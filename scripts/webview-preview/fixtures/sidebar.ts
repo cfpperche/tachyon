@@ -330,6 +330,51 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM | FleetVM[]>> = {
   },
 
   /**
+   * t-195a6c — the two imprecise glances on the same screen: a triaged card
+   * must read as parked (the word, not only the id), an active card must
+   * still read as in-progress, a live agent without a card still says
+   * "no board task", and a dead resumable card must not claim leftover
+   * brief as current work.
+   */
+  "board-assignment-state": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...base,
+      agents: [
+        {
+          name: "claude", model: "Opus 4.8", status: "idle", kind: "agent", attention: "idle",
+          focus: {
+            source: "task", taskId: "t-b928fc", taskStatus: "triaged",
+            text: "Registrar o processo",
+            full: "t-b928fc  Registrar o processo",
+          },
+        },
+        {
+          name: "cartagrok", model: "grok-4", status: "running", kind: "agent", attention: "working",
+          focus: {
+            source: "task", taskId: "t-195a6c", taskStatus: "active",
+            text: "sidebar card precision",
+            full: "t-195a6c  sidebar card precision",
+          },
+        },
+        {
+          name: "idle-temp", model: "grok-4", status: "idle", kind: "agent", attention: "idle",
+          focus: { source: "brief", text: "waiting for the next card", full: "waiting for the next card" },
+        },
+        {
+          name: "syspromptcodex", model: "GPT-5.1 Codex", status: "stopped", kind: "agent",
+          resumable: true,
+          focus: {
+            source: "brief",
+            text: "FATIA 1, e ela e so MEDIC",
+            full: "FATIA 1, e ela e so MEDIC — delivered hours ago",
+          },
+        },
+      ],
+    } as FleetVM,
+  },
+
+  /**
    * t-7d6013 — the durable record of what `tachyon.yml` DISCARDED, on an otherwise healthy fleet.
    *
    * The control is `default` (the same SAMPLE with no banner), so the only difference between the two

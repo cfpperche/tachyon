@@ -283,6 +283,7 @@
     letter-spacing: .03em; text-transform: uppercase;
   }
   .row-focus .focus-src.src-task { color: #4fc1ff; }
+  .row-focus .focus-src.src-triaged { color: var(--ds-muted, #858585); }
   .row-focus .focus-src.src-brief { color: #c586c0; }
   .row-focus .focus-src.src-continuity { color: #dcdcaa; }
   .row-focus .focus-src.src-none { color: var(--ds-muted, #858585); }

@@ -12,6 +12,8 @@ export interface AgentFocus {
   source: FocusSource;
   /** Board task id when source === "task". */
   taskId?: string;
+  /** Board status of the assigned card. Present only when source === "task". */
+  taskStatus?: "triaged" | "active";
   /** Full untruncated text for tooltip. */
   full: string;
 }
@@ -116,9 +118,11 @@ export function resolveAgentFocus(input: ResolveAgentFocusInput): AgentFocus | u
   const task = pickFocusTask(input.agent, input.tasks ?? []);
   if (task) {
     const full = `${task.id}  ${task.title}`.trim();
+    const taskStatus = task.status === "triaged" || task.status === "active" ? task.status : undefined;
     return {
       source: "task",
       taskId: task.id,
+      ...(taskStatus ? { taskStatus } : {}),
       full,
       text: truncateFocusText(task.title),
     };

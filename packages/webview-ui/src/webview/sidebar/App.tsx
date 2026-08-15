@@ -501,9 +501,11 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
       </Badge>
     ) : null,
 
-  /* spec 390 / t-9eacf9 — the glance is whether an OPEN board card is assigned, not
-     whether a focus fallback exists. After land, brief/continuity still look like work.
-     Open card → show the id. Live agent without a card → say so (not a warn badge). */
+  /* spec 390 / t-9eacf9 / t-195a6c — the glance is the OPEN board card and
+     its board state, not a leftover brief. After land, brief/continuity still
+     look like work. Open card → show the id and the status word (`task` when
+     active, `triaged` when parked). Live agent without a card → say so (not a
+     warn badge). A dead card must not claim current work. */
   focus: ({ a, template }) => {
     const focus = a.focus;
     const boardTaskId = focus?.source === "task" ? focus.taskId : undefined;
@@ -517,10 +519,14 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
     const lineStyle = lines === undefined ? {} : { style: `--card-focus-lines:${lines}` };
 
     if (boardTaskId && focus) {
+      const parked = focus.taskStatus === "triaged";
+      const label = parked ? "triaged" : "task";
+      const srcClass = parked ? "src-triaged" : "src-task";
+      const boardStatus = parked ? "triaged" : "active";
       return (
-        <div class="row-focus" data-testid="agent-board-line" title={`task · ${boardTaskId}\n${focus.full}`} {...lineStyle}>
+        <div class="row-focus" data-testid="agent-board-line" data-board-status={boardStatus} title={`${label} · ${boardTaskId}\n${focus.full}`} {...lineStyle}>
           <span class="focus-arrow" aria-hidden="true">↳</span>
-          <span class="focus-src src-task">task</span>
+          <span class={`focus-src ${srcClass}`}>{label}</span>
           <span class="focus-id">{boardTaskId}</span>
           <span class="focus-text">{focus.text}</span>
         </div>
@@ -539,18 +545,9 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
       );
     }
 
-    if (!focus) return null;
-    const focusTitle = `${focus.source === "continuity" ? "goal" : focus.source}${focus.taskId ? ` · ${focus.taskId}` : ""}\n${focus.full}`;
-    return (
-      <div class="row-focus" title={focusTitle} {...lineStyle}>
-        <span class="focus-arrow" aria-hidden="true">↳</span>
-        <span class={`focus-src src-${focus.source}`}>
-          {focus.source === "continuity" ? "goal" : focus.source}
-        </span>
-        {focus.taskId && <span class="focus-id">{focus.taskId}</span>}
-        <span class="focus-text">{focus.text}</span>
-      </div>
-    );
+    // t-195a6c — a stopped/crashed card with leftover brief or continuity is
+    // not current work. Do not fall through to a generic focus line.
+    return null;
   },
 
   "metrics-lanes": ({ a, metricsOpen, hasResources }) => (metricsOpen && hasResources ? <ResourceDetail a={a} /> : null),
