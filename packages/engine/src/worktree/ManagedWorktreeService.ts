@@ -9,13 +9,13 @@ import {
   WorktreeManager,
   type GitExec,
   type WorktreeOccupancyProbe,
-  type WorktreeRecord,
   type WorktreeRemovalResult,
   defaultGitExec,
   gitArgs,
   pathFor,
   resolveBase,
 } from "./WorktreeManager.js";
+import type { WorktreeRecord } from "./worktreeRecord.js";
 import { classifyManagedWorktree, localTrunkRef, resolveTrunkRefs, type WorktreeClassification } from "./classify.js";
 import type { ChangedFile } from "./review.js";
 import { probeLandSuggestion, probePrimaryCheckout, type LandSuggestion, type PrimaryCheckoutState } from "./land.js";

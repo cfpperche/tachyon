@@ -11,7 +11,8 @@
  * only caller that ever needed it as a wire payload.
  */
 import type { AgentOccupancyVerdict } from "./AgentManager.js";
-import type { WorktreeRecord, WorktreeRemovalResult, WorktreeAbsence } from "../worktree/WorktreeManager.js";
+import type { WorktreeRemovalResult, WorktreeAbsence } from "../worktree/WorktreeManager.js";
+import type { WorktreeRecord } from "../worktree/worktreeRecord.js";
 import { AgentProfileRefusal } from "@tachyon/shared/config/agentProfileRefusal.js";
 
 export interface AgentDeleteSessionManager {

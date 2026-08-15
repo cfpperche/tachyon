@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { adapterForRuntime, type ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
 import { type EntryKind } from "../config/loadConfig.js";
-import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
+import type { WorktreeRecord } from "../worktree/worktreeRecord.js";
 import { appendCapped, parseWorktreeEvidence, type WorktreeEvidence } from "../worktree/evidence.js";
 import type { SharedDependencyState } from "../worktree/dependencySharing.js";
 import { spawnContractCompletion, type SpawnContract } from "../agents/spawnContract.js";

@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { WorktreeManager, branchFor, resolveWorktreeCwd, type WorktreeRecord } from "@tachyon/engine/worktree/WorktreeManager.js";
+import { WorktreeManager, branchFor, resolveWorktreeCwd } from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { WorktreeRecord } from "@tachyon/engine/worktree/worktreeRecord.js";
 import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 
 /**

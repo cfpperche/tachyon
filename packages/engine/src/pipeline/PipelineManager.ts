@@ -4,7 +4,7 @@ import type { NodeSignals } from "./doneContract.js";
 import { advance } from "./pipelineDriver.js";
 import { sanitizeSummary, type UpstreamHandoff } from "./nodePrompt.js";
 import { validateCompleteNode, type CompleteNodeInput, type CompleteNodeVerdict, type NodeAuthState } from "./completeNode.js";
-import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
+import type { WorktreeRecord } from "../worktree/worktreeRecord.js";
 
 /**
  * spec 230 — the executor. Owns run state + side effects; all the DECISION logic lives in the pure
