@@ -5228,16 +5228,13 @@ export class Workspace {
     try {
       return await this.runAgentProfileStudioLifecycle(mutation);
     } catch (error) {
-      // t-9d7487 — the screen deliberately exposes only governed refusals, but the local engine log
-      // must retain EVERY cause. The real incident was a dirty-worktree refusal before the canonical
-      // transaction; neither that thrown error nor any of the seven transaction failures left a line,
-      // so once the panel flattened it there was no surviving diagnosis anywhere.
-      if (mutation.operation === "forget") {
-        console.error(
-          `[tachyon t-9d7487] agent profile lifecycle 'forget' failed for '${mutation.agentName}'`,
-          error,
-        );
-      }
+      // t-9d7487 / t-739151 — the screen exposes only governed refusals; the local engine log
+      // retains EVERY cause, for every Studio operation. Forget was the measured incident; rename,
+      // set-enabled, ownership and grant used the same door and were not logged.
+      console.error(
+        `[tachyon] agent profile lifecycle '${mutation.operation}' failed for '${mutation.agentName}'`,
+        error,
+      );
       if (!isAgentProfileRefusal(error)) throw error;
       return { schemaVersion: 1, kind: "refused", code: error.code, message: error.message };
     }

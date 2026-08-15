@@ -3673,18 +3673,32 @@ describe("Agent Studio — authorizing a capability with the agent running (t-74
       await ws.manager.spawn(AGENT);
       const before = await ws.inspectAgentProfileStudio(AGENT);
 
-      const refused = await ws.commitAgentProfileStudioLifecycle({
-        schemaVersion: 1,
-        operation: "set-enabled",
-        agentName: AGENT,
-        expectedRevision: before.revision,
-        enabled: false,
-      });
+      const engineLogPath = path.join(ws.workspaceRoot, "engine.log");
+      const engineLog = new EngineLogRing(20, { filePath: engineLogPath });
+      const priorConsoleError = console.error;
+      console.error = (...args: unknown[]) => engineLog.pushArgs("E", args);
+      const refused = await (async () => {
+        try {
+          return await ws.commitAgentProfileStudioLifecycle({
+            schemaVersion: 1,
+            operation: "set-enabled",
+            agentName: AGENT,
+            expectedRevision: before.revision,
+            enabled: false,
+          });
+        } finally {
+          console.error = priorConsoleError;
+        }
+      })();
 
       expect(refused).toMatchObject({ kind: "refused", code: "agent-profile/agent-running" });
       expect(refused).toMatchObject({
         message: expect.stringContaining(`Stop '${AGENT}', apply the change, then start it again`),
       });
+      // t-739151 — the same door must retain the cause for every operation, not only forget.
+      expect(fs.readFileSync(engineLogPath, "utf8")).toContain(
+        `agent profile lifecycle 'set-enabled' failed for '${AGENT}'`,
+      );
     } finally {
       ws.dispose();
     }
