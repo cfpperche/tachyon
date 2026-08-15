@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ManagedEntryInfo } from "@tachyon/engine/agents/AgentManager.js";
+import type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
 import {
   listHandoffDistillTargets,
   startHandoffDistillation,

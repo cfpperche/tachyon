@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
-export type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
 import { withPostCutAttestation } from "./legacyFleetGate.js";
 import { hasLifecycleHooks, isTemporaryInstance } from "./agentInstancePolicy.js";
 import fs from "node:fs";
