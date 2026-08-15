@@ -23,7 +23,7 @@ interface SchemaNode {
   deprecated?: boolean;
 }
 
-const schemaPath = path.join(process.cwd(), "src", "config", "tachyon.schema.json");
+const schemaPath = path.join(process.cwd(), "apps", "vscode-extension", "tachyon.schema.json");
 const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as SchemaNode;
 
 describe("tachyon.schema.json — settings.companion", () => {

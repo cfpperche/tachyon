@@ -26,14 +26,14 @@ import { fileURLToPath } from "node:url";
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * src/, test/ AND scripts/ — every hand-written source tree, not just product code.
+ * test/ AND scripts/ — every root-owned hand-written source tree, not just product code.
  *
  * The narrow version of this guard covered `src/` alone, and the test enforcing it slipped past:
  * the comment explaining how to avoid a literal NUL contained one, so the enforcer was itself
  * undiffable. A scope that excludes the enforcer is the same shape as a trigger list that misses the
  * cases that bite. This file lives under `scripts/`, so it is scanned by the rule it implements.
  */
-export const SCANNED = ["src", "test", "scripts"];
+export const SCANNED = ["test", "scripts"];
 
 /** Tab, LF and CR are the legitimate whitespace controls. Everything else in C0, plus DEL, must be an escape. */
 export const ALLOWED = new Set([0x09, 0x0a, 0x0d]);

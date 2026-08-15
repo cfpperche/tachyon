@@ -15,7 +15,7 @@ import {
   summarize,
   trustVerdict,
 } from "../../scripts/dogfood/runtime-remeasure-analysis.js";
-import { codexMemoryEffectiveState } from "../../src/runtime/adapters/codexMemory.js";
+import { codexMemoryEffectiveState } from "../helpers/codexMemory.js";
 import { CODEX_APPROVAL_POLICIES, CODEX_SANDBOX_MODES } from "@tachyon/engine/config/codexNativeConfigProjection.js";
 import { FLAG_SUGGESTIONS } from "@tachyon/engine/webview/formLogic.js";
 

@@ -187,7 +187,7 @@ Control is a **tab shell**, not six independent apps.
 ## Component library
 
 `src/webview/shared/ui/` **is the component library** — catalog, APIs, known gaps, and the
-promotion queue live in `src/webview/shared/ui/README.md`. The library is a living artifact:
+promotion queue live in `packages/webview-ui/src/webview/shared/ui/README.md`. The library is a living artifact:
 components get added, replaced, and retired over its life, but there is always exactly ONE library.
 Evolution rule: change the library, migrate the call sites, retire the old entry — never ship a
 parallel per-surface implementation "for now". A pattern that appears in two surfaces gets promoted

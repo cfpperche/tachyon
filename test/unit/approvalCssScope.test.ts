@@ -9,7 +9,7 @@ import path from "node:path";
 describe("approval.css surface scoping (t-e1bd89)", () => {
   const cssPath = path.resolve(__dirname, "../../packages/webview-ui/src/webview/approval/approval.css");
   const css = fs.readFileSync(cssPath, "utf8");
-  const appPath = path.resolve(__dirname, "../../src/webview/approval/App.tsx");
+  const appPath = path.resolve(__dirname, "../../packages/webview-ui/src/webview/approval/App.tsx");
   const app = fs.readFileSync(appPath, "utf8");
 
   it("does not declare a bare global button rule", () => {

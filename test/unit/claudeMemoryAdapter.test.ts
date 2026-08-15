@@ -8,7 +8,7 @@ import {
   claudeProjectKey,
   claudePurgePlanArgv,
   parseClaudePurgePlan,
-} from "../../src/runtime/adapters/claudeMemory.js";
+} from "../helpers/claudeMemory.js";
 import { nativeMemoryCapability, resolveMemoryPolicy } from "@tachyon/engine/runtime/nativeMemory.js";
 
 /**

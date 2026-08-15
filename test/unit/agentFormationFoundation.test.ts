@@ -18,7 +18,7 @@ import {
 import {
   FORMATION_GOVERNED_LANES,
   validateFormationSessionTransition,
-} from "../../src/agents/formation/sessionPolicy.js";
+} from "../helpers/sessionPolicy.js";
 import { FormationObjectStore } from "@tachyon/engine/agents/formation/objectStore.js";
 import type { AgentProfileAuthorityRecord } from "@tachyon/engine/config/agentProfileAuthority.js";
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseConfig, type AgentDef } from "@tachyon/engine/config/loadConfig.js";
 import { upsertAgent } from "@tachyon/engine/config/YamlConfigEditor.js";
 import { fromTerminalDef, toTerminalEntry, type FormState } from "@tachyon/engine/webview/formLogic.js";
-import schema from "../../src/config/tachyon.schema.json";
+import schema from "../../apps/vscode-extension/tachyon.schema.json";
 import { canonicalAgentFields, serializeAgentPatch } from "../../packages/webview-ui/src/webview/agent-studio-shell/domain.js";
 import {
   patchProfileFromStudioMutation,
