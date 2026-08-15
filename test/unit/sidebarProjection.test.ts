@@ -81,6 +81,24 @@ describe("parseSidebarViewV1 agent status enum", () => {
     expect(() => parseSidebarViewV1(minimalFleet("finished"))).toThrow();
   });
 
+  it("t-195a6c: accepts taskStatus on a task focus without refusing the fleet", () => {
+    const input = minimalFleet("running");
+    (input.fleet.agents as Array<Record<string, unknown>>)[0] = {
+      ...input.fleet.agents[0],
+      focus: {
+        text: "Registrar o processo",
+        source: "task",
+        taskId: "t-b928fc",
+        taskStatus: "triaged",
+        full: "t-b928fc  Registrar o processo",
+      },
+    };
+    const view = parseSidebarViewV1(input);
+    expect(view.fleet.agents[0]?.focus?.taskStatus).toBe("triaged");
+    expect(view.fleet.agents[0]?.focus?.taskId).toBe("t-b928fc");
+    expect(isSidebarViewV1(input)).toBe(true);
+  });
+
   it("degrades oversized persisted focus prose without splitting Unicode or rejecting the fleet", () => {
     const input = minimalFleet("running");
     (input.fleet.agents as Array<Record<string, unknown>>)[0] = {

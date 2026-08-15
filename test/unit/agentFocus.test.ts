@@ -52,7 +52,7 @@ describe("agentFocus (spec 390)", () => {
       ledger: { contractTask: "should lose" },
       continuityBody: "# Current Goal\nshould lose",
     });
-    expect(taskWin).toMatchObject({ source: "task", taskId: "t-aaaaaa", text: "Fix rebind" });
+    expect(taskWin).toMatchObject({ source: "task", taskId: "t-aaaaaa", text: "Fix rebind", taskStatus: "active" });
 
     const briefWin = resolveAgentFocus({
       agent: "worker",
@@ -72,5 +72,20 @@ describe("agentFocus (spec 390)", () => {
 
     expect(resolveAgentFocus({ agent: "empty", kind: "agent" })).toBeUndefined();
     expect(resolveAgentFocus({ agent: "shell", kind: "terminal", continuityBody: "# Current Goal\nx" })).toBeUndefined();
+  });
+
+  it("t-195a6c — carries the assigned card's board status on the focus object", () => {
+    const triaged = resolveAgentFocus({
+      agent: "claude",
+      kind: "agent",
+      tasks: [{
+        id: "t-b928fc",
+        title: "Registrar o processo",
+        status: "triaged",
+        assignee: "claude",
+        updatedAt: "2026-08-13T00:00:00Z",
+      }],
+    });
+    expect(triaged).toMatchObject({ source: "task", taskId: "t-b928fc", taskStatus: "triaged" });
   });
 });

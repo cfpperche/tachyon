@@ -24,6 +24,8 @@ export interface AgentFocus {
   text: string;
   source: FocusSource;
   taskId?: string;
+  /** Board status of the assigned card. Present only when source === "task". */
+  taskStatus?: "triaged" | "active";
   full: string;
 }
 export type PersistenceHookBadge = "active" | "skipped" | "failed" | "unknown";

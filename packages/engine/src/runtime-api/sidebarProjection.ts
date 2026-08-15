@@ -126,6 +126,7 @@ const agent = z.object({
     text: displayText(128, 1),
     source: z.enum(["task", "brief", "continuity"]),
     taskId: z.string().regex(/^t-[0-9a-f]{6}$/).optional(),
+    taskStatus: z.enum(["triaged", "active"]).optional(),
     full: displayText(SIDEBAR_FOCUS_FULL_MAX, 1, "… — open the agent for the full brief"),
   }).strict().optional(),
   persistenceHooks: persistenceHooks.optional(),

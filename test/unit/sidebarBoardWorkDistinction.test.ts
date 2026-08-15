@@ -85,16 +85,60 @@ describe("t-9eacf9 — sidebar card board-work distinction", () => {
 });
 
 /**
- * t-195a6c defect 2 — a dead agent's leftover brief or continuity must not
- * read as current work. The resumable seal may stay. If a stopped card
- * shows brief/goal as the focus line, this file goes red.
+ * t-195a6c — the t-9eacf9 glance is still imprecise in two places: a triaged
+ * card reads as in-progress work, and a dead agent's leftover brief reads as
+ * current work. Both halves fail this file if they regress.
  */
-describe("t-195a6c — dead card does not claim current work", () => {
+describe("t-195a6c — assignment state vs current work", () => {
   let AgentRow: (props: unknown) => unknown;
 
   beforeAll(async () => {
     const mod = await loadWebviewModule(APP_TSX);
     AgentRow = mod.AgentRow as typeof AgentRow;
+  });
+
+  it("renders a triaged assignment as triaged, not as in-progress work", () => {
+    const html = renderStatic(AgentRow({
+      a: agent({
+        name: "claude",
+        attention: "idle",
+        focus: {
+          source: "task",
+          taskId: "t-b928fc",
+          taskStatus: "triaged",
+          text: "Registrar o processo",
+          full: "t-b928fc  Registrar o processo",
+        },
+      }),
+      flash: false,
+    }));
+    expect(html).toContain('data-testid="agent-board-line"');
+    expect(html).toContain("t-b928fc");
+    expect(html).toContain("triaged");
+    // The source label the human reads must be the board state, not `task`.
+    expect(html).not.toMatch(/focus-src src-task[^>]*>task</);
+    expect(html).toMatch(/data-board-status="triaged"/);
+  });
+
+  it("keeps an active assignment as in-progress work", () => {
+    const html = renderStatic(AgentRow({
+      a: agent({
+        name: "worker",
+        attention: "working",
+        focus: {
+          source: "task",
+          taskId: "t-195a6c",
+          taskStatus: "active",
+          text: "sidebar card precision",
+          full: "t-195a6c  sidebar card precision",
+        },
+      }),
+      flash: false,
+    }));
+    expect(html).toContain("t-195a6c");
+    expect(html).toMatch(/focus-src src-task[^>]*>task</);
+    expect(html).toMatch(/data-board-status="active"/);
+    expect(html).not.toContain("triaged");
   });
 
   it("does not claim current work from a leftover brief on a stopped agent", () => {
@@ -131,5 +175,27 @@ describe("t-195a6c — dead card does not claim current work", () => {
     }));
     expect(html).not.toContain("ship the already-landed slice");
     expect(html).not.toContain("src-continuity");
+  });
+
+  it("still shows a parked assignment on a stopped agent as triaged, not as current work", () => {
+    const html = renderStatic(AgentRow({
+      a: agent({
+        name: "parked-owner",
+        status: "stopped",
+        resumable: true,
+        focus: {
+          source: "task",
+          taskId: "t-b928fc",
+          taskStatus: "triaged",
+          text: "Registrar o processo",
+          full: "t-b928fc  Registrar o processo",
+        },
+      }),
+      flash: false,
+    }));
+    expect(html).toContain("t-b928fc");
+    expect(html).toContain("triaged");
+    expect(html).toMatch(/data-board-status="triaged"/);
+    expect(html).not.toMatch(/focus-src src-task[^>]*>task</);
   });
 });
