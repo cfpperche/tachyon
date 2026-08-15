@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { TerminalStudioAdapter } from "../../apps/vscode-extension/src/webview/TerminalStudioAdapter.js";
-import { blankTerminalFields } from "../../packages/webview-ui/src/webview/terminal-studio-shell/domain.js";
+import { blankTerminalFields } from "@tachyon/webview-ui/webview/terminal-studio-shell/domain.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import type { StudioSubmit } from "../../apps/vscode-extension/src/webview/studioSubmit.js";
 import type { AgentDef } from "@tachyon/engine/config/loadConfig.js";

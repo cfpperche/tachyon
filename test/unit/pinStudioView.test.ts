@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { attachmentFromVM, attachmentsForSave, attachmentsUsedByDoc, toEditorDoc, toStoredDoc, upsertAttachment } from "@tachyon/webview-ui/webview/rich-doc/document";
 import { dataURLWithMediaType } from "@tachyon/webview-ui/webview/rich-doc/data-url";
-import type { PinStudioAttachmentVM } from "../../packages/webview-ui/src/webview/pin-studio/types.js";
+import type { PinStudioAttachmentVM } from "@tachyon/webview-ui/webview/pin-studio/types.js";
 import type { TiptapJSON } from "@tachyon/engine/pins/types.js";
 
 const attachment: PinStudioAttachmentVM = {

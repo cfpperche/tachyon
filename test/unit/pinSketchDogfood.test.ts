@@ -5,7 +5,7 @@ import path from "node:path";
 import { PinAttachmentStore } from "@tachyon/engine/pins/PinAttachmentStore.js";
 import { PinStore } from "@tachyon/engine/pins/PinStore.js";
 import { attachmentsForSave, attachmentsUsedByDoc } from "@tachyon/webview-ui/webview/rich-doc/document";
-import type { PinStudioAttachmentVM } from "../../packages/webview-ui/src/webview/pin-studio/types.js";
+import type { PinStudioAttachmentVM } from "@tachyon/webview-ui/webview/pin-studio/types.js";
 import type { TiptapJSON } from "@tachyon/engine/pins/types.js";
 
 const roots: string[] = [];

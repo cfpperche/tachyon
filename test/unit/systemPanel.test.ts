@@ -5,8 +5,8 @@ import { buildSectionsModel, type SectionsModel, type WorkspaceBundle } from "@t
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "../../apps/vscode-extension/src/webview/SystemPanel.js";
-import { readyMessage } from "../../packages/webview-ui/src/webview/system/messages.js";
-import { summariseWorkspaceRows } from "../../packages/webview-ui/src/webview/system/summary.js";
+import { readyMessage } from "@tachyon/webview-ui/webview/system/messages.js";
+import { summariseWorkspaceRows } from "@tachyon/webview-ui/webview/system/summary.js";
 import { buildControlInspectorModel, type ControlInspectorWorkspaceInput } from "@tachyon/webview-ui/control-inspector/model";
 
 const wsInput = (over: Partial<ControlInspectorWorkspaceInput> & { wsHash: string }): ControlInspectorWorkspaceInput => ({

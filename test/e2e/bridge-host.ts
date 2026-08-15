@@ -4,24 +4,22 @@
  * real agent CLI (e.g. `claude -p --mcp-config ...`) can drive the 7 tools end-to-end.
  * Prints the Bridge URL on stdout; runs until killed.
  */
-// Keep workspace imports relative: delegated worktrees share the primary checkout's node_modules,
-// so package-name imports can resolve a different tree and split TypeScript private-class identities.
-import { Bridge } from "../../packages/bridge/src/Bridge.js";
-import { AgentManager } from "../../packages/engine/src/agents/AgentManager.js";
-import { TmuxService, workspaceHash } from "../../packages/engine/src/tmux/TmuxService.js";
-import { parseConfig } from "../../packages/engine/src/config/loadConfig.js";
-import { PinStore } from "../../packages/engine/src/pins/PinStore.js";
-import { TaskStore } from "../../packages/engine/src/tasks/TaskStore.js";
-import { ValidationStore } from "../../packages/engine/src/validations/ValidationStore.js";
-import { AttentionMonitor } from "../../packages/shared/src/attention/AttentionMonitor.js";
-import { LifecycleMonitor } from "../../packages/engine/src/agents/LifecycleMonitor.js";
-import { CMD_WAIT_PREFIX, Waiters } from "../../packages/engine/src/workspace/Waiters.js";
-import { ControlModeClient } from "../../packages/engine/src/tmux/ControlModeClient.js";
-import { CommandRunner } from "../../packages/engine/src/commands/CommandRunner.js";
-import { Scheduler } from "../../packages/engine/src/schedule/Scheduler.js";
-import { ProposalStore } from "../../packages/engine/src/schedule/ProposalStore.js";
-import { RunbookRunner } from "../../packages/engine/src/commands/RunbookRunner.js";
-import { subtreeCpuTicks } from "../../packages/engine/src/attention/cpu.js";
+import { Bridge } from "@tachyon/bridge/Bridge.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
+import { TmuxService, workspaceHash } from "@tachyon/engine/tmux/TmuxService.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { PinStore } from "@tachyon/engine/pins/PinStore.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
+import { AttentionMonitor } from "@tachyon/shared/attention/AttentionMonitor.js";
+import { LifecycleMonitor } from "@tachyon/engine/agents/LifecycleMonitor.js";
+import { CMD_WAIT_PREFIX, Waiters } from "@tachyon/engine/workspace/Waiters.js";
+import { ControlModeClient } from "@tachyon/engine/tmux/ControlModeClient.js";
+import { CommandRunner } from "@tachyon/engine/commands/CommandRunner.js";
+import { Scheduler } from "@tachyon/engine/schedule/Scheduler.js";
+import { ProposalStore } from "@tachyon/engine/schedule/ProposalStore.js";
+import { RunbookRunner } from "@tachyon/engine/commands/RunbookRunner.js";
+import { subtreeCpuTicks } from "@tachyon/engine/attention/cpu.js";
 
 const workspaceRoot = process.env.TACHYON_E2E_ROOT ?? "/tmp/tachyon-e2e";
 const { config, errors } = parseConfig(
