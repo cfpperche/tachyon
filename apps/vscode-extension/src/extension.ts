@@ -3,6 +3,8 @@ import { engineSystemdUnitName } from "@tachyon/engine/engine-service/engineSupe
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
+import os from "node:os";
+import { performance } from "node:perf_hooks";
 import { doctor, probeServer, TmuxService, workspaceHash, SOCKET_NAME, type PaneSnapshot } from "@tachyon/engine/tmux/TmuxService.js";
 import { subtreeCpuTicks } from "@tachyon/engine/attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
@@ -103,6 +105,15 @@ import type { ViewKind } from "@tachyon/engine/workspace/EngineHost.js";
 const WT_DIFF_SCHEME = "tachyon-worktree";
 import { initializeVsCodeNotifications, notify } from "./workspace/notify.js";
 import { showNotification } from "./workspace/NotificationService.js";
+import { recordShellNote } from "./workspace/shellDiagnosticLog.js";
+import {
+  HOST_LAG_INTERVAL_MS,
+  classifyHostLag,
+  formatHostLagLog,
+  localizeHostLagNotice,
+  readLinuxRunDelayMs,
+  shouldNotifyHostLag,
+} from "./workspace/hostEventLoopLag.js";
 import { detectInstalledClis } from "@tachyon/engine/webview/cliDetect.js";
 import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
 import { registerDisposePanelSerializer, registerTrustedPanelSerializer } from "./webview/shared/panelSerializer.js";
@@ -1317,17 +1328,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     taskDetailPanels.refresh(); // SDD 485 C4 — EVERY open task-detail document, each re-reading its own task
     sidebarProto.refresh();
   };
+  // t-0bf709 — the timer only sees that a tick was late. Classification (ELU +
+  // cpuUsage + run_delay + Date.now vs hrtime) decides the message; a clock jump
+  // is silent. The log line goes to Output → Tachyon, which does not reveal itself.
   let lastBridgeLagNoticeAt = 0;
-  let bridgeLagExpectedAt = Date.now() + 5_000;
+  let bridgeLagExpectedAt = Date.now() + HOST_LAG_INTERVAL_MS;
+  let prevHostLagHr = process.hrtime.bigint();
+  let prevHostLagElu = performance.eventLoopUtilization();
+  let prevHostLagCpu = process.cpuUsage();
+  let prevHostLagRunDelay = readLinuxRunDelayMs();
   const bridgeLagTimer = setInterval(() => {
     const now = Date.now();
-    const lag = now - bridgeLagExpectedAt;
-    bridgeLagExpectedAt = now + 5_000;
-    if (lag > 5_000 && now - lastBridgeLagNoticeAt > 60_000) {
+    const hr = process.hrtime.bigint();
+    const currentElu = performance.eventLoopUtilization();
+    const elu = performance.eventLoopUtilization(currentElu, prevHostLagElu);
+    const cpu = process.cpuUsage(prevHostLagCpu);
+    const runDelay = readLinuxRunDelayMs();
+    const sample = classifyHostLag({
+      wallLagMs: now - bridgeLagExpectedAt,
+      hrLagMs: Number(hr - prevHostLagHr) / 1e6 - HOST_LAG_INTERVAL_MS,
+      eluActiveMs: elu.active,
+      eluIdleMs: elu.idle,
+      cpuMs: (cpu.user + cpu.system) / 1000,
+      loadavg1: os.loadavg()[0] ?? 0,
+      cpuCount: os.cpus().length || 1,
+      runDelayMs: runDelay !== undefined && prevHostLagRunDelay !== undefined
+        ? Math.max(0, runDelay - prevHostLagRunDelay)
+        : undefined,
+    });
+    bridgeLagExpectedAt = now + HOST_LAG_INTERVAL_MS;
+    prevHostLagHr = hr;
+    prevHostLagElu = currentElu;
+    prevHostLagCpu = process.cpuUsage();
+    prevHostLagRunDelay = runDelay;
+    if (shouldNotifyHostLag(sample) && now - lastBridgeLagNoticeAt > 60_000) {
       lastBridgeLagNoticeAt = now;
-      notify(vscode.l10n.t("Tachyon host event loop lagged by {0}ms; Bridge recovery remains available from the command palette.", Math.round(lag)), "warn");
+      recordShellNote("host-event-loop-lag", formatHostLagLog(sample));
+      notify(localizeHostLagNotice(vscode.l10n, sample.cause, sample.wallLagMs), "warn");
     }
-  }, 5_000);
+  }, HOST_LAG_INTERVAL_MS);
   context.subscriptions.push({ dispose: () => clearInterval(bridgeLagTimer) });
 
   // Any engine/Bridge-driven state change re-pushes the whole fleet to the webview.
