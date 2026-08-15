@@ -13,11 +13,13 @@ type BridgeOptions = ConstructorParameters<typeof Bridge>[1];
 /** App-side implementation of the engine-declared transport composition port. */
 export const workspaceBridgePort: WorkspaceBridgePort = {
   createWorkspaceTransport: (options) => Bridge.createWorkspaceTransport(options),
+  // Unchecked by design: WorkspaceBridgePort names the cross-seam risk and its executable coverage.
   createClientRebind: (deps) => Bridge.createClientRebind(deps as unknown as BridgeClientRebindDeps),
   parseClientRebindSettings: (value) => Bridge.parseClientRebindSettings(value),
   isClientWired: (record) => Bridge.isClientWired(record as Parameters<typeof Bridge.isClientWired>[0]),
   reloadInitiatorStateKey: (workspaceHash) => Bridge.reloadInitiatorStateKey(workspaceHash),
   createServer: (deps, options: WorkspaceBridgeServerOptions) => new Bridge(
+    // Unchecked by design: the engine must not derive this opaque adapter bag from BridgeDeps.
     deps as unknown as BridgeDeps,
     options as BridgeOptions,
   ),

@@ -126,12 +126,18 @@ export interface WorkspaceBridgePort {
     getState: <T>(key: string) => T | undefined;
     setState: (key: string, value: unknown) => void;
   }): WorkspaceBridgeIdentityTransport;
-  // Existing adapter bags retain their concrete types on the transport side. `any` here is confined
-  // to the composition seam: the app implementation checks both bags against Bridge's constructors.
+  // Existing adapter bags retain their concrete types on the transport side. This port deliberately
+  // does NOT prove that this opaque callback bag matches BridgeClientRebindDeps: doing so here would
+  // make the engine derive its contract from the transport again. The transport-side composition
+  // therefore uses an unchecked assertion; typecheck covers each side independently, while the auth
+  // handshake/rebind behavior test is what detects a runtime wiring divergence across this seam.
   createClientRebind(deps: WorkspaceBridgeClientRebindDependencies): WorkspaceBridgeClientRebind;
   parseClientRebindSettings(value: unknown): WorkspaceBridgeClientRebindSettings;
   isClientWired(record: unknown): boolean;
   reloadInitiatorStateKey(workspaceHash: string): string;
+  // Likewise, the large pre-existing MCP adapter bag is opaque at this boundary and its conversion
+  // to BridgeDeps is unchecked. Bridge/tool integration tests (plus the full daemon/workspace suites),
+  // not TypeScript assignability at the composition line, detect divergence between the two shapes.
   createServer(deps: WorkspaceBridgeServerDependencies, options: WorkspaceBridgeServerOptions): WorkspaceBridgeServer;
   derivePort(workspaceHash: string): number;
   readonly companionApprovalChannel: ApprovalResolutionChannel;
