@@ -197,28 +197,6 @@ describe("Human Inbox — the artifacts a detail route will preview", () => {
 });
 
 describe("Human Inbox — history filters", () => {
-  const history = () => build(
-    [
-      approval(),
-      approval({
-        id: "a-approved",
-        status: "resolved",
-        resolution: {
-          decision: "approved",
-          resolvedAt: "2026-07-27T11:00:00.000Z",
-          resolvedBy: "unattributed:companion-http",
-          injectedText: "fixed receipt",
-        },
-      }),
-    ],
-    [validation({
-      id: "v-failed",
-      title: "visual regression",
-      status: "closed",
-      rounds: [{ n: 1, outcome: "failed", closedAt: "2026-07-20T11:00:00.000Z", evidenceRefs: [] }],
-    })],
-  );
-
   it("keeps a decided Saved Agent proposal as a history row with its outcome", () => {
     const decided: SavedAgentProposalDecision = {
       id: "sp-dec001",
