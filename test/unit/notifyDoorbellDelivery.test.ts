@@ -1,4 +1,4 @@
-import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
+import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, expect, it, afterEach } from "vitest";

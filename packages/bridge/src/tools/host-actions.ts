@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { hostActionName } from "../../host-action/index.js";
+import { hostActionName } from "@tachyon/engine/host-action/index.js";
 import { type BridgeDeps, fail, ok } from "./shared.js";
 
 export function registerHostActionTools(mcp: McpServer, deps: BridgeDeps): void {

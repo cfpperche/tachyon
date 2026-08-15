@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { registerTools } from "@tachyon/engine/bridge/tools.js";
-import { resolveActor } from "@tachyon/engine/bridge/callerIdentity.js";
-import type { CallerKind, CallerSnapshot } from "@tachyon/engine/bridge/callerIdentity.js";
+import { registerTools } from "@tachyon/bridge/tools.js";
+import { resolveActor } from "@tachyon/bridge/callerIdentity.js";
+import type { CallerKind, CallerSnapshot } from "@tachyon/bridge/callerIdentity.js";
 import {
   PARENT_CWD_REFUSAL,
   PARENT_CWD_RULE,

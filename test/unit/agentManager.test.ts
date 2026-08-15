@@ -21,7 +21,7 @@ import {
 } from "@tachyon/engine/agents/legacyFleetGate.js";
 import { HarnessManager, bridgeGrokHome, bridgeHermesHome, bridgeMcpPath, bridgeOpencodeMcpPath, harnessHome, opencodeHarnessDirs } from "@tachyon/engine/harness/HarnessManager.js";
 import { adapterFor, harnessable } from "@tachyon/shared/resume/adapters.js";
-import { CallerIdentityRegistry } from "@tachyon/engine/bridge/callerIdentity.js";
+import { CallerIdentityRegistry } from "@tachyon/bridge/callerIdentity.js";
 import { briefFilePath } from "@tachyon/engine/agents/briefFile.js";
 import { identityLine, notifyParentGuidance, noInteractivePromptGuidance } from "@tachyon/engine/agents/spawnContract.js";
 import { paneTranscriptPath, paneTranscriptExists, ensurePaneTranscriptFile } from "@tachyon/engine/agents/paneTranscript.js";

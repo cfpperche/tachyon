@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Bridge, isLoopbackRemote, shouldRejectLanNonCompanion } from "@tachyon/engine/bridge/Bridge.js";
-import type { BridgeDeps } from "@tachyon/engine/bridge/tools.js";
+import { Bridge, isLoopbackRemote, shouldRejectLanNonCompanion } from "@tachyon/bridge/Bridge.js";
+import type { BridgeDeps } from "@tachyon/bridge/tools.js";
 import {
   companionListenHost,
   companionPairBaseUrl,

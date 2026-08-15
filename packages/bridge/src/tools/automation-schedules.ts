@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { ScheduleDef } from "../../config/loadConfig.js";
+import type { ScheduleDef } from "@tachyon/engine/config/loadConfig.js";
 import { type BridgeDeps, AGENT_NAME, fail, ok, proposalAuthor, validateProposedSchedule } from "./shared.js";
 
 export function registerScheduleTools(mcp: McpServer, deps: BridgeDeps): void {

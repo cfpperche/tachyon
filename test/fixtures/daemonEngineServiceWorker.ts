@@ -1,5 +1,5 @@
 import { startDaemonEngineService } from "@tachyon/engine/engine-service/engineService.js";
-import { workspaceBridgePort } from "@tachyon/engine/bridge/workspaceComposition.js";
+import { workspaceBridgePort } from "@tachyon/bridge/workspaceComposition.js";
 
 async function main(): Promise<void> {
   const [workspaceRoot, storageRoot, mediaRoot, controlSocketPath] = process.argv.slice(2);

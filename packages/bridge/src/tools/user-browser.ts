@@ -2,9 +2,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import fs from "node:fs";
 import path from "node:path";
-import { modelFacingScreenshotResult } from "../../companion/screenshotPersist.js";
-import { envelopeFromTabResult } from "../../companion/tabEnvelope.js";
-import { appendMutationLog, evaluateMutationSafety } from "../../companion/tabSafety.js";
+import { modelFacingScreenshotResult } from "@tachyon/engine/companion/screenshotPersist.js";
+import { envelopeFromTabResult } from "@tachyon/engine/companion/tabEnvelope.js";
+import { appendMutationLog, evaluateMutationSafety } from "@tachyon/engine/companion/tabSafety.js";
 import { fail, ok } from "./shared.js";
 import type { BridgeDeps } from "./shared.js";
 

@@ -1,4 +1,4 @@
-import { runEngineDaemon } from "@tachyon/engine/bridge/daemonMain.js";
+import { runEngineDaemon } from "@tachyon/bridge/daemonMain.js";
 
 const encodedOptions = process.argv[2];
 if (!encodedOptions) throw new Error("usage: engineSupervisorWorker <encoded-options>");

@@ -6,6 +6,21 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Design decisions
 
+- **Fatia 6 (`t-1fc788`):** `packages/bridge` now owns the 38 HTTP/MCP transport modules and declares
+  `@tachyon/engine`; engine declares no dependency back. The daemon bundle entry moved with the product
+  composition root to `packages/bridge/src/daemonMain.ts`, while the transport-neutral daemon core and
+  `WorkspaceBridgePort` remain engine-owned. Every former bridge→engine relative crossing is now a
+  declared package import, so `check:package-boundary` mechanically rejects the reverse direction with
+  an empty exception list.
+- The executable alternate-transport proof lives outside engine, implements `WorkspaceBridgePort`, and
+  composes it into the real engine daemon entry without importing `@tachyon/bridge`. The focused proof,
+  the explicit engine→bridge rejection fixture, the 254-test bridge/daemon/workspace slice, typecheck,
+  dev bundle, and the updated ruler all pass; the ruler remains **0 bindings · 0 imports · 0 consumers**.
+- Release/smoke were removed from this worktree's acceptance by the maintainer after the clean release
+  attempt hit the intended stable provenance guard: stable artifacts can only be built from canonical
+  `main`, never a linked worktree. The maintainer owns `npm run release` and `npm run smoke:vsix`
+  post-merge; no bypass or primary-checkout execution was attempted.
+
 - **Fatia 5 (`t-de69d6`):** `Workspace` now declares an eleven-member `WorkspaceBridgePort` and
   receives its implementation. Five members are the already-extracted authentication/rebind
   mechanism from slice 4; six replace the final six imports (`createServer`, `derivePort`, approval

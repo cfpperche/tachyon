@@ -5,8 +5,8 @@ import { createHash } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import net from "node:net";
 import { EngineControlClient } from "@tachyon/engine/engine-service/controlClient.js";
-import { bridgeTokenFileName } from "@tachyon/engine/bridge/token.js";
-import { bridgeStateMigrationStorage } from "@tachyon/engine/bridge/stateMigrationStorage.js";
+import { bridgeTokenFileName } from "@tachyon/bridge/token.js";
+import { bridgeStateMigrationStorage } from "@tachyon/bridge/stateMigrationStorage.js";
 import {
   stageEngineBundle,
   stageEngineRuntime,

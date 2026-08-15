@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { type BridgeDeps, AGENT_NAME, fail, normalizeCreatePinInput, ok, plainTextDoc, resolveDeclaredActor } from "./shared.js";
-import { SIDEBAR_PIN_TEXT_MAX } from "../../sidebar/wireText.js";
+import { SIDEBAR_PIN_TEXT_MAX } from "@tachyon/engine/sidebar/wireText.js";
 
 export function registerPinTools(mcp: McpServer, deps: BridgeDeps): void {
 

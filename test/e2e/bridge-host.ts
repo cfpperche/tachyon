@@ -6,7 +6,7 @@
  */
 // Keep workspace imports relative: delegated worktrees share the primary checkout's node_modules,
 // so package-name imports can resolve a different tree and split TypeScript private-class identities.
-import { Bridge } from "../../packages/engine/src/bridge/Bridge.js";
+import { Bridge } from "../../packages/bridge/src/Bridge.js";
 import { AgentManager } from "../../packages/engine/src/agents/AgentManager.js";
 import { TmuxService, workspaceHash } from "../../packages/engine/src/tmux/TmuxService.js";
 import { parseConfig } from "../../packages/engine/src/config/loadConfig.js";

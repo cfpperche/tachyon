@@ -6,7 +6,7 @@ import {
   resolveApproval,
   writeApprovalRequest,
 } from "@tachyon/engine/approvals/approvalRequest.js";
-import { APPROVAL_CHANNEL_COMPANION_HTTP, APPROVAL_CHANNEL_VSCODE_COMMAND } from "@tachyon/engine/bridge/approvalChannels.js";
+import { APPROVAL_CHANNEL_COMPANION_HTTP, APPROVAL_CHANNEL_VSCODE_COMMAND } from "@tachyon/bridge/approvalChannels.js";
 
 /**
  * t-7a306a — completing the pin is a SECONDARY step, and both halves of that were wrong.

@@ -7,28 +7,26 @@ import { resolveSource, walk } from "./monorepo-imports.mjs";
 /**
  * Reproducible ruler for the engine -> bridge boundary measured in t-69ae46.
  *
- * An edge is one statically named binding imported or re-exported by a TypeScript source outside
- * packages/engine/src/bridge from a source inside that directory. Both relative specifiers and the
- * package's @tachyon/engine/* self-imports count. Type-only bindings count because they still couple
- * the source trees. `imports` counts the matching static import/export declarations, and `consumers`
- * counts distinct source files containing them. Side-effect imports and `export *` declarations
- * therefore count as imports but contribute zero named bindings. Dynamic import(), require(), lexical
- * occurrences, imports internal to bridge, tests, generated files, and docs do not count. Resolution
- * is delegated to monorepo-imports.mjs, the same resolver used by the other graph measurements and
- * boundary checks.
+ * An edge is one statically named binding imported or re-exported by a TypeScript source in
+ * packages/engine/src from packages/bridge/src. Both relative specifiers and @tachyon/bridge package
+ * imports count. Type-only bindings count because they still couple the packages. `imports` counts
+ * the matching static import/export declarations, and `consumers` counts distinct source files
+ * containing them. Side-effect imports and `export *` declarations therefore count as imports but
+ * contribute zero named bindings. Dynamic import(), require(), lexical occurrences, tests, generated
+ * files, and docs do not count. Resolution is delegated to monorepo-imports.mjs, the same resolver
+ * used by the other graph measurements and boundary checks.
  */
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(scriptDirectory, "../..");
 const engineSourceRoot = path.join(root, "packages", "engine", "src");
-const bridgeRoot = path.join(engineSourceRoot, "bridge");
+const bridgeRoot = path.join(root, "packages", "bridge", "src");
 const bridgePrefix = `${bridgeRoot}${path.sep}`;
 const files = walk(engineSourceRoot).filter((file) => /\.tsx?$/.test(file)).sort();
-const fileSet = new Set(files);
+const fileSet = new Set([...files, ...walk(bridgeRoot).filter((file) => /\.tsx?$/.test(file))]);
 const rows = [];
 
 for (const importer of files) {
-  if (importer.startsWith(bridgePrefix)) continue;
   const source = ts.createSourceFile(importer, fs.readFileSync(importer, "utf8"), ts.ScriptTarget.Latest, true);
   for (const statement of source.statements) {
     if (!isStaticImportOrExport(statement)) continue;
@@ -45,7 +43,7 @@ for (const importer of files) {
 }
 
 const output = {
-  criterion: "named static import/re-export bindings (relative or @tachyon/engine self-import) from engine sources outside bridge to sources inside bridge; type-only bindings count",
+  criterion: "named static import/re-export bindings from @tachyon/engine sources to @tachyon/bridge sources; type-only bindings count",
   totals: {
     bindings: rows.reduce((sum, row) => sum + row.bindings, 0),
     imports: rows.length,
@@ -78,9 +76,9 @@ function bindingCount(statement) {
 
 function resolveEngineSource(importer, specifier) {
   if (specifier.startsWith(".")) return resolveSource(importer, specifier, fileSet);
-  const prefix = "@tachyon/engine/";
+  const prefix = "@tachyon/bridge/";
   if (!specifier.startsWith(prefix)) return undefined;
-  const packageTarget = path.join(engineSourceRoot, specifier.slice(prefix.length));
+  const packageTarget = path.join(bridgeRoot, specifier.slice(prefix.length));
   let relativeSpecifier = path.relative(path.dirname(importer), packageTarget);
   if (!relativeSpecifier.startsWith(".")) relativeSpecifier = `./${relativeSpecifier}`;
   return resolveSource(importer, relativeSpecifier, fileSet);

@@ -4,7 +4,7 @@ import {
   newOutputSince,
   waitForOutput,
   type WaitOutputCaptureSource,
-} from "@tachyon/engine/bridge/waitForOutput.js";
+} from "@tachyon/bridge/waitForOutput.js";
 
 describe("newOutputSince", () => {
   it("returns the appended suffix for append-only growth", () => {

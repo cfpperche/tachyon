@@ -2,14 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
+import { registerTools, type BridgeDeps } from "@tachyon/bridge/tools.js";
 import {
   ProposalStore,
   SCHEDULE_PROPOSAL_PENDING_CEILING,
   SCHEDULE_PROPOSAL_TTL_MS,
 } from "@tachyon/engine/schedule/ProposalStore.js";
 import { buildHumanInbox } from "@tachyon/webview-ui/humanInbox/model";
-import type { CallerSnapshot } from "@tachyon/engine/bridge/callerIdentity.js";
+import type { CallerSnapshot } from "@tachyon/bridge/callerIdentity.js";
 
 /** A fake MCP server that just captures tool handlers (same shape probeBridge.test.ts uses). */
 class FakeMcp {

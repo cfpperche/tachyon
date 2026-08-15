@@ -1,4 +1,4 @@
-import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
+import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 /**
  * t-7d6013 — a discarded declaration leaves a DURABLE record, and never anything more than a record.
  *

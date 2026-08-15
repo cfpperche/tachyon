@@ -10,7 +10,7 @@ import {
   resolveApproval,
   writeApprovalRequest,
 } from "@tachyon/engine/approvals/approvalRequest.js";
-import { APPROVAL_CHANNEL_VSCODE_COMMAND } from "@tachyon/engine/bridge/approvalChannels.js";
+import { APPROVAL_CHANNEL_VSCODE_COMMAND } from "@tachyon/bridge/approvalChannels.js";
 import { buildApprovalViewModel } from "../../apps/vscode-extension/src/webview/approval/viewModel.js";
 import { renderPrimer } from "@tachyon/engine/agents/primer.js";
 import { makeTempDir } from "../helpers/tempDir.js";
@@ -54,9 +54,9 @@ describe("container-generated delegation behavior", () => {
     expect(serviceSource).toContain('case "approval.resolve"');
     expect(serviceSource).toContain("await resolveApproval({");
     // t-3b47ad — approval tools live under tools/human-approvals.ts; absence of a resolve tool is a whole-surface check.
-    const toolsDir = path.join(process.cwd(), "packages/engine/src/bridge/tools");
+    const toolsDir = path.join(process.cwd(), "packages/bridge/src/tools");
     const toolsSource = [
-      fs.readFileSync(path.join(process.cwd(), "packages/engine/src/bridge/tools.ts"), "utf8"),
+      fs.readFileSync(path.join(process.cwd(), "packages/bridge/src/tools.ts"), "utf8"),
       ...fs.readdirSync(toolsDir).filter((f) => f.endsWith(".ts")).map((f) => fs.readFileSync(path.join(toolsDir, f), "utf8")),
     ].join("\n");
     expect(toolsSource).toContain('"list_pending_approvals"');

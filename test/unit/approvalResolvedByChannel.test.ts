@@ -73,7 +73,7 @@ import {
   APPROVAL_CHANNEL_COMPANION_HTTP,
   APPROVAL_CHANNEL_VSCODE_COMMAND,
   APPROVAL_RESOLUTION_CHANNELS,
-} from "@tachyon/engine/bridge/approvalChannels.js";
+} from "@tachyon/bridge/approvalChannels.js";
 import { approvalResolutionPorts } from "@tachyon/engine/approvals/approvalResolutionPorts.js";
 
 /** The values the product used to write. They are history in old records, and never legal again. */

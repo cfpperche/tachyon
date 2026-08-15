@@ -4,8 +4,8 @@
  * registerTools is the door Bridge.createMcp uses; the lists themselves stay handwritten.
  */
 import { beforeAll, describe, expect, it } from "vitest";
-import { registerTools } from "@tachyon/engine/bridge/tools.js";
-import type { BridgeDeps } from "@tachyon/engine/bridge/tools/shared.js";
+import { registerTools } from "@tachyon/bridge/tools.js";
+import type { BridgeDeps } from "@tachyon/bridge/tools/shared.js";
 import {
   IDE_BROWSER_TOOL_NAMES,
   USER_BROWSER_TOOL_NAMES,

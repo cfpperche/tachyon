@@ -24,6 +24,7 @@
   "references": [
     { "path": "./packages/shared" },
     { "path": "./packages/engine" },
+    { "path": "./packages/bridge" },
     { "path": "./packages/webview-ui" }
   ],
   "exclude": ["node_modules", "dist", ".vscode-test", "test/browser"]

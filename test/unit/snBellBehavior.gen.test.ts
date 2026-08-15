@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
-import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
+import { registerTools, type BridgeDeps } from "@tachyon/bridge/tools.js";
 import { readDoorbellEvents } from "@tachyon/engine/workspace/doorbell.js";
 import { createTmuxExecutor, TMUX_CONTROL_TIMEOUT_MS, TmuxService } from "@tachyon/engine/tmux/TmuxService.js";
 import { makeTempDir } from "../helpers/tempDir.js";

@@ -7,7 +7,7 @@ import {
   composeBoundedAgentNotice,
   formatNoticePointer,
   prepareAgentSummary,
-} from "@tachyon/engine/bridge/notifyAgent.js";
+} from "@tachyon/bridge/notifyAgent.js";
 import { truncateByCodePoint } from "@tachyon/engine/utils/truncateByCodePoint.js";
 import { truncateFocusText } from "@tachyon/engine/sidebar/agentFocus.js";
 

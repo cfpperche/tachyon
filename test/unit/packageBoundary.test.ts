@@ -14,13 +14,16 @@ function fixture(engineDependencies?: Record<string, string>) {
   const root = mkdtempSync(path.join(tmpdir(), "tachyon-package-boundary-"));
   roots.push(root);
   mkdirSync(path.join(root, "packages/engine/src"), { recursive: true });
+  mkdirSync(path.join(root, "packages/bridge/src"), { recursive: true });
   mkdirSync(path.join(root, "packages/webview-ui/src"), { recursive: true });
   mkdirSync(path.join(root, "apps/shell/src"), { recursive: true });
   writeFileSync(path.join(root, "package.json"), '{"private":true,"workspaces":["apps/*","packages/*"]}\n');
   writeFileSync(path.join(root, "packages/engine/package.json"), `${JSON.stringify({ name: "@tachyon/engine", dependencies: engineDependencies })}\n`);
+  writeFileSync(path.join(root, "packages/bridge/package.json"), '{"name":"@tachyon/bridge","dependencies":{"@tachyon/engine":"0.91.0"}}\n');
   writeFileSync(path.join(root, "packages/webview-ui/package.json"), '{"name":"@tachyon/webview-ui"}\n');
   writeFileSync(path.join(root, "apps/shell/package.json"), '{"name":"shell"}\n');
   writeFileSync(path.join(root, "packages/webview-ui/src/view.ts"), "export const view = true;\n");
+  writeFileSync(path.join(root, "packages/bridge/src/transport.ts"), "export const transport = true;\n");
   return root;
 }
 
@@ -52,6 +55,15 @@ describe("package boundary gate", () => {
     writeFileSync(path.join(root, "packages/engine/src/index.ts"), 'import "@tachyon/webview-ui/view.js";\n');
 
     expect(() => runGate(root)).toThrowError(/workspace dependency @tachyon\/webview-ui is not declared/);
+  });
+
+  it("rejects an engine import from the bridge package", () => {
+    const root = fixture();
+    writeFileSync(path.join(root, "packages/engine/src/index.ts"), 'import "@tachyon/bridge/transport.js";\n');
+
+    expect(() => runGate(root)).toThrowError(
+      /packages\/engine\/src\/index\.ts -> @tachyon\/bridge\/transport\.js: workspace dependency @tachyon\/bridge is not declared/,
+    );
   });
 
   it("accepts a named workspace import when the dependency is declared", () => {

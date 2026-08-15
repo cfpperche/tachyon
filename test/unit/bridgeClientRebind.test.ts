@@ -17,7 +17,7 @@ import {
   type BridgeClientRebindDeps,
   type BridgeClientRebindSettings,
   type RebindResumeReadiness,
-} from "@tachyon/engine/bridge/clientRebind.js";
+} from "@tachyon/bridge/clientRebind.js";
 import { SessionLedger, durableBoundGeneration, type SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
 import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 

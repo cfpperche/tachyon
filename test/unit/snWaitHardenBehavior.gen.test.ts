@@ -13,7 +13,7 @@ import {
   waitOutputConcurrencyRefusalMessage,
   type WaitOutputCaptureSource,
   type WaitForOutputResult,
-} from "@tachyon/engine/bridge/waitForOutput.js";
+} from "@tachyon/bridge/waitForOutput.js";
 
 const WS = "/repo-wait-harden";
 const HASH = workspaceHash(WS);

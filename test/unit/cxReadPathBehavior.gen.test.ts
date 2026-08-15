@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
-import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
+import { registerTools, type BridgeDeps } from "@tachyon/bridge/tools.js";
 
 class FakeMcp {
   handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: { type: string; text: string }[]; isError?: boolean }>>();

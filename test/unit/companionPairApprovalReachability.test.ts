@@ -58,7 +58,7 @@ import {
   readApprovalRequest,
   writeApprovalRequest,
 } from "@tachyon/engine/approvals/approvalRequest.js";
-import { APPROVAL_CHANNEL_COMPANION_HTTP } from "@tachyon/engine/bridge/approvalChannels.js";
+import { APPROVAL_CHANNEL_COMPANION_HTTP } from "@tachyon/bridge/approvalChannels.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
 import { assertNoFleetLeak, isolatedDaemonChildEnv } from "../helpers/isolatedDaemonEnv.js";

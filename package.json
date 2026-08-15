@@ -12,7 +12,7 @@
     "build": "npm run generate:theme-tokens && node scripts/build-engine-channel.mjs dev",
     "build:stable": "npm run generate:theme-tokens && node scripts/build-engine-channel.mjs stable",
     "watch": "npm run generate:theme-tokens && node scripts/build-engine-channel.mjs dev --watch",
-    "typecheck": "tsc -b packages/shared packages/engine packages/webview-ui --pretty false && tsc --noEmit && tsc -p tsconfig.webview.json && tsc -p tsconfig.browser-test.json",
+    "typecheck": "tsc -b packages/shared packages/engine packages/bridge packages/webview-ui --pretty false && tsc --noEmit && tsc -p tsconfig.webview.json && tsc -p tsconfig.browser-test.json",
     "check:package-boundary": "node scripts/check-package-boundary.mjs",
     "check:engine-boundary": "bash scripts/check-engine-boundary.sh",
     "check:source-diffable": "node scripts/check-source-diffable.mjs",

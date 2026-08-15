@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type PersistableEntry, type SecretPort } from "./callerIdentity.js";
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "./token.js";
-import { callerIdentityInstanceIdStateKey, callerIdentityRegistryStateKey } from "../workspace/operationalStateKeys.js";
+import { callerIdentityInstanceIdStateKey, callerIdentityRegistryStateKey } from "@tachyon/engine/workspace/operationalStateKeys.js";
 
 export interface WorkspaceBridgeTransportOptions {
   workspaceId: string;

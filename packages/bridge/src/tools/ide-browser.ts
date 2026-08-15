@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { IDE_BROWSER_EVAL_MAX_CHARS, IDE_BROWSER_ROUTES } from "../../ide-browser/protocol.js";
+import { IDE_BROWSER_EVAL_MAX_CHARS, IDE_BROWSER_ROUTES } from "@tachyon/engine/ide-browser/protocol.js";
 import { type BridgeDeps, fail, ok } from "./shared.js";
 
 export function registerIdeBrowserTools(mcp: McpServer, deps: BridgeDeps): void {

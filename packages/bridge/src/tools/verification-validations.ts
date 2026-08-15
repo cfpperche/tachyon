@@ -1,8 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { validationSummary } from "../../validations/ValidationStore.js";
-import { nextValidation } from "../../validations/nextValidation.js";
-import { discoverValidationCandidates } from "../../validations/discovery.js";
+import { validationSummary } from "@tachyon/engine/validations/ValidationStore.js";
+import { nextValidation } from "@tachyon/engine/validations/nextValidation.js";
+import { discoverValidationCandidates } from "@tachyon/engine/validations/discovery.js";
 import { type BridgeDeps, AGENT_NAME, TASK_ARTIFACT_REF, TASK_PRIORITY, VALIDATION_EXECUTOR, VALIDATION_EXPECT, VALIDATION_ID, VALIDATION_OUTCOME, VALIDATION_STATUS, definedPatch, fail, ok, validationActor } from "./shared.js";
 
 export function registerValidationTools(mcp: McpServer, deps: BridgeDeps): void {

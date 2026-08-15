@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { bridgeGenerationStateKey } from "@tachyon/engine/bridge/clientRebind.js";
-import { bridgeStateMigrationStorage } from "@tachyon/engine/bridge/stateMigrationStorage.js";
-import { bridgeTokenFileName } from "@tachyon/engine/bridge/token.js";
+import { bridgeGenerationStateKey } from "@tachyon/bridge/clientRebind.js";
+import { bridgeStateMigrationStorage } from "@tachyon/bridge/stateMigrationStorage.js";
+import { bridgeTokenFileName } from "@tachyon/bridge/token.js";
 import { DaemonStateStore } from "@tachyon/engine/engine-service/daemonStateStore.js";
 import {
   applyEngineStateMigration,

@@ -1,4 +1,4 @@
-import type { EngineStateMigrationStorage } from "../engine-service/stateMigration.js";
+import type { EngineStateMigrationStorage } from "@tachyon/engine/engine-service/stateMigration.js";
 import { bridgeGenerationStateKey } from "./clientRebind.js";
 import { bridgeTokenFileName, externalBridgeTokenFileName } from "./token.js";
 

@@ -1,13 +1,13 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { ContinuityMeta } from "../../continuity/ContinuityStore.js";
-import { listPendingApprovalRequests } from "../../approvals/approvalRequest.js";
+import type { ContinuityMeta } from "@tachyon/engine/continuity/ContinuityStore.js";
+import { listPendingApprovalRequests } from "@tachyon/engine/approvals/approvalRequest.js";
 import {
   decomposeContinuityRead,
   removedContinuityReferences,
   renderContinuity,
   renderMissingContinuity,
-} from "../../continuity/presentation.js";
+} from "@tachyon/engine/continuity/presentation.js";
 import { type BridgeDeps, AGENT_NAME, contextRenewalRequestRefusal, fail, ok, resolveDeclaredActor } from "./shared.js";
 
 export function registerContinuityTools(mcp: McpServer, deps: BridgeDeps): void {

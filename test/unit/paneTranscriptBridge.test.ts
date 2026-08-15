@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Bridge } from "@tachyon/engine/bridge/Bridge.js";
+import { Bridge } from "@tachyon/bridge/Bridge.js";
 import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import { parseConfig } from "@tachyon/engine/config/loadConfig.js";

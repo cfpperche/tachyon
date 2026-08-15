@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { registerTools } from "@tachyon/engine/bridge/tools.js";
+import { registerTools } from "@tachyon/bridge/tools.js";
 
 /**
  * t-a4ac02 — remove the Bridge tool `next_task`; keep the pure function `nextTask()`.

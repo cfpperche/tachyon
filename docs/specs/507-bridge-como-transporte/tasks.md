@@ -73,13 +73,13 @@ Se não couber numa mudança, parta por mecanismo e diga. Não empurre os três 
 
 Com a régua em zero, o movimento é mecânico.
 
-- [ ] `packages/bridge` com os módulos de transporte.
-- [ ] `package.json` do bridge declara `@tachyon/engine`; o da engine **não** declara `@tachyon/bridge`.
-- [ ] `check:package-boundary` verde com lista de exceções **vazia**. Se precisar de exceção, a inversão não terminou — volte, não abra a exceção.
-- [ ] Existe prova executável de que um transporte novo se escreve sem editar `packages/engine`.
-- [ ] `npm run release` e `npm run smoke:vsix` passam; a versão não muda.
+- [x] `packages/bridge` com os módulos de transporte.
+- [x] `package.json` do bridge declara `@tachyon/engine`; o da engine **não** declara `@tachyon/bridge`.
+- [x] `check:package-boundary` verde com lista de exceções **vazia**. Se precisar de exceção, a inversão não terminou — volte, não abra a exceção.
+- [x] Existe prova executável de que um transporte novo se escreve sem editar `packages/engine`.
+- [ ] ~~`npm run release` e `npm run smoke:vsix` passam; a versão não muda.~~ Transferido pelo mantenedor para o checkout primário pós-merge: o build stable recusa linked worktrees por desenho.
 - [ ] **F5 provado por um humano.**
-- [ ] `docs/system-design.md` atualizado.
+- [x] `docs/system-design.md` atualizado.
 
 ---
 

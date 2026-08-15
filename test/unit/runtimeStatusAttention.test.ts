@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AttentionMonitor, type AttentionSettings } from "@tachyon/shared/attention/AttentionMonitor.js";
-import { registerTools } from "@tachyon/engine/bridge/tools.js";
-import type { BridgeDeps } from "@tachyon/engine/bridge/tools/shared.js";
+import { registerTools } from "@tachyon/bridge/tools.js";
+import type { BridgeDeps } from "@tachyon/bridge/tools/shared.js";
 
 const SETTINGS: AttentionSettings = { enabled: true, silenceSec: 8, patterns: [] };
 

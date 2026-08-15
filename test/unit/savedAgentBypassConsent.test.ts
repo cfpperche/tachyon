@@ -1,4 +1,4 @@
-import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
+import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";

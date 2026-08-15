@@ -1,11 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { projectTaskListRow, type TaskListFields } from "../../tasks/TaskStore.js";
-import { TASK_AUTHORING_LIMITS } from "../../tasks/taskAuthoring.js";
-import { orderTaskViewsForListing } from "../../tasks/listOrder.js";
-import { asAgent } from "../../config/loadConfig.js";
-import { TaskPrototypeStore } from "../../tasks/TaskPrototypeStore.js";
-import { reconcileLanded } from "../../tasks/reconcileLanded.js";
+import { projectTaskListRow, type TaskListFields } from "@tachyon/engine/tasks/TaskStore.js";
+import { TASK_AUTHORING_LIMITS } from "@tachyon/engine/tasks/taskAuthoring.js";
+import { orderTaskViewsForListing } from "@tachyon/engine/tasks/listOrder.js";
+import { asAgent } from "@tachyon/engine/config/loadConfig.js";
+import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js";
+import { reconcileLanded } from "@tachyon/engine/tasks/reconcileLanded.js";
 import { type BridgeDeps, AGENT_NAME, CREATE_TASK_ARTIFACT_REF, TASK_ARTIFACT_REF, TASK_AWAITING_HUMAN_KIND, TASK_EXPECT, TASK_ID, TASK_PRIORITY, TASK_STATUS, createTaskLimitErrorMap, createTaskString, definedPatch, emitTaskNotification, fail, notifyTaskJournalAppended, ok, prototypeBridgeView, resolveDeclaredActor, resolvedJournalAuthor, taskNotificationActor, taskReceipt } from "./shared.js";
 
 export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {

@@ -5,8 +5,8 @@ import type { CallerIdentityRegistry, CallerScope } from "./callerIdentity.js";
 import type { BridgeDeps } from "./tools.js";
 import { composeAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
 import type { BridgeClientRebindDeps } from "./clientRebind.js";
-import type { WorkspaceBridgePort, WorkspaceBridgeServerOptions } from "../workspace/WorkspaceBridgePort.js";
-import { Workspace, type WorkspaceDeps, type WorkspaceSeams } from "../workspace/Workspace.js";
+import type { WorkspaceBridgePort, WorkspaceBridgeServerOptions } from "@tachyon/engine/workspace/WorkspaceBridgePort.js";
+import { Workspace, type WorkspaceDeps, type WorkspaceSeams } from "@tachyon/engine/workspace/Workspace.js";
 
 type BridgeOptions = ConstructorParameters<typeof Bridge>[1];
 

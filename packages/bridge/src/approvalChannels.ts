@@ -1,7 +1,7 @@
-import type { ApprovalResolutionChannel } from "../approvals/approvalRequest.js";
-import { APPROVAL_CHANNEL_VSCODE_COMMAND } from "../engine-service/extensionOperationChannels.js";
+import type { ApprovalResolutionChannel } from "@tachyon/engine/approvals/approvalRequest.js";
+import { APPROVAL_CHANNEL_VSCODE_COMMAND } from "@tachyon/engine/engine-service/extensionOperationChannels.js";
 
-export { APPROVAL_CHANNEL_VSCODE_COMMAND } from "../engine-service/extensionOperationChannels.js";
+export { APPROVAL_CHANNEL_VSCODE_COMMAND } from "@tachyon/engine/engine-service/extensionOperationChannels.js";
 
 /**
  * t-86e59a — channel constants identify the transport entry point, never an actor.

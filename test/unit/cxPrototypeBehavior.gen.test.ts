@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
+import { registerTools, type BridgeDeps } from "@tachyon/bridge/tools.js";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js";
 
