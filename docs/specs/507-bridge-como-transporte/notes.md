@@ -94,3 +94,8 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
+
+## Dogfood log
+
+### 2026-08-15T01:46:59Z — pass (1/1) — source: tasks.md — commit: 03ed7dc030d805e0b76cd3ae6b888749ffc5371b
+- `npm run smoke:vsix` — pass
