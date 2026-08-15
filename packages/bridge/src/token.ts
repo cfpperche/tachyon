@@ -51,9 +51,5 @@ export function tokenMatches(received: string | undefined, expected: string): bo
   return crypto.timingSafeEqual(a, b);
 }
 
-export const TOKEN_ENV_VAR = "TACHYON_BRIDGE_TOKEN";
-export const URL_ENV_VAR = "TACHYON_BRIDGE_URL";
-/** spec 351 — the per-agent minted token, injected ALONGSIDE (never instead of) TOKEN_ENV_VAR: an
- *  agent's MCP config prefers this one; the old shared var stays for human/legacy fallback during the
- *  compat window. */
-export const AGENT_TOKEN_ENV_VAR = "TACHYON_AGENT_BRIDGE_TOKEN";
+/** Spawn/hook env names live in shared so a hook cannot invent a parallel key (t-907238). */
+export { TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "@tachyon/shared/bridge/env.js";
