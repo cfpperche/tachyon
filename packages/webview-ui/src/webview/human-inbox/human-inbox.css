@@ -477,7 +477,7 @@
   height: 360px;
   border: 0;
   border-radius: var(--ds-radius);
-  background: #fff;
+  background: var(--ds-plate);
 }
 
 .hi-root .hi-stage-watermark {

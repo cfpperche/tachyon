@@ -79,7 +79,7 @@
 .seg { display: inline-flex; border: 1px solid var(--ds-border); border-radius: 5px; overflow: hidden; }
 .seg button { padding: 3px 12px; font-size: var(--ds-small); color: var(--ds-muted); }
 .seg button.seg-on { background: var(--ds-btn-bg); color: var(--ds-btn-fg); }
-.seg button.seg-danger { background: var(--ds-err); color: #fff; }
+.seg button.seg-danger { background: var(--ds-err); color: var(--ds-on-err); }
 .ackline { display: flex; align-items: flex-start; gap: var(--ds-2); margin-top: 10px; font-size: 12.5px; color: var(--ds-warn); }
 .ackline input { margin-top: 3px; }
 /* spec 263 — per-runtime install selector */
