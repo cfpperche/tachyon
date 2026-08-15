@@ -1,7 +1,8 @@
 # tachyon.yml.example — shared template for THIS monorepo dogfood fleet.
 #
-# Live config is gitignored. Create/edit locally:
-#   cp tachyon.yml.example tachyon.yml
+# This file stays. It is the documented onboarding path (`cp tachyon.yml.example tachyon.yml`)
+# and the only tracked config a clone reads before anything runs. Live `tachyon.yml` is
+# gitignored and is the coordinator's machine. Do not delete this template to "clean up".
 #
 # Format: https://github.com/cfpperche/tachyon
 
@@ -44,13 +45,20 @@ settings:
   # and no recreating agents.
   agentNotifications:
     idleAfterMinutes: 10
-  # worktree:
-  #   branch: "tachyon/{agent}"   # template for per-agent worktree branch names
-  #   revealInWorkspace: true     # show each running agent's worktree as a folder (multi-root windows only)
-  #   sharedDirectories:          # existing + gitignored directories to share by symlink; no product defaults
-  #     - node_modules             # keeps SHA-256 lockfile divergence protection; other stacks share as declared
-  #     - .cache
-  #   shareDependencies: true     # compatibility kill switch for sharedDirectories
+  # t-4ab1fb (2026-08-14): do NOT share `node_modules` in this monorepo. Symlinking the primary's
+  # node_modules made `@tachyon/*` resolve to the PRIMARY `packages/`, not the worktree's — measured
+  # in Node, Vitest, tsc and esbuild, and observed in a mixed real run. It saved 5–7 s and 478 MB
+  # per worktree against 2.368 silently redirected imports in 921 files. The lockfile digest does
+  # not catch a SOURCE change when the lockfile is identical, which is the normal development
+  # worktree. An empty list is the declaration: we considered sharing and chose none.
+  worktree:
+    sharedDirectories: []
+  # companion / ideBrowser stay out: they are the coordinator's personal opt-ins (tab tools,
+  # Design Mode). Schema defaults are off. Copy them from a live fleet only if you want those surfaces.
+  #
+  # worktree.branch: "tachyon/{agent}"   # MUST contain {agent}
+  # worktree.revealInWorkspace: true     # multi-root windows only
+  # worktree.shareDependencies: true     # kill switch; empty sharedDirectories already shares nothing
   #
   # Gitignored files/directories that need an independent copy in each worktree belong in the
   # repo-root .worktreeinclude (literal paths only), for example `.env` or `.vscode/settings.json`.

@@ -73,6 +73,15 @@ describe("tachyon.yml.example — the documented onboarding path", () => {
     expect(result.config?.agents).toEqual({});
   });
 
+  it("t-4ab1d8: a clone receives the empty sharedDirectories declaration, not a node_modules share", () => {
+    const result = loadAsFreshCheckout(exampleText);
+    expect(result.config?.settings.worktree?.sharedDirectories).toEqual([]);
+    expect(exampleText).toMatch(/t-4ab1fb/);
+    // The pre-monorepo comment listed `- node_modules` as a share to copy. That is the defect
+    // this guard exists to keep dead: uncommenting it would recreate 2.368 redirected imports.
+    expect(exampleText).not.toMatch(/^\s*#?\s*-\s*node_modules\s*$/m);
+  });
+
   it("door 2: every key the template declares is published by the schema VS Code validates it with", () => {
     const declared = parseYaml(exampleText) as Record<string, Record<string, unknown>>;
     const publishedTopLevel = Object.keys(schema.properties);
