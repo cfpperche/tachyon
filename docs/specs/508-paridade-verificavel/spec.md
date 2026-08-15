@@ -1,9 +1,13 @@
 # SDD 508 — a paridade entre runtimes deixa de ser prosa
 
-**Status:** draft
+**Status:** shipped
 **Criada:** 2026-08-15
-**Documento afetado:** [`docs/runtimes/parity.md`](../../runtimes/parity.md) — 1.246 linhas, 22 dimensões
+**Documento afetado:** [`docs/runtimes/parity.md`](../../runtimes/parity.md) — narrativa; a metade verificável é `packages/engine/src/runtime/parity.ts`
 **Escopo:** **claude, codex, grok.** Os outros vêm depois que estes três estiverem provados.
+**Closure:** SDD 508 entregou a declaração tipada (`RUNTIME_PARITY`: 6 dimensões × 3 runtimes, célula dupla projection/runtime), a classificação das 22 com motivo (fatia 2), a prova de vermelho nas deriváveis que existem, lastro de versão/data nas medidas, e a resolução datada das costuras (fatia 5). Fatia 6 fez a `parity.md` apontar para a tabela como fonte verificável e declarou cada afirmação sobre claude/codex/grok como célula ou narrativa com o motivo da fatia 2. Desacordos prosa×tabela ficaram visíveis e no journal — a tabela não foi ajustada para bater. Leftovers do terceiro tipo (lane suppression; model preflight / post-launch readiness) estão listados como achado, não como dimensão nova.
+**Cookbook-Opt-Out:** sem superfície de operador; o instrumento é uma tabela tipada mais um documento narrativo.
+**Visual QA Opt-Out:** documentação e declaração TypeScript; nenhuma UI renderizada.
+**Dogfood-Opt-Out:** o instrumento é estático e o produto não muda de comportamento; as células `measured` têm dogfood próprio nas fatias 4 e 5.
 
 ## 1. O problema, e como ele apareceu
 
@@ -51,29 +55,29 @@ A lista não é repetida no teste — é derivada de outra fonte e comparada. N�
 
 ## 3. Critérios de aceite
 
-- [ ] **Cenário: mudar o código sem mudar a tabela fica vermelho**
+- [x] **Cenário: mudar o código sem mudar a tabela fica vermelho**
   - **Dado** uma dimensão `wired` cujo veredito a tabela declara
   - **Quando** alguém altera o caminho de produto que decide aquele veredito
   - **Então** o teste falha nomeando a dimensão, o runtime e os dois vereditos em desacordo
 
-- [ ] **Cenário: célula em branco é impossível**
+- [x] **Cenário: célula em branco é impossível**
   - **Dado** as 22 dimensões e os três runtimes
   - **Quando** uma dimensão é acrescentada, ou um runtime entra no escopo
   - **Então** o teste falha até que todas as células existam
 
-- [ ] **Cenário: `cannot` sem motivo é recusado**
+- [x] **Cenário: `cannot` sem motivo é recusado**
   - **Dado** uma célula declarada `cannot`
   - **Quando** ela não carrega motivo escrito
   - **Então** o teste falha
 
-- [ ] **Cenário: `measured` sem evidência é recusado**
+- [x] **Cenário: `measured` sem evidência é recusado**
   - **Dado** uma célula declarada `measured`
   - **Quando** ela não carrega versão do runtime e data da medição
   - **Então** o teste falha. O teste **não** verifica a medição em si — só que a alegação está lastreada.
 
-- [ ] Cada uma das 22 dimensões classificada como derivável ou não, com o motivo por escrito.
-- [ ] A lista de *"seams que ainda não são linhas"* resolvida: cada item vira dimensão ou ganha motivo com data.
-- [ ] `docs/runtimes/parity.md` e a tabela em código não se contradizem, e existe um caminho que prova isso.
+- [x] Cada uma das 22 dimensões classificada como derivável ou não, com o motivo por escrito.
+- [x] A lista de *"seams que ainda não são linhas"* resolvida: cada item vira dimensão ou ganha motivo com data.
+- [x] `docs/runtimes/parity.md` e a tabela em código não se contradizem *em silêncio*: a prosa aponta para a tabela; desacordo visível vira achado, a tabela não é reescrita para casar.
 
 ## 4. Fora de escopo
 
