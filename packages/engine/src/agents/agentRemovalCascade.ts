@@ -43,10 +43,14 @@ export async function stopAgentSessionForDelete(
   await manager.kill(agent).catch(() => undefined);
   const after = await manager.probeAgentOccupancy(agent);
   if (after.state === "occupied") {
-    throw new Error(`could not stop '${agent}' — it was not removed (${after.detail})`);
+    throw new AgentProfileRefusal(
+      "agent-profile/forget-agent-running",
+      `could not stop '${agent}' — it was not removed (${after.detail})`,
+    );
   }
   if (after.state === "unknown") {
-    throw new Error(
+    throw new AgentProfileRefusal(
+      "agent-profile/occupancy-unverifiable",
       `could not confirm '${agent}' stopped: occupancy unverifiable — ${after.detail}. `
       + "Removal refuses to guess; nothing durable was deleted. Retry once the tmux server answers.",
     );
@@ -158,7 +162,13 @@ export async function removeAgentWorktree(
   deleteBranch: boolean,
 ): Promise<AgentWorktreeRemovalReceipt> {
   const descendants = await ports.manager.liveDescendants(agent);
-  if (descendants.length > 0) throw new Error(`cannot remove '${agent}' worktree while descendants are live: ${descendants.join(", ")}`);
+  if (descendants.length > 0) {
+    throw new AgentProfileRefusal(
+      "agent-profile/worktree-release-agent-running",
+      `cannot remove '${agent}' worktree while descendants are live: ${descendants.join(", ")}. `
+      + `Stop ${descendants.join(", ")} first — they share this worktree.`,
+    );
+  }
   const record = ports.ledger.get(agent)?.worktree;
   if (!record) throw new Error(`'${agent}' has no worktree`);
   // t-4736b4 — measured occupancy, not the last-known-good snapshot: this gate sits on the same
@@ -167,10 +177,14 @@ export async function removeAgentWorktree(
     await ports.manager.kill(agent).catch(() => undefined);
     const after = await ports.manager.probeAgentOccupancy(agent);
     if (after.state === "occupied") {
-      throw new Error(`could not stop '${agent}' before removing its worktree (${after.detail})`);
+      throw new AgentProfileRefusal(
+        "agent-profile/forget-agent-running",
+        `could not stop '${agent}' before removing its worktree (${after.detail})`,
+      );
     }
     if (after.state === "unknown") {
-      throw new Error(
+      throw new AgentProfileRefusal(
+        "agent-profile/occupancy-unverifiable",
         `could not confirm '${agent}' stopped before removing its worktree: occupancy unverifiable — ${after.detail}. `
         + "The checkout was left in place; retry once the tmux server answers.",
       );
