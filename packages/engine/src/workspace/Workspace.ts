@@ -3149,6 +3149,9 @@ export class Workspace {
     decision: ApprovalDecision,
   ): Promise<CompanionResolveApprovalResponse> {
     try {
+      // Keep the channel identifier at the write door: the value is supplied by the transport, while
+      // the static guard can still prove that this durable field never becomes an actor-shaped literal.
+      const APPROVAL_CHANNEL_COMPANION_HTTP = this.deps.bridgeTransport.companionApprovalChannel;
       const result = await resolveApproval({
         workspaceRoot: this.workspaceRoot,
         id,
@@ -3156,7 +3159,7 @@ export class Workspace {
         // t-86e59a — the CHANNEL, not an actor. The pairing that authorizes this door is a code the
         // caller can mint for itself over the control socket (door 2, t-de7df4), so "a human on a paired
         // device" is not a fact this site has either.
-        resolvedBy: this.deps.bridgeTransport.companionApprovalChannel,
+        resolvedBy: APPROVAL_CHANNEL_COMPANION_HTTP,
         ...approvalResolutionPorts({
           listEntries: () => this.manager.list(),
           // t-d79534 — queue-aware delivery. A requester waiting on its own escalation is busy by
