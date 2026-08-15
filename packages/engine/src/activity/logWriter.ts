@@ -270,13 +270,18 @@ export class ActivityLogWriter {
   }
 }
 
-function createNormalizer(runtime = "claude", sourcePath?: string): ActivityNormalizer {
+/** Product registry for runtimes whose native records carry Activity/observed-model provenance. */
+export function activityNormalizerForRuntime(runtime: string, sourcePath?: string): ActivityNormalizer | undefined {
   if (runtime === "claude") return createClaudeNormalizer(sourcePath);
   if (runtime === "codex") return createCodexNormalizer(sourcePath);
   if (runtime === "grok") return createGrokNormalizer(sourcePath);
   if (runtime === "pi") return createPiNormalizer(sourcePath);
   // Hermes uses HermesStorageReader (SQLite), not line-tail normalizers.
-  return { push: () => [] };
+  return undefined;
+}
+
+function createNormalizer(runtime = "claude", sourcePath?: string): ActivityNormalizer {
+  return activityNormalizerForRuntime(runtime, sourcePath) ?? { push: () => [] };
 }
 
 function normalizerKey(cur: SessionLoc): string {

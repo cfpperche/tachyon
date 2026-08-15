@@ -3,13 +3,28 @@ export const PARITY_RUNTIMES = ["claude", "codex", "grok"] as const;
 export type ParityRuntime = (typeof PARITY_RUNTIMES)[number];
 
 /** SDD 508 slice 1 — start with product decisions that can be derived without a live CLI. */
-export const PARITY_DIMENSIONS = ["session-hooks", "headless-probe"] as const;
+export const PARITY_DIMENSIONS = [
+  "session-hooks",
+  "headless-probe",
+  "observed-model-provenance",
+  "probe-model-proof",
+  "cross-runtime-task-continuation",
+] as const;
 export type ParityDimension = (typeof PARITY_DIMENSIONS)[number];
 
-export type ParityCell =
+export type ProjectionParityFact =
   | { verdict: "wired" }
-  | { verdict: "measured"; runtimeVersion: string; measuredAt: string }
   | { verdict: "cannot"; reason: string };
+
+export type RuntimeParityFact =
+  | { verdict: "measured"; runtimeVersion: string; measuredAt: string }
+  | { verdict: "cannot"; reason: string }
+  | { verdict: "unmeasured" };
+
+export interface ParityCell {
+  projection: ProjectionParityFact;
+  runtime: RuntimeParityFact;
+}
 
 export type ParityDeclaration = Record<ParityDimension, Record<ParityRuntime, ParityCell>>;
 
@@ -24,14 +39,29 @@ export function runtimeUsesSilentPersistenceHooks(runtime: string): boolean {
  */
 export const RUNTIME_PARITY = {
   "session-hooks": {
-    claude: { verdict: "wired" },
-    codex: { verdict: "wired" },
-    grok: { verdict: "wired" },
+    claude: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    codex: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    grok: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
   },
   "headless-probe": {
-    claude: { verdict: "wired" },
-    codex: { verdict: "wired" },
-    grok: { verdict: "wired" },
+    claude: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    codex: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    grok: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+  },
+  "observed-model-provenance": {
+    claude: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    codex: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    grok: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+  },
+  "probe-model-proof": {
+    claude: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    codex: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    grok: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+  },
+  "cross-runtime-task-continuation": {
+    claude: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    codex: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    grok: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
   },
 } as const satisfies ParityDeclaration;
 
@@ -56,19 +86,32 @@ export function parityDeclarationErrors(input: unknown): string[] {
         errors.push(`${label}: missing parity cell`);
         continue;
       }
-      if (cell.verdict === "wired") continue;
-      if (cell.verdict === "cannot") {
-        if (!nonEmpty(cell.reason)) errors.push(`${label}: cannot requires a written reason`);
-        continue;
+      const projection = cell.projection && typeof cell.projection === "object"
+        ? cell.projection as Record<string, unknown>
+        : undefined;
+      if (!projection) {
+        errors.push(`${label}/projection: missing parity fact`);
+      } else if (projection.verdict === "cannot") {
+        if (!nonEmpty(projection.reason)) errors.push(`${label}/projection: cannot requires a written reason`);
+      } else if (projection.verdict !== "wired") {
+        errors.push(`${label}/projection: must be wired or cannot`);
       }
-      if (cell.verdict === "measured") {
-        if (!nonEmpty(cell.runtimeVersion)) errors.push(`${label}: measured requires runtimeVersion`);
-        if (!nonEmpty(cell.measuredAt) || !/^\d{4}-\d{2}-\d{2}$/.test(cell.measuredAt)) {
-          errors.push(`${label}: measured requires measuredAt as YYYY-MM-DD`);
+
+      const runtimeFact = cell.runtime && typeof cell.runtime === "object"
+        ? cell.runtime as Record<string, unknown>
+        : undefined;
+      if (!runtimeFact) {
+        errors.push(`${label}/runtime: missing parity fact`);
+      } else if (runtimeFact.verdict === "cannot") {
+        if (!nonEmpty(runtimeFact.reason)) errors.push(`${label}/runtime: cannot requires a written reason`);
+      } else if (runtimeFact.verdict === "measured") {
+        if (!nonEmpty(runtimeFact.runtimeVersion)) errors.push(`${label}/runtime: measured requires runtimeVersion`);
+        if (!nonEmpty(runtimeFact.measuredAt) || !/^\d{4}-\d{2}-\d{2}$/.test(runtimeFact.measuredAt)) {
+          errors.push(`${label}/runtime: measured requires measuredAt as YYYY-MM-DD`);
         }
-        continue;
+      } else if (runtimeFact.verdict !== "unmeasured") {
+        errors.push(`${label}/runtime: must be measured, cannot, or explicitly unmeasured; wired is projection-only`);
       }
-      errors.push(`${label}: unknown parity verdict`);
     }
   }
   return errors;

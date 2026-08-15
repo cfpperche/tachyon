@@ -107,3 +107,69 @@ nomeado em `plan.md` D5.
 
 `session-ownership hooks` da lista da linha 66 já virou `session-hooks` na fatia 1. Os demais seams
 daquela lista não foram promovidos nem classificados aqui; pertencem à fatia 5.
+
+## Fatia 5 — as costuras deixam de ser promessa sem prazo
+
+Decisão tomada em **2026-08-15**, limitada a Claude, Codex e Grok.
+
+### Critério de promoção
+
+Uma costura merece dimensão quando expressa um resultado de produto estável e comparável entre
+runtimes, cuja presença/ausência pode afetar o usuário ou a validade de uma evidência e pode divergir
+sem que uma dimensão existente fique necessariamente vermelha. Ela continua fora quando é apenas a
+estratégia nativa usada para cumprir uma dimensão existente, quando duplicaria exatamente a mesma
+falha, ou quando é uma regra condicional cuja ausência significa “não se aplica” e não falta de
+capacidade. Em ambos os casos a decisão recebe data; nenhum item volta a ser backlog sem relógio.
+
+### Decisão por costura
+
+| Costura | Decisão em 2026-08-15 | Veredito / motivo |
+|---|---|---|
+| Session ownership hooks | dimensão `session-hooks` (fatia 1) | Projeção Claude/Codex/Grok `wired`, derivada por `runtimeUsesSilentPersistenceHooks`; runtime Claude/Codex/Grok `unmeasured` até a fatia de medição registrar versão e data. |
+| Session-id strategy (mint vs capture) | continua fora | É protocolo nativo por trás de Resume: Claude/Grok mintam, Codex captura. A capacidade comparável é reconstruir a conversa, já coberta pela linha 4; exigir mecanismo idêntico contrariaria o princípio da matriz. |
+| Deterministic `transcriptPath` | continua fora | É um locator interno consumido por Resume/Activity. Se deixa de resolver, as linhas 4/8 falham; promovê-lo contaria o mesmo defeito duas vezes sem criar resultado novo para o usuário. |
+| Model-label normalization | continua fora | Row 10 já inclui aliases de modelo usados pelos peers. IDs observados desconhecidos usam fallback aberto, validado e honesto; quantidade de aliases é política de apresentação, não uma capacidade autônoma. |
+| Live/observed model provenance | dimensão `observed-model-provenance` | Projeção Claude/Codex/Grok `wired`, derivada pelo registry de normalizers usado pelo Activity; runtime dos três `unmeasured`. Isso é distinto do label declarado da row 10. |
+| Probe effective-model proof | dimensão `probe-model-proof` | Projeção Claude/Codex/Grok `wired`, derivada de `reportsEffectiveModel` + `modelEvidence` no adapter registrado; runtime dos três `unmeasured`, preservando a futura distinção provider-usage/session-record. |
+| Composer suggestion vs human draft | continua fora | É uma regra condicional de Attention: Claude/Codex renderizam suggestion SGR-dim e declaram `ansiEmptyContentStyle: all-dim`; Grok não renderiza suggestion, então não declarar a exceção protege drafts reais. Ausência em Grok não é lacuna. |
+| Cross-runtime task continuation | dimensão `cross-runtime-task-continuation` | Projeção Claude/Codex/Grok `wired`, derivada de admissão como Agent + canal de brief; runtime dos três `unmeasured`. O mecanismo host-side continua distinto de native resume. |
+
+As cinco dimensões hoje declaradas são, portanto: as duas da fatia 1 mais as três promovidas nesta
+fatia. Nenhuma das quatro costuras mantidas fora permanece sem motivo ou sem a data de 2026-08-15.
+
+## Fatia 3 — projeção e runtime deixam de disputar uma célula
+
+Decisão do dono em **2026-08-15**: cada célula passa a carregar dois fatos independentes.
+`projection` aceita somente `wired` (quando comparado com a porta real do produto) ou `cannot` com
+motivo; `runtime` aceita `measured` com versão/data, `cannot` com motivo, ou `unmeasured` explícito.
+`wired` é recusado no lado runtime, impedindo que ausência de medição se vista de sucesso.
+
+A fatia 5 havia sido executada antes desta decisão. Seus documentos foram preservados, mas suas nove
+células `wired` sem derivação não foram: as três novas dimensões agora derivam a projeção por portas
+reais e declaram o runtime honestamente `unmeasured`. Assim a reordenação não transforma história em
+tautologia.
+
+### Provas de vermelho da célula dupla
+
+Todas foram mutações temporárias na declaração/produto real, executadas com
+`npx vitest run test/unit/runtimeParity.test.ts`, e restauradas em seguida:
+
+- removido `runtime` de `session-hooks/grok` (cast inseguro apenas para deixar o mutante compilar):
+  exit 1, `session-hooks/grok/runtime: missing parity fact`; a fixture permanente também remove
+  `projection` e exige o diagnóstico irmão;
+- trocada a projeção por `{ verdict: "cannot" }`: exit 1,
+  `session-hooks/grok/projection: cannot requires a written reason`;
+- trocado runtime por `{ verdict: "measured" }`: exit 1, exigindo `runtimeVersion` e
+  `measuredAt as YYYY-MM-DD`;
+- trocado runtime por `{ verdict: "wired" }`: exit 1,
+  `must be measured, cannot, or explicitly unmeasured; wired is projection-only`;
+- removido Grok de `runtimeUsesSilentPersistenceHooks`: exit 1,
+  `session-hooks/grok: product=not-wired, declaration=wired`;
+- removido o adapter Grok de `headlessProbeAdapters`: exit 1,
+  `headless-probe/grok: product=not-wired, declaration=wired` (e a dimensão de prova de modelo
+  também ficou vermelha, confirmando que ambas leem o mesmo registry de produção).
+
+O teste focado voltou a verde depois da restauração. As três dimensões da fatia 5 não são “sim
+trivial para três”: observed provenance lê o registry real do Activity; probe proof lê as flags de
+prova/evidence do adapter registrado; task continuation combina admissão real de Agent e entrega de
+brief. Cada uma pode divergir quando uma dessas portas muda.
