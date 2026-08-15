@@ -85,7 +85,7 @@ a { color: var(--ds-link); }
 .ds-btn-primary:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
 .ds-btn-danger {
   background: var(--ds-err);
-  color: #fff;
+  color: var(--ds-on-err);
   border-color: transparent;
 }
 .ds-btn-danger:hover { filter: brightness(1.05); }

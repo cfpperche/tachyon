@@ -337,7 +337,7 @@
 .ck-pair-offer-qr-img {
   display: block;
   border-radius: 4px;
-  background: #fff;
+  background: var(--ds-plate);
   image-rendering: pixelated;
 }
 .ck-pair-offer-candidates {
