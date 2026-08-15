@@ -204,7 +204,7 @@ describe("Human Inbox — history filters", () => {
       proposer: "claude",
       outcome: "approved",
       resolvedAt: "2026-07-27T11:00:00.000Z",
-      resolvedBy: "human",
+      decidedBy: "human",
     };
     const items = buildHumanInbox({
       wsHash: "ws1",
@@ -218,7 +218,7 @@ describe("Human Inbox — history filters", () => {
         proposer: "claude",
         outcome: "denied",
         resolvedAt: "2026-07-27T11:10:00.000Z",
-        resolvedBy: "human",
+        decidedBy: "human",
       }],
     }, { now: NOW });
     expect(items.map(({ id, kind, state, outcome }) => ({ id, kind, state, outcome }))).toEqual([

@@ -810,7 +810,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
             agentName: d.agentName,
             outcome: d.outcome,
             resolvedAt: d.resolvedAt,
-            resolvedBy: d.resolvedBy,
+            decidedBy: d.decidedBy,
           })),
           // Reported, never hidden: a queued file that fails its digest is the one thing a reader must
           // not mistake for "withdrawn". It also consumes ceiling, so an unexplained refusal would be
@@ -956,7 +956,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
             agentName: d.agentName,
             outcome: d.outcome,
             resolvedAt: d.resolvedAt,
-            resolvedBy: d.resolvedBy,
+            decidedBy: d.decidedBy,
           })),
           unreadable: queue.unreadable,
         }, null, 2));

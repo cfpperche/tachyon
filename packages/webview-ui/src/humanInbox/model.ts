@@ -138,7 +138,7 @@ export interface SavedAgentProposalDecision {
   proposer: string;
   outcome: "approved" | "denied" | "cancelled" | "expired";
   resolvedAt: string;
-  resolvedBy: string;
+  decidedBy: string;
   digest?: string;
   rationale?: string;
   runtimeAdapter?: string;
@@ -210,7 +210,7 @@ function decidedProposalItem(
     state: "resolved",
     outcome: decided.outcome,
     resolvedAt: decided.resolvedAt,
-    resolvedBy: decided.resolvedBy,
+    resolvedBy: decided.decidedBy,
     wsHash: input.wsHash,
     folder: input.folder,
     stale: false,

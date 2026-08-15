@@ -415,7 +415,7 @@ export function listSavedAgentProposalDecisions(
         agentName: event.agentName,
         outcome: "denied",
         resolvedAt: event.at,
-        resolvedBy: event.deniedBy,
+        decidedBy: event.deniedBy,
         operation: "create",
       });
     } else if (event.kind === "cancelled") {
@@ -427,7 +427,7 @@ export function listSavedAgentProposalDecisions(
         agentName: event.agentName ?? event.id,
         outcome: denied ? "denied" : "cancelled",
         resolvedAt: event.at,
-        resolvedBy: denied ? event.reason.slice("denied by ".length).split(":")[0] ?? event.by : event.by,
+        decidedBy: denied ? event.reason.slice("denied by ".length).split(":")[0] ?? event.by : event.by,
         operation: "create",
       });
     } else if (event.kind === "expired") {
@@ -438,7 +438,7 @@ export function listSavedAgentProposalDecisions(
         agentName: event.agentName,
         outcome: "expired",
         resolvedAt: event.at,
-        resolvedBy: "expiry",
+        decidedBy: "expiry",
         operation: "create",
       });
     }
@@ -453,7 +453,7 @@ export function listSavedAgentProposalDecisions(
       agentName: proposal.spec.name,
       outcome: "expired",
       resolvedAt: proposal.expiresAt,
-      resolvedBy: "expiry",
+      decidedBy: "expiry",
       operation: "create",
       rationale: proposal.spec.rationale,
       runtimeAdapter: proposal.spec.runtimeAdapter,
@@ -469,7 +469,7 @@ export function listSavedAgentProposalDecisions(
       agentName: receipt.agentName,
       outcome: "approved",
       resolvedAt: receipt.approvedAt,
-      resolvedBy: receipt.approvedBy,
+      decidedBy: receipt.approvedBy,
       operation: "create",
       ...(receipt.rationale ? { rationale: receipt.rationale } : {}),
       ...(receipt.runtimeAdapter ? { runtimeAdapter: receipt.runtimeAdapter } : {}),

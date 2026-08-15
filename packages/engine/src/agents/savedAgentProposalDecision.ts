@@ -15,7 +15,8 @@ export interface SavedAgentProposalDecisionRecord {
   agentName: string;
   outcome: SavedAgentProposalDecisionOutcome;
   resolvedAt: string;
-  resolvedBy: string;
+  /** Who or what closed it. Not approval `resolvedBy` — that field is a channel constant (t-86e59a). */
+  decidedBy: string;
   operation: "create" | "remove";
   rationale?: string;
   runtimeAdapter?: string;

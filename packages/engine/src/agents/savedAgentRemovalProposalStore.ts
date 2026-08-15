@@ -355,7 +355,7 @@ export function listSavedAgentRemovalProposalDecisions(
         agentName: event.agentName,
         outcome: "denied",
         resolvedAt: event.at,
-        resolvedBy: event.deniedBy,
+        decidedBy: event.deniedBy,
         operation: "remove",
       });
     } else if (event.kind === "cancelled") {
@@ -367,7 +367,7 @@ export function listSavedAgentRemovalProposalDecisions(
         agentName: event.agentName ?? event.id,
         outcome: denied ? "denied" : "cancelled",
         resolvedAt: event.at,
-        resolvedBy: denied ? event.reason.slice("denied by ".length).split(":")[0] ?? event.by : event.by,
+        decidedBy: denied ? event.reason.slice("denied by ".length).split(":")[0] ?? event.by : event.by,
         operation: "remove",
       });
     } else if (event.kind === "expired") {
@@ -378,7 +378,7 @@ export function listSavedAgentRemovalProposalDecisions(
         agentName: event.agentName,
         outcome: "expired",
         resolvedAt: event.at,
-        resolvedBy: "expiry",
+        decidedBy: "expiry",
         operation: "remove",
       });
     }
@@ -393,7 +393,7 @@ export function listSavedAgentRemovalProposalDecisions(
       agentName: proposal.spec.name,
       outcome: "expired",
       resolvedAt: proposal.expiresAt,
-      resolvedBy: "expiry",
+      decidedBy: "expiry",
       operation: "remove",
       rationale: proposal.spec.rationale,
     });
@@ -408,7 +408,7 @@ export function listSavedAgentRemovalProposalDecisions(
       agentName: receipt.agentName,
       outcome: "approved",
       resolvedAt: receipt.approvedAt,
-      resolvedBy: receipt.approvedBy,
+      decidedBy: receipt.approvedBy,
       operation: "remove",
     });
   }
