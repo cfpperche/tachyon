@@ -285,6 +285,7 @@
   .row-focus .focus-src.src-task { color: #4fc1ff; }
   .row-focus .focus-src.src-brief { color: #c586c0; }
   .row-focus .focus-src.src-continuity { color: #dcdcaa; }
+  .row-focus .focus-src.src-none { color: var(--ds-muted, #858585); }
   .row-focus .focus-id {
     flex: none; font: 600 10px/1 ui-monospace, Consolas, monospace; color: #4fc1ff;
   }

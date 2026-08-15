@@ -138,10 +138,9 @@ describe("SDD 494 Part 4 saved-agent disagreement on the sidebar row — headles
       expect(after.badgeWidth, `@ ${width.id}: badge width moved`).toBe(before.badgeWidth);
       expect(after.refusedRow!.height, `@ ${width.id}: the refused row grew`).toBe(before.refusedRow!.height);
       expect(after.healthy!.height, `@ ${width.id}: the healthy NEIGHBOUR regressed`).toBe(before.healthy!.height);
-      // Measured, and NOT asserted as equal to the neighbour: a refused row is taller than a healthy
-      // one (58 vs 34 at both widths) because it carries an extra badge. That predates this change —
-      // both numbers are identical before and after — so it is recorded here rather than fixed here.
-      expect(after.refusedRow!.height, `@ ${width.id}: a refused row should still be the taller one`).toBeGreaterThan(after.healthy!.height);
+      // t-9eacf9 — a live neighbour without an open card now carries "no board task", so it can be
+      // taller than a stopped refused row. SDD 494's claim is that lengthening the refusal does not
+      // move geometry (the two expects above). Which row is taller is no longer a fact of this fixture.
 
       // Nothing scrolls sideways at any width a person can drag to.
       expect(after.docWidth, `@ ${width.id}: horizontal overflow`).toBeLessThanOrEqual(after.viewportWidth);

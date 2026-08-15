@@ -2,7 +2,7 @@ import { createContext, Fragment } from "preact";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Button, Badge, EmptyState, DenseRow } from "../shared/ui";
 import {
-  SAMPLE, TABS, searchIndex,
+  SAMPLE, TABS, searchIndex, isAgentRow,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
 } from "@tachyon/shared/sidebar/types";
 import {
@@ -21,6 +21,7 @@ import { placeMoreMenu } from "./menuPosition";
 import {
   AGENT_STATUS_FILTERS,
   AGENT_STATUS_FILTER_LABEL,
+  agentIsLive,
   asAgentStatusFilter,
   countAgentStatusFilters,
   filterAgentsByStatus,
@@ -500,18 +501,48 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
       </Badge>
     ) : null,
 
-  /* spec 390 — focus line: what the agent is working on (task → brief → continuity goal) */
+  /* spec 390 / t-9eacf9 — the glance is whether an OPEN board card is assigned, not
+     whether a focus fallback exists. After land, brief/continuity still look like work.
+     Open card → show the id. Live agent without a card → say so (not a warn badge). */
   focus: ({ a, template }) => {
     const focus = a.focus;
-    if (!focus) return null;
-    const focusTitle = `${focus.source === "continuity" ? "goal" : focus.source}${focus.taskId ? ` · ${focus.taskId}` : ""}\n${focus.full}`;
+    const boardTaskId = focus?.source === "task" ? focus.taskId : undefined;
+    const showNone = !boardTaskId && isAgentRow(a) && agentIsLive(a);
+    if (!focus && !showNone) return null;
     // t-045d44 — `options.focus.lines` is a CSS concern, so it is passed as a custom property and the
     // clamping stays in sidebar.css. Wrapping is the COMPONENT's business (spec.md § narrow sidebar);
     // the template only says how many lines it may use. Absent → no property → the stylesheet's own
     // single-line rule, unchanged, which is what keeps the default byte-identical.
     const lines = template.options?.focus?.lines;
+    const lineStyle = lines === undefined ? {} : { style: `--card-focus-lines:${lines}` };
+
+    if (boardTaskId && focus) {
+      return (
+        <div class="row-focus" data-testid="agent-board-line" title={`task · ${boardTaskId}\n${focus.full}`} {...lineStyle}>
+          <span class="focus-arrow" aria-hidden="true">↳</span>
+          <span class="focus-src src-task">task</span>
+          <span class="focus-id">{boardTaskId}</span>
+          <span class="focus-text">{focus.text}</span>
+        </div>
+      );
+    }
+
+    if (showNone) {
+      const src = focus?.source === "continuity" ? "goal" : focus?.source;
+      const title = focus ? `no board task · ${src}\n${focus.full}` : "no board task";
+      return (
+        <div class="row-focus" data-testid="agent-board-none" title={title} {...lineStyle}>
+          <span class="focus-arrow" aria-hidden="true">↳</span>
+          <span class="focus-src src-none">no board task</span>
+          {focus?.text ? <span class="focus-text">{focus.text}</span> : null}
+        </div>
+      );
+    }
+
+    if (!focus) return null;
+    const focusTitle = `${focus.source === "continuity" ? "goal" : focus.source}${focus.taskId ? ` · ${focus.taskId}` : ""}\n${focus.full}`;
     return (
-      <div class="row-focus" title={focusTitle} {...(lines === undefined ? {} : { style: `--card-focus-lines:${lines}` })}>
+      <div class="row-focus" title={focusTitle} {...lineStyle}>
         <span class="focus-arrow" aria-hidden="true">↳</span>
         <span class={`focus-src src-${focus.source}`}>
           {focus.source === "continuity" ? "goal" : focus.source}
