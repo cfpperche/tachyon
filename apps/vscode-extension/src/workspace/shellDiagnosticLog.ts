@@ -152,6 +152,11 @@ export function recordShellFailure(context: string, error: unknown): DescribedFa
   return described;
 }
 
+/** One durable line on the existing channel. Does not reveal the panel. */
+export function recordShellNote(context: string, detail: string): void {
+  shellChannel().appendLine(`[${new Date().toISOString()}] ${context}: ${detail}`);
+}
+
 /** Tests only — the channel is a module singleton that must not leak between cases. */
 export function __resetShellDiagnosticLog(): void {
   channel = undefined;
