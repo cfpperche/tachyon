@@ -1,11 +1,21 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-08-15 (`t-d3ace4` — row 23 adds persistent profile instructions at launch; prior `t-f842f0` — Codex worktree skill revocation now purges the tree THIS grant path wrote; prior 2026-08-11 `t-5313dc` — row 22 added: write confinement / discovery root)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-08-15 (`t-904b2a` — SDD 508 fatia 6: this file is the narrative half; `RUNTIME_PARITY` is the verifiable half. Prior `t-d3ace4` — row 23; prior `t-f842f0`; prior 2026-08-11 `t-5313dc` — row 22)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/runtime/nativeLaneSuppression.ts`, `src/runtime/nativeMemory.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
 **Native-config / Runtime Config seams:** `src/config/agentNativeConfigPolicy.ts` (family definitions + SDD 471/472 `authorize`), `src/config/agentNativeConfigSchema.ts` (`AGENT_NATIVE_CONFIG_FAMILIES`), `src/config/codexNativeConfigProjection.ts`, `src/config/claudeNativeConfigProjection.ts`, `src/config/grokNativeConfigProjection.ts`, `src/runtimeConfig/codexInventory.ts`, `src/runtimeConfig/claudeInventory.ts`, `src/runtimeConfig/grokInventory.ts`, `src/runtimeObservability/claudeStatusLineCapture.ts` (host-written Claude `statusLine` wrapper into `spawn-settings`)
+**Verifiable source (Claude, Codex, Grok):** [`packages/engine/src/runtime/parity.ts`](../../packages/engine/src/runtime/parity.ts) (`RUNTIME_PARITY`, SDD 508). Six typed dimensions, eighteen cells. This file does not answer for those cells.
 
-This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
-It is **not** a board task and is **not** a shippable SDD spec — it is continuous product/engine documentation.
+This document is the **narrative** half of runtime parity — continuous product/engine documentation, not a board task and not a shippable SDD spec. If a sentence here about Claude, Codex or Grok disagrees with `RUNTIME_PARITY`, **this file may be wrong**. Do not edit the table to match the prose.
+
+### How to read a Claude / Codex / Grok claim
+
+Three kinds. A leftover of the third kind is a defect in *this* file, not a soft cell.
+
+| Kind | What it means |
+|------|----------------|
+| **Table cell, derived** | The code answers. The dimension name is a key of `RUNTIME_PARITY`. |
+| **Narrative, motive measured** | SDD 508 fatia 2 measured that the row is not a typed cell today, and wrote why. The motive lives in [`docs/specs/508-paridade-verificavel/notes.md`](../specs/508-paridade-verificavel/notes.md) § Fatia 2. A narrative line is not a bad line. |
+| **Neither** | An affirmation without a cell and without that motive. Fatia 6 lists those as findings. |
 
 Historical seed: board task `t-4891dd` (meta-tracker) — **superseded** by this file.  
 Adversarial reviews (folded in): `.tachyon/reviews/parity-doc-claude.md`, `.tachyon/reviews/parity-doc-codex.md` (2026-07-09).
@@ -26,7 +36,7 @@ Adversarial reviews (folded in): `.tachyon/reviews/parity-doc-claude.md`, `.tach
 
 **Consequence for agents:** when implementing runtime work, update **this file in the same PR** as `adapters` / `runtimeProfile` / Bridge / activity / attention changes. Open a board task only for a **concrete gap** you are about to implement — never for “owning the matrix.”
 
-**Code wins over prose.** If a cell cannot be justified from the seams above, demote the mark; do not invent a path.
+**The typed table wins over this prose** for Claude, Codex and Grok. If a cell cannot be justified from the seams above *or* from `RUNTIME_PARITY`, demote the mark; do not invent a path, and do not rewrite the table to match a sentence here.
 
 ---
 
@@ -64,6 +74,59 @@ For the Codex marks in rows 7, 9, and 12, **✓** is scoped to durable Agent Pro
 the authored, allowlisted native policy in a private `CODEX_HOME` before fresh spawn, restart, and
 resume. It does not claim to impose that policy on arbitrary legacy `cmd: codex …` definitions.
 
+### Claude / Codex / Grok attestation (SDD 508 fatia 6)
+
+Every numbered claim below is either a key of `RUNTIME_PARITY` or a narrative line whose motive
+fatia 2 already wrote. The three-runtime marks in §3.1 inherit this row's kind; they do not grow
+a second, silent source.
+
+| # | Capability | Kind | Cell or fatia-2 motive |
+|---|------------|------|------------------------|
+| 1 | Brief / instructions | narrative | `derivable` — `runtimePromptAdapter` / `composeCommand` choose the opening channel; no typed cell yet |
+| 2 | Bridge MCP | narrative | `measured` — generated argv/config is not proof the CLI lists and calls the server |
+| 3 | Attention | narrative | `measured` — classifier/profile are callable; idle/working/throttle identity is TUI emission |
+| 4 | Resume | narrative | `derivable` — `adapterForRuntime(runtime)?.resumeCommand`; no typed cell yet |
+| 5 | Fork | narrative | `cannot` for **Codex** — no native branch that preserves the source; Claude/Grok have `forkCommand` but that is still not a typed cell |
+| 6 | Harness / private home | narrative | `derivable` — `harnessable` / `HarnessManager` materialize the tree; no typed cell yet |
+| 7 | Graceful stop | narrative | `measured` — key sequence is derived; clean process exit is temporal TUI behavior |
+| 8 | Activity ingest | narrative | `measured` — a green normalizer does not prove the installed CLI still writes that store |
+| 9 | Permission inject | narrative | `measured` — no callable per-runtime support verdict; unchanged argv would mis-score Claude |
+| 10 | Label / profile | narrative | `derivable` — `runtimeProfile(runtime)`; no typed cell yet |
+| 11 | Restart | narrative | `derivable` — single `AgentManager.restart` door; no typed cell yet |
+| 12 | Native configuration parity | narrative | `measured` — projected bytes ≠ the binary still reading and honoring the key |
+| 13 | Headless probe | **table** | `headless-probe` |
+| 14 | Runtime Config (Control) | narrative | `derivable` — `inspect*` / `apply*` adapters; no typed cell yet |
+| 15 | Runtime-managed native memory | narrative | `measured` — the registry itself splits declared/verified/refuted; comparing it to itself is tautology |
+| 16 | Auth-required detection | narrative | `measured` — matcher fixtures ≠ the current CLI still emitting the turn-attached signal |
+| 17 | Temporary Agent (`spawn_agent`) | narrative | `derivable` — `isSupportedAgentRuntime` / admission; no typed cell yet |
+| 18 | Internal checklist telemetry | narrative | `measured` — no product function decides support; file names do not prove emission |
+| 19 | Design Mode chat reply | narrative | `measured` — list+call+land crosses model/Bridge/UI; the definition itself requires dated dogfood |
+| 20 | Auth status probe (pre-launch) | narrative | `measured` — the matrix itself says Tachyon does not consume `RUNTIME_AUTH_PREFLIGHT` for these three |
+| 21 | Native login surface | narrative | `measured` — `RUNTIME_LOGIN` is the command; PTY/paste-back/device-code are CLI facts |
+| 22 | Write confinement / discovery root | narrative | `cannot` for **Claude, Codex and Grok** on discovery root; write confinement is only partial and unconsumed |
+| 23 | Persistent profile instructions | **table** | `persistent-instructions-launch` |
+
+Typed dimensions that are **not** numbered rows, all keys of the same table:
+
+| Dimension | Kind | Notes |
+|-----------|------|--------|
+| `session-hooks` | **table** | Seam promoted in fatia 1 / 5 |
+| `observed-model-provenance` | **table** | Seam promoted in fatia 5 |
+| `probe-model-proof` | **table** | Seam promoted in fatia 5 |
+| `cross-runtime-task-continuation` | **table** | Seam promoted in fatia 5 |
+
+The four seams kept *out* of the table already carry a dated motive (2026-08-15, fatia 5) in the
+list immediately below: session-id strategy, deterministic `transcriptPath`, model-label
+normalization, composer suggestion vs human draft. Those are narrative on purpose.
+
+**Leftovers of the third kind** (claim about Claude/Codex/Grok with neither a cell nor a fatia-2
+motive) — listed, not repaired, in fatia 6:
+
+- **Native lane suppression** (formation gate table under §3.1) — not one of the 22, not a typed
+  dimension. Adjacent to rows 12/15 but slice 2 never classified this combined gate.
+- **Model preflight** and **post-launch readiness** in the per-runtime §3.2 tables — same: real
+  claims, no cell, no fatia-2 row.
+
 The seams once parked here were resolved by SDD 508 fatia 5 on **2026-08-15**; none remains as an
 undated promise:
 
@@ -74,24 +137,39 @@ undated promise:
   separate user outcome. A path that stops resolving is already red on rows 4/8; a second dimension
   would count the same failure twice.
 - **session-ownership hooks** became the typed `session-hooks` dimension in SDD 508 fatia 1
-  (**2026-08-15**), covering Claude, Codex and Grok explicitly.
+  (**2026-08-15**), covering Claude, Codex and Grok explicitly. Table: `session-hooks`.
 - **model-label normalization** stays out: row 10 Label/profile already requires the model aliases
   peers use, while unknown observed ids deliberately take the validated open fallback. Alias breadth
   is presentation policy, not a separate capability.
 - **live/observed model provenance** became typed dimension `observed-model-provenance`: Claude,
-  Codex and Grok have a projection guarded through their Activity normalizer registry; runtime
-  evidence remains independently unmeasured until the measurement slice records version and date.
+  Codex and Grok have a projection guarded through their Activity normalizer registry. Runtime
+  evidence is **uneven and that unevenness is the point**: Codex is `measured` (0.147.0,
+  2026-08-15 — the rollout Activity reads is the same file the probe adapter took the model from,
+  and an invented model key appears in neither); Claude and Grok stay `unmeasured` with the missing
+  channel named, because the probe JSON proves `modelUsage` on headless stdout, not the durable
+  file Activity reads.
+  Table: `observed-model-provenance`. (Fatia 6: if this paragraph and the table disagree, the table wins.)
 - **probe effective-model proof** became typed dimension `probe-model-proof`: all three have a
   projection guarded by the registered adapter's proof declaration; runtime evidence and its kind
   remain separate rather than treating provider usage and a session record as equal.
+  Table: `probe-model-proof`.
 - **composer suggestion vs human draft** stays out: this is a conditional classifier rule within row
   3 Attention. Claude/Codex need `all-dim` because they render suggestions; Grok renders none, so
   absence of the exemption is correct behavior rather than a parity gap.
 - **cross-runtime task continuation** became typed dimension `cross-runtime-task-continuation`: the
-  projection is guarded by destination Agent admission plus opening-brief delivery; runtime behavior
-  remains independently unmeasured and the feature stays distinct from native resume.
+  projection is guarded by destination Agent admission plus opening-brief delivery, and runtime
+  behaviour is `measured` for all three (2026-08-15 — Claude 2.1.233, Codex 0.147.0, Grok 1.0.4),
+  scoped to the destination-brief half. The feature stays distinct from native resume: what is
+  measured is that a destination runtime accepts and delivers the opening brief, not that a
+  conversation continues.
+  Table: `cross-runtime-task-continuation`. (Fatia 6: if this paragraph and the table disagree, the table wins.)
 
 ### Soul identity delivery
+
+**Narrative (SDD 508 fatia 6).** Not a typed cell. Same opening-prompt adapter as row 1 Brief;
+inherits that row's fatia-2 motive (`runtimePromptAdapter` / `composeCommand` choose the channel;
+the product does not claim the model obeyed). Claude / Codex / Grok marks below are that channel,
+not a seventh dimension.
 
 Soul is a Tachyon-owned optional layer loaded from `.tachyon/agents/<agent>/SOUL.md` only when the
 declared agent has `soul: true`. It uses the same opening-prompt adapter registry as startup briefs,

@@ -23,7 +23,9 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Give one triaged board Task to an already-live Temporary agent without restarting it or touching its checkout. " +
         "Claims the task, then pushes a freshly projected WORK ON RECORD into the existing conversation through the " +
-        "queue-safe notice path. Refuses while the agent owns different active work: finish or release that assignment first.",
+        "queue-safe notice path. Refuses when the agent is not running (same liveness notify_agent uses: the session " +
+        "must exist now) and while the agent owns different active work: finish or release that assignment first. " +
+        "A claim is not kept if the WORK ON RECORD cannot be delivered.",
       inputSchema: {
         name: AGENT_NAME.describe("live Temporary agent to retask"),
         task_id: TASK_ID.describe("triaged or active-unassigned board task to claim"),
@@ -66,6 +68,12 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
           }
           const record = await deps.manager.liveRetaskWorkRecord(name);
           const receipt = await deps.deliverNotice(name, record);
+          // t-3e2e2d — deliverNotice can still return `notified` (or queue for a session that
+          // will never idle) after the recipient has gone. Re-probe before echoing success;
+          // the catch releases the claim so the board does not keep an active ghost assignee.
+          if (!(await deps.tmux.hasSession(deps.manager.session(name)))) {
+            throw new Error(`retask_agent refused: agent '${name}' is not running`);
+          }
           return ok(JSON.stringify({ agent: name, task: task_id, delivery: receipt.status }, null, 2));
         } catch (error) {
           if (claimed) await releaseSpawnClaim(deps, claimed, prior);
