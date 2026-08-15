@@ -2,16 +2,16 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
-  SAVED_AGENT_REMOVAL_PROPOSALS_REL_DIR,
-  cancelSavedAgentRemovalProposal,
   readSavedAgentRemovalProposal,
   savedAgentRemovalProposalPath,
   appendSavedAgentRemovalProposalWitness,
+  SAVED_AGENT_REMOVAL_RECEIPTS_REL_DIR,
 } from "@tachyon/engine/agents/savedAgentRemovalProposalStore.js";
 import {
   savedAgentRemovalProposalIsExpired,
   type SavedAgentRemovalProposal,
 } from "@tachyon/engine/agents/savedAgentRemovalProposal.js";
+import { composeSavedAgentProposalDecisionNotice } from "@tachyon/engine/agents/savedAgentProposalDecision.js";
 import type { AgentProfileGrants } from "@tachyon/engine/config/agentProfileGrants.js";
 
 /**
@@ -23,7 +23,7 @@ import type { AgentProfileGrants } from "@tachyon/engine/config/agentProfileGran
  * authority / roster / worktree.
  */
 
-export const SAVED_AGENT_REMOVAL_RECEIPTS_REL_DIR = path.join(SAVED_AGENT_REMOVAL_PROPOSALS_REL_DIR, "receipts");
+export { SAVED_AGENT_REMOVAL_RECEIPTS_REL_DIR };
 
 export type SavedAgentRemovalCommitOutcome = "committing" | "committed" | "failed";
 
@@ -71,6 +71,8 @@ export interface SavedAgentRemovalCommitPorts {
   readTargetIdentity(agentName: string): Promise<{ agentId: string; revision: string } | undefined>;
   readProposerGrants(agentName: string): AgentProfileGrants | undefined;
   currentConfigSha256(): string;
+  /** t-ea8f78 — same notice queue approvals use. Optional so refusal fixtures stay port-free. */
+  deliverNotice?(agent: string, line: string): Promise<unknown>;
 }
 
 function receiptPath(workspaceRoot: string, digest: string): string {
@@ -216,6 +218,12 @@ export async function approveSavedAgentRemovalProposal(input: {
       approvedBy: input.approvedBy,
       at: base.approvedAt,
     });
+    await notifyRemovalProposer(input.ports, proposal.proposer, composeSavedAgentProposalDecisionNotice({
+      operation: "remove",
+      id: proposal.id,
+      agentName: proposal.spec.name,
+      outcome: "approved",
+    }));
     return { ok: true, receipt };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -226,25 +234,51 @@ export async function approveSavedAgentRemovalProposal(input: {
   }
 }
 
-export function denySavedAgentRemovalProposal(input: {
+export async function denySavedAgentRemovalProposal(input: {
   workspaceRoot: string;
   proposalId: string;
   deniedBy: string;
   reason: string;
   nowMs: number;
-}): { denied: boolean } {
+  deliverNotice?: (agent: string, line: string) => Promise<unknown>;
+}): Promise<{ denied: boolean }> {
   let proposal: SavedAgentRemovalProposal;
   try {
     proposal = readSavedAgentRemovalProposal(input.workspaceRoot, input.proposalId);
   } catch {
     return { denied: false };
   }
-  cancelSavedAgentRemovalProposal({
-    workspaceRoot: input.workspaceRoot,
+  try {
+    fs.rmSync(savedAgentRemovalProposalPath(input.workspaceRoot, proposal.id), { force: true });
+  } catch { /* witness is the durable fact */ }
+  appendSavedAgentRemovalProposalWitness(input.workspaceRoot, {
+    kind: "denied",
     id: proposal.id,
-    by: proposal.proposer,
-    reason: `denied by ${input.deniedBy}: ${input.reason}`,
-    nowMs: input.nowMs,
+    digest: proposal.digest,
+    proposer: proposal.proposer,
+    deniedBy: input.deniedBy,
+    reason: input.reason,
+    agentName: proposal.spec.name,
+    at: new Date(input.nowMs).toISOString(),
   });
+  await notifyRemovalProposer({ deliverNotice: input.deliverNotice }, proposal.proposer, composeSavedAgentProposalDecisionNotice({
+    operation: "remove",
+    id: proposal.id,
+    agentName: proposal.spec.name,
+    outcome: "denied",
+  }));
   return { denied: true };
+}
+
+async function notifyRemovalProposer(
+  ports: { deliverNotice?: (agent: string, line: string) => Promise<unknown> },
+  agent: string,
+  line: string,
+): Promise<void> {
+  if (!ports.deliverNotice) return;
+  try {
+    await ports.deliverNotice(agent, line);
+  } catch {
+    /* the decision stands; delivery is best-effort */
+  }
 }

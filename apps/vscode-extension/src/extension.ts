@@ -1660,6 +1660,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         readProposerGrants: (agentName) => readAgentProfileGrants(workspaceRoot, agentName),
         currentConfigSha256: () => workspaceConfigSha256(workspaceRoot),
+        deliverNotice: (agent, line) => ws.deliverNotice(agent, line),
       },
     });
   };
@@ -1705,6 +1706,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         readProposerGrants: (agentName) => readAgentProfileGrants(workspaceRoot, agentName),
         currentConfigSha256: () => workspaceConfigSha256(workspaceRoot),
+        deliverNotice: (agent, line) => ws.deliverNotice(agent, line),
       },
     });
   };
@@ -1752,6 +1754,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       humanInboxStaleAfter: (wsHash: string) => byHash(wsHash)?.config?.settings?.humanInbox?.staleAfterHours,
       approveSavedAgentProposal: (input) => commitSavedAgentProposal(input),
       approveSavedAgentRemoval: (input) => commitSavedAgentRemoval(input),
+      deliverNotice: async (workspaceRoot, agent, line) => {
+        const target = workspaces().find((candidate) => candidate.workspaceRoot === workspaceRoot);
+        if (!target) return;
+        await target.deliverNotice(agent, line);
+      },
       decideScheduleProposal: async (wsHash, id, decision) => {
         const ws = byHash(wsHash);
         if (!ws) throw new Error(`workspace ${wsHash} is not attached`);

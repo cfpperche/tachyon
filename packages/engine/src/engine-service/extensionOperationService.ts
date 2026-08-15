@@ -582,6 +582,10 @@ export async function executeExtensionCommand(
       const result = await workspace.managedWorktrees.releaseLock(command.id, { actor: { kind: "human" } });
       return json(result as unknown as JsonValue);
     }
+    case "notice.deliver": {
+      const result = await workspace.deliverNotice(command.agent, command.line);
+      return json({ status: result.status });
+    }
     case "agent.inject-continuity":
       await workspace.injectContinuity(command.agent, "manual", { origin: "ui" });
       return json({ changed: true });

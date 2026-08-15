@@ -13,6 +13,7 @@ export type { HumanInboxViewModel, HumanInboxItemViewModel } from "@tachyon/webv
 import {
   buildHumanInbox,
   humanInboxCounts,
+  type HumanInboxInput,
   type HumanInboxKind,
   type StaleAfter,
 } from "@tachyon/webview-ui/humanInbox/model";
@@ -40,6 +41,8 @@ export function buildHumanInboxViewModel(input: {
   savedAgentRemovals?: readonly SavedAgentRemovalProposalReview[];
   untrustedSavedAgentRemovals?: readonly { id: string; reason: string }[];
   scheduleProposals?: readonly ScheduleProposal[];
+  decidedSavedAgentProposals?: HumanInboxInput["decidedSavedAgentProposals"];
+  decidedSavedAgentRemovals?: HumanInboxInput["decidedSavedAgentRemovals"];
   now?: string;
   /**
    * t-e4f662 — the workspace's configured staleness threshold, or absent for the product default.
@@ -60,6 +63,8 @@ export function buildHumanInboxViewModel(input: {
       ...(input.savedAgentRemovals ? { savedAgentRemovals: input.savedAgentRemovals } : {}),
       ...(input.untrustedSavedAgentRemovals ? { untrustedSavedAgentRemovals: input.untrustedSavedAgentRemovals } : {}),
       ...(input.scheduleProposals ? { scheduleProposals: input.scheduleProposals } : {}),
+      ...(input.decidedSavedAgentProposals ? { decidedSavedAgentProposals: input.decidedSavedAgentProposals } : {}),
+      ...(input.decidedSavedAgentRemovals ? { decidedSavedAgentRemovals: input.decidedSavedAgentRemovals } : {}),
     },
     {
       ...(input.now ? { now: input.now } : {}),

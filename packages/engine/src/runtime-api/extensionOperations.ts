@@ -72,6 +72,10 @@ export const EXTENSION_COMMAND_ACTIONS = [
   // refuses it by name instead of silently decoding it as something else.
   "agent-profile.authorize-skill",
   "agent-profile.authorize-plugin",
+  // t-ea8f78 — host-only wake through Workspace.deliverNotice. Not a Bridge tool: an agent that
+  // could reach this would be ringing anyone's pane. The Saved Agent commit lives in the editor
+  // and needs this one door onto the same queue approval.resolve already uses.
+  "notice.deliver",
 ] as const;
 
 const extensionQueryActionSchema = z.enum(EXTENSION_QUERY_ACTIONS);
@@ -288,6 +292,11 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     action: z.literal("handoff.note"),
     summary: text(4_000, 1),
     evidence: z.array(text(4_096, 1)).max(20),
+  }).strict(),
+  z.object({
+    action: z.literal("notice.deliver"),
+    agent: name,
+    line: text(4_000, 1),
   }).strict(),
 ]);
 

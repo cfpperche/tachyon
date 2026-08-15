@@ -497,20 +497,60 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
   });
 });
 
-describe("denying a Saved Agent proposal (SDD 482 phase 4C)", () => {
-  it("removes the proposal and records who decided", () => {
+describe("t-ea8f78 — a decision wakes the proposer with WHICH outcome", () => {
+  it("delivers an approved notice to the proposer, not merely that it ended", async () => {
     const ws = workspace();
     const proposal = proposed(ws);
-    expect(denySavedAgentProposal({ workspaceRoot: ws, proposalId: proposal.id, deniedBy: "human", reason: "wrong runtime", nowMs: NOW }))
-      .toEqual({ denied: true });
-    expect(listSavedAgentProposals(ws)).toEqual([]);
-    const cancelled = readSavedAgentProposalWitness(ws).find((e) => e.kind === "cancelled") as { reason: string } | undefined;
-    expect(cancelled?.reason).toContain("denied by human: wrong runtime");
+    const notices: Array<{ agent: string; line: string }> = [];
+    const p = ports({
+      deliverNotice: async (agent, line) => {
+        notices.push({ agent, line });
+      },
+    });
+    const result = await approveSavedAgentProposal({
+      workspaceRoot: ws, proposalId: proposal.id, approvedDigest: proposal.digest,
+      approvedBy: "human", nowMs: NOW, ports: p,
+    });
+    expect(result.ok).toBe(true);
+    expect(notices).toEqual([{
+      agent: "claude-runtime",
+      line: `[tachyon] Saved Agent proposal ${proposal.id} to create 'importer' was approved`,
+    }]);
   });
 
-  it("converges when the proposal is already gone", () => {
+  it("delivers a denied notice to the proposer", async () => {
     const ws = workspace();
-    expect(denySavedAgentProposal({ workspaceRoot: ws, proposalId: "sp-aaaaaa", deniedBy: "human", reason: "n/a", nowMs: NOW }))
+    const proposal = proposed(ws);
+    const notices: Array<{ agent: string; line: string }> = [];
+    await denySavedAgentProposal({
+      workspaceRoot: ws,
+      proposalId: proposal.id,
+      deniedBy: "human",
+      reason: "wrong runtime",
+      nowMs: NOW,
+      deliverNotice: async (agent, line) => { notices.push({ agent, line }); },
+    });
+    expect(notices).toEqual([{
+      agent: "claude-runtime",
+      line: `[tachyon] Saved Agent proposal ${proposal.id} to create 'importer' was denied`,
+    }]);
+  });
+});
+
+describe("denying a Saved Agent proposal (SDD 482 phase 4C)", () => {
+  it("removes the proposal and records who decided", async () => {
+    const ws = workspace();
+    const proposal = proposed(ws);
+    expect(await denySavedAgentProposal({ workspaceRoot: ws, proposalId: proposal.id, deniedBy: "human", reason: "wrong runtime", nowMs: NOW }))
+      .toEqual({ denied: true });
+    expect(listSavedAgentProposals(ws)).toEqual([]);
+    const denied = readSavedAgentProposalWitness(ws).find((e) => e.kind === "denied") as { reason: string; deniedBy: string } | undefined;
+    expect(denied).toMatchObject({ deniedBy: "human", reason: "wrong runtime" });
+  });
+
+  it("converges when the proposal is already gone", async () => {
+    const ws = workspace();
+    expect(await denySavedAgentProposal({ workspaceRoot: ws, proposalId: "sp-aaaaaa", deniedBy: "human", reason: "n/a", nowMs: NOW }))
       .toEqual({ denied: false });
   });
 });

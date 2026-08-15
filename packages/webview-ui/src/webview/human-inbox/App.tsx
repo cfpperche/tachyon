@@ -3,6 +3,7 @@ import type { ApprovalDecision } from "@tachyon/engine/approvals/approvalRequest
 import type { ValidationOutcome } from "@tachyon/engine/validations/types.js";
 import {
   filterHumanInboxItems,
+  humanInboxHeaderChips,
   type HumanInboxFilters,
   type HumanInboxItem,
   type HumanInboxKind,
@@ -149,10 +150,15 @@ export function App({ vm, error, dispatch }: { vm?: HumanInboxViewModel; error?:
       {/* One count, derived from the rows themselves — never a shell-side constant. A security
           counter that reads zero while requests sit on disk is worse than no counter (report § 4.1). */}
       <div class="hi-counts" data-testid="inbox-counts">
-        <span class={counts.total > 0 ? "hi-count strong" : "hi-count"}>{counts.total} waiting</span>
-        <span class="hi-count">{counts.approvals} approvals</span>
-        <span class="hi-count">{counts.validations} validations</span>
-        {counts.stale > 0 ? <span class="hi-count warn">{counts.stale} stale</span> : null}
+        {humanInboxHeaderChips(counts).map((chip) => (
+          <span
+            key={chip.key}
+            class={chip.tone === "strong" ? "hi-count strong" : chip.tone === "warn" ? "hi-count warn" : "hi-count"}
+            data-testid={`inbox-count-${chip.key}`}
+          >
+            {chip.label}
+          </span>
+        ))}
       </div>
       <div class="hi-filters" aria-label="Inbox filters">
         <Select aria-label="State" value={filters.state} onChange={(event) => updateFilter("state", event.currentTarget.value as HumanInboxFilters["state"])}>
@@ -179,6 +185,9 @@ export function App({ vm, error, dispatch }: { vm?: HumanInboxViewModel; error?:
             <option value="passed">passed</option>
             <option value="failed">failed</option>
             <option value="skipped">skipped</option>
+          </optgroup>
+          <optgroup label="Proposals">
+            <option value="expired">expired</option>
           </optgroup>
         </Select>
         <Select aria-label="Period" value={filters.period} onChange={(event) => updateFilter("period", event.currentTarget.value as HumanInboxFilters["period"])}>
@@ -446,10 +455,12 @@ function SavedAgentProposalDetail({
   proposal,
   dispatch,
   error,
+  resolved,
 }: {
   proposal: SavedAgentProposalReview;
   dispatch: HumanInboxDispatch;
   error?: HumanInboxErrorReceipt;
+  resolved?: boolean;
 }) {
   const [reason, setReason] = useState("");
   const [pending, setPending] = useState<"approve" | "deny" | undefined>();
@@ -528,6 +539,7 @@ function SavedAgentProposalDetail({
         </p>
       </div>
 
+      {resolved ? null : (
       <div class="hi-proposal-decide ds-card">
         <Textarea
           value={reason}
@@ -553,6 +565,7 @@ function SavedAgentProposalDetail({
           </Button>
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -561,10 +574,12 @@ function SavedAgentRemovalDetail({
   proposal,
   dispatch,
   error,
+  resolved,
 }: {
   proposal: SavedAgentRemovalProposalReview;
   dispatch: HumanInboxDispatch;
   error?: HumanInboxErrorReceipt;
+  resolved?: boolean;
 }) {
   const [reason, setReason] = useState("");
   const [pending, setPending] = useState<"approve" | "deny" | undefined>();
@@ -613,6 +628,7 @@ function SavedAgentRemovalDetail({
         </p>
       </div>
 
+      {resolved ? null : (
       <div class="hi-proposal-decide">
         <Textarea
           value={reason}
@@ -636,6 +652,7 @@ function SavedAgentRemovalDetail({
           {pending === "deny" ? "Denying…" : "Deny"}
         </Button>
       </div>
+      )}
     </div>
   );
 }
@@ -723,9 +740,9 @@ export function ItemApp({
       {item.detail.kind === "approval" ? (
         <ApprovalDetail item={item.detail.approval} dispatch={dispatch} />
       ) : item.detail.kind === "saved-agent-proposal" ? (
-        <SavedAgentProposalDetail proposal={item.detail.proposal} dispatch={dispatch} error={error} />
+        <SavedAgentProposalDetail proposal={item.detail.proposal} dispatch={dispatch} error={error} resolved={item.state === "resolved"} />
       ) : item.detail.kind === "saved-agent-removal" ? (
-        <SavedAgentRemovalDetail proposal={item.detail.proposal} dispatch={dispatch} error={error} />
+        <SavedAgentRemovalDetail proposal={item.detail.proposal} dispatch={dispatch} error={error} resolved={item.state === "resolved"} />
       ) : item.detail.kind === "schedule-proposal" ? (
         <ScheduleProposalDetail proposal={item.detail.proposal} dispatch={dispatch} />
       ) : (
