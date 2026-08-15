@@ -110,13 +110,6 @@ describe("Tachyon multi-root (spec 204)", () => {
     assert.ok(sessions.includes(`tachyon-${beta.hash}-beta-agent`), "sanity: beta was running before the kill");
   });
 
-  it("commands are folder-scoped too", async () => {
-    const alphaCmds = await vscode.commands.executeCommand("tachyon._commands", alpha.hash);
-    const betaCmds = await vscode.commands.executeCommand("tachyon._commands", beta.hash);
-    assert.ok(alphaCmds.some((c) => c.name === "alpha-check"), "alpha-check missing");
-    assert.strictEqual(betaCmds.length, 0, "beta declares no commands");
-  });
-
   it("both Bridges enforce auth independently", async function () {
     this.timeout(15000);
     for (const ws of [alpha, beta]) {

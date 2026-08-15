@@ -22,8 +22,6 @@ function minimalFleet(agentStatus: string) {
       terminals: [],
       pipelines: [],
       schedules: [],
-      commands: [],
-      runbooks: [],
       pins: [],
       notices: [],
       proposals: [],

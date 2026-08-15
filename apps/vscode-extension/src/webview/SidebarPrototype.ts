@@ -366,7 +366,6 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       // own fleet list and sends the chosen hash, so the native list never opens for it.
       const STUDIO: Record<string, string> = {
         "studio:agents": "tachyon.newAgentStudio", "studio:terminals": "tachyon.terminalStudio",
-        "studio:commands": "tachyon.commandStudio", "studio:runbooks": "tachyon.runbookStudio",
         "studio:schedules": "tachyon.scheduleStudio",
       };
       if (m.op && STUDIO[m.op]) return void vscode.commands.executeCommand(STUDIO[m.op], m.hash);
@@ -416,16 +415,6 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       void vscode.commands.executeCommand(cmd, ...ws.shellCommandArgs(context));
     };
     switch (op) {
-      case "command:run": return exec("tachyon.runCommandItem", { kind: "command", commandName: id });
-      case "command:open": return void vscode.commands.executeCommand("tachyon.openCommandTerminalItem", id, ws.wsHash);
-      case "command:edit": return exec("tachyon.editCommandStudioItem", { kind: "command", commandName: id });
-      case "command:editYaml": return exec("tachyon.editCommandItem", { kind: "command", commandName: id });
-      case "command:delete": return exec("tachyon.deleteCommandItem", { kind: "command", commandName: id });
-      case "runbook:run": return exec("tachyon.runRunbookItem", { kind: "runbook", runbookName: id });
-      case "runbook:edit": return exec("tachyon.editRunbookStudioItem", { kind: "runbook", runbookName: id });
-      case "runbook:editYaml": return exec("tachyon.editRunbookItem", { kind: "runbook", runbookName: id });
-      case "runbook:delete": return exec("tachyon.deleteRunbookItem", { kind: "runbook", runbookName: id });
-      case "runbook:step": { const hash = id.indexOf("#"); return void vscode.commands.executeCommand("tachyon.openRunbookStepItem", id.slice(0, hash), Number(id.slice(hash + 1)), ws.wsHash); }
       case "pin:toggle": return this.mutateSidebar(ws, { action: "pin.toggle", id, done: !!done });
       case "notice:markRead": return this.mutateSidebar(ws, { action: "notice.markRead", id });
       case "notice:markAllRead": return this.mutateSidebar(ws, { action: "notice.markAllRead", id: "all" });

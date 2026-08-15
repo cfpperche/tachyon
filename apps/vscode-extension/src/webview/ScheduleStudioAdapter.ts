@@ -30,10 +30,7 @@ export class ScheduleStudioAdapter implements StudioHostAdapter<ScheduleStudioEn
   }
 
   load(entityId: string | undefined): StudioLoadResult<ScheduleStudioEntity, ScheduleStudioReferenceData> {
-    const deps = this.ws.studioDeps();
     const referenceData: ScheduleStudioReferenceData = {
-      commandNames: deps.commandNames(),
-      runbookNames: Object.keys(this.ws.config?.runbooks ?? {}),
       agentNames: Object.keys(this.ws.config?.agents ?? {}),
     };
     if (entityId === undefined) {

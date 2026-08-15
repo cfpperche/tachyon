@@ -150,7 +150,7 @@ function analyze({ preDom, postDom, preDump, postDump }) {
   const dashCard = Object.fromEntries(
     Object.entries(postKeys).map(([mgr, list]) => [mgr, { pre: (preKeys[mgr] ?? []).length, post: (list ?? []).length }]),
   );
-  const multiPost = Object.entries(dashCard).filter(([, c]) => c.post > 1 && !["taskDetail", "pinDetail", "agentStudio", "commandStudio", "terminalStudio", "runbookStudio", "scheduleStudio", "activity", "probes"].includes);
+  const multiPost = Object.entries(dashCard).filter(([, c]) => c.post > 1 && !["taskDetail", "pinDetail", "agentStudio", "terminalStudio", "scheduleStudio", "activity", "probes"].includes);
   // windows should be exactly 1 when open
   const windowManagers = ["tmux", "runtimeOps"];
   const windowOk = windowManagers.every((m) => (postKeys[m] ?? []).length <= 1);

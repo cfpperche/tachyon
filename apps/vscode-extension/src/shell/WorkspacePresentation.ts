@@ -156,8 +156,6 @@ export function pluginFleetPresentation(
         adhoc: agent.lifetime === "temporary",
       })),
     terminals: [],
-    commands: [],
-    runbooks: [],
     pins: [],
     schedules: [],
     pipelines: [],

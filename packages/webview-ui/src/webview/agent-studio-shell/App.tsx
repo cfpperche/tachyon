@@ -85,7 +85,7 @@ import { persistentInstructionsRefusal } from "@tachyon/shared/config/agentInstr
  * bundle can't resolve (see agent-studio-shell/domain.ts's header for the empirical confirmation).
  *
  * t-610705 (Phase D, D1b) — Control-hosted now: props-driven, same split as every other migrated studio
- * (command-studio-shell/App.tsx's doc comment has the full rationale for routeKey/mountNonce/useStudioFreeze/
+ * (the shared studio host has the full rationale for routeKey/mountNonce/useStudioFreeze/
  * eager ref updates).
  */
 export interface AgentStudioAppProps {

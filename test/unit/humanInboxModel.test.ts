@@ -279,7 +279,7 @@ describe("t-00aa76 — header chips cannot contradict the waiting total", () => 
     by: "claude",
     createdAt: "2026-07-27T10:00:00.000Z",
     expiresAt: "2026-07-28T10:00:00.000Z",
-    schedule: { every: "1h", run: "test" },
+    schedule: { every: "1h", spawn: "claude" },
   });
 
   it("kind chips the header renders sum to the waiting total", () => {

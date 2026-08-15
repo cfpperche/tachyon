@@ -4,8 +4,6 @@
  * second segment encodes the kind, followed by the 8-char workspace hash:
  *
  *   tachyon-ctl-<hash>              → control-mode engine anchor (internal)
- *   tachyon-cmd-<hash>-<command>…   → one-shot command run
- *   tachyon-rb-<hash>-<runbook>-<n> → runbook step
  *   tachyon-login-<hash>-<runtime>  → runtime login pane (t-2656d7)
  *   tachyon-<hash>-<name>           → agent or terminal (indistinguishable by name)
  *
@@ -38,14 +36,12 @@ export function classifySession(session: string): ClassifiedSession {
     return { kind: "anchor", wsHash: HASH.test(hash) ? hash : undefined, label: "engine anchor" };
   }
 
-  // tachyon-cmd-<hash>-<command>…
+  // leftover tachyon-cmd- / tachyon-rb- prefixes must not fall through to agent/session
   if (rest.startsWith("cmd-")) {
-    return namespaced("command", rest.slice("cmd-".length), session);
+    return namespaced("unknown", rest.slice("cmd-".length), session);
   }
-
-  // tachyon-rb-<hash>-<runbook>-<n>
   if (rest.startsWith("rb-")) {
-    return namespaced("runbook", rest.slice("rb-".length), session);
+    return namespaced("unknown", rest.slice("rb-".length), session);
   }
 
   // tachyon-login-<hash>-<runtime> (t-2656d7) — a governed runtime login pane. Named here so the

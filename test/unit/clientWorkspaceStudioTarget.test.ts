@@ -9,8 +9,8 @@ import {
 } from "@tachyon/engine/engine-service/protocol.js";
 import { ClientWorkspaceStudioTarget } from "../../apps/vscode-extension/src/shell/ClientWorkspaceStudioTarget.js";
 import { FakeWorkspaceClient } from "../helpers/FakeWorkspaceClient.js";
-import { CommandStudioAdapter } from "../../apps/vscode-extension/src/webview/CommandStudioAdapter.js";
-import { blankCommandFields } from "@tachyon/webview-ui/webview/command-studio-shell/domain.js";
+import { TerminalStudioAdapter } from "../../apps/vscode-extension/src/webview/TerminalStudioAdapter.js";
+import { blankTerminalFields } from "@tachyon/webview-ui/webview/terminal-studio-shell/domain.js";
 import type { StudioDeps } from "../../apps/vscode-extension/src/webview/studioSubmit.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 import type { AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio.js";
@@ -177,25 +177,25 @@ describe("ClientWorkspaceStudioTarget", () => {
       operationId: () => `studio-operation-${++nextOperation}`,
     });
 
-    const adapter = new CommandStudioAdapter(target);
+    const adapter = new TerminalStudioAdapter(target);
     const loaded = adapter.load("lint");
     expect(loaded).toMatchObject({ status: "ok", entity: { name: "lint", fields: { cmd: "npm run lint" } } });
     expect(await target.studioDeps().detectClis()).toEqual(["codex"]);
 
-    const saved = await adapter.save(undefined, { ...blankCommandFields(), name: "deploy", cmd: "npm run deploy" });
+    const saved = await adapter.save(undefined, { ...blankTerminalFields(), name: "deploy", cmd: "npm run deploy" });
     expect(saved).toEqual({ status: "ok", entityId: "deploy" });
     expect(operations).toEqual(["studio-operation-1"]);
     expect(fake.invocations[0]?.command).toMatchObject({ method: "studio.submit", input: { state: { name: "deploy" } } });
-    expect(target.config?.commands.deploy?.cmd).toBe("npm run deploy");
+    expect(target.config?.agents.deploy?.cmd).toBe("npm run deploy");
 
     const beforeInvalid = fs.readFileSync(configPath, "utf8");
-    await expect(adapter.save(undefined, { ...blankCommandFields(), name: "invalid", cmd: "" }))
+    await expect(adapter.save(undefined, { ...blankTerminalFields(), name: "invalid", cmd: "" }))
       .resolves.toMatchObject({ status: "error", error: { source: "validation" } });
     expect(fs.readFileSync(configPath, "utf8")).toBe(beforeInvalid);
     expect(operations).toEqual(["studio-operation-1", "studio-operation-2"]);
 
     fs.writeFileSync(configPath, "not: [valid", "utf8");
-    expect(target.config?.commands.deploy?.cmd).toBe("npm run deploy");
+    expect(target.config?.agents.deploy?.cmd).toBe("npm run deploy");
 
     fs.rmSync(configPath);
     expect(target.config).toBeUndefined();
@@ -224,10 +224,10 @@ describe("ClientWorkspaceStudioTarget", () => {
     // the fields the scenario sets. Before t-8247ec this never left the shell.
     const partial = { name: "dev", cmd: "npm run dev", kind: "terminal" };
     await expect(target.studioSubmit({ state: partial as never })).resolves.toBeUndefined();
-    await expect(target.studioSubmit({ state: { name: "release", kind: "runbook", steps: "hello" } as never })).resolves.toBeUndefined();
+    await expect(target.studioSubmit({ state: { name: "release", kind: "schedule", schedTarget: "claude" } as never })).resolves.toBeUndefined();
     expect(fake.invocations[0]?.command).toMatchObject({
       method: "studio.submit",
-      input: { state: { name: "dev", kind: "terminal", schedTiming: "every", schedAction: "run", catchUp: false } },
+      input: { state: { name: "dev", kind: "terminal", schedTiming: "every", schedAction: "spawn", catchUp: false } },
     });
   });
 
@@ -251,12 +251,13 @@ describe("ClientWorkspaceStudioTarget", () => {
       extensionUri: {} as StudioDeps["extensionUri"],
       operationId: () => "studio-operation-error",
     });
-    await expect(target.studioSubmit({ state: { ...blankCommandFields(), name: "deploy", cmd: "npm run deploy" } }))
+    await expect(target.studioSubmit({ state: { ...blankTerminalFields(), name: "deploy", cmd: "npm run deploy" } }))
       .rejects.toThrow("engine write failed");
   });
 
 });
 
-function config(...commands: string[]): string {
-  return `agents: {}\nterminals:\n  worker:\n    cmd: sh\ncommands:\n${commands.map((name) => `  ${name}:\n    cmd: npm run ${name}\n`).join("")}runbooks:\n  ship:\n    steps:\n      - lint\n`;
+function config(...terminals: string[]): string {
+  const extra = terminals.map((name) => `  ${name}:\n    cmd: npm run ${name}\n`).join("");
+  return `agents: {}\nterminals:\n  worker:\n    cmd: sh\n${extra}`;
 }

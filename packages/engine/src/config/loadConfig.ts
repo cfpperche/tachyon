@@ -438,24 +438,11 @@ export function composeCommand(def: Pick<AgentEntry, "cmd" | "instructions">): s
 
 // spec 234 — GridShape / LayoutDef removed (layouts feature retired; `layouts:` stays a tolerated, ignored key).
 
-export interface CommandDef {
-  cmd: string;
-  cwd?: string;
-  env?: Record<string, string>;
-}
-
-export interface RunbookDef {
-  /** each step: an exact command-name reference (commands: map) or an inline shell string */
-  steps: string[];
-}
-
 export interface ScheduleDef {
   /** interval form, e.g. "30m" / "1h" / "2h" — exactly one of every/at */
   every?: string;
   /** daily wall-clock form "HH:MM" (24h, local time) */
   at?: string;
-  /** action: a command/runbook name to run — exactly one of run/spawn */
-  run?: string;
   /** action: a declared agent name to spawn */
   spawn?: string;
   /** startup prompt delivered when spawning (spawn only) */
@@ -491,8 +478,6 @@ export interface TachyonConfig {
   /** Unified managed-entry map. Parsed from both `agents:` and `terminals:` blocks; the
    *  property name is compatibility surface, not a statement that every entry is an AI agent. */
   agents: Record<string, AgentDef>;
-  commands: Record<string, CommandDef>;
-  runbooks: Record<string, RunbookDef>;
   schedules: Record<string, ScheduleDef>;
   /** spec 352 — derived child-side ownership map from agents.<owner>.subagents. */
   declaredOwner: Record<string, string>;
@@ -650,7 +635,7 @@ export const MAX_IDLE_NOTIFY_MINUTES = 7 * 24 * 60;
  * Two literals in two files could not be kept in step by discipline, so the parser reads THIS list
  * and `configSchema.test.ts` compares it to the schema's published properties.
  */
-export const KNOWN_TOP_LEVEL_KEYS = ["agents", "terminals", "layouts", "commands", "runbooks", "schedules", "settings"] as const;
+export const KNOWN_TOP_LEVEL_KEYS = ["agents", "terminals", "layouts", "schedules", "settings"] as const;
 
 /** The `settings:` keys this parser knows, retired-but-still-named ones included. See KNOWN_TOP_LEVEL_KEYS. */
 export const KNOWN_SETTINGS_KEYS = [
@@ -1288,8 +1273,8 @@ export function parseConfig(yamlText: string): ParseResult {
   }
 
   // spec 215 — agents: and terminals: merge into ONE kind-tagged record (the engine's single
-  // source of truth). t-f67185 — an empty roster is valid: Board, pins, plugins, and commands-only
-  // workspaces do not need a declared agent or terminal. Malformed blocks still refuse.
+  // source of truth). t-f67185 — an empty roster is valid: Board, pins, and plugins do not need a
+  // declared agent or terminal. Malformed blocks still refuse.
   const agents: Record<string, ManagedEntryDef> = {};
   if (raw.agents !== undefined && !isPlainObject(raw.agents)) {
     discarded.push("'agents' must be a mapping of agent name -> definition");
@@ -1341,67 +1326,6 @@ export function parseConfig(yamlText: string): ParseResult {
 
   // spec 234 — layouts: is recognized (allowed-keys list) but no longer parsed/validated (feature retired).
 
-  const commands: Record<string, CommandDef> = {};
-  if (raw.commands !== undefined) {
-    if (!isPlainObject(raw.commands)) {
-      discarded.push("'commands' must be a mapping of command name -> definition");
-    } else {
-      for (const [name, def] of Object.entries(raw.commands)) {
-        if (!NAME_RE.test(name)) {
-          discarded.push(`commands.${name}: invalid name (must match ${NAME_RE})`);
-          continue;
-        }
-        if (!isPlainObject(def) || typeof def.cmd !== "string" || def.cmd.trim().length === 0) {
-          discarded.push(`commands.${name}: must be a mapping with a non-empty 'cmd'`);
-          continue;
-        }
-        const command: CommandDef = { cmd: def.cmd };
-        if (def.cwd !== undefined) {
-          if (typeof def.cwd !== "string") discarded.push(`commands.${name}.cwd: must be a string`);
-          else command.cwd = def.cwd;
-        }
-        if (def.env !== undefined) {
-          if (!isPlainObject(def.env) || Object.values(def.env).some((v) => typeof v !== "string")) {
-            discarded.push(`commands.${name}.env: must be a mapping of string -> string`);
-          } else {
-            command.env = def.env as Record<string, string>;
-          }
-        }
-        for (const key of Object.keys(def)) {
-          if (!["cmd", "cwd", "env"].includes(key)) discarded.push(`commands.${name}: unknown key '${key}'`);
-        }
-        commands[name] = command;
-      }
-    }
-  }
-
-  const runbooks: Record<string, RunbookDef> = {};
-  if (raw.runbooks !== undefined) {
-    if (!isPlainObject(raw.runbooks)) {
-      discarded.push("'runbooks' must be a mapping of runbook name -> definition");
-    } else {
-      for (const [name, def] of Object.entries(raw.runbooks)) {
-        if (!NAME_RE.test(name)) {
-          discarded.push(`runbooks.${name}: invalid name (must match ${NAME_RE})`);
-          continue;
-        }
-        if (
-          !isPlainObject(def) ||
-          !Array.isArray(def.steps) ||
-          def.steps.length === 0 ||
-          def.steps.some((st) => typeof st !== "string" || st.trim().length === 0)
-        ) {
-          discarded.push(`runbooks.${name}: must declare a non-empty 'steps' list of strings`);
-          continue;
-        }
-        for (const key of Object.keys(def)) {
-          if (key !== "steps") discarded.push(`runbooks.${name}: unknown key '${key}'`);
-        }
-        runbooks[name] = { steps: def.steps as string[] };
-      }
-    }
-  }
-
   const schedules: Record<string, ScheduleDef> = {};
   if (raw.schedules !== undefined) {
     if (!isPlainObject(raw.schedules)) {
@@ -1417,7 +1341,7 @@ export function parseConfig(yamlText: string): ParseResult {
           continue;
         }
         for (const key of Object.keys(def)) {
-          if (!["every", "at", "run", "spawn", "instructions", "catchUp"].includes(key)) {
+          if (!["every", "at", "spawn", "instructions", "catchUp"].includes(key)) {
             discarded.push(`schedules.${name}: unknown key '${key}'`);
           }
         }
@@ -1435,19 +1359,12 @@ export function parseConfig(yamlText: string): ParseResult {
           discarded.push(`schedules.${name}.at: must be 'HH:MM' (24h)`);
           continue;
         }
-        const hasRun = def.run !== undefined;
         const hasSpawn = def.spawn !== undefined;
-        if (hasRun === hasSpawn) {
-          discarded.push(`schedules.${name}: exactly one of 'run' or 'spawn' is required`);
+        if (!hasSpawn) {
+          discarded.push(`schedules.${name}: 'spawn' is required`);
           continue;
         }
-        if (hasRun) {
-          if (typeof def.run !== "string" || (!(def.run in commands) && !(def.run in runbooks))) {
-            discarded.push(`schedules.${name}.run: must reference a declared command or runbook`);
-            continue;
-          }
-        }
-        if (hasSpawn && (typeof def.spawn !== "string" || !(def.spawn in agents))) {
+        if (typeof def.spawn !== "string" || !(def.spawn in agents)) {
           discarded.push(`schedules.${name}.spawn: must reference a declared agent`);
           continue;
         }
@@ -1460,8 +1377,7 @@ export function parseConfig(yamlText: string): ParseResult {
           continue;
         }
         const entry: ScheduleDef = hasEvery ? { every: def.every as string } : { at: def.at as string };
-        if (hasRun) entry.run = def.run as string;
-        else entry.spawn = def.spawn as string;
+        entry.spawn = def.spawn as string;
         if (def.instructions !== undefined) entry.instructions = def.instructions as string;
         if (def.catchUp !== undefined) entry.catchUp = def.catchUp as boolean;
         schedules[name] = entry;
@@ -2057,7 +1973,7 @@ export function parseConfig(yamlText: string): ParseResult {
 
   const declaredOwner = buildDeclaredOwner(agents, discarded, warnings);
   warnings.push(...discarded);
-  return { config: { agents, commands, runbooks, schedules, declaredOwner, settings }, errors: [], warnings, discarded };
+  return { config: { agents, schedules, declaredOwner, settings }, errors: [], warnings, discarded };
 }
 
 export function loadConfigFile(path: string): ParseResult {

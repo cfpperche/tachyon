@@ -21,8 +21,6 @@ import { inLifecycleScope, lifecycleScopeRefusal } from "../lifecycleScope.js";
 import type { LifecycleTool } from "../lifecycleScope.js";
 import type { BackstopAcknowledgement } from "@tachyon/shared/workspace/TemporaryBackstopMonitor.js";
 import type { RuntimeConditionReportV1 } from "@tachyon/engine/runtimeOps/runtimeCondition.js";
-import type { CommandRunner } from "@tachyon/engine/commands/CommandRunner.js";
-import type { RunbookRunner } from "@tachyon/engine/commands/RunbookRunner.js";
 import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
 import type { Scheduler } from "@tachyon/engine/schedule/Scheduler.js";
 import type { ProposalStore } from "@tachyon/engine/schedule/ProposalStore.js";
@@ -365,10 +363,6 @@ export interface BridgeDeps {
   onHumanValidationPending?: (validation: { id: string; title: string; author: string }) => void;
   /** Event-driven waiter registry — enables wait_for_agent (absent = tool returns an error). */
   waiters?: Waiters;
-  /** One-shot command runner — enables run_command/list_commands. */
-  commands?: CommandRunner;
-  /** Step-by-step runbook runner — enables run_runbook. */
-  runbooks?: RunbookRunner;
   /** Schedule engine — enables list_schedules (active timers). */
   scheduler?: Scheduler;
   /** Pending agent-proposed schedules — enables propose_schedule. */
@@ -524,9 +518,7 @@ export function validateProposedSchedule(s: ScheduleDef): string | null {
   if (hasEvery === hasAt) return "exactly one of 'every' or 'at' is required";
   if (hasEvery && parseEvery(s.every as string) === null) return "every must be like '30m', '1h', '2h'";
   if (hasAt && parseAt(s.at as string) === null) return "at must be 'HH:MM' (24h)";
-  const hasRun = s.run !== undefined;
-  const hasSpawn = s.spawn !== undefined;
-  if (hasRun === hasSpawn) return "exactly one of 'run' or 'spawn' is required";
+  if (s.spawn === undefined) return "'spawn' is required";
   return null;
 }
 

@@ -45,7 +45,7 @@ const BEFORE = UNPROJECTABLE.slice(UNPROJECTABLE.indexOf("profile: "));
 const base = {
   ...SAMPLE,
   folder: { hash: "hash-alpha", name: "tachyon" },
-  terminals: [], pipelines: [], schedules: [], commands: [], runbooks: [], pins: [], notices: [],
+  terminals: [], pipelines: [], schedules: [], pins: [], notices: [],
 };
 
 /** The neighbour the change must not regress, plus the three states that keep a roster row. */

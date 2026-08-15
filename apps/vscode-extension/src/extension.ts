@@ -8,7 +8,7 @@ import { subtreeCpuTicks } from "@tachyon/engine/attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import type { TmuxServerSnapshot } from "@tachyon/webview-ui/inspector/model";
 import { asAgent, CONFIG_FILENAMES, loadConfigFile, type ScheduleDef } from "@tachyon/engine/config/loadConfig.js";
-import { commandEntryLine, runbookEntryLine, scheduleEntryLine, setSettingsValue } from "@tachyon/engine/config/YamlConfigEditor.js";
+import { scheduleEntryLine, setSettingsValue } from "@tachyon/engine/config/YamlConfigEditor.js";
 import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { type InspectorDeps } from "./webview/ServerInspector.js";
 import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
@@ -48,8 +48,6 @@ import { mintTaskId } from "@tachyon/engine/tasks/TaskStore.js";
 import { mintPinId } from "@tachyon/engine/pins/PinStore.js";
 import { AGENT_STUDIO_SHELL_VIEW_TYPE, AgentStudioPanelManager, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
 import { TERMINAL_STUDIO_SHELL_VIEW_TYPE, TerminalStudioPanelManager, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
-import { COMMAND_STUDIO_SHELL_VIEW_TYPE, CommandStudioPanelManager, type CommandStudioPanelState } from "./webview/CommandStudioPanel.js";
-import { RUNBOOK_STUDIO_SHELL_VIEW_TYPE, RunbookStudioPanelManager, type RunbookStudioPanelState } from "./webview/RunbookStudioPanel.js";
 import { SCHEDULE_STUDIO_SHELL_VIEW_TYPE, ScheduleStudioPanelManager, type ScheduleStudioPanelState } from "./webview/ScheduleStudioPanel.js";
 import { PipelineStudioPanelManager, PIPELINE_STUDIO_VIEW_TYPE, type PipelineStudioPanelState } from "./webview/PipelineStudioPanel.js";
 import { registerIdeBrowserBridge } from "./webview/ide-browser-bridge/register.js";
@@ -72,8 +70,6 @@ import {
 import type {
   AgentItem,
   PinItem,
-  CommandItem,
-  RunbookItem,
   ScheduleItem,
   ProposalItem,
   PipelineDefItem,
@@ -1387,9 +1383,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   openPinDocumentFromSidebar = (wsHash, pinId) => pinDetailPanels.open(wsHash, pinId);
   context.subscriptions.push({ dispose: () => pinDetailPanels.dispose() });
   const studioPanels = {
-    command: new CommandStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
     terminal: new TerminalStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
-    runbook: new RunbookStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
     schedule: new ScheduleStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
     agent: new AgentStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
   } as const;
@@ -2667,9 +2661,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }, { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<LegacyPinDetailState>(context, PIN_DETAIL_VIEW_TYPE, (panel, state) => pinDetailPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<AgentPanePanelState>(context, AGENT_PANE_VIEW_TYPE, (panel, state) => agentPanes.deserialize(panel, state));
-  registerTrustedPanelSerializer<CommandStudioPanelState | SectionPanelState>(context, COMMAND_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.command.deserialize(panel, state));
   registerTrustedPanelSerializer<TerminalStudioPanelState | SectionPanelState>(context, TERMINAL_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.terminal.deserialize(panel, state));
-  registerTrustedPanelSerializer<RunbookStudioPanelState | SectionPanelState>(context, RUNBOOK_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.runbook.deserialize(panel, state));
   registerTrustedPanelSerializer<ScheduleStudioPanelState | SectionPanelState>(context, SCHEDULE_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.schedule.deserialize(panel, state));
   registerTrustedPanelSerializer<AgentStudioPanelState | SectionPanelState>(context, AGENT_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.agent.deserialize(panel, state));
   // SDD 485 D20 — a pre-410 Pin Studio panel is still a live restore door. Reopen it in the Pins
@@ -2901,26 +2893,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       refreshAll();
     }),
     vscode.commands.registerCommand("tachyon._upsertAgent", (submit: StudioSubmit, hash?: string) => byHash(hash)?.studioSubmit(submit)),
-    vscode.commands.registerCommand("tachyon._runCommand", (name: string, hash?: string) => {
-      const ws = byHash(hash);
-      return ws ? extensionInvoke(ws, { action: "command.run", name }) : undefined;
-    }),
-    vscode.commands.registerCommand("tachyon._commands", (hash?: string) => {
-      const ws = byHash(hash);
-      return ws ? extensionQuery(ws, { action: "commands.list" }) : [];
-    }),
-    vscode.commands.registerCommand("tachyon._commandTick", (hash?: string) => {
-      const ws = byHash(hash);
-      return ws ? extensionInvoke(ws, { action: "command.tick" }) : undefined;
-    }),
-    vscode.commands.registerCommand("tachyon._runRunbook", (name: string, hash?: string) => {
-      const ws = byHash(hash);
-      return ws ? extensionInvoke(ws, { action: "runbook.run", name }) : undefined;
-    }),
-    vscode.commands.registerCommand("tachyon._runbooks", (hash?: string) => {
-      const ws = byHash(hash);
-      return ws ? extensionQuery(ws, { action: "runbooks.list" }) : [];
-    }),
     vscode.commands.registerCommand("tachyon._schedules", (hash?: string) => {
       const ws = byHash(hash);
       return ws ? extensionQuery(ws, { action: "schedules.list" }) : [];
@@ -3676,11 +3648,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       studioPanels.terminal.openNew(ws.wsHash);
     }),
-    vscode.commands.registerCommand("tachyon.runbookStudio", async (hash?: string) => {
-      const ws = byHash(hash) ?? (await pickFolderForCreate());
-      if (!ws) return;
-      studioPanels.runbook.openNew(ws.wsHash);
-    }),
     vscode.commands.registerCommand("tachyon.editAgentStudioItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
@@ -4076,101 +4043,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = await pickWorkspace();
       if (ws) await connectRuntime(ws);
     }),
-    // ---- commands & runbooks ----
-    vscode.commands.registerCommand("tachyon.runCommandItem", async (item: CommandItem) => {
-      const ws = wsOf(item);
-      if (!ws) return;
-      try {
-        await extensionInvoke(ws, { action: "command.run", name: item.commandName });
-        refreshAll();
-        await presentTerminal(
-          ws,
-          `cmd:${item.commandName}`,
-          `tachyon-cmd-${ws.wsHash}-${item.commandName}`,
-          `$ ${item.commandName}`,
-        );
-      } catch (err) {
-        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
-      }
-    }),
-    vscode.commands.registerCommand("tachyon.openCommandTerminalItem", async (name: string, hash?: string) => {
-      const ws = targetOf(hash);
-      if (!ws) return;
-      try {
-        await presentTerminal(ws, `cmd:${name}`, `tachyon-cmd-${ws.wsHash}-${name}`, `$ ${name}`);
-      } catch (error) {
-        notify(error instanceof Error ? error.message : String(error), "error");
-      }
-    }),
-    vscode.commands.registerCommand("tachyon.runRunbookItem", (item: RunbookItem) => {
-      const ws = wsOf(item);
-      if (!ws) return;
-      void extensionInvoke(ws, { action: "runbook.run", name: item.runbookName }).catch((err) => {
-        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
-      });
-      setTimeout(() => refreshAll(), 50); // pick up "running" promptly
-    }),
-    vscode.commands.registerCommand("tachyon.openRunbookStepItem", async (runbook: string, index: number, hash?: string) => {
-      const ws = targetOf(hash);
-      if (!ws) return;
-      try {
-        await presentTerminal(
-          ws,
-          `rb:${runbook}:${index}`,
-          `tachyon-rb-${ws.wsHash}-${runbook}-${index}`,
-          `$ ${runbook}#${index + 1}`,
-        );
-      } catch (error) {
-        notify(error instanceof Error ? error.message : String(error), "error");
-      }
-    }),
-    vscode.commands.registerCommand("tachyon.editCommandItem", async (item: CommandItem) => {
-      const ws = wsOf(item);
-      if (!ws) return;
-      const file = configPathOf(ws);
-      if (!file) {
-        notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
-        return;
-      }
-      const doc = await vscode.workspace.openTextDocument(file);
-      const editor = await vscode.window.showTextDocument(doc, { preview: false });
-      const line = commandEntryLine(doc.getText(), item.commandName);
-      if (line !== undefined) {
-        const pos = new vscode.Position(line, 0);
-        editor.selection = new vscode.Selection(pos, pos);
-        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
-      }
-    }),
-    vscode.commands.registerCommand("tachyon.deleteCommandItem", async (item: CommandItem, forceArg?: boolean) => {
-      const ws = wsOf(item);
-      if (!ws) return;
-      if (!forceArg) {
-        const answer = await showNotification(
-          vscode.l10n.t("Delete command '{0}' from tachyon.yml?", item.commandName),
-          "warn",
-          [vscode.l10n.t("Delete")],
-          { modal: true },
-        );
-        if (answer !== vscode.l10n.t("Delete")) return;
-      }
-      await extensionInvoke(ws, { action: "config.command.delete", name: item.commandName });
-    }),
-    vscode.commands.registerCommand("tachyon.editCommandStudioItem", async (item: CommandItem) => {
-      const ws = wsOf(item);
-      if (!ws) return;
-      const def = ws.config?.commands[item.commandName];
-      if (!def) {
-        notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.commandName), "warn");
-        return;
-      }
-      studioPanels.command.openExisting(ws.wsHash, item.commandName);
-    }),
-    // t-be359b — see tachyon.newAgentStudio above for what `hash` means here.
-    vscode.commands.registerCommand("tachyon.commandStudio", async (hash?: string) => {
-      const ws = byHash(hash) ?? (await pickFolderForCreate());
-      if (!ws) return;
-      studioPanels.command.openNew(ws.wsHash);
-    }),
     vscode.commands.registerCommand("tachyon.scheduleStudio", async (hash?: string) => {
       const ws = byHash(hash) ?? (await pickFolderForCreate());
       if (!ws) return;
@@ -4185,51 +4057,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       studioPanels.schedule.openExisting(ws.wsHash, item.scheduleName);
-    }),
-    vscode.commands.registerCommand("tachyon.editRunbookStudioItem", async (item: RunbookItem) => {
-      const ws = wsOf(item);
-      if (!ws) return;
-      const def = ws.config?.runbooks[item.runbookName];
-      if (!def) {
-        notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.runbookName), "warn");
-        return;
-      }
-      studioPanels.runbook.openExisting(ws.wsHash, item.runbookName);
-    }),
-    vscode.commands.registerCommand("tachyon.editRunbookItem", async (item: RunbookItem) => {
-      const ws = wsOf(item);
-      if (!ws) return;
-      const file = configPathOf(ws);
-      if (!file) {
-        notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
-        return;
-      }
-      const doc = await vscode.workspace.openTextDocument(file);
-      const editor = await vscode.window.showTextDocument(doc, { preview: false });
-      const line = runbookEntryLine(doc.getText(), item.runbookName);
-      if (line !== undefined) {
-        const pos = new vscode.Position(line, 0);
-        editor.selection = new vscode.Selection(pos, pos);
-        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
-      }
-    }),
-    vscode.commands.registerCommand("tachyon.deleteRunbookItem", async (item: RunbookItem, forceArg?: boolean) => {
-      const ws = wsOf(item);
-      if (!ws) return;
-      if (!forceArg) {
-        const answer = await showNotification(
-          vscode.l10n.t("Delete runbook '{0}' from tachyon.yml?", item.runbookName),
-          "warn",
-          [vscode.l10n.t("Delete")],
-          { modal: true },
-        );
-        if (answer !== vscode.l10n.t("Delete")) return;
-      }
-      try {
-        await extensionInvoke(ws, { action: "config.runbook.delete", name: item.runbookName });
-      } catch (error) {
-        notify(error instanceof Error ? error.message : String(error), "warn");
-      }
     }),
   );
 

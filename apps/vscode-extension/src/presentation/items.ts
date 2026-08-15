@@ -9,8 +9,6 @@ import type { WorkspacePresentationTarget } from "../shell/WorkspacePresentation
 
 export interface AgentItem { ws?: WorkspacePresentationTarget; agentName: string; contextValue?: string }
 export interface PinItem { ws?: WorkspacePresentationTarget; pinId: string }
-export interface CommandItem { ws?: WorkspacePresentationTarget; commandName: string }
-export interface RunbookItem { ws?: WorkspacePresentationTarget; runbookName: string }
 export interface ScheduleItem { ws?: WorkspacePresentationTarget; scheduleName: string }
 export interface ProposalItem { ws?: WorkspacePresentationTarget; proposalId: string; label?: string }
 export interface PipelineDefItem { ws?: WorkspacePresentationTarget; pipelineName: string; run?: PipelineRun }

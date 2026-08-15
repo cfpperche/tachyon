@@ -14,7 +14,7 @@ import {
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
 } from "@tachyon/engine/engine-service/protocol.js";
-import { blankCommandFields } from "@tachyon/webview-ui/webview/command-studio-shell/domain.js";
+import { blankTerminalFields } from "@tachyon/webview-ui/webview/terminal-studio-shell/domain.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { controlNoncePath, readControlNonce } from "@tachyon/engine/engine-service/controlPeerAuth.js";
 
@@ -541,7 +541,7 @@ describe("persistent engine shell control", () => {
       workspaceHash: "abc12345",
       hello: hello(f.root, "shell-studio"),
     });
-    const state = { ...blankCommandFields(), name: "lint", cmd: "npm run lint" };
+    const state = { ...blankTerminalFields(), name: "lint", cmd: "npm run lint" };
     const request: EngineControlRequestV1 = {
       schemaVersion: 1,
       op: "invoke",

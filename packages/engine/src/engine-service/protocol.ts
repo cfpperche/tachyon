@@ -277,7 +277,7 @@ export type WorkspaceSimpleCommandMethodV1 = Exclude<
 export interface WorkspaceStudioFormV1 {
   name: string;
   cmd: string;
-  kind: "terminal" | "command" | "runbook" | "schedule";
+  kind: "terminal" | "schedule";
   instructions: string;
   watch: string;
   steps: string;
@@ -292,7 +292,7 @@ export interface WorkspaceStudioFormV1 {
   schedTiming: "every" | "at";
   schedEvery: string;
   schedAt: string;
-  schedAction: "run" | "spawn";
+  schedAction: "spawn";
   schedTarget: string;
   catchUp: boolean;
 }
@@ -1380,7 +1380,7 @@ export function canonicalWorkspaceStudioFormV1(state: unknown): WorkspaceStudioF
   for (const key of STUDIO_FORM_BOOLEAN_KEYS) canonical[key] = source[key] ?? false;
   canonical.kind = source.kind ?? "";
   canonical.schedTiming = source.schedTiming ?? "every";
-  canonical.schedAction = source.schedAction ?? "run";
+  canonical.schedAction = source.schedAction ?? "spawn";
   return canonical as unknown as WorkspaceStudioFormV1;
 }
 
@@ -1395,9 +1395,9 @@ function isWorkspaceStudioSubmitInputV1(value: Record<string, unknown>): boolean
   if (!hasOnlyKeys(state, STUDIO_FORM_KEYS)) return false;
   if (STUDIO_FORM_STRING_KEYS.some((key) => typeof state[key] !== "string" || (state[key] as string).length > 32_768)) return false;
   if (STUDIO_FORM_BOOLEAN_KEYS.some((key) => typeof state[key] !== "boolean")) return false;
-  return ["terminal", "command", "runbook", "schedule"].includes(state.kind as string)
+  return ["terminal", "schedule"].includes(state.kind as string)
     && (state.schedTiming === "every" || state.schedTiming === "at")
-    && (state.schedAction === "run" || state.schedAction === "spawn");
+    && state.schedAction === "spawn";
 }
 
 /** Bundle paths are canonical POSIX relative paths on every host. */

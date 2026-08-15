@@ -122,7 +122,7 @@ What each runtime *sees* and *is allowed to do cheaply*:
 
 | Lever | Effect | Shipped in product today? |
 |---|---|---|
-| `commands:` + `run_command` → structured result (happy path often `{passed, exitCode, durationMs, tail}` — see tool/README schema, not this ADR as oracle) | Avoid dumping full test/lint logs into context | Yes |
+| Structured host/verify output (gate records, not a curated one-shot tool) | Avoid dumping full test/lint logs into context | Yes |
 | Short `instructions` / role templates | Smaller startup contract | Yes |
 | `reanchor_agent` + role file after compaction | Avoid full re-exploration after CLI compact | Yes (manual always; auto opt-in via `settings.anchor.auto`, default false; detection claude + codex only) |
 | Worktree + `verify` | Fewer failed retries / confused context | Yes |
@@ -137,7 +137,7 @@ What each runtime *sees* and *is allowed to do cheaply*:
 | Default `read_output` = visible pane | Payload-size discipline | Yes |
 | Pins / project handoff / artifacts on disk | Shared memory **outside** any one context window | Yes |
 | Narrow workers + kill on idle | Dead history costs zero future tokens | Yes (lifecycle) |
-| Pipelines / runbooks | Orchestration as host graph, not prompt prose | Yes (shipped); budget signals open → Q5 |
+| Pipelines | Orchestration as host graph, not prompt prose | Yes (shipped); budget signals open → Q5 |
 | Attention / notify | Fewer “idle waiting” turns | Yes |
 
 **Cost intuition** (illustrative only — not a dimensional model; context grows per turn):
@@ -178,12 +178,12 @@ The Bridge process is free; the **calling agent’s** provider quota pays for to
 
 | Capability | Owner | Ship in core? | Notes |
 |---|---|---|---|
-| Bridge payload policy (`read_output`, structured `run_command`) | First-party | Yes | Core host; truncation must be fail-visible if added |
-| Wait / lifecycle / lineage / pipelines / runbooks | First-party | Yes | Fleet coordination |
+| Bridge payload policy (`read_output`) | First-party | Yes | Core host; truncation must be fail-visible if added |
+| Wait / lifecycle / lineage / pipelines | First-party | Yes | Fleet coordination |
 | Task→runtime routing (spawn the right CLI) | First-party surface; policy judgment | Yes (choice); policy open | Allocation lever |
 | Roles, reanchor, continuity, pins, handoff | First-party | Yes | State outside LLM context |
 | RuntimeOps quota / fleet health (selective native) | First-party | Yes (scoped) | CodexBar = oracle only |
-| Generic shell output compression (git/test/lint) | Edge (e.g. rtk) or thin first-party truncate on **our** paths | No vendor of rtk | Prefer curated commands first; never silent lossy evidence |
+| Generic shell output compression (git/test/lint) | Edge (e.g. rtk) or thin first-party truncate on **our** paths | No vendor of rtk | Prefer targeted reads first; never silent lossy evidence |
 | Multi-tool cost dashboard | Edge (e.g. CodeBurn) or future first-party with privacy lock | No vendor | Cost scan deferred in RuntimeOps research |
 | Fast Apply / WarpGrep-class edit-search | User runtime / MCP (e.g. Morph) | No | Not host identity |
 | Prose concision (“caveman”) | Role / project guidance / user skill | Text only | No binary |
@@ -195,7 +195,7 @@ The Bridge process is free; the **calling agent’s** provider quota pays for to
 | Alternative | Why reject (for now) |
 |---|---|
 | **Vendor rtk into VSIX / Bridge hot path** | Packaging: second binary + release matrix; shell-filter semantics are not host core. **Integrity:** any lossy compressor between agent and evidence is a tamper surface — can hide the failing line and turn a red run into a green-looking tail. Inspiration OK; import of product path not OK. |
-| **Any lossy filter on the evidence path (vendored or first-party) without explicit truncation markers** | Verification integrity: gates, `run_command` tails, and verify depend on honest output; silent compression can hide failures. Same class as “documented intent is a hope” ([dogfood-product-boundary.md](./dogfood-product-boundary.md)). |
+| **Any lossy filter on the evidence path (vendored or first-party) without explicit truncation markers** | Verification integrity: gates and verify depend on honest output; silent compression can hide failures. Same class as “documented intent is a hope” ([dogfood-product-boundary.md](./dogfood-product-boundary.md)). |
 | **Vendor CodeBurn as Tachyon’s usage UI** | Overlaps RuntimeOps direction; privacy/path surface; product would own their model of “tools.” Optional recommend only. |
 | **Depend on Morph (or any paid edit/search SaaS) in core** | Conflicts with local-first and no mandatory cloud; runtimes already have partial edit tools. |
 | **Ship Caveman (or equivalent) as a first-party plugin marketplace identity** | Single-runtime culture; marginal/uncertain savings; roles already cover “be brief.” |
@@ -208,7 +208,7 @@ The Bridge process is free; the **calling agent’s** provider quota pays for to
 
 Extend these; do not invent a parallel “token killer” product line. Detail lives in §3 tables and README.
 
-- Bridge: targeted `read_output`, `wait_for_agent`, `run_command` / `run_runbook`; README *What Bridge calls cost*  
+- Bridge: targeted `read_output`, `wait_for_agent`; README *What Bridge calls cost*  
 - Multi-runtime spawn (task→quota routing as human/coordinator choice)  
 - Roles / instructions / `reanchor_agent` / `.tachyon/roles/`  
 - Pins, project handoff, verify gates, worktrees, pipelines  
@@ -242,10 +242,10 @@ Use this section as the living backlog. When a question is resolved, move the an
 | Q2 | How far should **first-party Bridge truncation** go for hostile or huge `read_output` panes? | max bytes; redact (already partial — `src/bridge/redact.ts`); structured summary tool. **Must be fail-visible:** truncated output explicitly marks what was dropped (bytes/lines); never silent elision. | Open |
 | Q3 | Is multi-CLI **cost** observability in-product a goal for vN, or permanently “use CodeBurn”? | link RuntimeOps ADR | Open |
 | Q4 | Extend the existing README section *What Bridge calls cost* into a broader **fleet playbook**, or keep the rest architecture-only? | extend README / architecture-only / Studio tips (README already has the Bridge bucket story) | Open |
-| Q5 | Pipelines / sub-agents: any **hard budget** signals (max children, max `read_output` bytes per parent turn)? | policy vs soft guidance in primer (pipelines/runbooks themselves are shipped) | Open |
+| Q5 | Pipelines / sub-agents: any **hard budget** signals (max children, max `read_output` bytes per parent turn)? | policy vs soft guidance in primer (pipelines themselves are shipped) | Open |
 | Q6 | Naming: keep “ADE” in product language, or only in architecture docs? | marketing vs internal; §1.1 uses working shorthand only | Open |
-| Q7 | Dogfood: should *this* repo’s `tachyon.yml` demonstrate curated cheap `commands:` as the canonical pattern? | yes / later. **Currently absent** from this repo’s `tachyon.yml` (agents + settings only) — adopting is also dogfood proof for §3.1’s first row. | Open |
-| Q8 | Relationship to project guidance / skills: any first-party “be brief / prefer run_command” primer line? | primer.ts / role templates | Open |
+| Q7 | Dogfood: should *this* repo’s `tachyon.yml` demonstrate a cheap structured verify pattern? | later — curated one-shot commands were removed as unused. | Open |
+| Q8 | Relationship to project guidance / skills: any first-party “be brief” primer line? | primer.ts / role templates | Open |
 | Q9 | What **evidence** accompanies ratifying a token-economy lever? | dogfood before/after on a real task; payload-size fixture on Bridge results; or accept “reasoned, not measured” explicitly. Non-trivial under no telemetry + cost scans deferred (D8). | Open |
 
 _Add rows freely. Do not delete resolved IDs — mark Status = resolved and point to the decision._

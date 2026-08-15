@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Scheduler } from "@tachyon/engine/schedule/Scheduler.js";
 import { parseConfig, parseEvery, parseAt, type TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 
-const AGENTS = "agents:\n  claude: {cmd: claude}\ncommands:\n  test: {cmd: npm test}\nrunbooks:\n  ship:\n    steps: [test]\n";
+const AGENTS = "agents:\n  claude: {cmd: claude}\n";
 
 function configOf(extra: string): TachyonConfig {
   const { config, warnings } = parseConfig(AGENTS + extra);
@@ -28,25 +28,25 @@ describe("interval/at parsing", () => {
 });
 
 describe("config: schedules", () => {
-  it("parses every/run and at/spawn; validates the exclusivity rules", () => {
-    const c = configOf("schedules:\n  hourly: {every: 1h, run: test}\n  standup: {at: \"09:00\", spawn: claude, instructions: summarize}\n");
-    expect(c.schedules.hourly).toMatchObject({ every: "1h", run: "test" });
+  it("parses every/spawn and at/spawn; validates the exclusivity rules", () => {
+    const c = configOf("schedules:\n  hourly: {every: 1h, spawn: claude}\n  standup: {at: \"09:00\", spawn: claude, instructions: summarize}\n");
+    expect(c.schedules.hourly).toMatchObject({ every: "1h", spawn: "claude" });
     expect(c.schedules.standup).toMatchObject({ at: "09:00", spawn: "claude", instructions: "summarize" });
 
-    const both = parseConfig(AGENTS + "schedules:\n  x: {every: 1h, at: \"09:00\", run: test}\n");
+    const both = parseConfig(AGENTS + "schedules:\n  x: {every: 1h, at: \"09:00\", spawn: claude}\n");
     expect(both.warnings[0]).toContain("exactly one of 'every' or 'at'");
     const neither = parseConfig(AGENTS + "schedules:\n  x: {every: 1h}\n");
-    expect(neither.warnings[0]).toContain("exactly one of 'run' or 'spawn'");
-    const badRun = parseConfig(AGENTS + "schedules:\n  x: {every: 1h, run: ghost}\n");
-    expect(badRun.warnings[0]).toContain("declared command or runbook");
+    expect(neither.warnings[0]).toContain("'spawn' is required");
+    const leftoverRun = parseConfig(AGENTS + "schedules:\n  x: {every: 1h, run: ghost}\n");
+    expect(leftoverRun.warnings.some((w) => w.includes("unknown key") || w.includes("'spawn' is required"))).toBe(true);
     const badSpawn = parseConfig(AGENTS + "schedules:\n  x: {at: \"09:00\", spawn: ghost}\n");
     expect(badSpawn.warnings[0]).toContain("declared agent");
-    const badEvery = parseConfig(AGENTS + "schedules:\n  x: {every: 5s, run: test}\n");
+    const badEvery = parseConfig(AGENTS + "schedules:\n  x: {every: 5s, spawn: claude}\n");
     expect(badEvery.warnings[0]).toContain("30m");
   });
-  it("run can reference a runbook; instructions only with spawn", () => {
-    expect(configOf("schedules:\n  s: {every: 2h, run: ship}\n").schedules.s.run).toBe("ship");
-    expect(parseConfig(AGENTS + "schedules:\n  s: {every: 1h, run: test, instructions: hi}\n").warnings[0]).toContain("only valid with 'spawn'");
+  it("instructions only with spawn", () => {
+    expect(configOf("schedules:\n  s: {every: 2h, spawn: claude}\n").schedules.s.spawn).toBe("claude");
+    expect(parseConfig(AGENTS + "schedules:\n  s: {every: 1h, spawn: claude, instructions: hi}\n").config?.schedules.s.instructions).toBe("hi");
   });
 });
 
@@ -63,7 +63,7 @@ function makeScheduler(extra: string) {
 
 describe("Scheduler — every", () => {
   it("does not fire before the interval; fires after; re-anchors", () => {
-    const { sched, fired, advance } = makeScheduler("schedules:\n  s: {every: 1h, run: test}\n");
+    const { sched, fired, advance } = makeScheduler("schedules:\n  s: {every: 1h, spawn: claude}\n");
     sched.activate();
     sched.tick(); // t0 — anchored, no fire
     expect(fired).toEqual([]);
@@ -75,7 +75,7 @@ describe("Scheduler — every", () => {
     expect(fired).toEqual(["s", "s"]);
   });
   it("nothing fires before activate()", () => {
-    const { sched, fired, advance } = makeScheduler("schedules:\n  s: {every: 1h, run: test}\n");
+    const { sched, fired, advance } = makeScheduler("schedules:\n  s: {every: 1h, spawn: claude}\n");
     advance(5 * 3_600_000); sched.tick();
     expect(fired).toEqual([]);
   });
@@ -89,7 +89,7 @@ describe("Scheduler — at", () => {
     return d.getTime() + offsetMin * 60_000;
   }
   it("fires once when the daily time is crossed, not again the same day", () => {
-    const { sched, fired, setNow } = makeScheduler('schedules:\n  noon: {at: "12:00", run: test}\n');
+    const { sched, fired, setNow } = makeScheduler('schedules:\n  noon: {at: "12:00", spawn: claude}\n');
     setNow(atNoon(-5)); sched.activate(); sched.tick();
     expect(fired).toEqual([]);                 // before noon
     setNow(atNoon(1)); sched.tick();
@@ -98,13 +98,13 @@ describe("Scheduler — at", () => {
     expect(fired).toEqual(["noon"]);           // same day — no repeat
   });
   it("catchUp fires on activate when the time already passed today", () => {
-    const { sched, fired, setNow } = makeScheduler('schedules:\n  noon: {at: "12:00", run: test, catchUp: true}\n');
+    const { sched, fired, setNow } = makeScheduler('schedules:\n  noon: {at: "12:00", spawn: claude, catchUp: true}\n');
     setNow(atNoon(120)); // 14:00, missed noon
     sched.activate();
     expect(fired).toEqual(["noon"]);
   });
   it("without catchUp, a missed time does NOT fire on activate", () => {
-    const { sched, fired, setNow } = makeScheduler('schedules:\n  noon: {at: "12:00", run: test}\n');
+    const { sched, fired, setNow } = makeScheduler('schedules:\n  noon: {at: "12:00", spawn: claude}\n');
     setNow(atNoon(120));
     sched.activate(); sched.tick();
     expect(fired).toEqual([]);
@@ -113,7 +113,7 @@ describe("Scheduler — at", () => {
 
 describe("Scheduler — list/nextRun", () => {
   it("lists declared schedules with a future nextRun", () => {
-    const { sched } = makeScheduler("schedules:\n  s: {every: 1h, run: test}\n");
+    const { sched } = makeScheduler("schedules:\n  s: {every: 1h, spawn: claude}\n");
     sched.activate();
     const list = sched.list();
     expect(list).toHaveLength(1);
@@ -124,7 +124,7 @@ describe("Scheduler — list/nextRun", () => {
 
 describe("Scheduler — pause", () => {
   it("a paused schedule stays due and fires on resume", () => {
-    const { sched, fired, advance } = makeScheduler("schedules:\n  s: {every: 1h, run: test}\n");
+    const { sched, fired, advance } = makeScheduler("schedules:\n  s: {every: 1h, spawn: claude}\n");
     sched.activate(); sched.tick();
     sched.setPaused("s", true);
     advance(2 * 3_600_000); sched.tick();          // overdue but paused

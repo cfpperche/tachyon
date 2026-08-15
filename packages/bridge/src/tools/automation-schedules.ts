@@ -15,26 +15,23 @@ export function registerScheduleTools(mcp: McpServer, deps: BridgeDeps): void {
         "The proposal is recorded under YOUR name, resolved by the Bridge from your token — there is no " +
         "author parameter, because the human approving it is authorizing a config-as-code write and must " +
         "see who asked. " +
-        "Exactly one of every (interval like '1h','30m') or at ('HH:MM' daily); exactly one of run (a " +
-        "command/runbook name) or spawn (an agent name, optional instructions). Re-proposing the same " +
-        "name replaces the prior pending proposal.",
+        "Exactly one of every (interval like '1h','30m') or at ('HH:MM' daily); spawn names a declared " +
+        "agent (optional instructions). Re-proposing the same name replaces the prior pending proposal.",
       inputSchema: {
         name: AGENT_NAME.describe("a short name for the schedule"),
         every: z.string().optional().describe("interval, e.g. '1h' or '30m'"),
         at: z.string().optional().describe("daily wall-clock time 'HH:MM' (24h, local)"),
-        run: z.string().optional().describe("a command or runbook name to run"),
         spawn: z.string().optional().describe("a declared agent to spawn"),
         instructions: z.string().optional().describe("startup prompt when spawning"),
         reason: z.string().optional().describe("why you want this — shown to the human"),
       },
     },
-    async ({ name, every, at, run, spawn, instructions, reason }) => {
+    async ({ name, every, at, spawn, instructions, reason }) => {
       try {
         if (!deps.proposals) return fail(new Error("schedule proposals are not available on this Bridge"));
         const schedule: ScheduleDef = {};
         if (every !== undefined) schedule.every = every;
         if (at !== undefined) schedule.at = at;
-        if (run !== undefined) schedule.run = run;
         if (spawn !== undefined) schedule.spawn = spawn;
         if (instructions !== undefined) schedule.instructions = instructions;
         const problem = validateProposedSchedule(schedule);

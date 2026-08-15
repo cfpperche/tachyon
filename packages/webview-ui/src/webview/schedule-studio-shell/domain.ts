@@ -8,8 +8,6 @@ export interface ScheduleStudioEntity {
 }
 
 export interface ScheduleStudioReferenceData {
-  commandNames: string[];
-  runbookNames: string[];
   agentNames: string[];
 }
 
@@ -35,7 +33,7 @@ export function blankScheduleFields(): FormState {
     schedTiming: "every",
     schedEvery: "1h",
     schedAt: "09:00",
-    schedAction: "run",
+    schedAction: "spawn",
     schedTarget: "",
     catchUp: false,
   };

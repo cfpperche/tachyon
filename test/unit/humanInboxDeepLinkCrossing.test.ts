@@ -130,7 +130,7 @@ function liveWorkspace(): { manager: HumanInboxPanelManager; root: string } {
   fs.mkdirSync(path.dirname(removalFile), { recursive: true });
   fs.writeFileSync(removalFile, `${JSON.stringify(removal)}\n`);
   const schedules = new ProposalStore(root);
-  schedules.create("nightly", { every: "1h", run: "test" }, "claude", "keep it green");
+  schedules.create("nightly", { every: "1h", spawn: "claude" }, "claude", "keep it green");
   const scheduleFile = JSON.parse(fs.readFileSync(schedules.file, "utf8")) as { proposals: Array<{ id: string }> };
   scheduleFile.proposals[0]!.id = ITEM_ID["schedule-proposal"];
   fs.writeFileSync(schedules.file, `${JSON.stringify(scheduleFile)}\n`);

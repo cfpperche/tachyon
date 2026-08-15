@@ -19,12 +19,9 @@ describe("classifySession", () => {
     expect(classifySession(`tachyon-${HASH}-my-dev-server`)).toEqual({ kind: "session", wsHash: HASH, label: "my-dev-server" });
   });
 
-  it("classifies a command run", () => {
-    expect(classifySession(`tachyon-cmd-${HASH}-lint`)).toEqual({ kind: "command", wsHash: HASH, label: "lint" });
-  });
-
-  it("classifies a runbook step", () => {
-    expect(classifySession(`tachyon-rb-${HASH}-ship-2`)).toEqual({ kind: "runbook", wsHash: HASH, label: "ship-2" });
+  it("does not treat leftover command/runbook prefixes as agents", () => {
+    expect(classifySession(`tachyon-cmd-${HASH}-lint`)).toEqual({ kind: "unknown", wsHash: HASH, label: "lint" });
+    expect(classifySession(`tachyon-rb-${HASH}-ship-2`)).toEqual({ kind: "unknown", wsHash: HASH, label: "ship-2" });
   });
 
   // t-2656d7 — a runtime login pane. Named rather than left to fall through to `unknown`, so the

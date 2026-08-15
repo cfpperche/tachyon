@@ -34,7 +34,7 @@ export function blankTerminalFields(): FormState {
     schedTiming: "every",
     schedEvery: "1h",
     schedAt: "09:00",
-    schedAction: "run",
+    schedAction: "spawn",
     schedTarget: "",
     catchUp: false,
   };
