@@ -4,6 +4,61 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.1 — a sidebar volta, e três guardas que não guardavam
+
+Correção da 0.93.0, cortada no mesmo dia. Tudo aqui foi encontrado **por um humano olhando a tela**,
+não por gate vermelho — que é o que estes consertos passam a mudar.
+
+### A sidebar parou de renderizar por causa de uma string vazia
+
+Depois do reload, a barra de status mostrava
+`Could not refresh Sidebar: fleet.agents[0].persistenceHooks.path is too_small` e a sidebar **sumia
+inteira**.
+
+A cadeia: um hook de sessão falhou e gravou `path: ""` no log de falhas; a saúde do hook copiou o
+campo direto; o projetor só omite valores `undefined`, e `""` não é `undefined`; o schema exige pelo
+menos um caractere. Um dado pobre virou catástrofe de renderização.
+
+Agora texto opcional vazio é **omitido** em vez de aceito. A distinção importa: aceitar vazio faria
+a projeção carregar um campo sem significado; omitir diz a verdade, que é a ausência.
+
+### E o hook que gerou aquilo nunca tinha funcionado
+
+O publicador de status de runtime lia uma variável de ambiente com um nome, e o spawn injetava
+outro. Nunca funcionou — e ninguém viu, porque **a falha era silenciosa**. O registro de falhas para
+esse tipo de hook chegou na véspera, e o primeiro encerramento de sessão depois disso expôs tudo de
+uma vez.
+
+O defeito não era novo. Ficou visível, pelo conserto que existia justamente para tornar visível o
+que era mudo.
+
+### Um `/exit` que ninguém digitou
+
+Durante a troca de versão, o Tachyon digita `/exit` no painel do agente para pará-lo com jeito.
+Numa dessas o comando ficou no campo sem ser enviado, e o aviso de reload foi escrito **por cima**,
+colando os dois numa linha só.
+
+A proteção contra escrever sobre rascunho já existia — e olhava apenas as últimas oito linhas do
+painel. O menu de comandos do Claude é mais alto que isso, então o texto saía da janela de captura e
+o campo era lido como vazio. Agora esse aviso lê o painel inteiro.
+
+### A carta do agente diz qual tarefa ele tem
+
+Um agente vivo e sem trabalho parecia igual a um trabalhando. Medido: entre um aviso e o próximo, um
+agente temporário passa em média **doze minutos e meio** parado, e às vezes quase uma hora — não é
+exceção, é o estado normal de espera.
+
+A carta agora mostra o id do cartão aberto, ou diz que não há cartão. Sem badge de alerta novo: a
+distinção é a presença ou a ausência do id.
+
+### O que essas quatro têm em comum
+
+Três eram **guardas que não guardavam**. A checagem de agente vivo lia um retrato em cache; a
+verificação de supressão nativa devolvia `false` fixo; a proteção do campo de texto enxergava só
+oito linhas. Todas passavam verde no instante exato em que deviam recusar.
+
+Nenhuma foi encontrada por teste. Todas por alguém olhando e perguntando por quê.
+
 ## 0.93.0 — as instruções permanentes param de depender de sorte, e a Inbox para de esconder decisões
 
 Versão de conserto. Quase tudo aqui existia como defeito silencioso: um comportamento que
