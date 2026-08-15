@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, appendOwnerRow, compactSessionOwnerRows, compactSpawnSettings, persistenceHookFailureFile, prunePersistenceLedger, readSessionOwners, removeSessionOwnerRows, removeSpawnSettings, resolveRotationFollow, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";
+import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, RUNTIME_STATUS_PUBLISHER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, appendOwnerRow, compactSessionOwnerRows, compactSpawnSettings, persistenceHookFailureFile, prunePersistenceLedger, readSessionOwners, removeSessionOwnerRows, removeSpawnSettings, resolveRotationFollow, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("sessionOwners — pure ledger helpers (spec 243)", () => {
@@ -413,6 +413,45 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
 
   it("spec 317: failure ledger path lives beside activity ledgers", () => {
     expect(persistenceHookFailureFile("/ws")).toBe("/ws/.tachyon/activity/persistence-hooks-failures.jsonl");
+  });
+
+  it("t-907238: publisher reads TACHYON_BRIDGE_URL, the var spawn injects", () => {
+    expect(RUNTIME_STATUS_PUBLISHER_SOURCE).toContain("process.env.TACHYON_BRIDGE_URL");
+    expect(RUNTIME_STATUS_PUBLISHER_SOURCE).not.toContain("TACHYON_AGENT_BRIDGE_URL");
+  });
+
+  it("t-907238: empty TACHYON_BRIDGE_URL is the incomplete-env failure, not a missing invented name", () => {
+    const tmp = makeTempDir("tachyon-runtime-status-publish-");
+    const script = path.join(tmp, "runtime-status-publish.cjs");
+    const failureFile = path.join(tmp, "failures.jsonl");
+    fs.writeFileSync(script, RUNTIME_STATUS_PUBLISHER_SOURCE);
+
+    const withoutUrlEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      TACHYON_AGENT_BRIDGE_TOKEN: "tok",
+      TACHYON_AGENT_BRIDGE_URL: "http://127.0.0.1:9/mcp",
+    };
+    delete withoutUrlEnv.TACHYON_BRIDGE_URL;
+    const withoutUrl = spawnSync(process.execPath, [script, "claude", failureFile, "claude"], {
+      env: withoutUrlEnv,
+      encoding: "utf8",
+    });
+    expect(withoutUrl.status).toBe(0);
+    const missing = JSON.parse(fs.readFileSync(failureFile, "utf8").trim().split("\n").at(-1)!);
+    expect(missing.reason).toContain("environment is incomplete");
+    expect(missing.path).toBe("");
+
+    fs.writeFileSync(failureFile, "");
+    const withUrl = spawnSync(process.execPath, [script, "claude", failureFile, "claude"], {
+      env: { ...process.env, TACHYON_AGENT_BRIDGE_TOKEN: "tok", TACHYON_BRIDGE_URL: "http://127.0.0.1:1/mcp" },
+      encoding: "utf8",
+    });
+    expect(withUrl.status).toBe(0);
+    const lines = fs.readFileSync(failureFile, "utf8").trim().split("\n").filter(Boolean);
+    expect(lines.length).toBeGreaterThan(0);
+    const last = JSON.parse(lines.at(-1)!);
+    expect(last.path).toBe("http://127.0.0.1:1/mcp");
+    expect(last.reason).not.toContain("environment is incomplete");
   });
 
   it("spec 319: persistence ledger retention keeps recent valid rows and latest row per key", () => {
