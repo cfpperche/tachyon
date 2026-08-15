@@ -78,7 +78,7 @@ function fakeWorkspace(opts: {
     studioDeps: () => ({
       detectClis: async () => opts.detected ?? [],
       takenNames: () => Object.keys(agents),
-      commandNames: () => [],
+
       defaultCwd: "/ws/root",
       suggestKindForCommand: () => "agent",
       onSubmit: () => undefined,

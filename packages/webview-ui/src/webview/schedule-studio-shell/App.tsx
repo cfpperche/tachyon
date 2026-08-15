@@ -14,10 +14,9 @@ import { cancelMessage, dirtyMessage, patchMessage, readyMessage, saveMessage } 
 import type { ScheduleStudioEntity, ScheduleStudioFields, ScheduleStudioHostMessage } from "./types";
 
 /**
- * t-610705 (SDD 410 Phase D, D1a) — Control-hosted, same props-driven split as Command/Terminal/
- * Runbook Studio (command-studio-shell/App.tsx's doc comment has the full rationale). Schedule also
- * handles "referenceData" independently of `load`, same reasoning as Runbook — the command/runbook/
- * agent-name catalog stays current after an external tachyon.yml change.
+ * t-610705 (SDD 410 Phase D, D1a) — Control-hosted, same props-driven split as Terminal Studio.
+ * Schedule also handles "referenceData" independently of `load` so the agent-name catalog stays
+ * current after an external tachyon.yml change.
  */
 export interface ScheduleStudioAppProps {
   dispatch: StudioDispatch;
@@ -28,7 +27,7 @@ export interface ScheduleStudioAppProps {
   backLink?: ComponentChildren;
 }
 
-const emptyReferenceData = (): ScheduleStudioReferenceData => ({ commandNames: [], runbookNames: [], agentNames: [] });
+const emptyReferenceData = (): ScheduleStudioReferenceData => ({ agentNames: [] });
 
 export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: ScheduleStudioAppProps) {
   const [mode, setMode] = useState<"new" | "edit">("new");
@@ -177,14 +176,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Sche
     setFields(next);
   };
   const set = <K extends keyof ScheduleStudioFields>(key: K, value: ScheduleStudioFields[K]) => updateFields((f) => ({ ...f, [key]: value }));
-  const targets = fields.schedAction === "spawn" ? referenceData.agentNames : [...referenceData.commandNames, ...referenceData.runbookNames];
-  const targetKind = fields.schedAction === "spawn"
-    ? "agent"
-    : referenceData.commandNames.includes(fields.schedTarget)
-      ? "command"
-      : referenceData.runbookNames.includes(fields.schedTarget)
-        ? "runbook"
-        : "unknown";
+  const targets = referenceData.agentNames;
+  const targetKind = referenceData.agentNames.includes(fields.schedTarget) ? "agent" : "unknown";
 
   const onSave = () => {
     if (frozenRef.current) return;
@@ -231,19 +224,10 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Sche
               </div>
             </div>
 
-            <div class="ssh-grid ssh-grid-compact">
-              <div class="ssh-group">
-                <label class="ssh-label" for="ssh-action">Action</label>
-                <Select id="ssh-action" value={fields.schedAction} onChange={(e) => set("schedAction", (e.currentTarget as HTMLSelectElement).value as ScheduleStudioFields["schedAction"])}>
-                  <option value="run">Run command or runbook</option>
-                  <option value="spawn">Spawn agent</option>
-                </Select>
-              </div>
-              <div class="ssh-group">
-                <label class="ssh-label" for="ssh-target">Target</label>
-                <Input id="ssh-target" value={fields.schedTarget} list="ssh-targets" placeholder={fields.schedAction === "spawn" ? "agent name" : "command or runbook name"} onInput={(e) => set("schedTarget", (e.currentTarget as HTMLInputElement).value)} />
-                <datalist id="ssh-targets">{targets.map((name) => <option key={name} value={name} />)}</datalist>
-              </div>
+            <div class="ssh-group">
+              <label class="ssh-label" for="ssh-target">Spawn agent</label>
+              <Input id="ssh-target" value={fields.schedTarget} list="ssh-targets" placeholder="agent name" onInput={(e) => set("schedTarget", (e.currentTarget as HTMLInputElement).value)} />
+              <datalist id="ssh-targets">{targets.map((name) => <option key={name} value={name} />)}</datalist>
             </div>
 
             <div class="ssh-group">
@@ -261,12 +245,10 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Sche
               </label>
             )}
 
-            {fields.schedAction === "spawn" && (
-              <div class="ssh-group">
-                <label class="ssh-label" for="ssh-instructions">Instructions</label>
-                <Textarea id="ssh-instructions" rows={5} value={fields.instructions} placeholder="Optional prompt delivered when the agent starts or is already running." onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
-              </div>
-            )}
+            <div class="ssh-group">
+              <label class="ssh-label" for="ssh-instructions">Instructions</label>
+              <Textarea id="ssh-instructions" rows={5} value={fields.instructions} placeholder="Optional prompt delivered when the agent starts or is already running." onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
+            </div>
           </div>
         ),
       }}

@@ -112,7 +112,7 @@ export function suggestName(base: string, taken: string[]): string {
 }
 
 /** What the shared config-backed Studios can produce. Agent Studio owns a separate profile contract. */
-export type StudioKind = "terminal" | "command" | "runbook" | "schedule";
+export type StudioKind = "terminal" | "schedule";
 
 interface SharedFormState {
   name: string;
@@ -120,7 +120,7 @@ interface SharedFormState {
   instructions: string;
   /** comma-separated globs (terminal kind) — parsed into the watch list */
   watch: string;
-  /** newline-separated steps (runbook kind) — each line a command name or inline shell */
+  /** leftover shared-shape field; no remaining studio writes it */
   steps: string;
   cwd: string;
   autostart: boolean;
@@ -138,8 +138,8 @@ interface SharedFormState {
   schedTiming: "every" | "at";
   schedEvery: string; // "1h" / "30m"
   schedAt: string; // "09:00"
-  schedAction: "run" | "spawn";
-  schedTarget: string; // command/runbook name (run) or agent name (spawn)
+  schedAction: "spawn";
+  schedTarget: string; // declared agent name to spawn
   catchUp: boolean;
 }
 
@@ -157,23 +157,12 @@ export function parseWatch(raw: string): string[] {
   return raw.split(",").map((g) => g.trim()).filter((g) => g.length > 0);
 }
 
-/** Textarea -> steps list: one per line, trimmed, blanks dropped. */
-export function parseSteps(raw: string): string[] {
-  return raw.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
-}
-
-/** Live hint for the Runbook tab: how each step line will resolve. */
-export function stepResolutions(raw: string, commandNames: string[]): Array<{ step: string; ref: boolean }> {
-  return parseSteps(raw).map((step) => ({ step, ref: commandNames.includes(step) }));
-}
-
 export interface FormIssue {
   /** stable code — the UI layer maps it to a localized message */
   code:
     | "name-invalid"
     | "name-taken"
     | "cmd-required"
-    | "steps-required"
     | "timing-invalid"
     | "target-required"
     | "terminal-cmd-is-attested-runtime";
@@ -204,11 +193,6 @@ export function validateTerminalForm(state: FormState, takenNames: string[], edi
 
 export function validateForm(state: FormState, takenNames: string[], editingName?: string): FormIssue[] {
   const issues = validateName(state, takenNames, editingName);
-  if (state.kind === "runbook") {
-    // a runbook is name + steps; cmd doesn't apply
-    if (parseSteps(state.steps).length === 0) issues.push({ code: "steps-required", blocking: true });
-    return issues;
-  }
   if (state.kind === "schedule") {
     const timing = state.schedTiming === "every" ? state.schedEvery : state.schedAt;
     const ok = state.schedTiming === "every" ? parseEvery(timing) !== null : parseAt(timing) !== null;
@@ -234,15 +218,11 @@ export function toEntry(state: FormState): Record<string, unknown> {
     const entry: Record<string, unknown> = {};
     if (state.schedTiming === "every") entry.every = state.schedEvery.trim();
     else entry.at = state.schedAt.trim();
-    if (state.schedAction === "run") entry.run = state.schedTarget.trim();
-    else {
-      entry.spawn = state.schedTarget.trim();
-      if (state.instructions.trim().length > 0) entry.instructions = state.instructions.trim();
-    }
+    entry.spawn = state.schedTarget.trim();
+    if (state.instructions.trim().length > 0) entry.instructions = state.instructions.trim();
     if (state.schedTiming === "at" && state.catchUp) entry.catchUp = true;
     return entry;
   }
-  if (state.kind === "runbook") return { steps: parseSteps(state.steps) };
   const entry: Record<string, unknown> = { cmd: state.cmd.trim() };
   if (state.cwd.trim().length > 0) entry.cwd = state.cwd.trim();
   return entry;
@@ -267,7 +247,7 @@ const SCHED_DEFAULTS = {
   schedTiming: "every" as const,
   schedEvery: "1h",
   schedAt: "09:00",
-  schedAction: "run" as const,
+  schedAction: "spawn" as const,
   schedTarget: "",
   catchUp: false,
 };
@@ -291,51 +271,9 @@ export function fromScheduleDef(name: string, def: ScheduleDef): FormState {
     schedTiming: def.at !== undefined ? "at" : "every",
     schedEvery: def.every ?? "1h",
     schedAt: def.at ?? "09:00",
-    schedAction: def.spawn !== undefined ? "spawn" : "run",
-    schedTarget: def.run ?? def.spawn ?? "",
+    schedAction: "spawn",
+    schedTarget: def.spawn ?? "",
     catchUp: def.catchUp ?? false,
-    isolate: false,
-  };
-}
-
-/** Pre-fills the form from an existing commands: entry (edit mode, Command tab). */
-export function fromCommandDef(name: string, def: { cmd: string; cwd?: string }): FormState {
-  return {
-    name,
-    cmd: def.cmd,
-    kind: "command",
-    worktree: false,
-    branch: "",
-    worktreeSetup: "",
-    instructions: "",
-    watch: "",
-    steps: "",
-    cwd: def.cwd ?? "",
-    autostart: false,
-    restartOnCrash: false,
-    attention: false,
-    ...SCHED_DEFAULTS,
-    isolate: false,
-  };
-}
-
-/** Pre-fills the form from an existing runbooks: entry (edit mode, Runbook tab). */
-export function fromRunbookDef(name: string, def: { steps: string[] }): FormState {
-  return {
-    name,
-    cmd: "",
-    kind: "runbook",
-    worktree: false,
-    branch: "",
-    worktreeSetup: "",
-    instructions: "",
-    watch: "",
-    steps: def.steps.join("\n"),
-    cwd: "",
-    autostart: false,
-    restartOnCrash: false,
-    attention: false,
-    ...SCHED_DEFAULTS,
     isolate: false,
   };
 }

@@ -7,7 +7,3 @@
 # Create three grok agents (grok / solo / idle), autostart off, then exercise the focus line.
 settings:
   maxAgents: 8
-
-commands:
-  hello:
-    cmd: "echo agent-focus-line-dogfood-ok"

@@ -75,10 +75,9 @@ describe("parseConfig", () => {
 
   // t-f67185 — empty roster is a valid product state (Board/pins/plugins without agents).
   // Guard against re-tightening: prove empty accepts and malformed still refuses.
-  it("t-f67185: empty agents / commands-only / bare mapping load as valid empty rosters", () => {
+  it("t-f67185: empty agents / bare mapping load as valid empty rosters", () => {
     for (const yaml of [
       "agents: {}\n",
-      "commands:\n  build:\n    cmd: npm run build\n",
       "{}\n",
       "settings:\n  maxAgents: 4\n",
       "terminals: {}\n",

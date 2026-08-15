@@ -20,7 +20,8 @@ import {
   type ExecResult,
   type PaneSnapshot,
 } from "@tachyon/engine/tmux/TmuxService.js";
-import { blankCommandFields } from "@tachyon/webview-ui/webview/command-studio-shell/domain.js";
+import { blankScheduleFields } from "@tachyon/webview-ui/webview/schedule-studio-shell/domain.js";
+import { blankTerminalFields } from "@tachyon/webview-ui/webview/terminal-studio-shell/domain.js";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
 import { TaskDetailStore, hashBody } from "@tachyon/engine/tasks/TaskDetailStore.js";
@@ -631,7 +632,7 @@ describe("daemon engine service", () => {
     const invalidStudio = await first.invoke("operation-studio-invalid-0001", {
       schemaVersion: 1,
       method: "studio.submit",
-      input: { state: { ...blankCommandFields(), name: "", cmd: "npm test" } },
+      input: { state: { ...blankTerminalFields(), name: "", cmd: "npm test" } },
     });
     expect(invalidStudio).toMatchObject({ method: "studio.submit", status: "ok", truncated: false });
     if (invalidStudio.method !== "studio.submit" || invalidStudio.status !== "ok") throw new Error("unexpected Studio result");
@@ -641,13 +642,13 @@ describe("daemon engine service", () => {
     const createStudioCommand = {
       schemaVersion: 1 as const,
       method: "studio.submit" as const,
-      input: { state: { ...blankCommandFields(), name: "lint", cmd: "npm run lint" } },
+      input: { state: { ...blankScheduleFields(), name: "lint", schedTarget: "worker" } },
     };
     const createdStudio = await first.invoke("operation-studio-create-0001", createStudioCommand);
     expectOk(createdStudio, "studio.submit", { errors: [], truncated: false });
     expect(await first.invoke("operation-studio-create-0001", createStudioCommand)).toEqual(createdStudio);
     expect(fs.readFileSync(configPath, "utf8")).toContain("lint:");
-    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "commands");
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "schedules");
     expect(await first.snapshot()).toMatchObject({
       projections: { agents: { items: [{ name: "worker", running: false }] } },
     });
@@ -869,7 +870,7 @@ describe("daemon engine service", () => {
     expect(await replacement.invoke("operation-agent-profile-create-observer-0001", canonicalAgentCreate("observer")))
       .toMatchObject({ status: "ok", action: "agent-profile.studio-commit" });
     const changed = await waitForEvent(replacement, (event) =>
-      event.kind === "views-changed" && event.payload.view === "commands");
+      event.kind === "views-changed" && event.payload.view === "agents");
     expect(changed.seq).toBeGreaterThan(initial.seq);
     const refreshed = await replacement.snapshot();
     expect(refreshed.projections.agents).toMatchObject({

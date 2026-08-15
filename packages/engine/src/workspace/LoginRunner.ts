@@ -5,15 +5,12 @@ import type { ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
 /**
  * t-2656d7 (SDD 495, first slice) — the pane a human logs a runtime in from.
  *
- * A sibling of `CommandRunner`, not a reuse of it, for two reasons the plan states: a login command
- * is NOT user-declared (`CommandRunner` resolves its command from `tachyon.yml commands:`, and its
- * comment block is a contract about declared commands), and this session's completion semantics are
- * different — a login pane exiting says the flow ENDED, never that it SUCCEEDED. It inherits the
- * tmux mechanics and the namespace property, which is the part worth sharing.
+ * A login is not a declared fleet entry. This session's completion semantics are different from
+ * an agent's: a login pane exiting says the flow ENDED, never that it SUCCEEDED.
  *
- * Its own namespace (`tachyon-login-<wsHash>-<runtime>`) buys exactly what `CommandRunner`'s buys:
- * invisible to `AgentManager`/`LifecycleMonitor` — no crash toast, no restart policy, no `maxAgents`
- * slot — because none of those mean anything for a pane whose job is to exit.
+ * Its own namespace (`tachyon-login-<wsHash>-<runtime>`) is invisible to
+ * `AgentManager`/`LifecycleMonitor` — no crash toast, no restart policy, no `maxAgents` slot —
+ * because none of those mean anything for a pane whose job is to exit.
  *
  * **Keyed by RUNTIME, never by agent.** A credential belongs to a config home, not to an agent, so
  * one login serves every agent on that runtime. Keying this way makes the same-key refusal below the

@@ -62,18 +62,18 @@ const ACTIVATION_TIMEOUT_MS = 180_000;
 /** This run's private tmux server. The engine identity folds it in, so the engine is private too. */
 const TMUX_SOCKET = `tachyon-vsix-smoke-${process.pid}`;
 
-/** The command the engine door asks the daemon to report back. */
+/** The terminal the engine door asks the daemon to report back. */
 const ENGINE_COMMAND = "vsix-smoke-engine-door";
 
 /**
  * The workspace configuration both activation runs open.
  *
- * It declares one command and nothing else. A declared agent or terminal would start a process, and
- * this smoke measures the engine rather than the fleet. The engine still has to stage a runtime,
- * launch its daemon, parse this file and project it — which is the whole claim.
+ * It declares one terminal and nothing else. Autostart is off so this smoke measures the engine
+ * rather than the fleet. The engine still has to stage a runtime, launch its daemon, parse this
+ * file and project it — which is the whole claim.
  */
 const SMOKE_CONFIG = `# Written by scripts/vsix-smoke.mjs (t-a8e1f7). Presence is what requests the engine.
-commands:
+terminals:
   ${ENGINE_COMMAND}:
     cmd: "echo vsix-smoke"
 `;

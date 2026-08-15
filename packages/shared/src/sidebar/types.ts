@@ -161,11 +161,6 @@ export interface PipelineNodeVM {
 }
 export interface PipelineVM { name: string; status: RunState; nodes: PipelineNodeVM[] }
 export interface ScheduleVM { name: string; when: string; next: string; paused: boolean }
-export type CommandState = "running" | "passed" | "failed" | "idle";
-export interface CommandVM { name: string; cmd: string; state: CommandState; detail: string }
-export type StepState = "running" | "passed" | "failed" | "skipped";
-export interface RunbookStepVM { n: number; label: string; state: StepState; detail?: string }
-export interface RunbookVM { name: string; running: boolean; failed: boolean; detail: string; steps: RunbookStepVM[] }
 export interface PinVM { id?: string; text: string; done: boolean; by?: string; tags: string[]; detail?: boolean; attachmentCount?: number }
 export interface PinPreviewAttachmentVM {
   id: string;
@@ -235,8 +230,6 @@ export interface FleetVM {
   terminals: AgentVM[];
   pipelines: PipelineVM[];
   schedules: ScheduleVM[];
-  commands: CommandVM[];
-  runbooks: RunbookVM[];
   pins: PinVM[];
   /** spec 415 — oldest-first open human attention. */
   notices?: NoticeVM[];
@@ -298,7 +291,7 @@ export interface FleetVM {
  * t-37f554 — `Attentions` is a first-class tab (not a permanent panel above Agents). Tab order is
  * visual only; the default selected tab remains Agents so a cold open still lands on the roster.
  */
-export type TabId = "Attentions" | "Control" | "Agents" | "Terminals" | "Pipelines" | "Schedules" | "Commands" | "Runbooks" | "Pins";
+export type TabId = "Attentions" | "Control" | "Agents" | "Terminals" | "Pipelines" | "Schedules" | "Pins";
 export const TABS: ReadonlyArray<{ id: TabId; icon: string }> = [
   { id: "Attentions", icon: "bell-dot" },
   // t-6e2952 — Control is a TAB in THIS row (second, right after Attentions), not a sidebar view of its
@@ -309,8 +302,6 @@ export const TABS: ReadonlyArray<{ id: TabId; icon: string }> = [
   { id: "Terminals", icon: "terminal" },
   { id: "Pipelines", icon: "run-all" },
   { id: "Schedules", icon: "clock" },
-  { id: "Commands", icon: "play-circle" },
-  { id: "Runbooks", icon: "book" },
   { id: "Pins", icon: "pinned" },
 ];
 
@@ -324,8 +315,6 @@ export function searchIndex(f: FleetVM): SearchItem[] {
     ...f.terminals.map((t): SearchItem => ({ name: t.name, tab: "Terminals", icon: "terminal", hint: t.sub, wsHash: ws })),
     ...f.pipelines.map((p): SearchItem => ({ name: p.name, tab: "Pipelines", icon: "run-all", hint: p.status, wsHash: ws })),
     ...f.schedules.map((s): SearchItem => ({ name: s.name, tab: "Schedules", icon: "clock", hint: s.when, wsHash: ws })),
-    ...f.commands.map((c): SearchItem => ({ name: c.name, tab: "Commands", icon: "play-circle", hint: c.cmd, wsHash: ws })),
-    ...f.runbooks.map((r): SearchItem => ({ name: r.name, tab: "Runbooks", icon: "book", hint: r.detail, wsHash: ws })),
     ...f.pins.map((p): SearchItem => ({
       name: p.text,
       tab: "Pins",
@@ -379,25 +368,8 @@ export const SAMPLE: FleetVM = {
     { id: "pr1", name: "hourly-lint", by: "claude", when: "every 1h · run lint", reason: "lint drift on long sessions" },
   ],
   schedules: [
-    { name: "nightly-audit", when: "every 1d · run test", next: "next in 6h", paused: false },
-    { name: "weekly-deps", when: "every 1w · run deps", next: "paused", paused: true },
-  ],
-  commands: [
-    { name: "test", cmd: "npm test", state: "passed", detail: "exit 0 · 12s" },
-    { name: "build", cmd: "npm run build", state: "running", detail: "running" },
-    { name: "typecheck", cmd: "tsc --noEmit", state: "failed", detail: "exit 1" },
-    { name: "lint", cmd: "biome check", state: "idle", detail: "never run" },
-  ],
-  runbooks: [
-    { name: "ship", running: false, failed: false, detail: "passed · 2 steps", steps: [
-      { n: 1, label: "lint", state: "passed", detail: "1s" },
-      { n: 2, label: "test", state: "passed", detail: "12s" },
-    ] },
-    { name: "deploy", running: false, failed: true, detail: "failed at step 2", steps: [
-      { n: 1, label: "build", state: "passed", detail: "8s" },
-      { n: 2, label: "push", state: "failed", detail: "exit 1" },
-    ] },
-    { name: "nightly", running: false, failed: false, detail: "never run", steps: [] },
+    { name: "nightly-audit", when: "every 1d · spawn auditor", next: "next in 6h", paused: false },
+    { name: "weekly-deps", when: "every 1w · spawn deps", next: "paused", paused: true },
   ],
   pins: [
     { text: "Bridge token rotation — confirm 0.26 injection path", done: true, by: "human", tags: ["security"] },

@@ -75,8 +75,8 @@ settings:
 ```
 
 An agent is a **canonical profile**: a durable identity with its own runtime, model, capabilities and
-optional git worktree, whose authority is custodied by the host rather than by the file. Terminals,
-commands and runbooks stay plain declarations.
+optional git worktree, whose authority is custodied by the host rather than by the file. Terminals
+stay plain declarations.
 
 ## What it gives you
 
@@ -91,8 +91,8 @@ commands and runbooks stay plain declarations.
 - **Sub-agents** — agents that spawn agents, with the lineage visible in the sidebar.
 - **Tasks, pins and a human inbox** — shared memory between you and the fleet, and one place where
   everything waiting on a human shows up.
-- **Pipelines, commands, runbooks and schedules** — curated one-shots and gated procedures, with the
-  human gate where you put it.
+- **Pipelines and schedules** — gated procedures and recurring agent spawns, with the human gate
+  where you put it.
 
 ## Settings
 
@@ -137,7 +137,7 @@ VS Code editor area                     tmux server (socket "tachyon")
         │                                        │ client (events + commands)
    Bridge (MCP over HTTP, 127.0.0.1:<port>) ─────┘
         ▲
-        │ spawn_agent / read_output / write_input / run_command / notify …
+        │ spawn_agent / read_output / write_input / notify …
    your agents (Claude Code, Codex, OpenCode, …)
 ```
 

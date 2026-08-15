@@ -25,7 +25,7 @@ function fakeWorkspace(opts: { agents?: Record<string, AgentDef>; submitResult?:
     studioDeps: () => ({
       detectClis: async () => [],
       takenNames: () => Object.keys(agents),
-      commandNames: () => [],
+
       defaultCwd: "/ws/root",
       suggestKindForCommand: () => "terminal",
       onSubmit: () => undefined,

@@ -49,9 +49,7 @@ import { isStudioId, type StudioId } from "../webview/shared/studio/studioIds";
  */
 function studioParentSection(studio: Exclude<StudioId, "pin">): SectionId {
   switch (studio) {
-    case "command":
     case "terminal":
-    case "runbook":
     case "schedule":
     case "agent":
       return "fleet";

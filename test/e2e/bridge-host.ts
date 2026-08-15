@@ -13,12 +13,10 @@ import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
 import { AttentionMonitor } from "@tachyon/shared/attention/AttentionMonitor.js";
 import { LifecycleMonitor } from "@tachyon/engine/agents/LifecycleMonitor.js";
-import { CMD_WAIT_PREFIX, Waiters } from "@tachyon/engine/workspace/Waiters.js";
+import { Waiters } from "@tachyon/engine/workspace/Waiters.js";
 import { ControlModeClient } from "@tachyon/engine/tmux/ControlModeClient.js";
-import { CommandRunner } from "@tachyon/engine/commands/CommandRunner.js";
 import { Scheduler } from "@tachyon/engine/schedule/Scheduler.js";
 import { ProposalStore } from "@tachyon/engine/schedule/ProposalStore.js";
-import { RunbookRunner } from "@tachyon/engine/commands/RunbookRunner.js";
 import { subtreeCpuTicks } from "@tachyon/engine/attention/cpu.js";
 
 const workspaceRoot = process.env.TACHYON_E2E_ROOT ?? "/tmp/tachyon-e2e";
@@ -27,14 +25,6 @@ const { config, errors } = parseConfig(
     "agents:",
     "  probe:",
     "    cmd: sh",
-    "commands:",
-    "  hello:",
-    "    cmd: echo e2e-hello",
-    "  failer:",
-    "    cmd: \"sh -c 'echo doomed; exit 7'\"",
-    "runbooks:",
-    "  ship:",
-    "    steps: [hello, \"echo inline-step\"]",
     "settings:",
     "  maxAgents: 3",
     "",
@@ -83,26 +73,12 @@ const lifecycle = new LifecycleMonitor(
   },
 );
 const wsHash = workspaceHash(workspaceRoot);
-const commands = new CommandRunner({
-  tmux,
-  wsHash,
-  workspaceRoot,
-  getConfig: () => config,
-  onFinished: (name, exitCode) => waiters.notifyDead(`${CMD_WAIT_PREFIX}${name}`, exitCode),
-});
-const runbooks = new RunbookRunner({
-  tmux,
-  wsHash,
-  workspaceRoot,
-  getConfig: () => config,
-});
 
 // F20 engine: command channel + event-driven lifecycle (ticker stays as heartbeat).
 const engine = new ControlModeClient({
   wsHash,
   onDeadMapChanged: () => {
     void lifecycle.tick();
-    void commands.tick();
   },
   onSessionsChanged: () => void lifecycle.tick(),
   onStateChange: (isUp) => console.error(`engine: ${isUp ? "up" : "down (subprocess fallback)"}`),
@@ -113,7 +89,6 @@ void engine.start();
 setInterval(() => {
   void lifecycle.tick();
   void monitor.tick();
-  void commands.tick();
 }, 1000);
 
 const scheduler = new Scheduler({ getConfig: () => config, onFire: () => {} });
@@ -130,8 +105,6 @@ const bridge = new Bridge(
     notify: (message, level) => console.error(`NOTIFY[${level}]: ${message}`),
     attentionOf: (agent) => monitor.stateOf(agent)?.state,
     waiters,
-    commands,
-    runbooks,
     scheduler,
     proposals,
     onScheduleProposed: ({ name, by }) => console.error(`PROPOSED: ${name} by ${by}`),

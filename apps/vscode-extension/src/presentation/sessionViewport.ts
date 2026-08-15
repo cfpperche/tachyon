@@ -20,7 +20,7 @@
  * Who else can reach this? Every door that attaches a client to an agent session must claim here:
  * - Interface → sidebar "Open terminal" → engine `terminal.present` → `Terminals.open`
  * - Interface → window restart → `Terminals.restoreOpen` → `Terminals.open` (same funnel)
- * - Agent → Bridge `spawn_terminal` / `run_command` → engine → same funnel
+ * - Agent → Bridge `spawn_terminal` → engine → same funnel
  * - Interface → server inspector → its own `createTerminal` (extension.ts openSession)
  * - Interface → "Open Agent Pane" / Reattach → `AgentPanePanelManager`
  * - a human running `tmux attach` in their own shell — NOT our door. It cannot be arbitrated; the

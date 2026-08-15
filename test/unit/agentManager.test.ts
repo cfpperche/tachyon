@@ -33,6 +33,18 @@ import type { AgentVM } from "@tachyon/shared/sidebar/types.js";
 const WS = "/repo";
 const HASH = workspaceHash(WS);
 
+/**
+ * t-328cc3 / t-67a565 — Claude's slash-command menu after `/exit` is typed. The prompt sits
+ * ABOVE more rows than `composer.tailLines` (8). Same measured shape the reload-notice probe
+ * used: `❯ /exit` plus the highlighted `/exit` row plus enough placeholders that a tailed
+ * reader never sees the glyph.
+ */
+const CLAUDE_SLASH_MENU_OVER_EXIT = [
+  "\x1b[39m❯\u00a0\x1b[94m/exit\x1b[39m",
+  "\x1b[94m/\x1b[1mexit\x1b[22m                         \x1b[1mExit\x1b[22m the CLI\x1b[39m",
+  ...Array.from({ length: 16 }, (_, i) => `\x1b[37m/cmd${String(i).padStart(2, "0")}\x1b[31mplaceholder row so the tail misses the prompt\x1b[39m`),
+].join("\n");
+
 /** t-0338fc — see the helper: opencode's adapter executes the runtime, so it is stubbed here. */
 const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
 
@@ -141,6 +153,10 @@ function fakeTmux(opts: { failRespawn?: boolean; failShowEnvironment?: boolean }
    *  draft that is simply present before the stop is cleared by the profile's own Ctrl-C and never
    *  reaches the typing step. */
   const composerArrival = new Map<string, string>();
+  /** t-328cc3 — after `/exit` is typed, render Claude's tall slash-command menu instead of a
+   *  one-line `❯ /exit`. The menu is taller than `composer.tailLines` (8), which is what made
+   *  `composerText` return null and withhold Enter. */
+  const composerSlashMenu = new Set<string>();
   /** What each Enter actually submitted. The defect is visible only here: the old delivery submitted
    *  the staged line WITH `/exit` appended to it, as a prompt. */
   const submittedLines: Array<{ session: string; text: string }> = [];
@@ -248,7 +264,14 @@ function fakeTmux(opts: { failRespawn?: boolean; failShowEnvironment?: boolean }
         const t = target();
         if (!sessions.has(t)) throw new Error("can't find session");
         const draft = composerDrafts.get(t);
-        if (draft !== undefined) return { stdout: `${panes.get(t) ?? ""}\n❯ ${draft}`, stderr: "" };
+        if (draft !== undefined) {
+          // Measured pane from t-67a565 / t-328cc3: `❯ /exit` sits ABOVE more rows than
+          // composer.tailLines, so the default reader cannot see the prompt.
+          if (draft === "/exit" && composerSlashMenu.has(t)) {
+            return { stdout: CLAUDE_SLASH_MENU_OVER_EXIT, stderr: "" };
+          }
+          return { stdout: `${panes.get(t) ?? ""}\n❯ ${draft}`, stderr: "" };
+        }
         return { stdout: panes.get(t) ?? "", stderr: "" };
       }
       case "list-sessions":
@@ -264,7 +287,7 @@ function fakeTmux(opts: { failRespawn?: boolean; failShowEnvironment?: boolean }
         return { stdout: "", stderr: "" };
     }
   };
-  return { sessions, dead, panes, composerDrafts, exitsOnExitCommand, composerInterloper, composerArrival, submittedLines, sessionEnv, sentKeys, sentTexts, respawnArgs, newSessionArgs, pipedSessions, pipePaneArgs, opLog, tmux: new TmuxService(exec) };
+  return { sessions, dead, panes, composerDrafts, exitsOnExitCommand, composerInterloper, composerArrival, composerSlashMenu, submittedLines, sessionEnv, sentKeys, sentTexts, respawnArgs, newSessionArgs, pipedSessions, pipePaneArgs, opLog, tmux: new TmuxService(exec) };
 }
 
 function configOf(yaml: string): TachyonConfig {
@@ -274,7 +297,7 @@ function configOf(yaml: string): TachyonConfig {
 }
 
 function makeManager(yaml: string, tmuxOpts: { failRespawn?: boolean; failShowEnvironment?: boolean } = {}) {
-  const { sessions, dead, panes, composerDrafts, exitsOnExitCommand, composerInterloper, composerArrival, submittedLines, sentKeys, sentTexts, respawnArgs, newSessionArgs, tmux } = fakeTmux(tmuxOpts);
+  const { sessions, dead, panes, composerDrafts, exitsOnExitCommand, composerInterloper, composerArrival, composerSlashMenu, submittedLines, sentKeys, sentTexts, respawnArgs, newSessionArgs, tmux } = fakeTmux(tmuxOpts);
   const config = configOf(yaml);
   const spawned: string[] = [];
   const killed: string[] = [];
@@ -293,7 +316,7 @@ function makeManager(yaml: string, tmuxOpts: { failRespawn?: boolean; failShowEn
     materializePiSessionDir: (name) => `/private/pi/${name}/sessions`,
     launchPreflight: HERMETIC_PREFLIGHT,
   });
-  return { manager, tmux, sessions, dead, panes, composerDrafts, exitsOnExitCommand, composerInterloper, composerArrival, submittedLines, sentKeys, sentTexts, respawnArgs, newSessionArgs, spawned, killed, restarted };
+  return { manager, tmux, sessions, dead, panes, composerDrafts, exitsOnExitCommand, composerInterloper, composerArrival, composerSlashMenu, submittedLines, sentKeys, sentTexts, respawnArgs, newSessionArgs, spawned, killed, restarted };
 }
 
 describe("AgentManager", () => {
@@ -1258,6 +1281,28 @@ describe("AgentManager", () => {
     // Typed, but never submitted: that Enter would have sent the other content to the model.
     expect(sentTexts).toEqual([{ session: CLAUDE, text: "/exit", submit: false }]);
     expect(sentKeys.map((k) => k.key)).not.toContain("C-m");
+  });
+
+  /**
+   * t-328cc3 — the measured incident. Typing `/exit` opens Claude's slash-command menu, which is
+   * taller than `composer.tailLines`. `composerText` then returns null, the exact-text Enter
+   * guard (t-ab2682) withholds C-m, and `/exit` stays armed. Fail-before: the command is still
+   * sitting in the composer and was never submitted. The designed stop is to SUBMIT `/exit`
+   * (the menu's highlighted item is the command we typed); the guard must still refuse a
+   * composer that holds anything else.
+   */
+  it("stopGracefully submits /exit when Claude's slash menu is open over it — t-328cc3", async () => {
+    const { manager, composerDrafts, composerSlashMenu, exitsOnExitCommand, submittedLines, sentKeys, sentTexts } = makeManager("agents:\n  claude:\n    cmd: claude\n");
+    await manager.spawn("claude");
+    composerDrafts.set(CLAUDE, "");
+    composerSlashMenu.add(CLAUDE);
+    exitsOnExitCommand.add(CLAUDE);
+    await manager.stopGracefully("claude");
+    // Must not stay armed: either submitted (the designed stop) or cleaned.
+    expect(composerDrafts.get(CLAUDE), "slash-menu /exit must not remain armed in the composer").not.toBe("/exit");
+    expect(submittedLines).toEqual([{ session: CLAUDE, text: "/exit" }]);
+    expect(sentTexts).toEqual([{ session: CLAUDE, text: "/exit", submit: false }]);
+    expect(sentKeys.map((k) => k.key)).toContain("C-m");
   });
 
   it("cannot restart a re-discovered Temporary agent (no stored definition)", async () => {

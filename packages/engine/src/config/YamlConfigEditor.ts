@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isAlias, isScalar, parseDocument, stringify, visit, YAMLMap, YAMLSeq } from "yaml";
+import { isAlias, isScalar, parseDocument, stringify, visit, YAMLMap } from "yaml";
 
 /**
  * UI-driven mutations over tachyon.yml. The FILE stays the source of truth —
@@ -232,95 +232,6 @@ export function upsertAgent(
   // Sanitize LAST, so a preserved key can never re-introduce one this section refuses.
   doc.setIn([target, name], doc.createNode(sanitizeForSection(target, carryUnauthoredForward(target, prior, entry))));
   return { text: String(doc), warnings };
-}
-
-/** Create or replace a one-shot command entry (Agent Studio's Command tab). */
-export function upsertCommand(
-  text: string | undefined,
-  name: string,
-  entry: Record<string, unknown>,
-  replaceName?: string,
-): EditResult {
-  assertValidName(name);
-  if (typeof entry.cmd !== "string" || entry.cmd.trim().length === 0) {
-    throw new Error("cmd must be a non-empty command");
-  }
-  if (text === undefined || text.trim().length === 0) {
-    throw new Error("create an agent first — commands need an existing tachyon.yml");
-  }
-  const doc = load(text);
-  if (replaceName !== undefined && replaceName !== name) {
-    if (!doc.hasIn(["commands", replaceName])) throw new Error(`command '${replaceName}' does not exist`);
-    if (doc.hasIn(["commands", name])) throw new Error(`command '${name}' already exists`);
-    doc.deleteIn(["commands", replaceName]);
-  } else if (replaceName === undefined && doc.hasIn(["commands", name])) {
-    throw new Error(`command '${name}' already exists`);
-  }
-  doc.setIn(["commands", name], doc.createNode(entry));
-  return { text: String(doc), warnings: [] };
-}
-
-/** Removes a command; warns about runbooks that referenced it (they fall back to inline). */
-export function deleteCommand(text: string, name: string): EditResult {
-  const doc = load(text);
-  if (!doc.hasIn(["commands", name])) throw new Error(`command '${name}' does not exist`);
-  doc.deleteIn(["commands", name]);
-  const warnings: string[] = [];
-  const runbooks = doc.get("runbooks");
-  if (runbooks instanceof YAMLMap) {
-    for (const pair of runbooks.items) {
-      const rbName = String((pair.key as { toJSON?: () => unknown }).toJSON?.() ?? pair.key);
-      const steps = doc.getIn(["runbooks", rbName, "steps"]);
-      if (steps instanceof YAMLSeq && (steps.toJSON() as string[]).includes(name)) {
-        warnings.push(`runbook '${rbName}' referenced '${name}' — that step now runs as inline shell`);
-      }
-    }
-  }
-  return { text: String(doc), warnings };
-}
-
-/** 0-based line of a command's entry. */
-export function commandEntryLine(text: string, name: string): number | undefined {
-  return entryLineIn(text, "commands", name);
-}
-
-/** Create or replace a runbook entry (Agent Studio's Runbook tab). */
-export function upsertRunbook(
-  text: string | undefined,
-  name: string,
-  entry: { steps: unknown },
-  replaceName?: string,
-): EditResult {
-  assertValidName(name);
-  if (!Array.isArray(entry.steps) || entry.steps.length === 0) {
-    throw new Error("steps must be a non-empty list");
-  }
-  if (text === undefined || text.trim().length === 0) {
-    throw new Error("create an agent first — runbooks need an existing tachyon.yml");
-  }
-  const doc = load(text);
-  if (replaceName !== undefined && replaceName !== name) {
-    if (!doc.hasIn(["runbooks", replaceName])) throw new Error(`runbook '${replaceName}' does not exist`);
-    if (doc.hasIn(["runbooks", name])) throw new Error(`runbook '${name}' already exists`);
-    doc.deleteIn(["runbooks", replaceName]);
-  } else if (replaceName === undefined && doc.hasIn(["runbooks", name])) {
-    throw new Error(`runbook '${name}' already exists`);
-  }
-  doc.setIn(["runbooks", name], doc.createNode(entry));
-  return { text: String(doc), warnings: [] };
-}
-
-/** Removes a runbook. Nothing references runbooks, so no cross-warnings. */
-export function deleteRunbook(text: string, name: string): EditResult {
-  const doc = load(text);
-  if (!doc.hasIn(["runbooks", name])) throw new Error(`runbook '${name}' does not exist`);
-  doc.deleteIn(["runbooks", name]);
-  return { text: String(doc), warnings: [] };
-}
-
-/** 0-based line of a runbook's entry. */
-export function runbookEntryLine(text: string, name: string): number | undefined {
-  return entryLineIn(text, "runbooks", name);
 }
 
 /** Create or replace a schedule entry (approving an agent proposal, or the Studio). */

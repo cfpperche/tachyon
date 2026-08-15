@@ -33,8 +33,6 @@ describe("persistent workspace presentation boundary", () => {
     const migrated = [
       "apps/vscode-extension/src/webview/PluginsPanel.ts",
       "apps/vscode-extension/src/webview/AgentStudioAdapter.ts",
-      "apps/vscode-extension/src/webview/CommandStudioAdapter.ts",
-      "apps/vscode-extension/src/webview/RunbookStudioAdapter.ts",
       "apps/vscode-extension/src/webview/ScheduleStudioAdapter.ts",
       "apps/vscode-extension/src/webview/TerminalStudioAdapter.ts",
       // BoardPanel.ts left this list on t-610705 Phase B #6: the panel host was retired and the

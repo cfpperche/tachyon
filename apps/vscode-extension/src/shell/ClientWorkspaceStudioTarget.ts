@@ -78,7 +78,6 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
       extensionUri: this.options.extensionUri,
       detectClis: this.detectClis,
       takenNames: () => Object.keys(this.config?.agents ?? {}),
-      commandNames: () => Object.keys(this.config?.commands ?? {}),
       defaultCwd: this.workspaceRoot,
       suggestKindForCommand,
       onSubmit: this.studioSubmit,

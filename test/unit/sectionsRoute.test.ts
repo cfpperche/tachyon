@@ -177,32 +177,32 @@ describe("studio-new / studio-edit (t-610705 Phase D, D0)", () => {
   });
 
   it("isStudioRoute is true for both kinds and false for everything else", () => {
-    expect(isStudioRoute(routes.studioNew("command", "ws-1"))).toBe(true);
-    expect(isStudioRoute(routes.studioEdit("command", "ws-1", "cmd-a"))).toBe(true);
+    expect(isStudioRoute(routes.studioNew("terminal", "ws-1"))).toBe(true);
+    expect(isStudioRoute(routes.studioEdit("terminal", "ws-1", "cmd-a"))).toBe(true);
     expect(isStudioRoute(routes.section("fleet"))).toBe(false);
     expect(isStudioRoute(routes.taskDetail("ws-1", "t-1"))).toBe(false);
   });
 
   it("decodeRoute round-trips a valid studio-new/studio-edit route", () => {
-    expect(decodeRoute({ kind: "studio-new", studio: "command", wsHash: "ws-1", returnRoute: null }))
-      .toEqual({ kind: "studio-new", studio: "command", wsHash: "ws-1", returnRoute: null });
-    expect(decodeRoute({ kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "cmd-a", returnRoute: null }))
-      .toEqual({ kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "cmd-a", returnRoute: null });
+    expect(decodeRoute({ kind: "studio-new", studio: "terminal", wsHash: "ws-1", returnRoute: null }))
+      .toEqual({ kind: "studio-new", studio: "terminal", wsHash: "ws-1", returnRoute: null });
+    expect(decodeRoute({ kind: "studio-edit", studio: "terminal", wsHash: "ws-1", entityId: "cmd-a", returnRoute: null }))
+      .toEqual({ kind: "studio-edit", studio: "terminal", wsHash: "ws-1", entityId: "cmd-a", returnRoute: null });
   });
 
   it("decodeRoute rejects an unknown studio, missing fields, or extra fields", () => {
     expect(decodeRoute({ kind: "studio-new", studio: "bogus", wsHash: "ws-1", returnRoute: null })).toBeNull();
-    expect(decodeRoute({ kind: "studio-new", studio: "command", returnRoute: null })).toBeNull();
+    expect(decodeRoute({ kind: "studio-new", studio: "terminal", returnRoute: null })).toBeNull();
     expect(decodeRoute({ kind: "studio-new", wsHash: "ws-1", returnRoute: null })).toBeNull();
-    expect(decodeRoute({ kind: "studio-new", studio: "command", wsHash: "", returnRoute: null })).toBeNull();
-    expect(decodeRoute({ kind: "studio-new", studio: "command", wsHash: "ws-1", returnRoute: null, extra: 1 })).toBeNull();
-    expect(decodeRoute({ kind: "studio-edit", studio: "command", wsHash: "ws-1", returnRoute: null })).toBeNull();
-    expect(decodeRoute({ kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "", returnRoute: null })).toBeNull();
+    expect(decodeRoute({ kind: "studio-new", studio: "terminal", wsHash: "", returnRoute: null })).toBeNull();
+    expect(decodeRoute({ kind: "studio-new", studio: "terminal", wsHash: "ws-1", returnRoute: null, extra: 1 })).toBeNull();
+    expect(decodeRoute({ kind: "studio-edit", studio: "terminal", wsHash: "ws-1", returnRoute: null })).toBeNull();
+    expect(decodeRoute({ kind: "studio-edit", studio: "terminal", wsHash: "ws-1", entityId: "", returnRoute: null })).toBeNull();
     // t-610705 (Phase D, D3) — returnRoute is a MANDATORY key now (same "no optional fields" rule the
     // rest of this route shape already enforces) — a record from before D3 simply lacking the key
     // fails closed rather than being silently treated as returnRoute:null.
-    expect(decodeRoute({ kind: "studio-new", studio: "command", wsHash: "ws-1" })).toBeNull();
-    expect(decodeRoute({ kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "cmd-a" })).toBeNull();
+    expect(decodeRoute({ kind: "studio-new", studio: "terminal", wsHash: "ws-1" })).toBeNull();
+    expect(decodeRoute({ kind: "studio-edit", studio: "terminal", wsHash: "ws-1", entityId: "cmd-a" })).toBeNull();
   });
 
   it("decodeRoute rejects studio-new for task (t-610705, D2) — never id-less, even though 'task' is otherwise a well-formed StudioId", () => {
@@ -275,7 +275,7 @@ describe("pin's nav-less returnRoute (t-610705 Phase D, D3)", () => {
   it("decodeRoute rejects a returnRoute that itself decodes to a studio kind (excluded by construction)", () => {
     expect(decodeRoute({
       kind: "studio-edit", studio: "pin", wsHash: "ws-1", entityId: "p-1",
-      returnRoute: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "cmd-a", returnRoute: null },
+      returnRoute: { kind: "studio-edit", studio: "terminal", wsHash: "ws-1", entityId: "cmd-a", returnRoute: null },
     })).toBeNull();
   });
 
@@ -288,8 +288,8 @@ describe("pin's nav-less returnRoute (t-610705 Phase D, D3)", () => {
 
   it("routes.studioNew/studioEdit refuse a non-null returnRoute for every studio EXCEPT pin (trusted-code footgun guard, design-dueto probe-12f603f3)", () => {
     const back: CockpitNonStudioRoute = { kind: "section", section: "mission" };
-    expect(() => routes.studioNew("command", "ws-1", back)).toThrow(/returnRoute is only meaningful for "pin"/);
-    expect(() => routes.studioEdit("command", "ws-1", "cmd-a", back)).toThrow(/returnRoute is only meaningful for "pin"/);
+    expect(() => routes.studioNew("terminal", "ws-1", back)).toThrow(/returnRoute is only meaningful for "pin"/);
+    expect(() => routes.studioEdit("terminal", "ws-1", "cmd-a", back)).toThrow(/returnRoute is only meaningful for "pin"/);
     expect(() => routes.studioNew("pin", "ws-1", back)).not.toThrow();
     expect(() => routes.studioEdit("pin", "ws-1", "p-1", back)).not.toThrow();
   });

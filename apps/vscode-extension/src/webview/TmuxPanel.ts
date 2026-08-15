@@ -281,8 +281,6 @@ export function inspectorStrings(): InspectorStrings {
     reapOrphans: t("Reap {0} orphaned", "{0}"),
     killConfirm: t("Kill session {0}? This stops the process and removes the pane.", "{0}"),
     kindSession: t("Agents & terminals"),
-    kindCommand: t("Commands"),
-    kindRunbook: t("Runbook steps"),
     kindLogin: t("Runtime logins"),
     kindAnchor: t("Engine internals"),
     kindUnknown: t("Other"),

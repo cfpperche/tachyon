@@ -51,7 +51,7 @@ function bridge(caller: CallerSnapshot | undefined) {
   const propose = async (name: string) => {
     const handler = mcp.handlers.get("propose_schedule");
     if (!handler) throw new Error("propose_schedule is not registered");
-    return handler({ name, every: "1h", run: "test", reason: "nightly regression" });
+    return handler({ name, every: "1h", spawn: "claude", reason: "nightly regression" });
   };
   return { root, proposals, toasts, propose };
 }
@@ -109,7 +109,7 @@ describe("who proposed a schedule (t-fbefec)", () => {
 
     // Author-looking arguments are not part of the tool's input and must not reach the record.
     const result = await mcp.handlers.get("propose_schedule")!({
-      name: "nightly", every: "1h", run: "test",
+      name: "nightly", every: "1h", spawn: "claude",
       by: "codex-canonico", agent: "codex-canonico", author: "codex-canonico", requester: "codex-canonico",
     });
     expect(result.isError, result.content[0]?.text).not.toBe(true);
@@ -135,7 +135,7 @@ describe("schedule proposal volume ceiling (t-e5ecec)", () => {
 
     // A neighbour's queue is independent, and resolving one of mine immediately frees its slot.
     const neighbour = new ProposalStore(mine.root);
-    expect(() => neighbour.create("theirs", { every: "1h", run: "test" }, "claude-runtime")).not.toThrow();
+    expect(() => neighbour.create("theirs", { every: "1h", spawn: "claude" }, "claude-runtime")).not.toThrow();
     mine.proposals.remove(mine.proposals.list().find((proposal) => proposal.by === "codex-canonico")!.id);
     const afterResolution = await mine.propose("after-resolution");
     expect(afterResolution.isError, afterResolution.content[0]?.text).not.toBe(true);
@@ -146,11 +146,11 @@ describe("schedule proposal volume ceiling (t-e5ecec)", () => {
     vi.setSystemTime(Date.parse("2026-08-12T12:00:00.000Z"));
     const { proposals } = bridge({ kind: "agent", name: "codex-canonico" });
     for (let index = 0; index < SCHEDULE_PROPOSAL_PENDING_CEILING; index += 1) {
-      proposals.create(`stale-${index}`, { every: "1h", run: "test" }, "codex-canonico");
+      proposals.create(`stale-${index}`, { every: "1h", spawn: "claude" }, "codex-canonico");
     }
 
     vi.advanceTimersByTime(SCHEDULE_PROPOSAL_TTL_MS);
-    expect(() => proposals.create("fresh", { every: "1h", run: "test" }, "codex-canonico")).not.toThrow();
+    expect(() => proposals.create("fresh", { every: "1h", spawn: "claude" }, "codex-canonico")).not.toThrow();
   });
 });
 
@@ -161,7 +161,7 @@ describe("schedule proposal review window (t-d4f246)", () => {
     vi.setSystemTime(now);
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-proposal-ttl-"));
     roots.push(root);
-    const proposal = new ProposalStore(root).create("nightly", { every: "1h", run: "test" }, "codex");
+    const proposal = new ProposalStore(root).create("nightly", { every: "1h", spawn: "claude" }, "codex");
     expect(Date.parse(proposal.expiresAt) - Date.parse(proposal.createdAt)).toBe(SCHEDULE_PROPOSAL_TTL_MS);
     const input = { wsHash: "ws", folder: "repo", approvals: [], validations: [], scheduleProposals: [proposal] };
     expect(buildHumanInbox(input, { now: new Date(now + SCHEDULE_PROPOSAL_TTL_MS - 1).toISOString() })).toHaveLength(1);

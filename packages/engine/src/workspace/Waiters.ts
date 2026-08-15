@@ -95,9 +95,6 @@ export class Waiters {
   }
 }
 
-/** Waiter key namespace for command completions (no clash with agent names). */
-export const CMD_WAIT_PREFIX = "cmd:";
-
 /** Shared by the MCP tool and the extension's internal command — one wait semantics. */
 export async function executeWait(
   deps: {

@@ -115,8 +115,6 @@ describe("webview convention (spec 279)", () => {
       tachyonPipelineStudio: "PIPELINE_STUDIO_VIEW_TYPE",
       tachyonAgentStudioShell: "AGENT_STUDIO_SHELL_VIEW_TYPE",
       tachyonTerminalStudioShell: "TERMINAL_STUDIO_SHELL_VIEW_TYPE",
-      tachyonCommandStudioShell: "COMMAND_STUDIO_SHELL_VIEW_TYPE",
-      tachyonRunbookStudioShell: "RUNBOOK_STUDIO_SHELL_VIEW_TYPE",
       tachyonScheduleStudioShell: "SCHEDULE_STUDIO_SHELL_VIEW_TYPE",
       tachyonAgentPane: "AGENT_PANE_VIEW_TYPE",
       tachyonRuntimeConfig: "RUNTIME_CONFIG_VIEW_TYPE",

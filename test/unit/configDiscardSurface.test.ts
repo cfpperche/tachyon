@@ -131,8 +131,6 @@ function fleetSource(ws: Workspace, tmux: TmuxService): SidebarFleetSource {
     get config() { return ws.config; },
     get configFailure() { return ws.configFailure; },
     get configDiscards() { return ws.configDiscards; },
-    commandRunner: ws.commandRunner,
-    runbookRunner: ws.runbookRunner,
     handoffStore: { snapshot: () => ({ exists: false, staleness: "fresh", pendingCount: 0 }) },
     pinStore: ws.pinStore,
     proposals: { list: () => [] },

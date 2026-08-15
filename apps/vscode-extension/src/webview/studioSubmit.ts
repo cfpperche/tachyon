@@ -8,8 +8,6 @@ export interface StudioDeps {
   extensionUri: vscode.Uri;
   detectClis: () => Promise<string[]>;
   takenNames: () => string[];
-  /** Declared commands: names. Drives Runbook step resolution. */
-  commandNames: () => string[];
   defaultCwd: string;
   suggestKindForCommand: (cmd: string) => EntryKind;
   onSubmit: (submit: StudioSubmit) => string[] | undefined | Promise<string[] | undefined>;
@@ -22,7 +20,7 @@ export interface StudioDeps {
  *  see StudioSaveResult's own doc comment for why the host needs it back. Trusting `patch.name` as the
  *  persisted key (rather than reading an id back from persistence) is safe ONLY because
  *  `Workspace.studioSubmit` (workspace/Workspace.ts) writes it VERBATIM as the YAML block key
- *  (`upsertCommand`/`upsertAgent`/etc. take `submit.state.name` directly, no normalization) and
+ *  (`upsertSchedule`/`upsertAgent`/etc. take `submit.state.name` directly, no normalization) and
  *  rejects — via the kind-specific form validator, returned as the `errors` array below — before this
  *  ever reaches the "ok" branch. If a future persistence path ever normalizes/slugifies a submitted
  *  name, this assumption breaks and `newEntityId` must come from that path's own return value instead. */

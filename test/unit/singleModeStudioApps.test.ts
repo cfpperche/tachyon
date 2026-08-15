@@ -4,9 +4,7 @@ import { sectionPanelKey } from "../../apps/vscode-extension/src/webview/shared/
 import { webviewApp } from "../../apps/vscode-extension/src/webview/webviewApps.js";
 
 const studios = [
-  "command",
   "terminal",
-  "runbook",
   "schedule",
   "agent",
 ] as const;
@@ -26,7 +24,7 @@ function studiosOnTheSharedHost(): string[] {
 }
 
 describe("SDD 485 D13 — editing-only studio document apps", () => {
-  it("declares all five as documents and keys reopening by entity identity", () => {
+  it("declares the remaining studios as documents and keys reopening by entity identity", () => {
     for (const studio of studios) {
       const app = webviewApp(`${studio}-studio-shell`);
       expect(app.host).toBe("section");
