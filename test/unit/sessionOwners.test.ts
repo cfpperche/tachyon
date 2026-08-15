@@ -3,6 +3,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, RUNTIME_STATUS_PUBLISHER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, appendOwnerRow, compactSessionOwnerRows, compactSpawnSettings, persistenceHookFailureFile, prunePersistenceLedger, readSessionOwners, removeSessionOwnerRows, removeSpawnSettings, resolveRotationFollow, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";
+import { AGENT_TOKEN_ENV_VAR, URL_ENV_VAR } from "@tachyon/shared/bridge/env.js";
+import { URL_ENV_VAR as spawnUrlEnvVar, AGENT_TOKEN_ENV_VAR as spawnTokenEnvVar } from "@tachyon/bridge/token.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("sessionOwners — pure ledger helpers (spec 243)", () => {
@@ -415,12 +417,18 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     expect(persistenceHookFailureFile("/ws")).toBe("/ws/.tachyon/activity/persistence-hooks-failures.jsonl");
   });
 
-  it("t-907238: publisher reads TACHYON_BRIDGE_URL, the var spawn injects", () => {
-    expect(RUNTIME_STATUS_PUBLISHER_SOURCE).toContain("process.env.TACHYON_BRIDGE_URL");
+  it("t-907238: publisher env names are the spawn launchEnv names, from one source", () => {
+    // URL_ENV_VAR is what WorkspaceBridgeTransport.launchEnv writes. The hook source
+    // interpolates that export. Two handwritten "TACHYON_BRIDGE_URL" strings would
+    // let this pass while the names drifted again.
+    expect(URL_ENV_VAR).toBe(spawnUrlEnvVar);
+    expect(AGENT_TOKEN_ENV_VAR).toBe(spawnTokenEnvVar);
+    expect(RUNTIME_STATUS_PUBLISHER_SOURCE).toContain(`process.env.${URL_ENV_VAR}`);
+    expect(RUNTIME_STATUS_PUBLISHER_SOURCE).toContain(`process.env.${AGENT_TOKEN_ENV_VAR}`);
     expect(RUNTIME_STATUS_PUBLISHER_SOURCE).not.toContain("TACHYON_AGENT_BRIDGE_URL");
   });
 
-  it("t-907238: empty TACHYON_BRIDGE_URL is the incomplete-env failure, not a missing invented name", () => {
+  it("t-907238: empty spawn URL env is the incomplete-env failure, not a missing invented name", () => {
     const tmp = makeTempDir("tachyon-runtime-status-publish-");
     const script = path.join(tmp, "runtime-status-publish.cjs");
     const failureFile = path.join(tmp, "failures.jsonl");
@@ -428,10 +436,10 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
 
     const withoutUrlEnv: NodeJS.ProcessEnv = {
       ...process.env,
-      TACHYON_AGENT_BRIDGE_TOKEN: "tok",
+      [AGENT_TOKEN_ENV_VAR]: "tok",
       TACHYON_AGENT_BRIDGE_URL: "http://127.0.0.1:9/mcp",
     };
-    delete withoutUrlEnv.TACHYON_BRIDGE_URL;
+    delete withoutUrlEnv[URL_ENV_VAR];
     const withoutUrl = spawnSync(process.execPath, [script, "claude", failureFile, "claude"], {
       env: withoutUrlEnv,
       encoding: "utf8",
@@ -443,7 +451,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
 
     fs.writeFileSync(failureFile, "");
     const withUrl = spawnSync(process.execPath, [script, "claude", failureFile, "claude"], {
-      env: { ...process.env, TACHYON_AGENT_BRIDGE_TOKEN: "tok", TACHYON_BRIDGE_URL: "http://127.0.0.1:1/mcp" },
+      env: { ...process.env, [AGENT_TOKEN_ENV_VAR]: "tok", [URL_ENV_VAR]: "http://127.0.0.1:1/mcp" },
       encoding: "utf8",
     });
     expect(withUrl.status).toBe(0);

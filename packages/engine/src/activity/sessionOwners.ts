@@ -16,6 +16,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { AGENT_TOKEN_ENV_VAR, URL_ENV_VAR } from "@tachyon/shared/bridge/env.js";
 
 /**
  * One hook group as both runtimes model it. Shaped identically to `plugins/adapters/hooks.ts`'s
@@ -760,8 +761,8 @@ process.stdin.on("end", () => {
 export const RUNTIME_STATUS_PUBLISHER_SOURCE = `// Tachyon runtime status publisher (t-6b3a0d) — materialized; do not edit.
 const fs = require("fs");
 const path = require("path");
-const url = process.env.TACHYON_BRIDGE_URL || "";
-const token = process.env.TACHYON_AGENT_BRIDGE_TOKEN || "";
+const url = process.env.${URL_ENV_VAR} || "";
+const token = process.env.${AGENT_TOKEN_ENV_VAR} || "";
 const runtime = process.argv[2] || "";
 const failureFile = process.argv[3] || "";
 const agent = process.argv[4] || "";
