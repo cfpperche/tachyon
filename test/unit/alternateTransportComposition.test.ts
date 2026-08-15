@@ -4,6 +4,7 @@ import type {
   WorkspaceBridgePort,
   WorkspaceBridgeServer,
 } from "@tachyon/engine/workspace/WorkspaceBridgePort.js";
+import { runEngineDaemon } from "@tachyon/engine/engine-service/daemonMain.js";
 import { describe, expect, it } from "vitest";
 
 const unsupported = (): never => { throw new Error("not used by the alternate transport proof"); };
@@ -60,16 +61,18 @@ const alternateTransport = {
 
 function composeAlternateTransport(port: WorkspaceBridgePort) {
   return {
+    runDaemon: (encodedOptions: string) => runEngineDaemon(encodedOptions, port),
     server: port.createServer({}, {}),
     notice: port.composeAgentNotice("new-transport", "engine", "connected"),
   };
 }
 
 describe("alternate transport composition", () => {
-  it("implements and composes the engine port without importing the production bridge", () => {
+  it("implements and composes the engine port without importing the production bridge", async () => {
     const composed = composeAlternateTransport(alternateTransport);
 
     expect(composed.server.url).toBe("alternate://transport");
     expect(composed.notice).toBe("new-transport:engine:connected");
+    await expect(composed.runDaemon("not-an-options-envelope")).rejects.toThrow();
   });
 });
