@@ -6,7 +6,7 @@ import {
   idleNotifyThresholdMs,
 } from "@tachyon/shared/workspace/TemporaryBackstopMonitor.js";
 import { parseConfig, MAX_IDLE_NOTIFY_MINUTES } from "@tachyon/engine/config/loadConfig.js";
-import type { ManagedEntryInfo } from "@tachyon/engine/agents/AgentManager.js";
+import type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
 
 /**
  * `t-585d5c` — the idle-notification threshold is configurable per workspace.

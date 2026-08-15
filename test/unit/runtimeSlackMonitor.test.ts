@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { RuntimeSlackMonitor } from "@tachyon/engine/workspace/RuntimeSlackMonitor.js";
 import { projectRuntimeCondition } from "@tachyon/engine/runtimeOps/runtimeCondition.js";
-import type { ManagedEntryInfo } from "@tachyon/engine/agents/AgentManager.js";
+import type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
 import type { CollectorEnvelopeV1 } from "@tachyon/engine/runtimeObservability/types.js";
 import type { ProviderQuotaChannelDescriptorV1 } from "@tachyon/engine/runtimeObservability/service.js";
 

@@ -1,4 +1,4 @@
-import type { ManagedEntryInfo } from "./AgentManager.js";
+import type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
 import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
 import type { SubmitReceipt } from "../tmux/TmuxService.js";
 

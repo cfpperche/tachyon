@@ -114,7 +114,8 @@ import {
   renameTerminalDeclaration,
   upsertTerminalDeclaration,
 } from "../config/terminalDeclarations.js";
-import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type ManagedEntryInfo, type RestartSessionMode } from "../agents/AgentManager.js";
+import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type RestartSessionMode } from "../agents/AgentManager.js";
+import type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
 import { SurfacePreservation } from "./surfacePreservation.js";
 import { mergedWorkspaceCommandReferences, workspaceCommandWriteFor } from "../config/agentWorkspaceCommandWrite.js";
 import { mergedPersistentInstructionsReferences, persistentInstructionsWriteFor } from "../config/agentInstructionsWrite.js";

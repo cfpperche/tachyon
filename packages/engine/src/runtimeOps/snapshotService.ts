@@ -3,7 +3,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { ActivityLog, type LoggedEvent } from "../activity/logStore.js";
 import type { AgentAttention } from "@tachyon/shared/attention/AttentionMonitor.js";
-import type { ManagedEntryInfo } from "../agents/AgentManager.js";
+import type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
 import { runtimeOf } from "@tachyon/shared/resume/adapters.js";
 import { agentSessionRecordsOf, isResumable, type SessionRecord } from "../resume/SessionLedger.js";
 import { MEASURED_CLI_VERSIONS } from "../runtime/measuredCliVersions.js";
