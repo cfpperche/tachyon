@@ -2044,6 +2044,8 @@ export class AgentManager {
   /** t-e3d14c — suppress native identity inputs only for launches whose formation vector replaces them. */
   private applyFormationNativeSuppression(name: string, def: AgentDef): { def: AgentDef; applied: boolean } {
     if (!this.opts.formation?.suppressionRequired(name)) return { def, applied: false };
+    // t-4c3d90 — do not apply a control the combined gate has not verified for this adapter.
+    if (!this.opts.formation.nativeSuppressionConfirmed(binaryOf(def.cmd))) return { def, applied: false };
     const applied = applyNativeLaneSuppressionCommand(def.cmd);
     return { def: { ...def, cmd: applied.cmd }, applied: applied.applied };
   }
