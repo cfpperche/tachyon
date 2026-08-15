@@ -134,3 +134,102 @@ superfícies depois de três specs** — vale decidir se encerra, mas isso é ou
     Fatia 9   fica menor por Q9: prefixo próprio em vez de reconciliação
 
 A Q6 é a única que aumenta o custo, e foi decidida sabendo disso.
+
+---
+
+## Q6 e Q8, resolvidas — 2026-08-15
+
+A Q6 tinha sido decidida como **desenhar, não descobrir**, e ficou parada esperando o ato de design.
+Ela destravou por um caminho que ninguém tinha proposto: o dono cortou a pergunta ao dizer *"essas
+decisoes de ux se baseie e benchmarks de chrome, shell, design"*. Medir prior art em vez de inventar.
+
+A medição está em [`benchmark.md`](./benchmark.md), 590 linhas, três referências lidas **em disco** e
+não em documentação: VS Code 1.133.0 (a build exata que o dono roda, servidor WSL e cliente Windows
+no mesmo commit), Chrome DevTools 151, e o Radix/shadcn/Tailwind já vendorizado aqui.
+
+### O achado que mudou a natureza da decisão
+
+**O VS Code 1.133 tem um registro de tokens de TAMANHO, no mesmo formato do registro de cores, e o
+injeta no webview.**
+
+    spacing.size20    2px      cornerRadius.xSmall  2px      bodyFontSize        13px
+    spacing.size40    4px      cornerRadius.small   4px      bodyFontSize.small  12px
+    spacing.size60    6px      cornerRadius.medium  6px      strokeThickness      1px
+    spacing.size80    8px      cornerRadius.large   8px
+    spacing.size100  10px      cornerRadius.xLarge 12px
+    spacing.size120  12px
+    spacing.size160  16px      fontSize.label3 10 · label2 11 · label1 12 · body1 13
+    spacing.size200  20px      fontSize.heading3 13 · heading2 18 · heading1 26
+
+Isso reformula a pergunta. Não era "que escala inventar" — era **quanto herdar do host**.
+
+E revelou uma convergência que já existia sem ninguém saber: `spacing.size60` é `6px`, o valor mais
+usado do produto (146 ocorrências), que o coordenador tinha classificado como "ajuste de olho" ao
+apresentar os números ao dono. Não era. `--ds-radius: 6px` também é exatamente `cornerRadius.medium`.
+**Convergiu; não foi adotado** — a distinção importa porque a Q6 recusou adotar.
+
+### Espaço — decisão: opção A, dez passos, herdados
+
+    2, 4, 6, 8, 10, 12, 16, 20, 24, 32        194 de 792 ocorrencias mudam (24%)
+
+Dez passos parece muito e não é, porque não são invenção nossa: são o registro do host. É a única
+opção que permite escrever `var(--vscode-spacing-size60, 6px)` e fazer o **espaçamento vir do tema,
+como a cor já vem**. Se a Microsoft reescalar a densidade do editor, o Tachyon acompanha sem commit.
+
+O eixo real da escolha era `10px`. A opção B (oito passos, todos com concordância unânime das três
+referências) o mata em 73 lugares — 81 ocorrências de diferença para A. Matar um passo que o HOST
+declara, para ganhar simetria com o Material do DevTools, é pagar para ficar menos parecido com o
+programa onde rodamos.
+
+**A opção C foi recusada pela medição, não por gosto.** Ela mata `6px` (146 usos) e `2px` (70 usos), e
+os dois são passo unânime das TRÊS referências. C não é "mais rigorosa que B" — é B com dois passos
+removidos por simetria, contra o que as referências dizem.
+
+Uma correção de fato que a medição trouxe: **a menor distância utilizável é 2px, não 4px.** As três
+referências a declaram, e as duas que separam traço de espaço declaram `1px` como espessura de traço e
+nunca como distância. O custo de eliminar `1px` como espaço é 19 ocorrências, não as 164 que o cartão
+antecipava.
+
+### Rampa — decisão: rampa 3, duas densidades nomeadas
+
+    operador   10, 11, 12, 13     do VS Code — a régua do chrome do host
+    leitura        13, 16, 20     do DevTools — a régua do conteúdo
+                                  47 de 464 declaracoes mudam (10%)
+
+Sete papéis sobre seis valores, com `13px` sendo papel nos dois lados. **É a mais barata das três E a
+única que aplica a Q8** — o dono já tinha decidido duas densidades ao perceber que apertar as
+superfícies de leitura machucaria o que mais se lê; as rampas 1 e 2 ignoram isso.
+
+A dobradiça em `13px` não é arbitrária: é o `--vscode-font-size` do host. As duas densidades se
+encontram no tamanho que o editor já usa.
+
+**A rampa 2 foi recusada por consequência prática**: ela faz 91 declarações CRESCEREM (10px→11px em 75
+lugares, 9px→11px em 16). Numa sidebar já apertada isso move a densidade para o lado errado do
+incômodo que originou a SDD.
+
+E a rampa 3 resolve metade de *"a distância das coisas me incomoda"* que ninguém tinha nomeado: as
+**13 entrelinhas distintas em 74 declarações** passam a ter dono, porque cada degrau de leitura carrega
+a sua — o DevTools declara o par tamanho/entrelinha, o VS Code declara só o tamanho.
+
+Em todas as três rampas, os quatro meios-pixels (`9.5`, `10.5`, `12.5`, `13.5`) desaparecem: nenhuma
+referência medida tem meio pixel em lugar nenhum. E os onze tamanhos de texto de hoje viram cinco.
+
+### A cessão de controle, declarada
+
+Herdar do host significa aceitar que a Microsoft mexa na nossa densidade sem nos avisar. O dono
+decidiu sabendo: *"herdar do host faz sentido po, ja usamos as cores"*.
+
+O precedente sustenta: a cor já funciona assim desde sempre e nunca gerou reclamação. A diferença é
+que a cor era a ÚNICA restrição declarada do design system — agora espaço, raio e rampa entram no
+mesmo contrato.
+
+**Consequência de manutenção, e é obrigatória:** `engines.vscode` é `^1.96.0` e os tokens são de
+1.133. Todo consumo de token do host sai com fallback — `var(--vscode-spacing-size60, 6px)` — e o
+fallback é o valor medido, não um chute.
+
+### O que isto muda na rota
+
+    Fatia 4   DESBLOQUEADA — a escala existe e cada passo tem referencia medida
+    Fatia 6   ganha os degraus nomeados de operador e leitura, nao so o padding
+    Fatia 8   segue grande, mas o custo agora e um NUMERO: 194 ocorrencias de espaco
+              e 47 de tipo, nao uma estimativa
