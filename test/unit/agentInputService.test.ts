@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { sendManagedAgentInput } from "@tachyon/engine/agents/agentInputService.js";
-import type { ManagedEntryInfo } from "@tachyon/engine/agents/AgentManager.js";
+import type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
 
 describe("managed agent input service", () => {
   it("revalidates one live AI agent and sends the exact submit intent", async () => {

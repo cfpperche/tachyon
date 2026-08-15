@@ -6,7 +6,7 @@
  * to the delegator via deliverNotice. Never writes doorbells.jsonl (protocol_doorbell_missed stays).
  */
 import type { AgentAttention } from "@tachyon/shared/attention/AttentionMonitor.js";
-import type { ManagedEntryInfo } from "../agents/AgentManager.js";
+import type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
 import type { ManagedWorktreeEntry } from "../worktree/managedWorktree.js";
 import type { NoticeQueueMetadata } from "@tachyon/shared/bridge/noticeQueue.js";
 

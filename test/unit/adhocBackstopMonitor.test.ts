@@ -5,7 +5,7 @@ import {
   ACKNOWLEDGED_ESCALATION_MULTIPLES,
   acknowledgedCheckInMs,
 } from "@tachyon/shared/workspace/TemporaryBackstopMonitor.js";
-import type { ManagedEntryInfo } from "@tachyon/engine/agents/AgentManager.js";
+import type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
 
 const agent = (name: string, opts: Partial<ManagedEntryInfo> = {}): ManagedEntryInfo => ({
   name,

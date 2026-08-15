@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ManagedEntryInfo } from "../agents/AgentManager.js";
+import type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
 import {
   hasSharedCwdAttributionGap,
   type ActivityAttributionWorkspace,
