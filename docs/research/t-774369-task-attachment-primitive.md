@@ -1,9 +1,18 @@
 # t-774369 — Task-scoped agent attachment primitive
 
 **Author:** anexogrok · **Tree measured:** `f6eee173` (`6dc3d8fc`) · **Date:** 2026-08-15
-**Kind:** design only. No production code in this change.
+**Kind:** decision packet. Measurement + proposal only. No implementation. Whether this enters the product is the owner's.
 
-The card asked to generalize the spec 273/274 evidence store into a task-scoped attachment. After measuring this tree, that store cannot own the bytes. The task-scoped store already exists (spec 339, `TaskAttachmentStore`). The missing piece is a Bridge door that writes through it without repeating the t-1d198e split (caption in one place, files in another).
+The card asked to generalize the spec 273/274 evidence store into a task-scoped attachment. After measuring this tree, that store cannot own the bytes. The task-scoped store already exists (spec 339, `TaskAttachmentStore`). What does not exist is a Bridge door onto it.
+
+### Decision packet (the four questions)
+
+| Question | Answer |
+|---|---|
+| Does the current store serve? | **The 273/274 evidence store does not** (agent-keyed, worktree-gated, no `taskId`, no card render). **The 339 task store does** — it already holds human-pasted images under `.tachyon/tasks/attachments/<task-id>/`. |
+| What would be missing? | Only a Bridge write: agent-authenticated `attach_task_attachment` that stamps `producedBy` and writes blob + sidecar + `attachment:` body ref together. Not a new store. |
+| Who owns the bytes? | **The Task.** `forgetAgent` does not touch `.tachyon/tasks/`. Dismissing the author leaves blob, sidecar, and body ref intact. |
+| What if we do not build it? | **Nobody open is blocked today.** The gap is 35 days old, priority 2, named “low urgency”. Work already ships through four workarounds. That is an argument against building, not a gap in the measurement. See §6. |
 
 ---
 
@@ -86,9 +95,9 @@ Who deletes, then? Only an explicit later hard-delete of the Task (not implement
 
 ## 3. Proposal — reuse 339, add a Bridge door
 
-Small after measurement. The store, allowlist, size cap, traversal check, content-addressing, inline render, and drop-vs-delete policy already exist. What does not exist is an agent-authenticated write that stamps provenance and keeps caption + bytes + body ref together.
+If the owner decides the primitive enters the product, this is the smallest door. The store, allowlist, size cap, traversal check, content-addressing, inline render, and drop-vs-delete policy already exist. What would be added is an agent-authenticated write that stamps provenance and keeps caption + bytes + body ref together.
 
-**Do not implement until the coordinator says so.**
+This section is a proposal, not a request to proceed.
 
 ### Reuse
 
@@ -182,9 +191,41 @@ Never a gate. An attachment informs, same as 273.
 - I did not count how many of the 128 live evidence directories are post-t-1d198e-orphans vs pre-existing. t-1d198e already measured 103/110 on 2026-08-14; this pass only confirmed the shape is still on disk.
 - I grepped this tree for a production `TaskDetailStore.delete` caller and found none. A caller could exist behind a name I did not search, or land later.
 - `src/bridge/tools.ts` and `src/worktree/evidence.ts` (paths on the card) have moved to `packages/bridge/src/tools/` and `packages/engine/src/worktree/`. The 2026-08-02 premise scan cited the old paths; the gap (`attach_task_attachment` missing) is still true.
+- I did not search every journal line of every open task for “I wanted to attach a png and could not”. The open-board scan is title+body+`artifact_refs` only.
 
 ---
 
-## Coordinator decision
+## 6. What happens if we do not build it
 
-After measurement this is a small, obvious Bridge door on `TaskAttachmentStore`, not a new store and not a generalization of 273/274. I did not implement. If you want it as a delivery, say so and I will implement only that door plus the actor×trigger tests above.
+Measured on the live primary board, 2026-08-15 (1485 task JSON files).
+
+| Fact | Number |
+|---|---|
+| Open tasks (`inbox`/`triaged`/`active`) | 81 |
+| Open tasks with an image-looking `artifact_ref` | **0** |
+| Open tasks with a Studio sidecar image | **0** |
+| Tasks (any status) with `artifact_refs.type = "image"` | 3, all `done` |
+| Image-looking refs (type `image`/`screenshot` or an image extension) | 34 refs on 23 tasks, **all `done`** |
+| Of those, host-absolute Windows paths (`/mnt/c/Users/cfpp/Pictures/Screenshots/…`) | 23 refs on 17 tasks, all `done`; a sample path is already gone from disk |
+| Git-tracked `docs/…` screenshot refs | 5, all `done` (spec evidence + the t-b8ff2c workaround) |
+| `.tachyon/evidence` or `.tachyon/vqa` screenshot refs | 6, all `done` |
+| Human Studio pastes on disk | 3 images on 2 tasks (`t-faad51`, `t-3cc2e8`), both `done`, `source: "paste"` |
+| Live prototypes | 1 (`t-ec39b9`) |
+| Days this card has sat on the board | 35 (filed 2026-07-10, still “low urgency”) |
+
+The motivating file for the card, `docs/assets/sidebar-hierarchy-confusion.png` on `t-b8ff2c`, was committed (`921d884e`) and later deleted as obsolete (`57cdf1dc`). `t-b8ff2c` is `done`. The git-tracked workaround did not survive; the work did.
+
+Four channels already carry pictures without this primitive:
+
+1. **Human paste/drop in Task Studio** — the only path that renders inline on the card. Used. Small.
+2. **`attach_evidence`** — agent visual-QA screenshots, worktree-scoped, not on the card. This is the intended channel for “I judged this UI”.
+3. **Git-tracked `docs/specs/…/evidence/*.png` + `artifact_ref`** — visible in an implementer’s worktree. Used for spec-owned proof.
+4. **A path in `artifact_ref`** — pointer only, no bytes, no render. 23 of those pointers were host-absolute and are already dead. Those tasks still closed.
+
+Open tasks whose title or body mention “screenshot” / “attach image” are `t-774369` (this card), plus three unrelated studies (`t-e23e57` computer-use, `t-b0a229` design-system map, `t-89be6a` UI skill). None of them is waiting on a Bridge attach door to move.
+
+**If we do not build it:** humans keep pasting; agents keep using evidence, spec `evidence/` folders, and path refs; closed cards keep whatever they already have; no open row on this board loses a writer. The thing that stays missing is exactly what the card named on 2026-07-10: an agent cannot put durable bytes on a Task so the card renders them the way a human paste does.
+
+That absence has not been measured to block anyone in the 35 days since. The broken host-absolute refs show the workaround is lossy — but the loss is on finished work, and the owner already accepted gitignored `.tachyon/` as the home for live board state. Not building leaves a known ergonomic hole and avoids a new agent-write into a shared card surface (the governance the card itself called the moat).
+
+This packet stops here.
