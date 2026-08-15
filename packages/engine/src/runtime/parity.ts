@@ -20,7 +20,7 @@ export type ProjectionParityFact =
 export type RuntimeParityFact =
   | { verdict: "measured"; runtimeVersion: string; measuredAt: string }
   | { verdict: "cannot"; reason: string }
-  | { verdict: "unmeasured" };
+  | { verdict: "unmeasured"; needed: string };
 
 export interface ParityCell {
   projection: ProjectionParityFact;
@@ -37,32 +37,48 @@ export function runtimeUsesSilentPersistenceHooks(runtime: string): boolean {
 /**
  * The code declaration is intentionally separate from every product decision below. Tests derive
  * the product verdict through its real callable door and compare it with these cells.
+ *
+ * t-2a29a7 — a mute `unmeasured` is the same promise-without-a-deadline fatia 5 removed from
+ * parity.md. The `needed` sentence is the measurement that would change the cell.
  */
+const NEEDED = {
+  "session-hooks-codex":
+    "Authenticated `codex` TUI (the spawn argv Tachyon uses, including `-c hooks.Stop=…`) whose Stop hook is the only source of an opaque canary file after a completed turn; an otherwise identical session without that overlay must not write the file. `codex exec` on 0.147.0 (2026-08-15) completed the turn and did not fire Stop, so exec is not that channel.",
+  "observed-model-provenance":
+    "After one authenticated turn, the file the Activity normalizer reads contains the model identity; an invented field name in that file is not treated as a model. Record CLI version and date.",
+} as const;
+
+const MEASURED = {
+  claude: { verdict: "measured", runtimeVersion: "2.1.233", measuredAt: "2026-08-15" },
+  codex: { verdict: "measured", runtimeVersion: "0.147.0", measuredAt: "2026-08-15" },
+  grok: { verdict: "measured", runtimeVersion: "1.0.4", measuredAt: "2026-08-15" },
+} as const;
+
 export const RUNTIME_PARITY = {
   "session-hooks": {
-    claude: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
-    codex: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
-    grok: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    claude: { projection: { verdict: "wired" }, runtime: MEASURED.claude },
+    codex: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured", needed: NEEDED["session-hooks-codex"] } },
+    grok: { projection: { verdict: "wired" }, runtime: MEASURED.grok },
   },
   "headless-probe": {
-    claude: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
-    codex: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
-    grok: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    claude: { projection: { verdict: "wired" }, runtime: MEASURED.claude },
+    codex: { projection: { verdict: "wired" }, runtime: MEASURED.codex },
+    grok: { projection: { verdict: "wired" }, runtime: MEASURED.grok },
   },
   "observed-model-provenance": {
-    claude: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
-    codex: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
-    grok: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    claude: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured", needed: NEEDED["observed-model-provenance"] } },
+    codex: { projection: { verdict: "wired" }, runtime: MEASURED.codex },
+    grok: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured", needed: NEEDED["observed-model-provenance"] } },
   },
   "probe-model-proof": {
-    claude: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
-    codex: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
-    grok: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    claude: { projection: { verdict: "wired" }, runtime: MEASURED.claude },
+    codex: { projection: { verdict: "wired" }, runtime: MEASURED.codex },
+    grok: { projection: { verdict: "wired" }, runtime: MEASURED.grok },
   },
   "cross-runtime-task-continuation": {
-    claude: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
-    codex: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
-    grok: { projection: { verdict: "wired" }, runtime: { verdict: "unmeasured" } },
+    claude: { projection: { verdict: "wired" }, runtime: MEASURED.claude },
+    codex: { projection: { verdict: "wired" }, runtime: MEASURED.codex },
+    grok: { projection: { verdict: "wired" }, runtime: MEASURED.grok },
   },
   "persistent-instructions-launch": {
     claude: {
@@ -127,7 +143,9 @@ export function parityDeclarationErrors(input: unknown): string[] {
         if (!nonEmpty(runtimeFact.measuredAt) || !/^\d{4}-\d{2}-\d{2}$/.test(runtimeFact.measuredAt)) {
           errors.push(`${label}/runtime: measured requires measuredAt as YYYY-MM-DD`);
         }
-      } else if (runtimeFact.verdict !== "unmeasured") {
+      } else if (runtimeFact.verdict === "unmeasured") {
+        if (!nonEmpty(runtimeFact.needed)) errors.push(`${label}/runtime: unmeasured requires needed`);
+      } else {
         errors.push(`${label}/runtime: must be measured, cannot, or explicitly unmeasured; wired is projection-only`);
       }
     }

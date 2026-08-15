@@ -60,6 +60,12 @@ describe("SDD 508 runtime parity declaration", () => {
     ]));
   });
 
+  it("refuses a mute unmeasured runtime half", () => {
+    const malformed = structuredClone(RUNTIME_PARITY) as unknown as Record<string, Record<string, unknown>>;
+    (malformed["session-hooks"]!.grok as Record<string, unknown>).runtime = { verdict: "unmeasured" };
+    expect(parityDeclarationErrors(malformed)).toContain("session-hooks/grok/runtime: unmeasured requires needed");
+  });
+
   it("refuses runtime behavior disguised as wired instead of explicitly unmeasured", () => {
     const malformed = structuredClone(RUNTIME_PARITY) as unknown as Record<string, Record<string, unknown>>;
     (malformed["session-hooks"]!.grok as Record<string, unknown>).runtime = { verdict: "wired" };
