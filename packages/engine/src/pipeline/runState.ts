@@ -1,6 +1,6 @@
 import type { PipelineDef } from "./loadPipeline.js";
 import type { UpstreamHandoff } from "./nodePrompt.js";
-import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
+import type { WorktreeRecord } from "../worktree/worktreeRecord.js";
 
 /**
  * spec 230 — pure pipeline-run state machine. Immutable transitions (each returns a NEW run); the

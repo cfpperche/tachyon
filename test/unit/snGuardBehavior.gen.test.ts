@@ -7,7 +7,7 @@ import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { asAgent, parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
 import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
-import type { WorktreeRecord } from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { WorktreeRecord } from "@tachyon/engine/worktree/worktreeRecord.js";
 
 /** t-ef19a1 — RULING: the trust asymmetry is INTENTIONAL (a tachyon.yml author already has full
  *  extension trust; a declared opencode agent with no `harness:` is allowed to run without isolation,

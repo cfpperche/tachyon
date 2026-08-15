@@ -125,7 +125,8 @@ import { createFormationAdoptionHost, type FormationAdoptionHost } from "../agen
 import type { FormationAdoptionRecord, FormationAdoptionState } from "../agents/formation/bootstrapTransaction.js";
 import { readCanonicalAgentProfile, readCanonicalAgentProfileEntry, closeCanonicalAgentProfile } from "../config/agentProfileReader.js";
 import type { FormationLifecyclePort } from "../agents/formation/lifecycleConsumer.js";
-import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { WorktreeManager, resolveWorktreeCwd, branchFor } from "../worktree/WorktreeManager.js";
+import type { WorktreeRecord } from "../worktree/worktreeRecord.js";
 import { shareDependencies } from "../worktree/dependencySharing.js";
 import { resolveParentLocation } from "../worktree/parentLocation.js";
 import { approvalResolutionPorts } from "../approvals/approvalResolutionPorts.js";

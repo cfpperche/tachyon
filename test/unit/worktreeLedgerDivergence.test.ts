@@ -23,7 +23,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { removeAgentWorktree, type AgentWorktreeRemovalPorts } from "@tachyon/engine/agents/agentRemovalCascade.js";
 import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
 import { ManagedWorktreeService, agentWorktreePath } from "@tachyon/engine/worktree/ManagedWorktreeService.js";
-import { WorktreeManager, type WorktreeRecord } from "@tachyon/engine/worktree/WorktreeManager.js";
+import { WorktreeManager } from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { WorktreeRecord } from "@tachyon/engine/worktree/worktreeRecord.js";
 import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 
 const AGENT = "claude-validador";

@@ -83,7 +83,8 @@ import type {
 } from "./presentation/items.js";
 import { isTemporaryItem } from "./presentation/contextValue.js";
 import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.js";
-import type { WorktreeRecord, WorktreeStatus } from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { WorktreeStatus } from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { WorktreeRecord } from "@tachyon/engine/worktree/worktreeRecord.js";
 import { previewBody } from "@tachyon/engine/prompts/injectFlow.js";
 import { createGitExec, worktreeShowFile, resolveBase } from "@tachyon/engine/worktree/WorktreeManager.js";
 import { resolveGitBinary } from "@tachyon/engine/worktree/gitBinary.js";

@@ -10,9 +10,9 @@ import {
   temporaryBranchFor,
   WorktreeUnavailableError,
   WorktreeManager,
-  type WorktreeRecord,
   type WorktreeResolveDeps,
 } from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { WorktreeRecord } from "@tachyon/engine/worktree/worktreeRecord.js";
 import { AGENT_NAME_PATTERN } from "@tachyon/engine/config/nameValidation.js";
 import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 
