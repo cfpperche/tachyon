@@ -100,4 +100,31 @@ describe("Kit a11y contract (T4)", () => {
     await page.waitForSelector('[data-testid="kit-popover-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-popover-trigger", { timeout: HANG_TIMEOUT_MS });
   });
+
+  it("an icon-only control wrapped in KitTooltip gets an accessible name from the label", async () => {
+    const named = await page.evaluate(() => {
+      const trigger = document.querySelector('[data-testid="icon-only-trigger"]');
+      return {
+        ariaLabel: trigger?.getAttribute("aria-label"),
+        text: (trigger?.textContent ?? "").trim(),
+      };
+    });
+    expect(named.text).toBe("");
+    expect(named.ariaLabel).toBe("Archive");
+  });
+
+  it("KitDialog opens, traps focus, and restores it on Escape", async () => {
+    await page.click('[data-testid="kit-dialog-trigger"]');
+    await page.waitForSelector('[data-testid="kit-dialog-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
+    await page.focus('[data-testid="kit-dialog-close"]');
+    await page.keyboard.press("Tab");
+    const stillInDialog = await page.evaluate(() => {
+      const content = document.querySelector('[data-testid="kit-dialog-content"]');
+      return !!content && content.contains(document.activeElement);
+    });
+    expect(stillInDialog).toBe(true);
+    await page.keyboard.press("Escape");
+    await page.waitForSelector('[data-testid="kit-dialog-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
+    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-dialog-trigger", { timeout: HANG_TIMEOUT_MS });
+  });
 });

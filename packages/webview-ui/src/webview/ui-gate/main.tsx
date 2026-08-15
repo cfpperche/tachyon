@@ -44,7 +44,16 @@ import {
   KitPopover,
   KitPopoverTrigger,
   KitPopoverContent,
+  KitTooltip,
+  KitDialog,
+  KitDialogTrigger,
+  KitDialogContent,
+  KitDialogHeader,
+  KitDialogTitle,
+  KitDialogDescription,
+  KitDialogClose,
 } from "../shared/ui/kit";
+import { Icon } from "../shared/ui/Icon";
 import { IconButton } from "../shared/ui/IconButton";
 import { PREFLIGHT_FIXTURE_HTML } from "./preflightFixture";
 
@@ -196,6 +205,22 @@ function Root() {
             <input data-testid="kit-popover-input" placeholder="focusable field" />
           </KitPopoverContent>
         </KitPopover>
+        <KitTooltip label="Archive">
+          <button type="button" data-testid="icon-only-trigger">
+            <Icon name="archive" />
+          </button>
+        </KitTooltip>
+        <KitDialog>
+          <KitDialogTrigger data-testid="kit-dialog-trigger">Kit dialog</KitDialogTrigger>
+          <KitDialogContent data-testid="kit-dialog-content">
+            <KitDialogHeader>
+              <KitDialogTitle>Kit dialog</KitDialogTitle>
+              <KitDialogDescription>Kit modal check</KitDialogDescription>
+            </KitDialogHeader>
+            <input data-testid="kit-dialog-input" placeholder="focusable field" />
+            <KitDialogClose data-testid="kit-dialog-close">Close</KitDialogClose>
+          </KitDialogContent>
+        </KitDialog>
       </section>
 
       <section

@@ -2,16 +2,16 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
-import { EXPECTED_ABSENCE_TIMEOUT_MS, HANG_TIMEOUT_MS } from "./support/hangTimeout";
+import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 
 // spec 342 T3 — THE COMPAT GATE. Per spec.md's checklist, browser-level (not jsdom): open/close, Esc,
 // outside-click dismissal, Tab/Shift+Tab containment where applicable, focus restore, nested portals,
 // keyboard nav/typeahead, aria-expanded/aria-controls/id stability. Pass/fail per component is transcribed
 // into docs/specs/342-vendored-ui-components/notes.md — THIS file is the evidence, not the record.
 //
-// Tooltip and Dialog GATE FAILURES are captured with vitest's `.fails` modifier, NOT skipped or deleted:
-// the suite stays green (a failing modifier that starts passing is itself a signal — Radix shipped a fix,
-// re-gate), while the actual repro stays live and runnable. See notes.md for the full disposition.
+// t-c7e518 — Tooltip and Dialog were recorded as `.fails` from 2026-07-03 (Presence getComputedStyle
+// on a Preact instance for Dialog; uncontrolled open-machine never flipping for Tooltip). Both now
+// pass on this tree; the previous red is the `.fails` history plus the journal measurement.
 describe("ui-gate compat gate (T3)", () => {
   let server: GateServer;
   let browser: Browser;
@@ -50,27 +50,26 @@ describe("ui-gate compat gate (T3)", () => {
   const waitForActiveTestId = (p: Page, testId: string, timeout = HANG_TIMEOUT_MS) =>
     p.waitForFunction((id) => document.activeElement?.getAttribute("data-testid") === id, { timeout }, testId);
 
-  describe("Tooltip — GATE FAILURE (excluded; T4 ships no KitTooltip)", () => {
-    // Repro: neither a real mouse hover NOR a programmatic focus opens the tooltip under preact/compat, even
-    // waiting a full second (well past TooltipProvider's delayDuration=0). `data-state` stays "closed" and
-    // `[data-testid="tooltip-content"]` never mounts. Verified with both trigger mechanisms manually before
-    // encoding as a permanent `.fails` regression probe.
-    it.fails("opens on trigger focus, restoring focus on Escape close", async () => {
+  describe("Tooltip — GATE PASS (t-c7e518)", () => {
+    it("opens on trigger focus, restoring focus on Escape close", async () => {
       await page.focus('[data-testid="tooltip-trigger"]');
-      await page.waitForSelector('[data-testid="tooltip-content"]', { visible: true, timeout: EXPECTED_ABSENCE_TIMEOUT_MS });
+      await page.waitForSelector('[data-testid="tooltip-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       expect(await activeTestId(page)).toBe("tooltip-trigger");
       await page.keyboard.press("Escape");
-      await page.waitForSelector('[data-testid="tooltip-content"]', { hidden: true, timeout: EXPECTED_ABSENCE_TIMEOUT_MS });
+      await page.waitForSelector('[data-testid="tooltip-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     });
 
-    it.fails("keeps aria-describedby on the trigger pointed at the content's id", async () => {
+    it("keeps aria-describedby on the trigger pointed at the tooltip announcement node", async () => {
       await page.focus('[data-testid="tooltip-trigger"]');
-      await page.waitForSelector('[data-testid="tooltip-content"]', { visible: true, timeout: EXPECTED_ABSENCE_TIMEOUT_MS });
+      await page.waitForSelector('[data-testid="tooltip-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       const linked = await page.evaluate(() => {
         const trigger = document.querySelector('[data-testid="tooltip-trigger"]');
         const content = document.querySelector('[data-testid="tooltip-content"]');
         const describedBy = trigger?.getAttribute("aria-describedby");
-        return !!describedBy && describedBy === content?.id;
+        const announced = describedBy ? document.getElementById(describedBy) : null;
+        // Radix puts `id` + role="tooltip" on a visually-hidden child, not on the popper root
+        // that carries data-testid. The contract is: the trigger names that announcement node.
+        return !!announced && !!content && content.contains(announced) && announced.getAttribute("role") === "tooltip";
       });
       expect(linked).toBe(true);
     });
@@ -245,23 +244,18 @@ describe("ui-gate compat gate (T3)", () => {
     });
   });
 
-  describe("Dialog — GATE FAILURE (excluded; no legacy modal to fall back to, so T6 ships no KitDialog)", () => {
-    // Repro: clicking the trigger opens (aria-expanded=true, data-state=open on the trigger, the Overlay
-    // mounts), then an UNCAUGHT exception fires before Content mounts: `TypeError: Failed to execute
-    // 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.` — some ref Radix Dialog's
-    // internals (RemoveScroll/FocusScope) expects to be attached by the time it reads computed style isn't,
-    // under preact/compat's ref-forwarding timing. `[data-testid="dialog-content"]` never mounts.
-    it.fails("opens without an uncaught exception", async () => {
+  describe("Dialog — GATE PASS (t-c7e518)", () => {
+    it("opens without an uncaught exception", async () => {
       const pageErrors: string[] = [];
       page.on("pageerror", (err) => pageErrors.push(String(err)));
       await page.click('[data-testid="dialog-trigger"]');
-      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: EXPECTED_ABSENCE_TIMEOUT_MS });
+      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       expect(pageErrors).toEqual([]);
     });
 
-    it.fails("traps Tab within the modal (last → first wraps forward)", async () => {
+    it("traps Tab within the modal (last → first wraps forward)", async () => {
       await page.click('[data-testid="dialog-trigger"]');
-      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: EXPECTED_ABSENCE_TIMEOUT_MS });
+      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await page.focus('[data-testid="dialog-close-footer"]');
       await page.keyboard.press("Tab");
       const stillInDialog = await page.evaluate(() => {
@@ -271,19 +265,19 @@ describe("ui-gate compat gate (T3)", () => {
       expect(stillInDialog).toBe(true);
     });
 
-    it.fails("closes on Escape and restores focus to the trigger", async () => {
+    it("closes on Escape and restores focus to the trigger", async () => {
       await page.click('[data-testid="dialog-trigger"]');
-      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: EXPECTED_ABSENCE_TIMEOUT_MS });
+      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await page.keyboard.press("Escape");
-      await page.waitForSelector('[data-testid="dialog-content"]', { hidden: true, timeout: EXPECTED_ABSENCE_TIMEOUT_MS });
+      await page.waitForSelector('[data-testid="dialog-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
       await waitForActiveTestId(page, "dialog-trigger");
     });
 
-    it.fails("dismisses on outside click (clicking the overlay)", async () => {
+    it("dismisses on outside click (clicking the overlay)", async () => {
       await page.click('[data-testid="dialog-trigger"]');
-      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: EXPECTED_ABSENCE_TIMEOUT_MS });
+      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await page.mouse.click(5, 5);
-      await page.waitForSelector('[data-testid="dialog-content"]', { hidden: true, timeout: EXPECTED_ABSENCE_TIMEOUT_MS });
+      await page.waitForSelector('[data-testid="dialog-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     });
   });
 
