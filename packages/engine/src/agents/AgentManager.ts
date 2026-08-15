@@ -14,11 +14,8 @@ import { redactSecrets } from "../utils/redactSecrets.js";
 import { RELEASE_LOCK_HINT, resolveBase as resolveWorktreeBase } from "../worktree/WorktreeManager.js";
 import type { WorktreeRecord } from "../worktree/worktreeRecord.js";
 import { bridgeGrokHome, defaultRealOpencodeDataHome, harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
-import {
-  type SessionLedger,
-  type SessionRecord,
-  type SessionResume,
-} from "../resume/SessionLedger.js";
+import type { SessionLedger } from "../resume/SessionLedger.js";
+import type { SessionRecord, SessionResume } from "../resume/sessionRecord.js";
 import {
   captureActivityRenameSnapshot,
   convergeActivityRetirement,

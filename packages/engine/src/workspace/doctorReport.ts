@@ -4,8 +4,7 @@
  */
 import type { ConfigFailure } from "../config/configFailure.js";
 import type { ConfigLkgSnapshot } from "../config/configLkg.js";
-import type { SessionRecord } from "../resume/SessionLedger.js";
-import { isResumable } from "../resume/SessionLedger.js";
+import { isResumable, type SessionRecord } from "../resume/sessionRecord.js";
 import { isTemporaryInstance } from "../agents/agentInstancePolicy.js";
 
 export type DoctorSeverity = "ok" | "warn" | "error" | "info";

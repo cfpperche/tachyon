@@ -1,4 +1,4 @@
-import { isResumable, type SessionRecord } from "./SessionLedger.js";
+import { isResumable, type SessionRecord } from "./sessionRecord.js";
 
 /**
  * Pure activation-time resume decision (spec 209 / F29). Given the ledger and the

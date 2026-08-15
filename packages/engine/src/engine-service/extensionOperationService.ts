@@ -21,7 +21,7 @@ import {
   setIdeBrowserEnabled,
   setIdleAfterMinutes,
 } from "../config/YamlConfigEditor.js";
-import { isResumable } from "../resume/SessionLedger.js";
+import { isResumable } from "../resume/sessionRecord.js";
 import { PromptStore } from "../prompts/PromptStore.js";
 import { injectTargets, submitRefuseReason } from "../prompts/injectFlow.js";
 import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";

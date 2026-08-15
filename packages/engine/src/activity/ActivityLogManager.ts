@@ -4,7 +4,7 @@ import * as path from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
 import { ActivityLogWriter, type SessionLoc } from "./logWriter.js";
 import { appendOwnerRow, readSessionOwners, resolveRotationFollow, sessionOwnersFile } from "./sessionOwners.js";
-import { isResumable } from "../resume/SessionLedger.js";
+import { isResumable } from "../resume/sessionRecord.js";
 import { encodeClaudeCwd } from "@tachyon/shared/resume/adapters.js";
 
 /** t-9f2641 — a resolved claude transcript that hasn't grown for this long is a candidate for rotation-follow

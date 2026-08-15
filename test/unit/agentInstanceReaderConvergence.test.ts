@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { degradedRosterExtras } from "@tachyon/engine/config/configFailure.js";
-import type { SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
+import type { SessionRecord } from "@tachyon/engine/resume/sessionRecord.js";
 
 /**
  * SDD 482 phase 3 (`t-5e1113`) — per-reader proof for the GROUPED delivery.
