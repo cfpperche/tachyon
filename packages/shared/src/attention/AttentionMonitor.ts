@@ -948,6 +948,20 @@ export class AttentionMonitor {
     if (composer.ansiEmptyContentStyle && this.io.capturePaneEscaped) {
       try {
         const styledContent = (await this.io.capturePaneEscaped(agent, composer.tailLines)).replace(/\s+$/, "");
+        // The escaped tail is how we tell a dim suggestion from a draft. When that tail
+        // contains no composer region at all, two things look the same to findComposerRegion:
+        // a history echo it skipped (occupied=false, t-6ffa13) and a slash menu that pushed
+        // the prompt above tailLines: 8 (occupied, t-67a565 / t-328cc3 / t-6fc817). A prompt
+        // glyph still in the tail means the skip already answered. No glyph means the prompt
+        // is above — walk the already-held full `content`. Do not recapture: another tmux
+        // IPC is ~4.6ms p50; the scan is ~0.01ms. Evidence stays false so a history echo
+        // on the plain capture cannot suppress hasActivitySignal.
+        if (!findComposerRegion(styledContent.split("\n"), composer)) {
+          if (this.tailHasPromptGlyph(styledContent, composer)) {
+            return { composerOccupied: false, composerEvidence: false };
+          }
+          return this.occupancyFromHeldPane(content, composer);
+        }
         const occupied = isComposerOccupied(styledContent, composer);
         return {
           composerOccupied: occupied,
@@ -956,10 +970,36 @@ export class AttentionMonitor {
           composerEvidence: occupied && this.composerHasAnsiEvidence(styledContent, composer),
         };
       } catch {
-        return { composerOccupied: isComposerOccupied(content, composer), composerEvidence: false };
+        return this.occupancyFromHeldPane(content, composer);
       }
     }
+    // t-6fc817 — grok/hermes/opencode/pi. Widening this walk past tailLines lets a history
+    // echo win when the live composer is off-screen (mid-turn). composerEvidence is true
+    // here, so hasActivitySignal would go false and the fleet would read idle. The tail
+    // bound is load-bearing, not an oversight.
     return { composerOccupied: isComposerOccupied(content, composer), composerEvidence: !composer.ansiEmptyContentStyle };
+  }
+
+  /** Occupancy over a pane we already hold. No extra capture. */
+  private occupancyFromHeldPane(
+    content: string,
+    composer: NonNullable<ReturnType<typeof runtimeProfile>>["composer"],
+  ): { composerOccupied: boolean; composerEvidence: boolean } {
+    if (!composer) return { composerOccupied: false, composerEvidence: false };
+    const lines = content.split("\n").length;
+    return {
+      composerOccupied: isComposerOccupied(content, { ...composer, tailLines: Math.max(composer.tailLines, lines) }),
+      composerEvidence: false,
+    };
+  }
+
+  /** A prompt glyph in the tailed capture, including history echoes findComposerRegion skips. */
+  private tailHasPromptGlyph(
+    content: string,
+    composer: NonNullable<ReturnType<typeof runtimeProfile>>["composer"],
+  ): boolean {
+    if (!composer?.promptLine) return false;
+    return content.split("\n").some((line) => composer.promptLine!.test(stripAnsi(line)));
   }
 
   private composerHasAnsiEvidence(content: string, composer: NonNullable<ReturnType<typeof runtimeProfile>>["composer"]): boolean {
