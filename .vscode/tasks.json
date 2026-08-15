@@ -16,13 +16,27 @@
     {
       "label": "tachyon: build-dev-host",
       "type": "shell",
-      "command": "set -euo pipefail; WF=\"${workspaceFolder}\"; if [ -e \"$WF/.tachyon/dev-host/extension\" ]; then PTR=\"$WF/.tachyon/dev-host\"; HOST=\"$WF\"; else HOST=\"$WF\"; if [ -f \"$WF/.git\" ]; then COMMON=\"$(git -C \"$WF\" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)\"; if [ -n \"${COMMON:-}\" ] && [ -f \"$(dirname \"$COMMON\")/package.json\" ]; then HOST=\"$(dirname \"$COMMON\")\"; fi; fi; BASE=\"$HOST/.tachyon/dev-host\"; if [ -e \"$BASE/extension\" ]; then PTR=\"$BASE\"; else echo \"Tachyon Dev Host is not armed under this checkout:\" >&2; echo \"  workspaceFolder: $WF\" >&2; echo \"  looked at: $WF/.tachyon/dev-host/extension\" >&2; echo \"  and: $BASE/extension\" >&2; echo \"Arm from the same checkout you F5 from:\" >&2; echo \"  cd $WF && scripts/dev-host/cli.sh point --worktree $WF --fixture <slug> --spec <n> --slug <s>\" >&2; echo \"  scripts/dev-host/cli.sh point-status\" >&2; exit 1; fi; fi; if [ ! -e \"$PTR/extension\" ]; then echo \"Tachyon Dev Host missing extension at $PTR/extension\" >&2; exit 1; fi; EXT=\"$(cd \"$PTR/extension\" && pwd -P)\"; NM_SRC=\"$HOST/node_modules\"; if [ ! -d \"$NM_SRC\" ]; then if [ -f \"$WF/.git\" ]; then COMMON=\"$(git -C \"$WF\" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)\"; if [ -n \"${COMMON:-}\" ] && [ -d \"$(dirname \"$COMMON\")/node_modules\" ]; then NM_SRC=\"$(dirname \"$COMMON\")/node_modules\"; fi; fi; fi; if [ ! -d \"$NM_SRC\" ] && [ -d \"$WF/node_modules\" ]; then NM_SRC=\"$WF/node_modules\"; fi; test -d \"$EXT/node_modules\" || ln -sfn \"$NM_SRC\" \"$EXT/node_modules\"; node --input-type=module -e \"import { ensureDevHostTmuxLaunchEnv } from './scripts/dev-host/pointer.mjs'; const r=ensureDevHostTmuxLaunchEnv(process.argv[1]); console.log('build-dev-host: tmux='+r.tmuxTmpDir);\" \"$HOST\"; echo \"build-dev-host: WF=$WF PTR=$PTR EXT=$EXT\"; TACHYON_ENGINE_CHANNEL=dev npm run build --prefix \"$HOST\"",
+      "command": "set -euo pipefail; WF=\"${workspaceFolder}\"; if [ -e \"$WF/.tachyon/dev-host/extension\" ]; then PTR=\"$WF/.tachyon/dev-host\"; HOST=\"$WF\"; else HOST=\"$WF\"; if [ -f \"$WF/.git\" ]; then COMMON=\"$(git -C \"$WF\" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)\"; if [ -n \"${COMMON:-}\" ] && [ -f \"$(dirname \"$COMMON\")/package.json\" ]; then HOST=\"$(dirname \"$COMMON\")\"; fi; fi; BASE=\"$HOST/.tachyon/dev-host\"; if [ -e \"$BASE/extension\" ]; then PTR=\"$BASE\"; else echo \"docs/runbooks/dev-host.md:1:1: error: Tachyon Dev Host is not armed under this checkout. Arm: cd $WF && scripts/dev-host/cli.sh point --worktree $WF --fixture <slug>\" >&2; echo \"Tachyon Dev Host is not armed under this checkout:\" >&2; echo \"  workspaceFolder: $WF\" >&2; echo \"  looked at: $WF/.tachyon/dev-host/extension\" >&2; echo \"  and: $BASE/extension\" >&2; echo \"Arm from the same checkout you F5 from:\" >&2; echo \"  cd $WF && scripts/dev-host/cli.sh point --worktree $WF --fixture <slug> --spec <n> --slug <s>\" >&2; echo \"  scripts/dev-host/cli.sh point-status\" >&2; exit 1; fi; fi; if [ ! -e \"$PTR/extension\" ]; then echo \"docs/runbooks/dev-host.md:1:1: error: Tachyon Dev Host missing extension at $PTR/extension\" >&2; exit 1; fi; EXT=\"$(cd \"$PTR/extension\" && pwd -P)\"; NM_SRC=\"$HOST/node_modules\"; if [ ! -d \"$NM_SRC\" ]; then if [ -f \"$WF/.git\" ]; then COMMON=\"$(git -C \"$WF\" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)\"; if [ -n \"${COMMON:-}\" ] && [ -d \"$(dirname \"$COMMON\")/node_modules\" ]; then NM_SRC=\"$(dirname \"$COMMON\")/node_modules\"; fi; fi; fi; if [ ! -d \"$NM_SRC\" ] && [ -d \"$WF/node_modules\" ]; then NM_SRC=\"$WF/node_modules\"; fi; test -d \"$EXT/node_modules\" || ln -sfn \"$NM_SRC\" \"$EXT/node_modules\"; node --input-type=module -e \"import { ensureDevHostTmuxLaunchEnv } from './scripts/dev-host/pointer.mjs'; const r=ensureDevHostTmuxLaunchEnv(process.argv[1]); console.log('build-dev-host: tmux='+r.tmuxTmpDir);\" \"$HOST\"; echo \"build-dev-host: WF=$WF PTR=$PTR EXT=$EXT\"; TACHYON_ENGINE_CHANNEL=dev npm run build --prefix \"$HOST\"",
       "options": {
         "cwd": "${workspaceFolder}"
       },
-      "problemMatcher": [],
+      "problemMatcher": {
+        "owner": "tachyon-dev-host",
+        "source": "dev-host",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "severity": "error",
+        "pattern": {
+          "regexp": "^(.*):(\\d+):(\\d+):\\s+(error):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
+      },
       "presentation": {
         "reveal": "silent",
+        "revealProblems": "onProblem",
         "panel": "shared"
       }
     }
