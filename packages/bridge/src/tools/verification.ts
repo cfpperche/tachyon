@@ -60,8 +60,9 @@ export function registerVerificationCoreTools(mcp: McpServer, deps: BridgeDeps):
     {
       description:
         "Read a worktree agent's non-binary EVIDENCE records (spec 273), newest-first, each flagged fresh/stale " +
-        "(stale = the worktree HEAD moved past the commit it was produced against). Use it to read advisories, " +
-        "review judgments and other evidence a child produced.",
+        "(stale = the worktree HEAD moved past the commit it was produced against). Records live next to their " +
+        "files under .tachyon/evidence/, so list_evidence still reads after the agent is dismissed. Use it to read " +
+        "advisories, review judgments and other evidence a child produced.",
       inputSchema: { name: AGENT_NAME.describe("the worktree agent whose evidence to read") },
     },
     async ({ name }) => {
