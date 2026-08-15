@@ -1,7 +1,8 @@
 # SDD 507 — a bridge vira transporte, e a engine deixa de saber quem a chama
 
-**Status:** draft
+**Status:** shipped
 **Criada:** 2026-08-14
+**Closure:** Entregue em 2026-08-15. A régua `engine -> bridge` foi de 31 a **zero** em cinco fatias; `packages/bridge` existe e declara `@tachyon/engine`, a engine não declara de volta, e `check:package-boundary` recusa a travessia com lista de exceções vazia. `test/unit/alternateTransportComposition.test.ts` compõe um transporte alternativo contra a porta com o `runEngineDaemon` real, sem editar um único arquivo da engine. Release e smoke rodados no primário; F5 e os três testes de dogfood provados pelo mantenedor.
 **Medição base:** [`docs/research/bridge-engine-boundary-t69ae46.md`](../../research/bridge-engine-boundary-t69ae46.md)
 **Régua:** `node scripts/research/measure-engine-bridge-imports.mjs`
 
@@ -49,26 +50,26 @@ A regra deixa de ser observada e passa a ser imposta. É a mesma diferença que 
 
 ## 5. Critérios de aceite
 
-- [ ] **Cenário: a engine não alcança o transporte**
+- [x] **Cenário: a engine não alcança o transporte**
   - **Dado** `packages/engine` sem declarar dependência de `@tachyon/bridge`
   - **Quando** um arquivo da engine importa qualquer coisa da bridge
   - **Então** `check:package-boundary` falha nomeando arquivo, alvo e fronteira
 
-- [ ] **Cenário: um segundo transporte não precisa da engine mudar**
+- [x] **Cenário: um segundo transporte não precisa da engine mudar**
   - **Dado** o contrato que a engine expõe
   - **Quando** alguém escreve um transporte novo contra ele
   - **Então** nenhum arquivo de `packages/engine` precisa ser editado, e existe prova executável disso
 
-- [ ] **Cenário: o produto continua idêntico**
+- [x] **Cenário: o produto continua idêntico**
   - **Dado** qualquer fatia desta SDD já mergeada
   - **Quando** se roda `npm run release` e `npm run smoke:vsix`
   - **Então** o VSIX é produzido e instala, com a mesma identidade de versão
 
-- [ ] A régua mede **zero** bindings `engine → bridge`.
-- [ ] `packages/bridge` existe, declara `@tachyon/engine`, e a engine não declara nada de volta.
-- [ ] `check:package-boundary` com lista de exceções **vazia**.
-- [ ] Quem instancia a `Bridge` não é mais a engine.
-- [ ] F5 provado por um humano.
+- [x] A régua mede **zero** bindings `engine → bridge`.
+- [x] `packages/bridge` existe, declara `@tachyon/engine`, e a engine não declara nada de volta.
+- [x] `check:package-boundary` com lista de exceções **vazia**.
+- [x] Quem instancia a `Bridge` não é mais a engine.
+- [x] F5 provado por um humano.
 
 ## 6. Fora de escopo
 
