@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { AgentInstanceLifetime } from "@tachyon/engine/resume/SessionLedger.js";
+import type { AgentInstanceLifetime } from "@tachyon/shared/resume/agentInstance.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { PluginActionBroker, type PluginActionBrokerResult } from "./broker.js";

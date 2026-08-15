@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import type { AgentInstancePolicy } from "@tachyon/shared/resume/agentInstance.js";
-export type { AgentInstanceLifetime, AgentInstancePolicy, AgentInstanceResumePolicy } from "@tachyon/shared/resume/agentInstance.js";
 import path from "node:path";
 import crypto from "node:crypto";
 import { isDeepStrictEqual } from "node:util";

@@ -5,7 +5,7 @@ import {
 } from "../handoff/handoffDistillService.js";
 import { isSafeHandoffRelativePath, projectHandoffRelativePath } from "../handoff/handoffPath.js";
 import type { HandoffDistillTargetState } from "@tachyon/shared/handoff/distill.js";
-import type { AgentInstanceLifetime, AgentInstanceResumePolicy } from "../resume/SessionLedger.js";
+import type { AgentInstanceLifetime, AgentInstanceResumePolicy } from "@tachyon/shared/resume/agentInstance.js";
 
 export const HANDOFF_BODY_MAX_CHARS = 1024 * 1024;
 export const HANDOFF_PENDING_NOTE_LIMIT = 1_000;
