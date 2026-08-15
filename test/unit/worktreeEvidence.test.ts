@@ -90,10 +90,26 @@ describe("worktree evidence — pure helpers (spec 273)", () => {
       expect(evidenceBadge(undefined)).toBeUndefined();
       expect(evidenceBadge({ total: 0, fresh: 0, stale: 0, bySeverity: { info: 0, warn: 0, error: 0 }, freshBySeverity: { info: 0, warn: 0, error: 0 }, latest: [] })).toBeUndefined();
     });
-    it("distils total/stale, and warn/error from FRESH counts (a stale error doesn't light the badge)", () => {
+    it("distils total from FRESH counts (a stale error doesn't light the badge)", () => {
       expect(
         evidenceBadge({ total: 4, fresh: 2, stale: 2, bySeverity: { info: 1, warn: 1, error: 2 }, freshBySeverity: { info: 1, warn: 1, error: 0 }, latest: [] }),
-      ).toEqual({ total: 4, stale: 2, warn: 1, error: 0 }); // total/stale from all; warn/error from fresh
+      ).toEqual({ total: 2, stale: 0, warn: 1, error: 0 });
+    });
+
+    it("t-1d198e — the badge counts only fresh records; all-stale is no badge", () => {
+      // The sidebar currently sums total including stale. A counter that already computed stale
+      // and still adds those rows is the defect. Derive expected from the same summary the product uses.
+      const allStale = summarizeEvidence([
+        ev({ id: "old", atCommit: "yesterday", severity: "error" }),
+      ], "HEAD");
+      expect(evidenceBadge(allStale)).toBeUndefined();
+      const mixed = summarizeEvidence([
+        ev({ id: "now", atCommit: "HEAD", severity: "warn" }),
+        ev({ id: "old", atCommit: "yesterday", severity: "error" }),
+      ], "HEAD");
+      const badge = evidenceBadge(mixed);
+      expect(badge?.total).toBe(mixed.fresh);
+      expect(badge?.total).not.toBe(mixed.total);
     });
   });
 

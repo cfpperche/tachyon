@@ -449,9 +449,9 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
     a.evidence ? (
       <Badge
         tone={a.evidence.error > 0 ? "err" : a.evidence.warn > 0 ? "warn" : "default"}
-        title={`${a.evidence.total} evidence record(s)${a.evidence.error ? `, ${a.evidence.error} error` : ""}${a.evidence.warn ? `, ${a.evidence.warn} warn` : ""}${a.evidence.stale ? `, ${a.evidence.stale} stale` : ""} — advisory, never gates (list_evidence to read)`}
+        title={`${a.evidence.total} evidence record(s) about the current tree${a.evidence.error ? `, ${a.evidence.error} error` : ""}${a.evidence.warn ? `, ${a.evidence.warn} warn` : ""} — advisory, never gates (list_evidence to read stale history)`}
       >
-        ⊙ {a.evidence.total}{a.evidence.stale > 0 ? ` (${a.evidence.stale}⊘)` : ""}
+        ⊙ {a.evidence.total}
       </Badge>
     ) : null,
 
