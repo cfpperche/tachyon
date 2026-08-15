@@ -38,6 +38,8 @@ const HEADER = [
   "#     other meta field but not `a.evidence`. A real, shipped bug — found by this file, not by review.",
   "#   execution-verify states — their badges and dedicated fixture blocks are removed with the product-run",
   "#     execution-verify capability; evidence badges remain advisory and independently rendered.",
+  "#   badge-evidence-clean / -warn / -error (t-1d198e) — the badge counts only records about the current",
+  "#     tree. Stale no longer appears in the label or tooltip; list_evidence still reads history.",
   "#",
   "# Regenerate ONLY for an intentional card change: UPDATE_SIDEBAR_CARD_GOLDEN=1 npx vitest run test/unit/sidebarCardTemplateEquality.test.ts",
   "# Serialized by test/helpers/staticPreact.ts; fixtures in test/fixtures/sidebar/agentCardFixtures.ts.",
