@@ -107,32 +107,3 @@ nomeado em `plan.md` D5.
 
 `session-ownership hooks` da lista da linha 66 já virou `session-hooks` na fatia 1. Os demais seams
 daquela lista não foram promovidos nem classificados aqui; pertencem à fatia 5.
-
-## Fatia 5 — as costuras deixam de ser promessa sem prazo
-
-Decisão tomada em **2026-08-15**, limitada a Claude, Codex e Grok.
-
-### Critério de promoção
-
-Uma costura merece dimensão quando expressa um resultado de produto estável e comparável entre
-runtimes, cuja presença/ausência pode afetar o usuário ou a validade de uma evidência e pode divergir
-sem que uma dimensão existente fique necessariamente vermelha. Ela continua fora quando é apenas a
-estratégia nativa usada para cumprir uma dimensão existente, quando duplicaria exatamente a mesma
-falha, ou quando é uma regra condicional cuja ausência significa “não se aplica” e não falta de
-capacidade. Em ambos os casos a decisão recebe data; nenhum item volta a ser backlog sem relógio.
-
-### Decisão por costura
-
-| Costura | Decisão em 2026-08-15 | Veredito / motivo |
-|---|---|---|
-| Session ownership hooks | dimensão `session-hooks` (fatia 1) | Claude `wired`; Codex `wired`; Grok `wired`. O produto decide a célula em `runtimeUsesSilentPersistenceHooks`, chamada pelo gate privado do Workspace. |
-| Session-id strategy (mint vs capture) | continua fora | É protocolo nativo por trás de Resume: Claude/Grok mintam, Codex captura. A capacidade comparável é reconstruir a conversa, já coberta pela linha 4; exigir mecanismo idêntico contrariaria o princípio da matriz. |
-| Deterministic `transcriptPath` | continua fora | É um locator interno consumido por Resume/Activity. Se deixa de resolver, as linhas 4/8 falham; promovê-lo contaria o mesmo defeito duas vezes sem criar resultado novo para o usuário. |
-| Model-label normalization | continua fora | Row 10 já inclui aliases de modelo usados pelos peers. IDs observados desconhecidos usam fallback aberto, validado e honesto; quantidade de aliases é política de apresentação, não uma capacidade autônoma. |
-| Live/observed model provenance | dimensão `observed-model-provenance` | Claude `wired`; Codex `wired`; Grok `wired`. Cada normalizer emite o modelo do registro nativo e spec 378 o projeta com fonte, timestamp, stale e divergência; isso é distinto do label declarado da row 10. |
-| Probe effective-model proof | dimensão `probe-model-proof` | Claude `wired` (`provider-usage`); Codex `wired` (`session-record` correlacionado); Grok `wired` (`provider-usage`). A célula afirma que o caminho de prova existe; o tipo de evidência continua visível porque não tem a mesma força. |
-| Composer suggestion vs human draft | continua fora | É uma regra condicional de Attention: Claude/Codex renderizam suggestion SGR-dim e declaram `ansiEmptyContentStyle: all-dim`; Grok não renderiza suggestion, então não declarar a exceção protege drafts reais. Ausência em Grok não é lacuna. |
-| Cross-runtime task continuation | dimensão `cross-runtime-task-continuation` | Claude `wired`; Codex `wired`; Grok `wired`. O mecanismo host-side faz focused handoff e abre nova sessão no runtime-alvo; não é native resume e pode regredir independentemente dele. |
-
-As cinco dimensões hoje declaradas são, portanto: as duas da fatia 1 mais as três promovidas nesta
-fatia. Nenhuma das quatro costuras mantidas fora permanece sem motivo ou sem a data de 2026-08-15.

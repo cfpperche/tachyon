@@ -3,13 +3,7 @@ export const PARITY_RUNTIMES = ["claude", "codex", "grok"] as const;
 export type ParityRuntime = (typeof PARITY_RUNTIMES)[number];
 
 /** SDD 508 slice 1 — start with product decisions that can be derived without a live CLI. */
-export const PARITY_DIMENSIONS = [
-  "session-hooks",
-  "headless-probe",
-  "observed-model-provenance",
-  "probe-model-proof",
-  "cross-runtime-task-continuation",
-] as const;
+export const PARITY_DIMENSIONS = ["session-hooks", "headless-probe"] as const;
 export type ParityDimension = (typeof PARITY_DIMENSIONS)[number];
 
 export type ParityCell =
@@ -35,21 +29,6 @@ export const RUNTIME_PARITY = {
     grok: { verdict: "wired" },
   },
   "headless-probe": {
-    claude: { verdict: "wired" },
-    codex: { verdict: "wired" },
-    grok: { verdict: "wired" },
-  },
-  "observed-model-provenance": {
-    claude: { verdict: "wired" },
-    codex: { verdict: "wired" },
-    grok: { verdict: "wired" },
-  },
-  "probe-model-proof": {
-    claude: { verdict: "wired" },
-    codex: { verdict: "wired" },
-    grok: { verdict: "wired" },
-  },
-  "cross-runtime-task-continuation": {
     claude: { verdict: "wired" },
     codex: { verdict: "wired" },
     grok: { verdict: "wired" },
