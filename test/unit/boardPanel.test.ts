@@ -10,7 +10,7 @@ import { BOARD_VIEW_TYPE, BoardPanelManager, boardRefreshKind, type BoardPanelDe
 import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
 import type { SectionPanelState } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
 import { legacyBoardTarget, type WorkspaceBoardTarget } from "../../apps/vscode-extension/src/shell/BoardTarget.js";
-import { readyMessage, requestSnapshotAction } from "../../packages/webview-ui/src/webview/board/messages.js";
+import { readyMessage, requestSnapshotAction } from "@tachyon/webview-ui/webview/board/messages.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 
 /**

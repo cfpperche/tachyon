@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import path from "node:path";
 import { buildSectionsModel, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import type { CockpitStrings } from "../../packages/webview-ui/src/webview/shared/control/messages.js";
+import type { CockpitStrings } from "@tachyon/webview-ui/webview/shared/control/messages.js";
 
 /** The block is a .tsx: compiled through the shared static-preact loader, like phase 4's own test. */
 let CardTemplateInEffect: (props: unknown) => unknown;

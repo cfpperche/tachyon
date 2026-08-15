@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { CONTROL_SECTION_NAV, controlSectionIcon } from "../../packages/webview-ui/src/webview/sidebar/sectionNav.js";
+import { CONTROL_SECTION_NAV, controlSectionIcon } from "@tachyon/webview-ui/webview/sidebar/sectionNav.js";
 import { WEBVIEW_APPS, sectionAppIconName } from "../../apps/vscode-extension/src/webview/webviewApps.js";
 
 /**

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { CommandStudioAdapter } from "../../apps/vscode-extension/src/webview/CommandStudioAdapter.js";
-import { blankCommandFields } from "../../packages/webview-ui/src/webview/command-studio-shell/domain.js";
+import { blankCommandFields } from "@tachyon/webview-ui/webview/command-studio-shell/domain.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import type { StudioSubmit } from "../../apps/vscode-extension/src/webview/studioSubmit.js";
 import type { AgentDef, CommandDef } from "@tachyon/engine/config/loadConfig.js";

@@ -8,7 +8,7 @@ import { resolveChromeExecutable } from "../browser/support/chrome.js";
 import { loadPlugin, previewInstall, applyInstall, detectRuntimes, type LoadedPlugin } from "../../apps/vscode-extension/src/plugins/engine.js";
 import { PluginActionBroker, type PluginActionBrokerResult } from "../../apps/vscode-extension/src/plugins/ui/broker.js";
 import { PluginFleetProjectionProvider } from "../../apps/vscode-extension/src/plugins/ui/projectionProvider.js";
-import { PLUGIN_UI_ACTION, PLUGIN_UI_ACTION_RESULT, type PluginHostBootstrap } from "../../packages/webview-ui/src/webview/plugin-host/relay.js";
+import { PLUGIN_UI_ACTION, PLUGIN_UI_ACTION_RESULT, type PluginHostBootstrap } from "@tachyon/webview-ui/webview/plugin-host/relay.js";
 import { renderWebviewShell } from "../../apps/vscode-extension/src/webview/shared/shell.js";
 import type { FleetVM } from "@tachyon/shared/sidebar/types.js";
 

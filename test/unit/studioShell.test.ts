@@ -6,11 +6,11 @@ import {
   assertNoDomainNameCollision,
   decodeStudioMessage,
   envelope,
-} from "../../packages/webview-ui/src/webview/shared/studio/protocol.js";
+} from "@tachyon/webview-ui/webview/shared/studio/protocol.js";
 import { hasBlockingErrors, mapUnknownError, NO_VALIDATION_ERRORS, type StudioError } from "../../apps/vscode-extension/src/webview/shared/studio/errorTaxonomy.js";
-import { canSave, requiresDiscardConfirmation } from "../../packages/webview-ui/src/webview/shared/studio/dirtyGating.js";
+import { canSave, requiresDiscardConfirmation } from "@tachyon/webview-ui/webview/shared/studio/dirtyGating.js";
 import { decideRestore } from "../../apps/vscode-extension/src/webview/shared/studio/restoreDecisions.js";
-import { studioLoadErrorTitle } from "../../packages/webview-ui/src/webview/shared/studio/studioLoadErrorTitle.js";
+import { studioLoadErrorTitle } from "@tachyon/webview-ui/webview/shared/studio/studioLoadErrorTitle.js";
 
 // spec 350 T1 — the shell's pure decision modules: versioned protocol with a disciplined domain slot,
 // error taxonomy (unknown = blocking), save gating, and restore decisions. DOM-free by design (dueto F1/F2).

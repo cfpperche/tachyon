@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { assigneePatch, canSubmitEdit, cardMenuActions, isStaleError, priorityPatch, resolveDrop, resolveReorder, type DragSession } from "../../packages/webview-ui/src/webview/board/interactions.js";
+import { assigneePatch, canSubmitEdit, cardMenuActions, isStaleError, priorityPatch, resolveDrop, resolveReorder, type DragSession } from "@tachyon/webview-ui/webview/board/interactions.js";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import type { Task } from "@tachyon/shared/tasks/types.js";
 

@@ -15,7 +15,7 @@ import { loadWebviewModule, renderStatic, renderStaticWithElements, type Rendere
 import { strings as fixtureStrings } from "../../scripts/webview-preview/fixtures/cockpit.js";
 import { buildSectionsModel, type WorkspaceBundle, type WorktreeRow } from "@tachyon/webview-ui/sections/model";
 import { landSuggestion, type LandFacts } from "@tachyon/engine/worktree/land.js";
-import type { WorktreeLandResult } from "../../packages/webview-ui/src/webview/worktrees/messages.js";
+import type { WorktreeLandResult } from "@tachyon/webview-ui/webview/worktrees/messages.js";
 
 const SHELL_TSX = path.join(__dirname, "../../packages/webview-ui/src/webview/worktrees/App.tsx");
 const HEAD = "9f3c1ab27d5e408b6c1d90ffae2b7c1d4e88a021";

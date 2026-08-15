@@ -12,7 +12,7 @@ import {
   nativeConfigSourceChoices,
   permissionAuthorizationChoices,
   setNativeConfigAuthorized,
-} from "../../packages/webview-ui/src/webview/agent-studio-shell/domain.js";
+} from "@tachyon/webview-ui/webview/agent-studio-shell/domain.js";
 import { validateAgentNativeConfigPolicy } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import type { AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 import type { WorkspaceAgentStudioTarget } from "../../apps/vscode-extension/src/shell/WorkspacePresentation.js";

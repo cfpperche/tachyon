@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import path from "node:path";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import type { TaskDetailVM } from "../../packages/webview-ui/src/webview/task-detail/messages.js";
+import type { TaskDetailVM } from "@tachyon/webview-ui/webview/task-detail/messages.js";
 
 /**
  * t-2f6cdd — the load-bearing deduction, measured instead of argued.

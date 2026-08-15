@@ -4,7 +4,7 @@ import {
   formatCompanionPairClipboard,
   issueCompanionPairCodeAction,
   type CompanionPairOffer,
-} from "../../packages/webview-ui/src/webview/shared/control/messages.js";
+} from "@tachyon/webview-ui/webview/shared/control/messages.js";
 
 describe("companion pair offer messages (Control Settings)", () => {
   it("issueCompanionPairCodeAction carries wsHash", () => {

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { COCKPIT_SECTION_IDS, collectNeedsFor, type SectionId } from "@tachyon/webview-ui/sections/model";
 import { resolveSectionDestination } from "../../apps/vscode-extension/src/sections/route";
 import { isSectionId, resolveSection } from "../../apps/vscode-extension/src/sections/resolveSection.js";
-import { CONTROL_SECTION_NAV } from "../../packages/webview-ui/src/webview/sidebar/sectionNav.js";
+import { CONTROL_SECTION_NAV } from "@tachyon/webview-ui/webview/sidebar/sectionNav.js";
 import { WEBVIEW_APPS } from "../../apps/vscode-extension/src/webview/webviewApps.js";
 import { WEBVIEW_SURFACES } from "../../apps/vscode-extension/src/webview/surfaces.js";
 
