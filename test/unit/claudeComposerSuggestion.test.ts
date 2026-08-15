@@ -113,3 +113,73 @@ describe("t-c5f29b — the capability is declared, not inferred", () => {
     }
   });
 });
+
+/**
+ * t-6fc817 — Claude's slash-command menu after `/exit` is typed. The prompt sits ABOVE more
+ * rows than `composer.tailLines` (8). Same measured shape t-67a565 / t-328cc3 used.
+ *
+ * The production door is `capturePaneEscaped(agent, composer.tailLines)`: a fake that always
+ * returns the whole pane cannot see the miss. Slice to `lines` the way tmux `-S -N` does.
+ */
+const SLASH_MENU_OVER_EXIT = [
+  "\x1b[39m❯\u00a0\x1b[94m/exit\x1b[39m",
+  "\x1b[94m/\x1b[1mexit\x1b[22m                         \x1b[1mExit\x1b[22m the CLI\x1b[39m",
+  ...Array.from({ length: 16 }, (_, i) => `\x1b[37m/cmd${String(i).padStart(2, "0")}\x1b[31mplaceholder row so the tail misses the prompt\x1b[39m`),
+].join("\n");
+
+function tailLinesOf(content: string, lines: number): string {
+  return content.split("\n").slice(-lines).join("\n");
+}
+
+function monitorHonoringEscapedTail(opts: {
+  content: string;
+  escaped?: string;
+  escapedThrows?: boolean;
+  escapedCalls?: number[];
+}): AttentionMonitor {
+  const escaped = opts.escaped ?? opts.content;
+  return new AttentionMonitor({
+    runningAgents: async () => ["agent"],
+    capturePane: async () => opts.content,
+    capturePaneEscaped: async (_agent, lines) => {
+      opts.escapedCalls?.push(lines);
+      if (opts.escapedThrows) throw new Error("no escaped capture");
+      return tailLinesOf(escaped, lines);
+    },
+    cpuTicks: async () => null,
+    settingsOf: () => SETTINGS,
+    cmdOf: () => "claude",
+    now: () => 1_000_000,
+  });
+}
+
+describe("t-6fc817 — slash menu taller than the escaped tail is still occupied", () => {
+  it("probeComposerOccupied sees /exit under the menu — the fleet write-guard door", async () => {
+    const escapedCalls: number[] = [];
+    const monitor = monitorHonoringEscapedTail({ content: SLASH_MENU_OVER_EXIT, escapedCalls });
+    // Fail-before: the dim-aware probe captures only tailLines (8), the menu is taller, the
+    // prompt leaves the capture, and occupancy reads as free — the t-67a565 miss, this door.
+    expect(await monitor.probeComposerOccupied("agent")).toBe(true);
+    expect(escapedCalls.every((n) => n === runtimeProfile("claude")?.composer?.tailLines)).toBe(true);
+  });
+
+  it("the attention tick classifies the same pane as composerOccupied", async () => {
+    const monitor = monitorHonoringEscapedTail({ content: SLASH_MENU_OVER_EXIT });
+    await monitor.tick();
+    expect(monitor.stateOf("agent")?.composerOccupied).toBe(true);
+  });
+
+  it("escaped-capture throw still sees /exit — the already-held full pane is enough", async () => {
+    const monitor = monitorHonoringEscapedTail({ content: SLASH_MENU_OVER_EXIT, escapedThrows: true });
+    expect(await monitor.probeComposerOccupied("agent")).toBe(true);
+    await monitor.tick();
+    expect(monitor.stateOf("agent")?.composerOccupied).toBe(true);
+  });
+
+  it("a history echo in the tail is still empty — the skip is not a slash-menu miss (t-6ffa13)", async () => {
+    const echo =
+      "\x1b[38;5;239m\x1b[48;5;237m❯ \x1b[38;5;231m[tachyon] task t-18f6a5 assigned to you\x1b[39m";
+    const monitor = monitorHonoringEscapedTail({ content: echo });
+    expect(await monitor.probeComposerOccupied("agent")).toBe(false);
+  });
+});
