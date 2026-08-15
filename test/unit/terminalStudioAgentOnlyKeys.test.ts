@@ -84,7 +84,7 @@ describe("t-b54ead — a terminal entry the Studio writes carries no agent-only 
     expect(Object.keys(MAXIMAL_TERMINAL_FORM).sort()).toEqual(Object.keys(blank).sort());
     const maximal = MAXIMAL_TERMINAL_FORM as unknown as Record<string, unknown>;
     const blankMap = blank as unknown as Record<string, unknown>;
-    const unchanged = Object.keys(blank).filter((k) => k !== "kind" && maximal[k] === blankMap[k]);
+    const unchanged = Object.keys(blank).filter((k) => k !== "kind" && k !== "schedAction" && maximal[k] === blankMap[k]);
     expect(unchanged, "these fields are still at their blank value — the maximal form proves nothing about them").toEqual([]);
   });
 

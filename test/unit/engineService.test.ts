@@ -20,6 +20,7 @@ import {
   type ExecResult,
   type PaneSnapshot,
 } from "@tachyon/engine/tmux/TmuxService.js";
+import { blankScheduleFields } from "@tachyon/webview-ui/webview/schedule-studio-shell/domain.js";
 import { blankTerminalFields } from "@tachyon/webview-ui/webview/terminal-studio-shell/domain.js";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
@@ -641,13 +642,13 @@ describe("daemon engine service", () => {
     const createStudioCommand = {
       schemaVersion: 1 as const,
       method: "studio.submit" as const,
-      input: { state: { ...blankTerminalFields(), name: "lint", cmd: "npm run lint" } },
+      input: { state: { ...blankScheduleFields(), name: "lint", schedTarget: "worker" } },
     };
     const createdStudio = await first.invoke("operation-studio-create-0001", createStudioCommand);
     expectOk(createdStudio, "studio.submit", { errors: [], truncated: false });
     expect(await first.invoke("operation-studio-create-0001", createStudioCommand)).toEqual(createdStudio);
     expect(fs.readFileSync(configPath, "utf8")).toContain("lint:");
-    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "agents");
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "schedules");
     expect(await first.snapshot()).toMatchObject({
       projections: { agents: { items: [{ name: "worker", running: false }] } },
     });
