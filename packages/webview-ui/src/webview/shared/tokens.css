@@ -28,6 +28,50 @@
   --ds-btn-hover: var(--vscode-button-hoverBackground, var(--vscode-button-background));
   --ds-accent: var(--vscode-button-background, var(--vscode-focusBorder, var(--vscode-textLink-foreground)));
 
+  /*
+   * SDD 505 Slice 4 — the roles §6.1 measured as simply absent. Each one is here because of a
+   * COUNT of what the tree does today instead, not because a design system is expected to have it.
+   * Declaration only: no surface moved onto them here (that is Slice 8).
+   */
+  /* second hover role: rows highlight like the editor's lists, icon hit targets keep --ds-hover.
+     Counted: sidebar.css mints a private `--hover` for exactly this, 10 uses. */
+  --ds-hover-row: var(--vscode-list-hoverBackground, var(--ds-hover));
+  /* the page/editor background the token layer never named. Counted: 66 direct
+     var(--vscode-editor-background) references across the surfaces; the name existed only inside
+     themeTokens.ts, which §6.3 says is the wrong file. No fallback, same as the other base roles
+     (--ds-fg, --ds-focus, --ds-input-bg): a theme-neutral literal for the page ground is a lie. */
+  --ds-editor-bg: var(--vscode-editor-background);
+  /* menu surface/foreground/selection. Counted: 23 direct var(--vscode-menu-*) references over
+     5 menu implementations — background 5, foreground 5, selectionBackground 6, selectionForeground 5. */
+  --ds-menu-bg: var(--vscode-menu-background, var(--ds-dropdown-bg));
+  --ds-menu-fg: var(--vscode-menu-foreground, var(--ds-dropdown-fg));
+  --ds-menu-selection-bg: var(--vscode-menu-selectionBackground, var(--ds-hover-row));
+  --ds-menu-selection-fg: var(--vscode-menu-selectionForeground, var(--ds-fg));
+  /* list selection, active and inactive. Counted: 12 direct references —
+     activeSelectionBackground 5, activeSelectionForeground 5, inactiveSelectionBackground 2. */
+  --ds-selection-bg: var(--vscode-list-activeSelectionBackground, var(--ds-hover-row));
+  --ds-selection-fg: var(--vscode-list-activeSelectionForeground, var(--ds-fg));
+  --ds-selection-inactive-bg: var(--vscode-list-inactiveSelectionBackground, var(--ds-hover-row));
+  /* the quiet status tone. Counted: `.ck-badge.muted` (settings.css) was invented because the shared
+     badge has ok/warn/err/info and no neutral, and its own comment says it did not want a second chip
+     language. It reads --ds-muted on purpose — a quiet tone IS the description colour; what was
+     missing is the tone ROLE beside --ds-ok/--ds-warn/--ds-err, not a new colour. */
+  --ds-quiet: var(--ds-muted);
+  /* text drawn ON --ds-err. Counted: 2 raw #fff (design-system.css .ds-btn-danger, plugins.css
+     .seg-danger), the second with a lint reason asking for this token by name. statusBarItem's
+     error foreground is the theme's own "text on the error colour"; --ds-btn-fg is the replacement
+     that lint reason named; #fff is the value both sites shipped. */
+  --ds-on-err: var(--vscode-statusBarItem-errorForeground, var(--ds-btn-fg, #fff));
+  /* Q5 — the inverted plate, and the ONLY colour in this sheet that does not come from the theme.
+     Counted: 4 raw #fff (human-inbox, pin-preview, rich-doc, settings), three of whose lint reasons
+     ask for this token. A QR code or a transparent PNG needs a light ground in every theme; the pair
+     is declared together because a fixed-light background with theme-inherited text is light-on-light
+     the moment anyone puts a caption on it (0 such captions today — the pair is the guard). */
+  --ds-plate: #fff;
+  --ds-plate-fg: #000;
+  /* code-block surface. Counted: 14 direct var(--vscode-textCodeBlock-background) references. */
+  --ds-code-bg: var(--vscode-textCodeBlock-background, color-mix(in srgb, var(--vscode-foreground) 8%, transparent));
+
   /* elevation / motion / stacking */
   --ds-shadow-1: 0 1px 2px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18));
   --ds-shadow-2: 0 10px 24px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18));
@@ -48,14 +92,68 @@
   --tachyon-tracking-label: .06em;
   --ds-mono: var(--tachyon-font-mono);
 
-  /* type scale */
+  /*
+   * SDD 505 Slice 4 — the type ramp, ramp 3 of benchmark.md §7.2: TWO NAMED DENSITIES, applying Q8
+   * to the ramp instead of only to padding. Four operator roles from the VS Code 1.133 size registry
+   * (§2.2, the ruler of the host's own chrome) and three reading roles from Chrome DevTools 151
+   * (§3.3, the ruler of content). 13px is a role on BOTH sides — it is the hinge, and it is the
+   * host's own --vscode-font-size, so the two densities meet at the size the editor already uses.
+   *
+   * The fallback is the measured value, never a guess: engines.vscode is ^1.96.0 and these host
+   * tokens are 1.133, so anything older gets the fallback and nothing else can correct it.
+   * The reading roles carry their line-height because DevTools declares the pair (13/20, 16/24,
+   * 20/24) and the operator roles do not because the VS Code registry declares size only. That
+   * asymmetry is the measurement, not an omission.
+   *
+   * 16px and 20px read no host token because the host has none to read: fontSize.heading2 is 18px,
+   * and its only 16px is codiconFontSize — an ICON size (§2.5). Pointing a reading role at an icon
+   * size to make the line look symmetric would be a lie about where the number came from, so those
+   * two are the measured DevTools literals and say so.
+   */
+  --ds-operator-label3: var(--vscode-fontSize-label3, 10px);
+  --ds-operator-label2: var(--vscode-fontSize-label2, 11px);
+  --ds-operator-label1: var(--vscode-fontSize-label1, 12px);
+  --ds-operator-body1: var(--vscode-fontSize-body1, 13px);
+  --ds-reading-body3: var(--vscode-font-size, 13px);
+  --ds-reading-body3-line: 20px;
+  --ds-reading-body1: 16px;
+  --ds-reading-body1-line: 24px;
+  --ds-reading-headline2: 20px;
+  --ds-reading-headline2-line: 24px;
+
+  /* legacy type scale — the eleven sizes Slice 8 migrates onto the ramp above. Left declared and
+     untouched on purpose: this slice declares, it does not move surfaces. */
   --ds-title: 16px;
   --ds-section: 11px;
   --ds-body: var(--vscode-font-size, 13px);
   --ds-small: 12px;
   --ds-micro: 11px;
 
-  /* spacing scale and page shell */
+  /*
+   * SDD 505 Slice 4 — the spacing scale, option A of benchmark.md §7.1: the ten steps of the
+   * VS Code 1.133 size registry, read from the host exactly the way colour already is. The host
+   * injects these into the webview through getWebviewThemeData, in the same object as the colours
+   * (§2.3), and they are themeable — which is the control the owner ceded on purpose.
+   *
+   * Same fallback rule as the ramp: ^1.96.0 hosts get the measured value, not a guess.
+   * The smallest usable distance is 2px, not 4px — all three references declare it, and the two
+   * that separate stroke from space declare 1px as stroke thickness and never as distance.
+   */
+  --ds-spacing-size20: var(--vscode-spacing-size20, 2px);
+  --ds-spacing-size40: var(--vscode-spacing-size40, 4px);
+  --ds-spacing-size60: var(--vscode-spacing-size60, 6px);
+  --ds-spacing-size80: var(--vscode-spacing-size80, 8px);
+  --ds-spacing-size100: var(--vscode-spacing-size100, 10px);
+  --ds-spacing-size120: var(--vscode-spacing-size120, 12px);
+  --ds-spacing-size160: var(--vscode-spacing-size160, 16px);
+  --ds-spacing-size200: var(--vscode-spacing-size200, 20px);
+  --ds-spacing-size240: var(--vscode-spacing-size240, 24px);
+  --ds-spacing-size320: var(--vscode-spacing-size320, 32px);
+
+  /* legacy spacing scale and page shell — the six steps 194 of 792 occurrences move off in Slice 8.
+     Deliberately NOT re-pointed at the ten above: repointing would put every existing padding under
+     the host's control with no visual evidence taken, and this slice takes none because it changes
+     no rendered pixel. */
   --ds-1: 4px; --ds-2: 8px; --ds-3: 12px; --ds-4: 16px; --ds-5: 24px; --ds-6: 32px;
   --ds-page-pad-x: var(--ds-4);
   --ds-page-pad-y: var(--ds-3);

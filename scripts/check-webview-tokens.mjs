@@ -73,8 +73,8 @@ export const HEX_EXCEPTIONS = Object.freeze([
   },
   {
     file: "packages/webview-ui/src/webview/shared/design-system.css",
-    values: ["#000", "#1e1e1e", "#cca700", "#fff"],
-    reason: "Shared component fallbacks already shipped here; tokens.css is now the only declaration source, so component literals remain explicit debt rather than becoming token declarations.",
+    values: ["#000", "#1e1e1e", "#cca700"],
+    reason: "Shared component fallbacks already shipped here; tokens.css is now the only declaration source, so component literals remain explicit debt rather than becoming token declarations. SDD 505 slice 4 retired the #fff on .ds-btn-danger — it is --ds-on-err now.",
   },
   {
     file: "packages/webview-ui/src/webview/agent-studio-shell/runtimeLogos.tsx",
@@ -92,11 +92,6 @@ export const HEX_EXCEPTIONS = Object.freeze([
     reason: "Task-checkbox vscode-var fallbacks predating the shared --ds-link / editor-bg tokens on this sheet.",
   },
   {
-    file: "packages/webview-ui/src/webview/human-inbox/human-inbox.css",
-    values: ["#fff"],
-    reason: "QR/image plate background so a dark-on-dark code does not vanish; no --ds inverted-plate token yet — add one to the DS rather than keep extending this.",
-  },
-  {
     file: `${appSourceRelative}/webview/ide-browser-bridge/themeTokens.ts`,
     values: [
       "#006ab1", "#0078d4", "#007fd4", "#0090f1", "#026ec1", "#0e639c", "#1177bb",
@@ -107,19 +102,9 @@ export const HEX_EXCEPTIONS = Object.freeze([
     reason: "Generated copies of tokens.css literals, light/dark VS Code fallback tables, and the runtime pure-white input guard; not independently authored surface colors.",
   },
   {
-    file: "packages/webview-ui/src/webview/pin-preview/pin-preview.css",
-    values: ["#fff"],
-    reason: "Sketch-image plate so a transparent PNG does not sit on the editor background; same inverted-plate gap as human-inbox.",
-  },
-  {
     file: `${appSourceRelative}/webview/pin-studio/excalidraw-entry.tsx`,
     values: ["#ffffff"],
     reason: "Excalidraw export/view default canvas; the vendor scene expects a literal page color, not a --ds token.",
-  },
-  {
-    file: "packages/webview-ui/src/webview/plugins/plugins.css",
-    values: ["#fff"],
-    reason: "Danger-segment label on --ds-err; should be --ds-btn-fg (or a --ds-on-err token) when this sheet is next touched.",
   },
   {
     file: "packages/webview-ui/src/webview/probes/probes.css",
@@ -129,7 +114,7 @@ export const HEX_EXCEPTIONS = Object.freeze([
   {
     file: "packages/webview-ui/src/webview/rich-doc/rich-doc.css",
     values: ["#fff"],
-    reason: "Sketch-node plate, same inverted-plate gap as pin-preview; add a DS token rather than another local #fff.",
+    reason: "Both sketch plates moved to --ds-plate in SDD 505 slice 4; what is left is the .rd-att-annotated-badge var(--vscode-button-foreground, #fff) fallback — a button foreground, not a plate, and --ds-btn-fg carries no literal of its own to replace it with.",
   },
   {
     file: "packages/webview-ui/src/webview/runtime-config/runtime-config.css",
@@ -138,8 +123,8 @@ export const HEX_EXCEPTIONS = Object.freeze([
   },
   {
     file: "packages/webview-ui/src/webview/settings/settings.css",
-    values: ["#0002", "#007fd4", "#3ba55d", "#444", "#4443", "#888", "#cca700", "#f14c4c", "#fff"],
-    reason: "Settings still carries vscode-var fallbacks and 4-digit alpha hex (#4443/#0002) from the card-template preview; QR plate is the inverted-plate #fff.",
+    values: ["#0002", "#007fd4", "#3ba55d", "#444", "#4443", "#888", "#cca700", "#f14c4c"],
+    reason: "Settings still carries vscode-var fallbacks and 4-digit alpha hex (#4443/#0002) from the card-template preview; the pairing QR plate moved to --ds-plate in SDD 505 slice 4.",
   },
   {
     file: "packages/webview-ui/src/webview/shared/ErrorBoundary.tsx",
