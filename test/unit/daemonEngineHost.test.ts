@@ -1,9 +1,9 @@
+import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DaemonEngineHost, EngineUiUnavailableError, type DaemonHostEvent, type DaemonUiRequest } from "@tachyon/engine/workspace/DaemonEngineHost.js";
-import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import { TmuxService } from "@tachyon/engine/tmux/TmuxService.js";
 import { routeHumanApprovalRequest } from "@tachyon/engine/engine-service/engineService.js";
 
@@ -268,7 +268,7 @@ describe("DaemonEngineHost", () => {
     const f = fixture();
     fs.writeFileSync(path.join(f.root, "tachyon.yml"), "agents: {}\nterminals:\n  test:\n    cmd: sh\n", "utf8");
     const tmux = new TmuxService(async () => ({ stdout: "", stderr: "" }));
-    const ws = await Workspace.createForTest(
+    const ws = await createWorkspaceForTest(
       f.root,
       { host: f.host, onViewsChanged: (view) => f.host.onViewsChanged(view) },
       { tmux, startBridge: false },

@@ -1,3 +1,4 @@
+import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
 /**
  * t-f67185 — empty roster is a valid attached workspace.
  *
@@ -123,7 +124,7 @@ describe("t-f67185 empty roster workspace", () => {
     fs.writeFileSync(path.join(root, "tachyon.yml"), yaml, "utf8");
     const host = new FakeHost(mkdir());
     const { tmux } = fakeTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, {
+    const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, {
       tmux,
       startBridge: false,
     });

@@ -7,8 +7,12 @@ import { startDaemonEngineService, type RunningDaemonEngineService } from "./eng
 import { decodeEngineDaemonOptions } from "./engineSupervisor.js";
 import { controlNoncePath } from "./controlPeerAuth.js";
 import { installEngineLogRing } from "./engineLogRing.js";
+import type { WorkspaceBridgePort } from "../workspace/WorkspaceBridgePort.js";
 
-export async function runEngineDaemon(encodedOptions: string): Promise<RunningDaemonEngineService> {
+export async function runEngineDaemon(
+  encodedOptions: string,
+  bridgeTransport: WorkspaceBridgePort,
+): Promise<RunningDaemonEngineService> {
   const options = decodeEngineDaemonOptions(encodedOptions);
   ensureSecureRuntimeDir(path.dirname(options.controlSocketPath));
   // V2.5: file next to control.sock so restart rehydrates recent lines
@@ -17,7 +21,7 @@ export async function runEngineDaemon(encodedOptions: string): Promise<RunningDa
     filePath: path.join(path.dirname(options.controlSocketPath), "engine.log"),
   });
   await removeStaleSocket(options.controlSocketPath, workspaceHash(fs.realpathSync(options.workspaceRoot)));
-  const service = await startDaemonEngineService(options);
+  const service = await startDaemonEngineService(options, bridgeTransport);
   process.title = `tachyon-engine:${service.identity.workspaceHash}`;
   let closing = false;
   const shutdown = () => {
@@ -65,13 +69,4 @@ async function removeStaleSocket(socketPath: string, expectedWorkspaceHash: stri
   }
   fs.unlinkSync(socketPath);
   fs.rmSync(controlNoncePath(socketPath), { force: true });
-}
-
-if (require.main === module) {
-  const encoded = process.argv[2];
-  if (!encoded) throw new Error("missing persistent engine daemon options");
-  void runEngineDaemon(encoded).catch((error) => {
-    process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  });
 }

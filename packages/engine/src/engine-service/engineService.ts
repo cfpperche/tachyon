@@ -15,6 +15,7 @@ import { wakeValidationClosedAuthors } from "../validations/validationCloseNotif
 import { DaemonEngineHost, type DaemonHostEvent, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
 import type { ViewKind } from "../workspace/EngineHost.js";
 import { Workspace } from "../workspace/Workspace.js";
+import type { WorkspaceBridgePort } from "../workspace/WorkspaceBridgePort.js";
 import { sendManagedAgentInput } from "../agents/agentInputService.js";
 import {
   startHandoffDistillation,
@@ -292,6 +293,7 @@ export function routeHumanValidationPending(
  */
 export async function startDaemonEngineService(
   options: StartDaemonEngineServiceOptions,
+  bridgeTransport: WorkspaceBridgePort,
 ): Promise<RunningDaemonEngineService> {
   validateOptions(options);
   const canonicalRoot = canonicalWorkspaceRoot(options.workspaceRoot);
@@ -357,6 +359,7 @@ export async function startDaemonEngineService(
     const observationsForCondition = providerObservations;
     workspace = await Workspace.createDaemon(canonicalRoot, {
       host,
+      bridgeTransport,
       // t-458497 — the cached provider-observation state the runtime-condition projection reads. The
       // channel inventory comes from the sources registered just above, so "grok has no quota
       // channel" is the ABSENCE of a grok source here rather than a name written down somewhere.

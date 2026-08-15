@@ -1,10 +1,10 @@
+import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "@tachyon/engine/workspace/EngineHost.js";
 import type { NotifyLevel } from "@tachyon/engine/workspace/EngineHost.js";
@@ -121,7 +121,7 @@ async function makeWorkspace() {
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  worker:\n    cmd: sh\n", "utf8");
   const host = new FakeHost(mkdir());
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
+  const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
   return { ws, ...fake };
 }
 

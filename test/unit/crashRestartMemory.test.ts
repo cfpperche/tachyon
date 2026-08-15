@@ -1,3 +1,4 @@
+import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
 import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -133,7 +134,7 @@ async function makeWorkspace() {
   );
   const host = new FakeHost(mkdir("crash-restart-storage-"), savedAgentSecrets(root, fixtures));
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
+  const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
   return { root, ws, host, ...fake };
 }
 
