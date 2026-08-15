@@ -59,11 +59,11 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     expect(union, "AgentStatus must be a declared union in packages/shared/src/sidebar/types.ts").toBeTruthy();
     const statuses = union![1].split("|").map((s) => s.trim()).filter(Boolean);
     expect(statuses, `AgentStatus must keep its nine states, got ${statuses.join(", ")}`).toHaveLength(9);
-    const approvals = readFileSync("src/webview/approval/App.tsx", "utf8");
+    const approvals = readFileSync("packages/webview-ui/src/webview/approval/App.tsx", "utf8");
     expect(approvals).toContain("PageChrome");
     expect(approvals).toContain("EmptyState");
     expect(approvals).toMatch(/Button[\s\S]*Approve/);
-    const validations = readFileSync("src/webview/validations/App.tsx", "utf8");
+    const validations = readFileSync("packages/webview-ui/src/webview/validations/App.tsx", "utf8");
     expect(validations).toContain("PageChrome");
     expect(validations).toContain("from \"@tachyon/webview-ui/webview/shared/ui/index\"");
     const runtime = readFileSync("packages/webview-ui/src/webview/runtime-ops/App.tsx", "utf8");

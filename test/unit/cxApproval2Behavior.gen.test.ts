@@ -42,7 +42,7 @@ describe("container-generated delegation behavior", () => {
       tampered: false,
       payload: request.payload,
     });
-    const appSource = fs.readFileSync(path.join(process.cwd(), "src/webview/approval/App.tsx"), "utf8");
+    const appSource = fs.readFileSync(path.join(process.cwd(), "packages/webview-ui/src/webview/approval/App.tsx"), "utf8");
     expect(appSource).toContain("<pre>{value}</pre>");
     expect(appSource).not.toContain("dangerouslySetInnerHTML");
 

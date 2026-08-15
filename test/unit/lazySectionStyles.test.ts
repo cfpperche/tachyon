@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadSectionStylesheet } from "../../src/webview/shared/lazySectionStyles.js";
+import { loadSectionStylesheet } from "../helpers/lazySectionStyles.js";
 
 // t-610705 (SDD 410 Phase B, Approvals CSS co-load pilot) — this repo's default vitest environment
 // is "node" (no jsdom/happy-dom), so stub the minimal document/window surface the module touches

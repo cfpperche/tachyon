@@ -27,7 +27,7 @@ import { loadProfileAwareConfig } from "@tachyon/engine/config/agentProfileConfi
 
 const repoRoot = process.cwd();
 const exampleText = fs.readFileSync(path.join(repoRoot, "tachyon.yml.example"), "utf8");
-const schema = JSON.parse(fs.readFileSync(path.join(repoRoot, "src", "config", "tachyon.schema.json"), "utf8")) as {
+const schema = JSON.parse(fs.readFileSync(path.join(repoRoot, "apps", "vscode-extension", "tachyon.schema.json"), "utf8")) as {
   properties: Record<string, { properties?: Record<string, unknown> }>;
 };
 

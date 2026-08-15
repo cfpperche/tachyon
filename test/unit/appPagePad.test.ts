@@ -38,7 +38,7 @@ const read = (rel: string) => fs.readFileSync(path.resolve(root, rel), "utf8");
 const VALIDATIONS_CSS = "packages/webview-ui/src/webview/validations/validations.css";
 const RUNTIME_OPS_CSS = "packages/webview-ui/src/webview/runtime-ops/runtime-ops.css";
 const HUMAN_INBOX_CSS = "packages/webview-ui/src/webview/human-inbox/human-inbox.css";
-const VALIDATIONS_APP = "src/webview/validations/App.tsx";
+const VALIDATIONS_APP = "packages/webview-ui/src/webview/validations/App.tsx";
 const DESIGN_SYSTEM_CSS = "packages/webview-ui/src/webview/shared/design-system.css";
 
 /** strip comments, then collect every `selector { declarations }` block (nested at-rule inner rules included). */

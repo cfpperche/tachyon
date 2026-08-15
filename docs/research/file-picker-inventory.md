@@ -18,7 +18,7 @@ Owner trigger: **Import image into pin** opened a native VS Code dialog that, in
 | Component | `src/webview/shared/ui/kit/KitFilePicker.tsx:24` (`export function KitFilePicker`) |
 | Props | `src/webview/shared/ui/kit/KitFilePicker.tsx:7` (`KitFilePickerProps`) |
 | Kit export | `src/webview/shared/ui/kit/index.ts:26` |
-| Catalog entry | `src/webview/shared/ui/README.md:57` — “File selection” |
+| Catalog entry | `packages/webview-ui/src/webview/shared/ui/README.md:57` — “File selection” |
 | Tokens / CSS | `src/webview/shared/design-system.css:308–318` (`.kit-file-picker*`) |
 
 ### What it already does
@@ -58,7 +58,7 @@ So: do **not** treat this as “no component.” Content-import migration can re
 | **Paste/drop image path** | pin `App.tsx:274–278`, task `App.tsx:383–387`; TipTap `rich-doc/tiptap.ts:93–94` | Webview `File` → base64 → `attachImage` **without** native dialog | Import **button** still bypasses this and uses host open dialog |
 | **`QuickPicker`** | `src/webview/shared/ui/QuickPicker.tsx:1–5` | In-webview filterable list (replaces `showQuickPick` when candidates are already known) | Not a filesystem browser |
 
-Documented host pattern (still accurate for residual native uses): `src/webview/shared/studio/README.md:42–43` — “Native picker round trip: webview asks, host runs `showOpenDialog`…”.
+Documented host pattern (still accurate for residual native uses): `packages/webview-ui/src/webview/shared/studio/README.md:42–43` — “Native picker round trip: webview asks, host runs `showOpenDialog`…”.
 
 ---
 

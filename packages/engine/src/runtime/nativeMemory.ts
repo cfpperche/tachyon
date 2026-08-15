@@ -206,7 +206,7 @@ export const RUNTIME_NATIVE_MEMORY_REGISTRY: Readonly<Record<string, RuntimeNati
       { kind: "runtime-doc", ref: "https://code.claude.com/docs/en/memory" },
       { kind: "runtime-doc", ref: "https://code.claude.com/docs/en/env-vars" },
       { kind: "installed-source", ref: "src/harness/HarnessManager.ts" },
-      { kind: "installed-source", ref: "src/runtime/adapters/claudeMemory.ts" },
+      { kind: "installed-source", ref: "test/helpers/claudeMemory.ts" },
       { kind: "installed-source", ref: RESEARCH },
       { kind: "behavioral-test", ref: `${RESEARCH}#claude-2026-07-28-live` },
     ],
