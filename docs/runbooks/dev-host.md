@@ -151,6 +151,66 @@ If the surface you are shipping is in the last row, decide **before** arming the
 budget the in-EDH setup, or point the reviewer at preview shots and say so. Handing someone an F5 that
 opens an empty screen wastes their time and reads as a broken build.
 
+### Git branches from a Dev Host session (t-dc9cb0)
+
+This is **correct dogfood**, not a pointing bug and not a reason to isolate git.
+
+The EDH opens the fixture **mirror** (`.tachyon/dev-host/workspace`), never the monorepo root.
+`point` already does that — measured on 2026-08-15: `meta.json` had
+`workspace=/home/goat/tachyon/test/fixtures/agent-pane-dogfood` and
+`workspaceArg=…/.tachyon/dev-host/workspace`. The product under test then creates **real**
+agent worktrees, because that is the worktree feature. `WorktreeManager` runs git with
+`cwd = workspaceRoot` (the opened folder = the mirror). The mirror has no `.git`, so git
+walks up and finds the enclosing checkout:
+
+```
+git -C .tachyon/dev-host/workspace rev-parse --show-toplevel  →  <the real repo>
+git -C .tachyon/dev-host/workspace rev-parse --git-common-dir →  <the real .git>
+```
+
+`git worktree add` therefore registers against the **real repository**. The branches show up
+in `git branch`, `git worktree list`, and Git Graph. That is the product path dogfood is
+supposed to prove. A private clone would exercise a different product.
+
+**What is already isolated:** the *directories*. `XDG_CACHE_HOME` is
+`<checkout>/.tachyon/dev-host/cache`, so the checkouts themselves land at
+
+```
+<checkout>/.tachyon/dev-host/cache/tachyon/worktrees/<wsHash>/<agent>
+```
+
+and never in `~/.cache/tachyon/worktrees` used by the live fleet.
+
+**What was not distinguishable:** the default branch name is `tachyon/<agent>`
+(`WorktreeManager.branchFor`). A dogfood agent created in Agent Studio (the fixture may
+have no agents at all — `agent-pane-dogfood` is only `commands.hello`) therefore appears
+in Git Graph as `tachyon/codex` or `tachyon/grok` even when those names are not in the
+owner's fleet. That is a naming tax, not a leak.
+
+**How to tell them apart, without asking anyone:**
+
+| | Fleet work | Dev Host residue |
+|--|------------|------------------|
+| Branch | `tachyon/<agent>` (or whatever `settings.worktree.branch` the fleet set) | **`tachyon/dev-host/<agent>`** after the next `point` |
+| Path | `~/.cache/tachyon/worktrees/<hash>/<agent>` | `<checkout>/.tachyon/dev-host/cache/tachyon/worktrees/<hash>/<agent>` |
+| `git worktree list` | checkout is under `~/.cache/tachyon/worktrees/` | checkout path contains `.tachyon/dev-host/cache/` |
+
+`point` stamps `settings.worktree.branch: tachyon/dev-host/{agent}` onto the **mirror copy**
+of `tachyon.yml` (and `fixture-new` writes the same). A fixture that already set
+`settings.worktree.branch` is left alone — that fixture is exercising that template.
+The tracked fixture file is not rewritten.
+
+**Already-created residue** (`tachyon/codex`, `tachyon/grok` at
+`.tachyon/dev-host/cache/tachyon/worktrees/eb13c881/{codex,grok}` as of 2026-08-15)
+keeps the old name until those worktrees are removed. Do **not** delete them while a
+process still has that cwd — occupancy was live when this was written (codex + its
+MainThread, and grok). They sit at 0 commits ahead of `origin/main`. There is no
+scheduled cleanup; when they are free, `git worktree remove` then `git branch -d` is
+enough.
+
+Do not invent a second git, a scheduled prune, or a retention policy for this. The
+owner's rule: machinery is last resort. A prefix is a prefix.
+
 ## Target matrix
 
 | Target | Extension bits | Workspace | Automated? | Use |
@@ -233,6 +293,9 @@ These exist so palliative EDH **cannot** strangle Codex/368 or the human’s liv
 1. **Never dogfood against the monorepo root as the open workspace.**
    Always open the **seeded fixture** directory (see below). The product under test is the
    *extension build* (`--extensionDevelopmentPath=<repo>`), not the Tachyon fleet `tachyon.yml`.
+   The fixture still sits *inside* the real checkout, so a worktree created in the EDH is a
+   real git worktree of that checkout — expected, and named `tachyon/dev-host/<agent>` so it
+   cannot be mistaken for fleet work. See **Git branches from a Dev Host session** above.
 
 2. **Never reload / reinstall VSIX in the normal (non-EDH) window** while 368 (or any live fleet) is running.
 

@@ -9,6 +9,7 @@ export const PARITY_DIMENSIONS = [
   "observed-model-provenance",
   "probe-model-proof",
   "cross-runtime-task-continuation",
+  "persistent-instructions-launch",
 ] as const;
 export type ParityDimension = (typeof PARITY_DIMENSIONS)[number];
 
@@ -78,6 +79,23 @@ export const RUNTIME_PARITY = {
     claude: { projection: { verdict: "wired" }, runtime: MEASURED.claude },
     codex: { projection: { verdict: "wired" }, runtime: MEASURED.codex },
     grok: { projection: { verdict: "wired" }, runtime: MEASURED.grok },
+  },
+  "persistent-instructions-launch": {
+    claude: {
+      projection: { verdict: "wired" },
+      runtime: {
+        verdict: "cannot",
+        reason: "Claude Code 2.1.233 automatic compact failed twice with compact_result=failed / too_few_groups; manual compact does not generalize",
+      },
+    },
+    codex: {
+      projection: { verdict: "wired" },
+      runtime: { verdict: "measured", runtimeVersion: "0.147.0", measuredAt: "2026-08-15" },
+    },
+    grok: {
+      projection: { verdict: "wired" },
+      runtime: { verdict: "measured", runtimeVersion: "1.0.4", measuredAt: "2026-08-15" },
+    },
   },
 } as const satisfies ParityDeclaration;
 

@@ -4,6 +4,7 @@ import { isSupportedAgentRuntime } from "@tachyon/shared/agents/agentRuntimeAdmi
 import { activityNormalizerForRuntime } from "@tachyon/engine/activity/logWriter.js";
 import { instructionsDeliverable } from "@tachyon/engine/config/loadConfig.js";
 import { headlessProbeAdapters } from "@tachyon/engine/probe/adapters/registry.js";
+import { runtimeProjectsPersistentInstructions } from "@tachyon/engine/agents/persistentInstructionsLaunch.js";
 import {
   PARITY_DIMENSIONS,
   PARITY_RUNTIMES,
@@ -113,6 +114,14 @@ describe("SDD 508 runtime parity declaration", () => {
       const product = isSupportedAgentRuntime(runtime) && instructionsDeliverable(runtime);
       const declared = declaredWired(RUNTIME_PARITY["cross-runtime-task-continuation"][runtime]);
       expect(product, `cross-runtime-task-continuation/${runtime}: product=${product ? "wired" : "not-wired"}, declaration=${declared ? "wired" : "not-wired"}`).toBe(declared);
+    }
+  });
+
+  it("derives persistent-instructions-launch through the projector AgentManager calls", () => {
+    for (const runtime of PARITY_RUNTIMES) {
+      const product = runtimeProjectsPersistentInstructions(runtime);
+      const declared = declaredWired(RUNTIME_PARITY["persistent-instructions-launch"][runtime]);
+      expect(product, `persistent-instructions-launch/${runtime}: product=${product ? "wired" : "not-wired"}, declaration=${declared ? "wired" : "not-wired"}`).toBe(declared);
     }
   });
 
