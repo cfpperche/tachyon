@@ -9,7 +9,8 @@ import { isAlias, isScalar, parseDocument, stringify, visit, YAMLMap, YAMLSeq } 
  */
 
 import { AGENT_NAME_PATTERN } from "./nameValidation.js";
-import { defaultAttentionEnabled, type EntryKind } from "./loadConfig.js";
+import { defaultAttentionEnabled } from "./loadConfig.js";
+import type { EntryKind } from "@tachyon/shared/config/entry.js";
 
 export interface EditResult {
   text: string;

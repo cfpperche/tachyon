@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import type { EntryKind } from "@tachyon/shared/config/entry.js";
-export type { EntryKind } from "@tachyon/shared/config/entry.js";
 import { parse as parseYaml } from "yaml";
 import { parseAgentMemoryMax } from "../agents/agentMemoryScope.js";
 import { binaryOf, binaryIndex } from "@tachyon/shared/resume/adapters.js";

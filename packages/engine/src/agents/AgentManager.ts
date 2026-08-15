@@ -5,7 +5,8 @@ import { hasLifecycleHooks, isTemporaryInstance } from "./agentInstancePolicy.js
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { asAgent, codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, shellQuote, instructionsDeliverable, type AgentDef, type AgentEntry, type AgentPermissionProjectionEntry, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { asAgent, codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, shellQuote, instructionsDeliverable, type AgentDef, type AgentEntry, type AgentPermissionProjectionEntry, type TachyonConfig } from "../config/loadConfig.js";
+import type { EntryKind } from "@tachyon/shared/config/entry.js";
 import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileResolver.js";
 import { applyManagedHookTrust, managedHookRuntimeOf } from "./managedHookTrust.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";

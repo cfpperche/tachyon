@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import * as vscode from "vscode";
-import type { EntryKind } from "@tachyon/engine/config/loadConfig.js";
+import type { EntryKind } from "@tachyon/shared/config/entry.js";
 import { SOCKET_NAME, socketPath, utf8LocaleEnv } from "@tachyon/engine/tmux/TmuxService.js";
 import type { SessionViewportRegistry } from "./sessionViewport.js";
 import type {

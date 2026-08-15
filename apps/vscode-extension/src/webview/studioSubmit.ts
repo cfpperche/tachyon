@@ -1,7 +1,7 @@
 import type { StudioSubmit } from "@tachyon/engine/webview/studioSubmit.js";
 export type { StudioSubmit } from "@tachyon/engine/webview/studioSubmit.js";
 import type * as vscode from "vscode";
-import type { EntryKind } from "@tachyon/engine/config/loadConfig.js";
+import type { EntryKind } from "@tachyon/shared/config/entry.js";
 import type { StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
 
 export interface StudioDeps {

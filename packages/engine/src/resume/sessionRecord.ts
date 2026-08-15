@@ -7,7 +7,7 @@
  */
 import type { AgentInstancePolicy } from "@tachyon/shared/resume/agentInstance.js";
 import { adapterForRuntime, type ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
-import { type EntryKind } from "../config/loadConfig.js";
+import type { EntryKind } from "@tachyon/shared/config/entry.js";
 import type { WorktreeRecord } from "../worktree/worktreeRecord.js";
 import type { SpawnContract } from "../agents/spawnContract.js";
 

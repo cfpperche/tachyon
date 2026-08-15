@@ -7,7 +7,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type { EntryKind, TachyonConfig } from "./loadConfig.js";
+import type { EntryKind } from "@tachyon/shared/config/entry.js";
+import type { TachyonConfig } from "./loadConfig.js";
 
 export const CONFIG_LKG_FILENAME = "config.lkg.json";
 export const CONFIG_LKG_SCHEMA_VERSION = 1 as const;
