@@ -278,6 +278,32 @@ describe("SDD 485 D4 — the Human Inbox app's cardinality is `dashboard`, one p
 });
 
 describe("SDD 485 D4 — the Human Inbox app lists both stores, counted once", () => {
+  it("t-00aa76 — a committed Saved Agent proposal leaves a resolved history row", async () => {
+    const p = project("ws-1");
+    const proposal = pendingSavedAgentProposal(p.root, "sp-000001");
+    const receiptDir = path.join(p.root, ".tachyon", "agent-proposals", "receipts");
+    fs.mkdirSync(receiptDir, { recursive: true });
+    fs.writeFileSync(path.join(receiptDir, `${proposal.digest}.json`), `${JSON.stringify({
+      digest: proposal.digest,
+      proposalId: proposal.id,
+      proposer: proposal.proposer,
+      approvedBy: "human",
+      agentName: proposal.spec.name,
+      approvedAt: new Date().toISOString(),
+      outcome: "committed",
+    })}\n`);
+    fs.rmSync(savedAgentProposalPath(p.root, proposal.id), { force: true });
+
+    const h = harness([p]);
+    const panel = await open(h);
+    const items = posted(panel, "humanInbox").at(-1)?.vm?.items ?? [];
+    expect(items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "sp-000001", kind: "saved-agent-proposal" }),
+    ]));
+    const row = items.find((item) => item.id === "sp-000001") as { state?: string; outcome?: string } | undefined;
+    expect(row).toMatchObject({ state: "resolved", outcome: "approved" });
+  });
+
   it("one surface lists approvals and validations together, counted once", async () => {
     const p = project("ws-1", "tachyon", [validationRecord("v-1"), validationRecord("v-agent", { executor: "agent" })]);
     pendingApproval(p.root, "a-000001");

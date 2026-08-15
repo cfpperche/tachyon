@@ -88,4 +88,24 @@ describe("t-d79534 — approval delivery goes through the notice queue", () => {
     expect(result.error).toContain("no running agent owns session");
     expect(deliverNotice).not.toHaveBeenCalled();
   });
+
+  it("t-ea8f78 — queues for the requester when they left the session before the decision", async () => {
+    const deliverNotice = vi.fn(async (): Promise<NoticeDeliveryResult> => ({ status: "queued", queued: 1 }));
+
+    const result = await ports(deliverNotice).inject("tachyon-h-gone", "approved", "claude");
+
+    expect(result).toEqual({ receipt: "queued:claude" });
+    expect(deliverNotice).toHaveBeenCalledWith("claude", "approved");
+  });
+
+  it("t-ea8f78 — addresses a stopped session owner rather than giving up", async () => {
+    const deliverNotice = vi.fn(async (): Promise<NoticeDeliveryResult> => ({ status: "queued", queued: 1 }));
+    const stopped = approvalResolutionPorts({
+      listEntries: async () => [{ session: "tachyon-h-dead", running: false, name: "dead" }],
+      deliverNotice,
+    });
+
+    expect(await stopped.inject("tachyon-h-dead", "denied")).toEqual({ receipt: "queued:dead" });
+    expect(deliverNotice).toHaveBeenCalledWith("dead", "denied");
+  });
 });

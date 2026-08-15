@@ -8,6 +8,7 @@ import {
   type SavedAgentProposal,
   type SavedAgentProposalAdmission,
 } from "./savedAgentProposal.js";
+import type { SavedAgentProposalDecisionRecord } from "./savedAgentProposalDecision.js";
 import type { AgentProfileV1 } from "../config/agentProfileSchema.js";
 import type { AgentOwnershipRosterV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 
@@ -34,13 +35,16 @@ import type { AgentOwnershipRosterV1 } from "@tachyon/shared/config/agentProfile
  * has something to be bound to.
  */
 export const SAVED_AGENT_PROPOSALS_REL_DIR = path.join(".tachyon", "agent-proposals");
+export const SAVED_AGENT_RECEIPTS_REL_DIR = path.join(SAVED_AGENT_PROPOSALS_REL_DIR, "receipts");
 export const SAVED_AGENT_PROPOSAL_WITNESS_REL_PATH = path.join(".tachyon", "agent-proposals.jsonl");
 export const SAVED_AGENT_PROPOSAL_ID_PREFIX = "sp-";
 
 export type SavedAgentProposalWitnessEvent =
   | { kind: "proposed"; id: string; proposer: string; digest: string; at: string }
   | { kind: "collapsed"; id: string; proposer: string; digest: string; at: string }
-  | { kind: "cancelled"; id: string; by: string; reason: string; at: string }
+  | { kind: "cancelled"; id: string; by: string; reason: string; at: string; agentName?: string }
+  | { kind: "denied"; id: string; digest: string; proposer: string; deniedBy: string; reason: string; agentName: string; at: string }
+  | { kind: "expired"; id: string; digest: string; proposer: string; agentName: string; at: string }
   | { kind: "refused"; proposer: string; code: string; at: string }
   /** Untrusted files seen in the queue. Recorded so corruption is diagnosable rather than merely felt. */
   | { kind: "unreadable"; ids: string[]; at: string }
@@ -324,10 +328,153 @@ export function cancelSavedAgentProposal(input: {
  */
 export function sweepExpiredSavedAgentProposals(workspaceRoot: string, nowMs: number): string[] {
   const swept: string[] = [];
+  const at = new Date(nowMs).toISOString();
   for (const proposal of listSavedAgentProposals(workspaceRoot)) {
     if (!savedAgentProposalIsExpired(proposal, nowMs)) continue;
     fs.rmSync(savedAgentProposalPath(workspaceRoot, proposal.id), { force: true });
+    appendSavedAgentProposalWitness(workspaceRoot, {
+      kind: "expired",
+      id: proposal.id,
+      digest: proposal.digest,
+      proposer: proposal.proposer,
+      agentName: proposal.spec.name,
+      at,
+    });
     swept.push(proposal.id);
   }
   return swept;
+}
+
+export interface SavedAgentProposalReceiptRecord {
+  digest: string;
+  proposalId: string;
+  proposer: string;
+  approvedBy: string;
+  agentName: string;
+  approvedAt: string;
+  outcome: string;
+  rationale?: string;
+  runtimeAdapter?: string;
+}
+
+export function listSavedAgentProposalReceipts(workspaceRoot: string): SavedAgentProposalReceiptRecord[] {
+  return readReceiptDir(path.join(workspaceRoot, SAVED_AGENT_RECEIPTS_REL_DIR));
+}
+
+function readReceiptDir(dir: string): SavedAgentProposalReceiptRecord[] {
+  if (!fs.existsSync(dir)) return [];
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const out: SavedAgentProposalReceiptRecord[] = [];
+  for (const entry of entries) {
+    if (!entry.endsWith(".json")) continue;
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(dir, entry), "utf8")) as Record<string, unknown>;
+      if (typeof raw.digest !== "string" || typeof raw.proposalId !== "string") continue;
+      if (typeof raw.proposer !== "string" || typeof raw.agentName !== "string") continue;
+      if (typeof raw.approvedBy !== "string" || typeof raw.approvedAt !== "string") continue;
+      if (typeof raw.outcome !== "string") continue;
+      out.push({
+        digest: raw.digest,
+        proposalId: raw.proposalId,
+        proposer: raw.proposer,
+        approvedBy: raw.approvedBy,
+        agentName: raw.agentName,
+        approvedAt: raw.approvedAt,
+        outcome: raw.outcome,
+        ...(typeof raw.rationale === "string" ? { rationale: raw.rationale } : {}),
+        ...(typeof raw.runtimeAdapter === "string" ? { runtimeAdapter: raw.runtimeAdapter } : {}),
+      });
+    } catch {
+      /* a corrupt receipt is not a decision we can show */
+    }
+  }
+  return out;
+}
+
+/**
+ * t-00aa76 / t-ea8f78 — every terminal outcome a proposer can tell apart, from receipts + witness
+ * + expired-but-still-on-disk files. Live pending proposals are NOT included.
+ */
+export function listSavedAgentProposalDecisions(
+  workspaceRoot: string,
+  nowMs: number,
+): SavedAgentProposalDecisionRecord[] {
+  const byId = new Map<string, SavedAgentProposalDecisionRecord>();
+
+  for (const event of readSavedAgentProposalWitness(workspaceRoot)) {
+    if (event.kind === "denied") {
+      byId.set(event.id, {
+        id: event.id,
+        digest: event.digest,
+        proposer: event.proposer,
+        agentName: event.agentName,
+        outcome: "denied",
+        resolvedAt: event.at,
+        decidedBy: event.deniedBy,
+        operation: "create",
+      });
+    } else if (event.kind === "cancelled") {
+      const denied = event.reason.startsWith("denied by ");
+      byId.set(event.id, {
+        id: event.id,
+        digest: "",
+        proposer: event.by,
+        agentName: event.agentName ?? event.id,
+        outcome: denied ? "denied" : "cancelled",
+        resolvedAt: event.at,
+        decidedBy: denied ? event.reason.slice("denied by ".length).split(":")[0] ?? event.by : event.by,
+        operation: "create",
+      });
+    } else if (event.kind === "expired") {
+      byId.set(event.id, {
+        id: event.id,
+        digest: event.digest,
+        proposer: event.proposer,
+        agentName: event.agentName,
+        outcome: "expired",
+        resolvedAt: event.at,
+        decidedBy: "expiry",
+        operation: "create",
+      });
+    }
+  }
+
+  for (const proposal of listSavedAgentProposals(workspaceRoot)) {
+    if (!savedAgentProposalIsExpired(proposal, nowMs) || byId.has(proposal.id)) continue;
+    byId.set(proposal.id, {
+      id: proposal.id,
+      digest: proposal.digest,
+      proposer: proposal.proposer,
+      agentName: proposal.spec.name,
+      outcome: "expired",
+      resolvedAt: proposal.expiresAt,
+      decidedBy: "expiry",
+      operation: "create",
+      rationale: proposal.spec.rationale,
+      runtimeAdapter: proposal.spec.runtimeAdapter,
+    });
+  }
+
+  for (const receipt of listSavedAgentProposalReceipts(workspaceRoot)) {
+    if (receipt.outcome !== "committed") continue;
+    byId.set(receipt.proposalId, {
+      id: receipt.proposalId,
+      digest: receipt.digest,
+      proposer: receipt.proposer,
+      agentName: receipt.agentName,
+      outcome: "approved",
+      resolvedAt: receipt.approvedAt,
+      decidedBy: receipt.approvedBy,
+      operation: "create",
+      ...(receipt.rationale ? { rationale: receipt.rationale } : {}),
+      ...(receipt.runtimeAdapter ? { runtimeAdapter: receipt.runtimeAdapter } : {}),
+    });
+  }
+
+  return [...byId.values()].sort((a, b) => a.resolvedAt.localeCompare(b.resolvedAt) || a.id.localeCompare(b.id));
 }

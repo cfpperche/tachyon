@@ -72,6 +72,11 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
   get bridgeUrl(): string { return this.client.bridgeUrl; }
   get config(): WorkspaceStudioTarget["config"] { return this.studio.config; }
 
+  /** t-ea8f78 — same notice queue approval.resolve uses, reached from the editor-side commit. */
+  async deliverNotice(agent: string, line: string): Promise<void> {
+    await this.extension.invoke({ action: "notice.deliver", agent, line });
+  }
+
   studioDeps(): StudioDeps { return this.studio.studioDeps(); }
   studioSubmit(submit: StudioSubmit): string[] | undefined | Promise<string[] | undefined> {
     return this.studio.studioSubmit(submit);

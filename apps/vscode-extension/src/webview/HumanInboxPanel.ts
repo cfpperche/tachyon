@@ -26,10 +26,10 @@ import type { WorkspacePresentationTarget } from "../shell/WorkspacePresentation
 import type { WorkspaceBoardTarget } from "../shell/BoardTarget.js";
 import { buildValidationsViewModel } from "./validations/viewModel";
 import { listApprovalViewItems } from "./approval/viewModel";
-import { readLiveSavedAgentProposalQueue } from "@tachyon/engine/agents/savedAgentProposalStore.js";
+import { listSavedAgentProposalDecisions, readLiveSavedAgentProposalQueue } from "@tachyon/engine/agents/savedAgentProposalStore.js";
 import { buildSavedAgentProposalReview } from "../agents/savedAgentProposalReview";
 import { denySavedAgentProposal, type SavedAgentCommitResult } from "../agents/savedAgentProposalCommit.js";
-import { readLiveSavedAgentRemovalProposalQueue } from "@tachyon/engine/agents/savedAgentRemovalProposalStore.js";
+import { listSavedAgentRemovalProposalDecisions, readLiveSavedAgentRemovalProposalQueue } from "@tachyon/engine/agents/savedAgentRemovalProposalStore.js";
 import { buildSavedAgentRemovalProposalReview } from "../agents/savedAgentRemovalProposalReview";
 import {
   denySavedAgentRemovalProposal,
@@ -106,6 +106,8 @@ export interface HumanInboxDeps {
     approvedDigest: string;
   }) => Promise<SavedAgentRemovalCommitResult>;
   decideScheduleProposal?: (wsHash: string, id: string, decision: "approve" | "deny") => Promise<void>;
+  /** t-ea8f78 — queue-safe wake for the proposer on deny (approve goes through the commit ports). */
+  deliverNotice?: (workspaceRoot: string, agent: string, line: string) => Promise<unknown>;
 }
 
 /** The two workspace targets one panel reads, resolved together so an approvals-only workspace is visible. */
@@ -278,6 +280,8 @@ export class HumanInboxPanelManager {
         buildSavedAgentRemovalProposalReview({ proposal, currentConfigSha256: configSha, nowMs })),
       untrustedSavedAgentRemovals: removals.unreadable,
       scheduleProposals: new ProposalStore(approvalWs.workspaceRoot).list(),
+      decidedSavedAgentProposals: listSavedAgentProposalDecisions(approvalWs.workspaceRoot, nowMs),
+      decidedSavedAgentRemovals: listSavedAgentRemovalProposalDecisions(approvalWs.workspaceRoot, nowMs),
       ...(configured === undefined ? {} : { staleAfterHours: configured }),
     });
   }
@@ -452,12 +456,15 @@ export class HumanInboxPanelManager {
     if (m.type === "decideSavedAgentProposal" && typeof m.id === "string" && typeof m.digest === "string") {
       try {
         if (m.decision === "deny") {
-          denySavedAgentProposal({
+          await denySavedAgentProposal({
             workspaceRoot,
             proposalId: m.id,
             deniedBy: "human",
             reason: typeof m.reason === "string" && m.reason.trim() ? m.reason.trim() : "no reason given",
             nowMs: Date.now(),
+            ...(this.deps.deliverNotice
+              ? { deliverNotice: (agent, line) => this.deps.deliverNotice!(workspaceRoot, agent, line) }
+              : {}),
           });
         } else if (m.decision === "approve") {
           const result = await this.deps.approveSavedAgentProposal?.({ workspaceRoot, proposalId: m.id, approvedDigest: m.digest });
@@ -483,12 +490,15 @@ export class HumanInboxPanelManager {
     if (m.type === "decideSavedAgentRemoval" && typeof m.id === "string" && typeof m.digest === "string") {
       try {
         if (m.decision === "deny") {
-          denySavedAgentRemovalProposal({
+          await denySavedAgentRemovalProposal({
             workspaceRoot,
             proposalId: m.id,
             deniedBy: "human",
             reason: typeof m.reason === "string" && m.reason.trim() ? m.reason.trim() : "no reason given",
             nowMs: Date.now(),
+            ...(this.deps.deliverNotice
+              ? { deliverNotice: (agent, line) => this.deps.deliverNotice!(workspaceRoot, agent, line) }
+              : {}),
           });
         } else if (m.decision === "approve") {
           const result = await this.deps.approveSavedAgentRemoval?.({ workspaceRoot, proposalId: m.id, approvedDigest: m.digest });

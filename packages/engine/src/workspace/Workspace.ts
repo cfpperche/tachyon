@@ -4247,6 +4247,15 @@ export class Workspace {
     if (await this.humanDraftPresent(agent)) {
       return this.enqueueNotice(agent, line, metadata, "human-draft");
     }
+    // t-ea8f78 — a recipient that is not running cannot be submitted to. Queue instead of throwing
+    // so a requester who left between the request and the decision still learns when they return
+    // (recoverOnIdle flushes). Who else can reach this: any deliverNotice caller (notify_agent,
+    // approval resolve, validation close, host pokes). All of those are "tell this agent"; an
+    // offline agent should hold the line, not drop it as a submit error.
+    const session = this.manager.session(agent);
+    if (!(await this.tmux.hasSession(session))) {
+      return this.enqueueNotice(agent, line, metadata);
+    }
     const receipt = await this.submitNoticeLine(agent, line);
     // t-8d190f — a typed-but-unsubmitted line used to report "notified". The doorbell must stay
     // actionable instead: the caller learns the text is staged and can decide, rather than believing
