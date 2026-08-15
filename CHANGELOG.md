@@ -4,11 +4,72 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
-## Unreleased
+## 0.93.2 — o espaçamento passa a vir do tema, e duas telas somem
+
+A primeira versão em que **o espaço acompanha o VS Code**, do mesmo jeito que a cor sempre acompanhou.
+
+### O espaço e o tamanho do texto ganham escala, e ela é herdada
+
+O sistema tinha 568 espaçamentos escritos à mão e **nenhuma escala**. O valor mais usado era `6px`;
+`3px`, `5px`, `7px` e `9px` apareciam 130 vezes juntos, como ajuste de olho. E havia **nove tamanhos
+de texto diferentes**, incluindo um `12.5px`.
+
+A escala não foi inventada: foi medida em três referências, e a mais importante já estava instalada
+nesta máquina. **O VS Code declara tokens de tamanho** — espaço, raio, tamanho de fonte — no mesmo
+formato em que declara as cores, e os entrega às telas do Tachyon. Isso foi confirmado executando a
+leitura numa tela real, não deduzido do código.
+
+    espaço    2 · 4 · 6 · 8 · 10 · 12 · 16 · 20 · 24 · 32
+    texto     operador 10/11/12/13   ·   leitura 13/16/20
+
+Duas densidades, porque apertar as telas de leitura machucaria justamente o que mais se lê. E `13px`
+serve às duas — é o tamanho que o próprio editor usa.
+
+Cada passo lê do tema com um valor de reserva medido. **Quando a Microsoft mudar a densidade do
+editor, o Tachyon acompanha** — e em versões antigas do VS Code nada quebra.
+
+### A tela de Activity foi a primeira migrada
+
+Espaçamentos escritos à mão: **126 → 0**. Tamanhos de texto: **38 → 1**. Referências diretas de tema:
+**69 → 6**.
+
+Você vai ver a diferença. Ela é a escala fazendo efeito, não um redesenho.
 
 ### Commands e Runbooks saíram
 
-As duas abas da sidebar, os runners, os painéis Studio e as tools `run_command` / `list_commands` / `run_runbook` foram removidos. O dono nunca usou a feature — as abas ficavam `(none)` depois de meses. Schedules continuam, agora só com `spawn:`. `docs/runbooks/` (procedimentos em markdown) e o `LoginRunner` de login nativo ficaram.
+As duas abas da sidebar, os runners, os painéis Studio e as ferramentas `run_command`,
+`list_commands` e `run_runbook` foram removidos — **24 arquivos, 3.330 linhas**. As abas mostravam
+vazio depois de meses de uso diário.
+
+Schedules continuam, agora só com `spawn:`. `docs/runbooks/` — que são procedimentos em markdown,
+não a feature — e o `LoginRunner` do login nativo ficaram.
+
+Nada foi migrado nem descontinuado com aviso: não havia o que migrar.
+
+### O aviso de travamento parou de pedir a coisa errada
+
+A mensagem `event loop lagged` sugeria recuperar a Bridge, e não havia nada a recuperar. Medindo, as
+duas causas prováveis foram descartadas — não era disputa de processador nem trabalho travando a
+interface — e apareceu uma terceira que ninguém tinha considerado: **um salto no relógio do sistema é
+indistinguível de um travamento** para quem só olha a hora.
+
+Agora o aviso classifica antes de falar. Salto de relógio não diz nada. O resto nomeia o gesto, e o
+gesto é *não* reiniciar a Bridge.
+
+### E o `/exit` que aparecia sozinho
+
+Ao trocar de versão, o Tachyon pede ao agente que encerre digitando `/exit` no campo dele. O comando
+ficava lá **sem ser enviado**, por até quinze segundos, até o encerramento forçado.
+
+A trava que segura o envio existe por um bom motivo — impedir que um encerramento envie um texto que
+alguém tinha começado a escrever. O que estava errado era o alcance da leitura: ela olhava só as
+últimas oito linhas da tela, e o menu que o próprio `/exit` abre é mais alto que isso.
+
+### Ainda por baixo
+
+A sidebar passou a distinguir um agente **com** tarefa de um **sem** tarefa, e mostra o estado dela
+quando está parada. Um agente que já encerrou deixou de anunciar como atual um trabalho que já
+entregou.
 
 ## 0.93.1 — a sidebar volta, e três guardas que não guardavam
 
