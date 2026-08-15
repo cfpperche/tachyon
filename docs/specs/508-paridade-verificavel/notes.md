@@ -173,3 +173,66 @@ O teste focado voltou a verde depois da restauração. As três dimensões da fa
 trivial para três”: observed provenance lê o registry real do Activity; probe proof lê as flags de
 prova/evidence do adapter registrado; task continuation combina admissão real de Agent e entrega de
 brief. Cada uma pode divergir quando uma dessas portas muda.
+
+## Fatia 4 — metade de runtime, 2026-08-15
+
+`unmeasured` sem `needed` é recusado pelo validador (mesma natureza de `cannot` sem motivo).
+Prova de vermelho, nova: `{ verdict: "unmeasured" }` em `session-hooks/grok/runtime` →
+`session-hooks/grok/runtime: unmeasured requires needed`. A prova de `measured` sem versão/data
+foi reexecutada no mesmo arquivo (`test/unit/runtimeParity.test.ts`) e continua vermelha.
+
+Método: canário opaco no canal candidato; controle positivo e negativo declarados; binário
+autenticado em `/home/goat/.{claude,codex,grok}` (o HOME isolado do agente não tem credencial);
+versão e data em toda célula `measured`.
+
+### Contagem
+
+| estado | células |
+|---|---:|
+| `measured` | **12** |
+| `cannot` | **0** |
+| `unmeasured` + `needed` | **3** |
+
+Não é sinal contra o desenho desta tabela de 15: a maioria tem lastro de binário. As 3 restantes
+nomeiam o canal que faltou, não um backlog mudo.
+
+### session-hooks
+
+- **claude 2.1.233** `measured`. `+` `--settings` com Stop command `printf HOOK_CANARY_4VJ8P2 > file`;
+  após `claude -p "Reply with the single word ok." --permission-mode dontAsk --no-chrome --no-session-persistence`
+  o arquivo existia. `−` a mesma invocação sem `--settings`; o arquivo não existia.
+- **grok 1.0.4** `measured`. `+` `$GROK_HOME/hooks/stop.json` (auth.json ligado ao home real) escreveu
+  o canário após um `-p --output-format json` com `stopReason: end_turn`. `−` home equivalente sem
+  `stop.json`; o canário não existia.
+- **codex 0.147.0** `unmeasured`. `codex exec -c hooks.Stop=…` (read-only e workspace-write) completou
+  o turno e **não** disparou Stop. O canal do produto é o TUI/`-c` no spawn, não `exec`.
+
+### headless-probe
+
+Adapter argv de produção, sessão autenticada.
+
+- **claude 2.1.233** `measured`. `+` `--output-format json --safe-mode --no-session-persistence --tools "" --permission-mode plan`: envelope `type:"result"`, `reason=ok`, lastMessage `HP_CANARY_7KQ2M9`. `−` sem `--output-format json`: stdout é o token cru, `extractClaudeResult` = null.
+- **grok 1.0.4** `measured`. `+` `-p --output-format json --no-memory --no-subagents --tools "" --permission-mode plan`: JSON com `text`, `reason=ok`, canário. `−` sem `--output-format json`: texto cru, sem objeto `{text}`.
+- **codex 0.147.0** `measured`. `+` `codex exec --json --output-last-message …` com stdin fechado: `thread.started`, artifact `HP_CANARY_7KQ2M9`, `reason=ok`. `−` sem `--json`: texto cru, sem `thread.started`. (`execFile` sem stdin=ignore fica pendurado em "Reading additional input from stdin".)
+
+### probe-model-proof
+
+Mesmas corridas. Chave inventada `tachyonInventedModel_ZZ9` ausente em todos.
+
+- **claude** `measured`. `modelUsage` keys: `claude-haiku-4-5-20251001`, `claude-opus-5[1m]` (evidence `provider-usage`).
+- **grok** `measured`. `modelUsage` key: `grok-4.6-build` (evidence `provider-usage`).
+- **codex** `measured`. rollout `turn_context.payload.model` = `gpt-5.6-sol` via `thread_id` (evidence `session-record`).
+
+### observed-model-provenance
+
+- **codex** `measured`. O rollout que o Activity lê é o mesmo arquivo de onde o adapter tirou
+  `gpt-5.6-sol`; a chave inventada não aparece.
+- **claude / grok** `unmeasured`. O JSON de probe prova `modelUsage` no stdout do headless, não o
+  ficheiro que o normalizer de Activity lê numa sessão persistida.
+
+### cross-runtime-task-continuation
+
+`measured` nos três pela metade de runtime que existe: o canal de brief do destino. Evidência
+`docs/research/t-a68138-system-prompt-compact.md`, mesma máquina, mesmas versões, 2026-08-15,
+controles +/− (canário só pelo canal; sessão sem o canal devolve `ABSENT`; compact real). Não
+mede o orquestrador host `continue_task` — isso é a metade de projeção, já `wired`.
