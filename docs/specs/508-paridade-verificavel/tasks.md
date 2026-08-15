@@ -41,9 +41,9 @@ Medição. Nada implementado além da classificação.
 
 ## Fatia 4 — as medidas
 
-- [ ] Toda célula `measured` carrega versão do runtime e data.
-- [ ] As que não têm medição registrada ficam explícitas como não medidas — não como `wired` por conveniência.
-- [ ] Dito o que precisaria ser medido, e como, para cada lacuna.
+- [x] Toda célula `measured` carrega versão do runtime e data.
+- [x] As que não têm medição registrada ficam explícitas como não medidas — não como `wired` por conveniência.
+- [x] Dito o que precisaria ser medido, e como, para cada lacuna.
 
 ---
 
