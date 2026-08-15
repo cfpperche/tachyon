@@ -270,9 +270,13 @@ desacordo: a nota ᵖ já traduz `cannot` de compact automático no mark combina
 
 ### Terceiro tipo (achado principal)
 
-Afirmações sobre claude/codex/grok sem célula e sem motivo da fatia 2:
+Afirmações sobre claude/codex/grok sem célula e sem motivo da fatia 2 — classificadas em
+`t-f293c7`, 2026-08-15. **Nenhuma virou dimensão.**
 
-- Native lane suppression (tabela de formation gate em §3.1).
-- Model preflight e post-launch readiness nas tabelas §3.2.
+| Afirmação | Classe | Critério exato (não "é difícil") |
+|---|---|---|
+| Native lane suppression (§3.1) | **não derivável** — permanece narrativa | A porta de produto `createFormationLifecycleHost` liga `verifyNativeSuppression: () => false` para todo adapter. `isNativeSuppressionConfirmed` vive em `test/helpers/nativeLaneSuppression.ts` e só o próprio teste a importa; ela lê um campo `evidence` escrito à mão, então derivá-la compararia o registro consigo mesmo (a tautologia da row 15). `packages/engine/src/runtime/nativeLaneSuppression.ts` não existe. Memory disable já é a row 15; o gate combinado é uma conjunção que o host não consulta. |
+| Model preflight (§3.2) | **cannot** no Claude; **measured** em Codex/Grok | `ClaudeLaunchPreflight.check` nunca marca `supported` a partir de catálogo: o CLI não oferece comando de catálogo account-aware, e uma lista no Tachyon envelhece nos dois sentidos. `CodexLaunchPreflight` / `GrokLaunchPreflight` executam `codex debug models` / `grok models`; um unitário que stubasse `check()` provaria o stub. |
+| Post-launch readiness (§3.2) | **measured** nos três | `GenericLaunchReadiness` / `CodexLaunchReadiness` classificam texto do pane contra `MODEL_REJECTED_RE`, que só cresce com frase capturada (`t-d501fc`). Fixture que casa o regex prova o leitor, não que o CLI de hoje ainda emite essas palavras (o mesmo motivo da row 16). |
 
-Não virou sétima dimensão. Cada um pede cartão próprio se o dono quiser classificá-los.
+Não há um booleano por runtime para promover. "Adapter registado" marcaria Claude como wired para um catálogo que ele não tem — o falso positivo que a fatia 1 recusou em permission inject. Duas dimensões novas cresceriam uma tabela já maioritariamente `measured` (D5). Motivo e data estão em `docs/runtimes/parity.md` leftovers.

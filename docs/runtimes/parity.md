@@ -119,13 +119,35 @@ The four seams kept *out* of the table already carry a dated motive (2026-08-15,
 list immediately below: session-id strategy, deterministic `transcriptPath`, model-label
 normalization, composer suggestion vs human draft. Those are narrative on purpose.
 
-**Leftovers of the third kind** (claim about Claude/Codex/Grok with neither a cell nor a fatia-2
-motive) — listed, not repaired, in fatia 6:
+**Leftovers of the third kind**, classified 2026-08-15 (`t-f293c7`). Neither became a typed
+dimension. The fatia 5 rule applies: an item without a date cannot remain.
 
-- **Native lane suppression** (formation gate table under §3.1) — not one of the 22, not a typed
-  dimension. Adjacent to rows 12/15 but slice 2 never classified this combined gate.
-- **Model preflight** and **post-launch readiness** in the per-runtime §3.2 tables — same: real
-  claims, no cell, no fatia-2 row.
+- **Native lane suppression** (formation gate table under §3.1) stays narrative, 2026-08-15.
+  Class: **not derivable**. There is no production per-runtime verdict to call. Formation's
+  live host (`createFormationLifecycleHost`) wires `verifyNativeSuppression: () => false` for
+  every adapter. The function `isNativeSuppressionConfirmed` lives in
+  `test/helpers/nativeLaneSuppression.ts` and is imported only by its own unit test; it reads a
+  hand-authored `evidence: "verified"` field, so deriving it would compare the registry to
+  itself (the row-15 tautology). `packages/engine/src/runtime/nativeLaneSuppression.ts` does
+  not exist — the path `parity.md` used to cite is residue from before the monorepo cut.
+  Memory disable is already row 15. Instructions-file suppression is a formation conjunction
+  of that row plus a control the host never consults. Counting the conjunction as a seventh
+  dimension would watch a test helper and double-count row 15.
+
+- **Model preflight and post-launch readiness** (§3.2 tables) stay narrative, 2026-08-15.
+  Class: **Claude catalog = cannot** (mechanism, not difficulty): `ClaudeLaunchPreflight.check`
+  never labels a pin `supported` from a catalog — Claude Code exposes no bounded
+  account-aware catalog command, and a Tachyon-held list would go stale in both directions.
+  **Codex/Grok catalog = measured**: `CodexLaunchPreflight` / `GrokLaunchPreflight` execute
+  `codex debug models` / `grok models`; a unit that stubbed `check()` would prove the stub.
+  **Pane readiness = measured**: `GenericLaunchReadiness` / `CodexLaunchReadiness` classify
+  pane text against `MODEL_REJECTED_RE`, which grows only from captured phrases (`t-d501fc`).
+  A fixture that matches the regex proves the reader, not that today's CLI still emits those
+  words (same reason as row 16). There is no single callable per-runtime boolean: "adapter
+  registered" would mark Claude wired for a catalog it does not have (the permission-inject
+  false positive). Splitting into two dimensions would grow a table already majority
+  `measured`. The comparable user result — `spawn_agent` must not answer `ready` for a
+  refused pin — remains two mechanisms, written here, dated.
 
 The seams once parked here were resolved by SDD 508 fatia 5 on **2026-08-15**; none remains as an
 undated promise:
@@ -401,11 +423,13 @@ plugins/extensions can still introduce uncontrolled memory. Hermes belongs under
 it has a canonical profile adapter and remains `✗` because copied config can reconnect native or
 external-provider memory. Human-approved selected memory is a separate Tachyon lane.
 
-**Native lane suppression (formation prerequisite, SDD 490 Fatia C):** formation refuses delivery
-until `nativeSuppressionConfirmed(adapter)` is true. The receipt covers every enabled human lane at
-once, so memory disable alone is insufficient — native **rules/instructions** delivery
-(`CLAUDE.md` / `AGENTS.md` / equivalents) must be suppressible too. Registry:
-`src/runtime/nativeLaneSuppression.ts`. Evidence:
+**Native lane suppression (formation prerequisite, SDD 490 Fatia C):** the behavioral table below
+is the measured record, not a production per-runtime verdict. `createFormationLifecycleHost`
+wires `verifyNativeSuppression: () => false`. The combined-gate helper
+`isNativeSuppressionConfirmed` lives in `test/helpers/nativeLaneSuppression.ts` and is not
+imported by production (`t-f293c7`, 2026-08-15; follow-up `t-4c3d90`). Memory disable alone is
+insufficient for a formation receipt — native **rules/instructions** delivery (`CLAUDE.md` /
+`AGENTS.md` / equivalents) must be suppressible too. Evidence:
 [`native-lane-suppression-sdd490-fatia-c.md`](../research/native-lane-suppression-sdd490-fatia-c.md).
 
 | Runtime | Instructions surface | Control measured | Memory disable | Combined gate |
