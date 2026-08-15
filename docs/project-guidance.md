@@ -96,6 +96,12 @@ one entry point is worth nothing — `t-e73e54` had exactly that comment, and a 
   Vitest, tsc and esbuild alike, with one real mixed run. A green gate that loaded another tree's
   source is worse than a red one. If resolution looks wrong, or a check reports missing workspace
   links, install and say so; never route around it with relative paths.
+- **After a workspace package is added, `npm install` in an existing checkout may not create its
+  link — `npm ci` does.** Measured 2026-08-15 when `packages/bridge` landed: two consecutive
+  `npm install` runs in the primary produced two different, both-incomplete link sets, and the stable
+  build died on `Cannot find package '@tachyon/bridge'`. The gate had been green because a fresh
+  worktree links correctly on first install. If a build fails on a package that plainly exists, run
+  `npm ci` before believing the code is at fault.
 - **`npm run release` and `npm run smoke:vsix` cannot run from a worktree, and that is the guard
   working.** The stable build refuses a linked worktree, and refuses again unless HEAD, local `main`
   and cached `origin/main` agree — it exists so an artifact never leaves a tree that is not `main`.
