@@ -143,6 +143,8 @@ import { humanBytes } from "../humanInbox/loadArtifact.js";
 import { materializePiSessionDir, removePiSessionDir } from "../agents/piSession.js";
 import { expectedAgentClaudeEntry, expectedAgentOpencodeEntry } from "../registration/adapters.js";
 import { adapterFor, binaryOf, harnessable, managesOwnSession, runtimeOf } from "@tachyon/shared/resume/adapters.js";
+import { headlessProbeAdapters } from "../probe/adapters/registry.js";
+import { runtimeUsesSilentPersistenceHooks } from "../runtime/parity.js";
 import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
 import os from "node:os";
 import { EVIDENCE_SCHEMA_VERSION, summarizeEvidence, viewEvidence, isSafeArtifactRef, type WorktreeEvidence, type EvidenceSummary, type EvidenceView } from "../worktree/evidence.js";
@@ -234,9 +236,6 @@ import { wakeTaskAssignee, type TaskAssigneeWakePorts } from "../tasks/taskNotif
 import { ValidationStore } from "../validations/ValidationStore.js";
 import { ProbeService } from "../probe/ProbeService.js";
 import { ProbeStore } from "../probe/ProbeStore.js";
-import { claudeAdapter } from "../probe/adapters/claude.js";
-import { codexAdapter } from "../probe/adapters/codex.js";
-import { grokAdapter } from "../probe/adapters/grok.js";
 import { buildProbeView, type ProbeView } from "../probe/probeView.js";
 import { ContinuityStore } from "../continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
@@ -1718,11 +1717,7 @@ export class Workspace {
     // refused in this build (separate worktrees for them are a follow-up — D8 auth does real work here).
     this.probeStore = new ProbeStore(path.join(workspaceRoot, ".tachyon", "probes"));
     this.probeService = new ProbeService({
-      adapters: new Map([
-        ["claude", claudeAdapter],
-        ["codex", codexAdapter],
-        ["grok", grokAdapter],
-      ]),
+      adapters: headlessProbeAdapters(),
       store: this.probeStore,
       onComplete: (env) => {
         this.host.notify(this.t("probe {0} {1}", env.runId.slice(0, 16), env.status), "info");
@@ -4033,7 +4028,7 @@ export class Workspace {
     const def = this.config?.agents?.[agent];
     if (!def || managesOwnSession(def.cmd)) return false;
     const binary = binaryOf(def.cmd);
-    return binary === "claude" || binary === "codex" || binary === "grok";
+    return runtimeUsesSilentPersistenceHooks(binary);
   }
 
   /**

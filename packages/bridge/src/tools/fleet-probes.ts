@@ -4,6 +4,9 @@ import { runningEnvelope } from "@tachyon/engine/probe/taxonomy.js";
 import type { ProbeEnvelope } from "@tachyon/engine/probe/taxonomy.js";
 import { type BridgeDeps, fail, ok, resolveDeclaredActor } from "./shared.js";
 
+/** Product input boundary for the runtimes accepted by probe_agent. */
+export const PROBE_RUNTIME_SCHEMA = z.enum(["claude", "codex", "grok"]);
+
 export function registerProbeTools(mcp: McpServer, deps: BridgeDeps): void {
 
   // ---- spec 257 — the captured headless A2A probe lane ----
@@ -33,7 +36,7 @@ export function registerProbeTools(mcp: McpServer, deps: BridgeDeps): void {
           "freeform. Returns {runId,status,result?}: a sync call holds up to ~120s, then returns status:running " +
           "+ runId to poll via read_probe_result. Use this for 'review this', 'is this claim true', 'second opinion'.",
         inputSchema: {
-          runtime: z.enum(["claude", "codex", "grok"]),
+          runtime: PROBE_RUNTIME_SCHEMA,
           archetype: z.enum(["adversarial-review", "factual-verify", "freeform"]).default("adversarial-review"),
           task: z.string().min(1).describe("what to ask the probed model — one substantive directive"),
           context: z.string().optional(),
