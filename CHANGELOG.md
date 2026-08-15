@@ -4,6 +4,85 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.0 — as instruções permanentes param de depender de sorte, e a Inbox para de esconder decisões
+
+Versão de conserto. Quase tudo aqui existia como defeito silencioso: um comportamento que
+funcionava na maior parte do tempo, e falhava sem avisar no resto.
+
+### As suas regras permanentes sobrevivem ao compact
+
+O campo **Persistent Instructions** do perfil de um agente agora entra por flag de launch, e não
+mais só no texto de abertura da conversa. A diferença aparece quando o contexto é compactado: o
+texto de abertura é reescrito pelo resumo, e o system prompt não.
+
+Antes, uma instrução voltava depois de um compact **porque o resumo decidiu carregá-la**. Um resumo
+que cortasse o trecho apagava a instrução em silêncio, para sempre, e nada acusava.
+
+Medido nos três runtimes com sessão real: Claude por `--append-system-prompt-file`, Grok por
+`--rules`, Codex por `developer_instructions`. A única lacuna conhecida está declarada em vez de
+escondida — a compactação **automática** do Claude não pôde ser provada, e a matriz de paridade diz
+isso com o motivo.
+
+### Human Inbox: proposta deixa de ser invisível
+
+Três coisas mudaram, e as três vinham do mesmo incidente — uma decisão tomada que nem quem decidiu
+nem quem pediu conseguiu ver depois:
+
+- o cabeçalho contava três dos seis números que já calculava, e os três omitidos eram justamente os
+  de proposta. Agora os contadores vêm da mesma fonte, e a soma não pode divergir do total;
+- uma proposta **decidida** sumia da lista inteira, enquanto approvals e validations resolvidas
+  ficavam no histórico. Agora fica, com o desfecho, e abre sem os botões de decidir;
+- aprovar ou negar uma proposta de Saved Agent agora **avisa quem propôs**. Antes não avisava
+  ninguém, e o agente só descobria por ausência — sem distinguir aprovado, negado, cancelado ou
+  expirado.
+
+E o caso "quem pediu saiu da sessão entre o pedido e a decisão" passou a ser coberto: a entrega
+espera na fila até o agente voltar, em vez de registrar erro e ficar por isso mesmo.
+
+### Evidence badge conta o que fala da árvore de agora
+
+O contador somava registros que o próprio produto já sabia vencidos — a linha de um agente podia
+dizer `6 evidence record(s), 6 stale` sobre trabalho fechado duas semanas antes. Agora conta só
+frescos, e o número passa a significar *existe coisa que você não viu sobre esta árvore*.
+
+E a legenda parou de morrer com o agente: o registro passa a viver ao lado dos arquivos de prova, em
+vez de dentro da linha de sessão que a dispensa apaga. Isso já tinha custado 103 pastas de captura
+sem o texto que dizia o que provavam — essas continuam onde estão, e nada foi apagado.
+
+### F5 no dev-host diz o que está errado
+
+Apertar F5 sem o dev-host armado mostrava uma linha: `terminated with exit code 1`. A causa já era
+impressa, com o comando exato para armar — só que no terminal, e o diálogo do VS Code não mostra
+terminal.
+
+Agora a falha chega ao painel **Problems**, com a causa e o comando, e o botão *Show Errors* leva a
+ela. O F5 continua falhando quando não está armado: escolher um fixture por conta própria abriria um
+Extension Development Host vazio, que é pior que uma falha explicada.
+
+### Tooltip e Dialog voltam a funcionar
+
+Os dois falhavam sob `preact/compat` desde julho e ficaram sem wrapper no Kit, o que deixava as
+toolbars densas de ícone-só **sem nome acessível** — nem para leitor de tela, nem para quem não
+reconhece o ícone.
+
+A causa não era o Radix: o Tooltip depende de hover e foco, e é esse caminho específico que não
+fechava o circuito. Popover, Dropdown e Select passavam o mesmo gate porque abrem por clique.
+
+### Ainda visível para quem dogfooda
+
+Worktrees criadas por uma sessão de dev-host agora nascem como `tachyon/dev-host/<agente>` em vez de
+`tachyon/<agente>`, para deixarem de se parecer com branch de trabalho no seu próprio repositório.
+
+### Por baixo
+
+A matriz de paridade entre runtimes deixou de ser só prosa. Seis dimensões agora têm contraparte
+tipada que **deriva o veredito do código** em vez de repeti-lo, e cada célula separa o que o Tachyon
+projeta do que o CLI realmente faz. As outras dezesseis estão declaradas como narrativa **com o
+motivo medido** de por que não são deriváveis hoje.
+
+Também deixaram de mentir: `retask_agent` afirmava entrega para agente que já tinha saído, e a porta
+do Agent Studio registrava falha no log apenas para uma das suas operações.
+
 ## 0.92.0 — o repositório virou monorepo, e a engine deixou de saber quem a chama
 
 Duas mudanças estruturais e **zero mudança de comportamento**. Nada que você vê ou faz muda nesta
