@@ -6,6 +6,8 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { handleCompanionHttp, isCompanionPath, type CompanionHttpSurface } from "../companion/CompanionHttp.js";
 import { registerTools, type BridgeDeps } from "./tools.js";
 import { resolveCaller, type CallerIdentityRegistry, type CallerScope, type CallerSnapshot } from "./callerIdentity.js";
+import { WorkspaceBridgeTransport, type WorkspaceBridgeTransportOptions } from "./workspaceBridgeTransport.js";
+import { BridgeClientRebindCoordinator, parseBridgeClientRebindSettings, isTachyonBridgeWiredRecord, reloadInitiatorStateKey, type BridgeClientRebindDeps } from "./clientRebind.js";
 
 export const BRIDGE_PATH = "/mcp";
 
@@ -89,6 +91,25 @@ export function derivePort(wsHash: string): number {
  * lives in tmux, not here.
  */
 export class Bridge {
+  static createWorkspaceTransport(options: WorkspaceBridgeTransportOptions): WorkspaceBridgeTransport {
+    return new WorkspaceBridgeTransport(options);
+  }
+
+  static createClientRebind(deps: BridgeClientRebindDeps): BridgeClientRebindCoordinator {
+    return new BridgeClientRebindCoordinator(deps);
+  }
+
+  static parseClientRebindSettings(value: unknown) {
+    return parseBridgeClientRebindSettings(value);
+  }
+
+  static isClientWired(record: Parameters<typeof isTachyonBridgeWiredRecord>[0]): boolean {
+    return isTachyonBridgeWiredRecord(record);
+  }
+
+  static reloadInitiatorStateKey(workspaceHash: string): string {
+    return reloadInitiatorStateKey(workspaceHash);
+  }
   private server?: http.Server;
   private _port?: number;
   private _usedFallback = false;
