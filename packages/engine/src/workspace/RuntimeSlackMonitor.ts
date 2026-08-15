@@ -1,5 +1,5 @@
 import type { ManagedEntryInfo } from "../agents/AgentManager.js";
-import type { NoticeQueueMetadata } from "./NoticeQueue.js";
+import type { NoticeQueueMetadata } from "@tachyon/shared/bridge/noticeQueue.js";
 import type {
   RuntimeConditionReportV1,
   RuntimeQuotaWindowV1,

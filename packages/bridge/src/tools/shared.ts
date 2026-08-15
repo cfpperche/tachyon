@@ -30,7 +30,7 @@ import { parseEvery, parseAt } from "@tachyon/engine/config/loadConfig.js";
 import type { ScheduleDef } from "@tachyon/engine/config/loadConfig.js";
 import type { EvidenceView } from "@tachyon/engine/worktree/evidence.js";
 import type { ProbeService } from "@tachyon/engine/probe/ProbeService.js";
-import type { NoticeQueueMetadata } from "@tachyon/engine/workspace/NoticeQueue.js";
+import type { NoticeQueueMetadata } from "@tachyon/shared/bridge/noticeQueue.js";
 import { resolveActor } from "../callerIdentity.js";
 import type { CallerSnapshot, CallerIdentityRegistry, CallerScope } from "../callerIdentity.js";
 import { redactSecrets } from "@tachyon/engine/utils/redactSecrets.js";
