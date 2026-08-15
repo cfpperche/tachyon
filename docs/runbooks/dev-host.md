@@ -12,9 +12,16 @@ fleet window.
 
 ## Comece por aqui — F5 não funciona antes de armar
 
-**O dev-host precisa ser ARMADO no checkout de onde você vai apertar F5.** Sem isso a
-`preLaunchTask` falha e o VS Code mostra só `terminated with exit code 1`; a explicação real fica no
-terminal, fora do diálogo, e é fácil não achar.
+**O dev-host precisa ser ARMADO no checkout de onde você vai apertar F5.** Armar escolhe o
+fixture. O F5 **não** escolhe um sozinho: `point` exige `--fixture` ou `--workspace`, e o
+`launch.json` é estático (spec 448). Um fixture errado abre um EDH vazio ou na superfície
+errada — F5 “funcionando” e não mostrando o que você veio ver. Por isso o F5 falha fechado
+quando não está armado, em vez de inventar um padrão.
+
+Se você apertar F5 desarmado, o diálogo deixa de ser só `terminated with exit code 1`. A
+`preLaunchTask` emite um erro no formato que o VS Code coloca em **Problems**; o botão
+**Show Errors** (e o painel Problems, que a tarefa revela) mostram a causa e o comando
+`point` com o checkout de onde você apertou F5. Não precisa rolar o terminal.
 
 ```bash
 cd /caminho/do/seu/checkout
