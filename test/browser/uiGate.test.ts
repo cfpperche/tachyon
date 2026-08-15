@@ -49,6 +49,19 @@ describe("ui-gate compat gate (T3)", () => {
   // times out and fails.
   const waitForActiveTestId = (p: Page, testId: string, timeout = HANG_TIMEOUT_MS) =>
     p.waitForFunction((id) => document.activeElement?.getAttribute("data-testid") === id, { timeout }, testId);
+  // t-384c72 — Content `visible` is not dismiss-ready. Radix DismissableLayer registers the
+  // Escape listener in the useEffect that (for modal) sets body pointer-events:none, then
+  // attaches the outside-pointer listener on setTimeout(0). First Escape/overlay-click is
+  // sometimes a no-op while the dialog stays fully open (state=open, overlay under (5,5));
+  // a second interaction one second later always closes. HANG_TIMEOUT_MS was never the
+  // shortage — waiting longer after a missed click cannot help. Poll the modal arming
+  // signal, then flush the same macrotask the pointerdown listener uses.
+  const waitForModalDismissArmed = async (p: Page) => {
+    await p.waitForFunction(() => getComputedStyle(document.body).pointerEvents === "none", { timeout: HANG_TIMEOUT_MS });
+    await p.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+  };
+  const flushPointerDownOutside = (p: Page) =>
+    p.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
 
   describe("Tooltip — GATE PASS (t-c7e518)", () => {
     it("opens on trigger focus, restoring focus on Escape close", async () => {
@@ -233,6 +246,10 @@ describe("ui-gate compat gate (T3)", () => {
     it("dismisses on outside click", async () => {
       await page.click('[data-testid="popover-trigger"]');
       await page.waitForSelector('[data-testid="popover-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
+      // same DismissableLayer setTimeout(0) race as Dialog (measured t-384c72: first
+      // outside click sometimes ignored). Focus landing is the non-modal arming signal.
+      await waitForActiveTestId(page, "popover-input");
+      await flushPointerDownOutside(page);
       await page.mouse.click(5, 5);
       await page.waitForSelector('[data-testid="popover-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     });
@@ -268,6 +285,7 @@ describe("ui-gate compat gate (T3)", () => {
     it("closes on Escape and restores focus to the trigger", async () => {
       await page.click('[data-testid="dialog-trigger"]');
       await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
+      await waitForModalDismissArmed(page);
       await page.keyboard.press("Escape");
       await page.waitForSelector('[data-testid="dialog-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
       await waitForActiveTestId(page, "dialog-trigger");
@@ -276,6 +294,7 @@ describe("ui-gate compat gate (T3)", () => {
     it("dismisses on outside click (clicking the overlay)", async () => {
       await page.click('[data-testid="dialog-trigger"]');
       await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
+      await waitForModalDismissArmed(page);
       await page.mouse.click(5, 5);
       await page.waitForSelector('[data-testid="dialog-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     });
