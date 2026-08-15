@@ -113,7 +113,21 @@ function fakeTmux() {
       if (sessions.has(target())) return { stdout: "", stderr: "" };
       throw new Error("can't find session");
     }
-    if (args[2] === "capture-pane") return { stdout: panes.get(target()) ?? "", stderr: "" };
+    if (args[2] === "capture-pane") {
+      const full = panes.get(target()) ?? "";
+      // Production's dim-aware probe asks tmux for the last N lines (`-S -N`). A fake that
+      // always returns the whole pane cannot see the class of miss that wrote the reload
+      // notice over `/exit` (t-67a565): Claude's slash menu is taller than composer.tailLines,
+      // so the tailed capture has no prompt glyph and occupancy reads as free.
+      const sIdx = args.indexOf("-S");
+      if (sIdx >= 0) {
+        const n = Math.abs(Number.parseInt(String(args[sIdx + 1] ?? "").replace(/^-/, ""), 10));
+        if (Number.isFinite(n) && n > 0) {
+          return { stdout: full.split("\n").slice(-n).join("\n"), stderr: "" };
+        }
+      }
+      return { stdout: full, stderr: "" };
+    }
     if (args[2] === "list-panes") {
       if (sessions.size === 0) throw new Error("no server");
       return { stdout: [...sessions].map((s) => `${s}\t0\t`).join("\n") + "\n", stderr: "" };
@@ -474,5 +488,71 @@ describe("t-a53dd9 — the human-draft signal, per runtime", () => {
     for (const runtime of ATTESTED_RUNTIMES) {
       expect(RUNTIME_PROFILES[runtime]?.composer, runtime).toBeDefined();
     }
+  });
+});
+
+/**
+ * t-67a565 — the reload-summary notice is queued unconditionally (startup has no attention
+ * sample yet) and drained on the first idle. That drain must not type over composer content.
+ *
+ * The incident pane was Claude's slash-command menu after rebind typed `/exit`: the prompt sits
+ * ABOVE more rows than `composer.tailLines` (8), so the dim-aware probe's tailed capture never
+ * sees `❯ /exit` and reports the composer free. Fail-before: that pane gets the notice appended.
+ */
+const SLASH_MENU_BELOW_EXIT = [
+  "\x1b[39m❯\u00a0\x1b[94m/exit\x1b[39m",
+  "\x1b[94m/\x1b[1mexit\x1b[22m                         \x1b[1mExit\x1b[22m the CLI\x1b[39m",
+  ...Array.from({ length: 16 }, (_, i) => `\x1b[37m/cmd${String(i).padStart(2, "0")}\x1b[31mplaceholder row so the tail misses the prompt\x1b[39m`),
+].join("\n");
+
+describe("t-67a565 — reload summary does not type over a composer draft", () => {
+  async function withReloadChild(composerLine: string) {
+    const ctx = await withCoordAndChild(composerLine);
+    ctx.ws.ledger.record("worker", {
+      def: { cmd: "pi", kind: "agent", parent: "coord" },
+      cwd: ctx.ws.workspaceRoot,
+      updatedAt: "before-reload",
+      instance: { lifetime: "temporary", resumePolicy: "restartable" },
+    });
+    (
+      ctx.ws as unknown as { summarizeMissingChildrenAfterReload(live: ReadonlySet<string>): void }
+    ).summarizeMissingChildrenAfterReload(new Set(["coord"]));
+    return ctx;
+  }
+
+  it("THE MEASURED BUG: slash-menu `/exit` is taller than the probe tail — the notice must not land on it", async () => {
+    const { ws, sent, session } = await withReloadChild(SLASH_MENU_BELOW_EXIT);
+
+    forceStateOf(ws, "coord", "idle");
+    await priv(ws).recoverOnIdle("coord");
+    await flush();
+
+    expect(sent.has(session)).toBe(false);
+    expect(priv(ws).noticeQueue.count("coord")).toBe(1);
+    ws.dispose();
+  });
+
+  it("a short human draft — the ordinary occupied composer — also holds the reload notice", async () => {
+    const { ws, sent, session } = await withReloadChild(HUMAN_DRAFT);
+
+    forceStateOf(ws, "coord", "idle");
+    await priv(ws).recoverOnIdle("coord");
+    await flush();
+
+    expect(sent.has(session)).toBe(false);
+    expect(priv(ws).noticeQueue.count("coord")).toBe(1);
+    ws.dispose();
+  });
+
+  it("an empty composer still receives the reload notice, exactly as before", async () => {
+    const { ws, sent, session } = await withReloadChild(EMPTY_COMPOSER);
+
+    forceStateOf(ws, "coord", "idle");
+    await priv(ws).recoverOnIdle("coord");
+    await flush();
+
+    expect((sent.get(session) ?? []).join("")).toContain("after reload");
+    expect(priv(ws).noticeQueue.count("coord")).toBe(0);
+    ws.dispose();
   });
 });

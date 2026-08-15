@@ -256,7 +256,7 @@ import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, validateTerminalForm, blockingErrors, toEntry, toTerminalEntry } from "../webview/formLogic.js";
 import type { StudioSubmit } from "../webview/studioSubmit.js";
 import type { EngineHost, HostDisposable, ViewKind } from "./EngineHost.js";
-import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
+import { composerProfileFor, isComposerOccupied } from "@tachyon/shared/runtime/composerRegion.js";
 import type { RuntimeLaunchPreflightPort } from "@tachyon/shared/runtime/launchPreflight.js";
 import type { NotifyLevel } from "./EngineHost.js";
 import type { NoticeDeliveryResult } from "./noticeDelivery.js";
@@ -4313,6 +4313,31 @@ export class Workspace {
   }
 
   /**
+   * t-67a565 — the reload-summary drain asks this in addition to `humanDraftPresent`.
+   *
+   * Claude's dim-aware probe captures only `composer.tailLines` (8). After rebind types `/exit`,
+   * Claude opens a slash-command menu taller than that tail, the prompt leaves the capture, and
+   * occupancy reads as free. A full-pane capture still sees `❯ /exit`. Restricted to the reload
+   * summary: do not widen every notice's probe without measuring each door.
+   */
+  private async reloadNoticeDraftPresent(agent: string): Promise<boolean> {
+    const composer = composerProfileFor(this.manager.defOf(agent)?.cmd);
+    if (!composer) return false;
+    try {
+      const pane = await this.tmux.capturePane(this.manager.session(agent), {
+        joinWrapped: true,
+        preserveColors: true,
+      });
+      // findComposerRegion only walks `composer.tailLines` from the bottom. A full capture
+      // still misses `/exit` unless we let that walk cover the pane we just read.
+      const lines = pane.split("\n").length;
+      return isComposerOccupied(pane, { ...composer, tailLines: Math.max(composer.tailLines, lines) });
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * t-fb1453 — never silently. Expiry is a LOSS, and until now the only one with no witness: the sender
    * was answered `queued '<x>' for idle delivery` and nothing ever took that back. Named, not counted —
    * "a notice expired" tells a human nothing they can act on; "the report codex-revisor filed for you
@@ -4354,7 +4379,8 @@ export class Workspace {
     // with it (t-b4a799's unknown-flattened-into-known); now only a KNOWN fate consumes the item.
     let item = this.noticeQueue.peek(agent);
     if (!item) return false;
-    const composerOccupied = await this.humanDraftPresent(agent);
+    const composerOccupied = await this.humanDraftPresent(agent)
+      || (this.queuedReloadSummaries.has(agent) && await this.reloadNoticeDraftPresent(agent));
     const retryStaged = composerOccupied && await this.stagedQueuedNoticePresent(agent, item.line);
     // t-e169e4 — occupied content remains human-owned unless it is byte-for-byte the retained queue
     // head. The queue is the out-of-band ownership mark; provenance-looking text alone is not enough.
@@ -6003,7 +6029,9 @@ export class Workspace {
       }
       // Startup has not necessarily taken its first attention sample yet. Queue unconditionally so a
       // survivor that is mid-turn is never interrupted by an unknown→assumed-idle read; the first
-      // idle observation uses the ordinary NoticeQueue flush path.
+      // idle observation uses the ordinary NoticeQueue flush path. That flush consults
+      // humanDraftPresent and, for this line, a full-pane occupancy read (t-67a565): the tailed
+      // probe is blind to Claude's slash menu sitting on an unsubmitted `/exit`.
       this.queuedReloadSummaries.set(parent, { children, line });
       this.enqueueNotice(parent, line);
     }
