@@ -214,7 +214,7 @@ describe("Design Mode compiled IIFE", () => {
       });
       expect(coverage).toBeLessThan(0.6);
       expect(await page.$eval('pierce/[data-testid="viewport-phone"]', (node) => ({ font: getComputedStyle(node).fontSize, color: getComputedStyle(node).color, height: node.getBoundingClientRect().height }))).toMatchObject({ font: "13px", color: "rgb(255, 255, 255)" });
-      const evidenceDir = path.resolve(".vqa/visual-qa");
+      const evidenceDir = path.resolve(".tachyon/vqa/visual-qa");
       fs.mkdirSync(evidenceDir, { recursive: true });
       await page.screenshot({ path: path.join(evidenceDir, `design-mode-overlay-${width}.png`) as `${string}.png` });
       await page.click('pierce/[data-testid="markup-start"]');
