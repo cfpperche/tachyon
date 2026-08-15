@@ -5,7 +5,7 @@
  * if disk still knows agents (session ledger and/or last-known-good snapshot).
  * LKG is render-only: spawn/autostart must refuse LKG-derived definitions.
  */
-import type { EntryKind } from "./loadConfig.js";
+import type { EntryKind } from "@tachyon/shared/config/entry.js";
 import type { ConfigLkgSnapshot } from "./configLkg.js";
 import type { AgentInstanceLifetime, AgentInstancePolicy } from "@tachyon/shared/resume/agentInstance.js";
 import { isResumable, type SessionRecord } from "../resume/sessionRecord.js";

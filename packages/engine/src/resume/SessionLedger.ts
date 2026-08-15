@@ -4,7 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { type ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
-import { type EntryKind } from "../config/loadConfig.js";
+import type { EntryKind } from "@tachyon/shared/config/entry.js";
 import type { WorktreeRecord } from "../worktree/worktreeRecord.js";
 import { appendCapped, parseWorktreeEvidence, type WorktreeEvidence } from "../worktree/evidence.js";
 import type { SharedDependencyState } from "../worktree/dependencySharing.js";

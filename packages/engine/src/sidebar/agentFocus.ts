@@ -2,7 +2,7 @@
  * spec 390 — resolve the human-glance "focus line" for an agent row.
  * Pure: no IO. Priority: open MC task (assignee) → spawn brief → continuity Current Goal → omit.
  */
-import type { EntryKind } from "../config/loadConfig.js";
+import type { EntryKind } from "@tachyon/shared/config/entry.js";
 
 export type FocusSource = "task" | "brief" | "continuity";
 

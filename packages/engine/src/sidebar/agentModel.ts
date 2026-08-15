@@ -7,7 +7,7 @@ import type {
   PersistenceHookBadge,
   ModelSource,
 } from "@tachyon/shared/sidebar/types";
-import type { EntryKind } from "../config/loadConfig.js";
+import type { EntryKind } from "@tachyon/shared/config/entry.js";
 import type { ExternalToolsSummaryVM } from "@tachyon/shared/externalTools/types.js";
 import { runtimeOf } from "@tachyon/shared/resume/adapters.js";
 import { modelLabelForRuntime } from "@tachyon/shared/runtime/runtimeProfile.js";
