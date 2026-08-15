@@ -22,6 +22,7 @@ import {
   TOKEN_ENV_REF_CLAUDE,
 } from "@tachyon/engine/registration/adapters.js";
 import { makeTempDir } from "../helpers/tempDir.js";
+import type { SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
 
 const URL_ = "http://127.0.0.1:43210/mcp";
 
@@ -135,6 +136,77 @@ describe("Bridge caller resolution (spec 351 T3)", () => {
     const root = makeTempDir("tachyon-caller-auth-");
     return { workspaceRoot: root, manager, tmux, pins: new PinStore(root), tasks: new TaskStore(root), validations: new ValidationStore(root), notify: () => {} };
   }
+
+  it("composes frozen connection credentials, resolved identity, and a live client rebind", async () => {
+    const root = makeTempDir("tachyon-transport-lifecycle-");
+    const workspaceId = "frozenws";
+    const master = "1".repeat(64);
+    const external = "2".repeat(64);
+    // Frozen pre-inversion filenames and bytes: do not derive this fixture through token helpers.
+    fs.writeFileSync(path.join(root, "bridge-token-frozenws"), `${master}\n`, { mode: 0o600 });
+    fs.writeFileSync(path.join(root, "bridge-external-token-frozenws"), `${external}\n`, { mode: 0o600 });
+    const state = new Map<string, unknown>();
+    state.set("tachyon.callerIdentity.instanceId.frozenws", "frozen-instance");
+    const secrets = new Map<string, string>([["tachyon.callerIdentity.hmacKey", "3".repeat(64)]]);
+    const transport = Bridge.createWorkspaceTransport({
+      workspaceId,
+      storagePath: root,
+      authEnabled: true,
+      legacyCompatEnabled: true,
+      getState: <T>(key: string) => state.get(key) as T | undefined,
+      setState: (key, value) => state.set(key, value),
+    });
+    await transport.initializeIdentity({
+      getSecret: async (key) => secrets.get(key),
+      setSecret: async (key, value) => { secrets.set(key, value); },
+    });
+    const agentToken = transport.mintCaller("claude");
+    const observed: Array<{ kind: string; name?: string }> = [];
+    const bridge = new Bridge(minimalDeps(), {
+      token: transport.token,
+      externalToken: transport.externalToken,
+      getRegistry: () => transport.callerRegistry,
+      scope: transport.scope,
+      onRequestComplete: (info) => { if (info.caller) observed.push(info.caller); },
+    });
+    await bridge.start();
+    try {
+      const client = new Client({ name: "transport-lifecycle", version: "0.0.1" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!), {
+        requestInit: { headers: { Authorization: `Bearer ${agentToken}` } },
+      }));
+      await client.listTools();
+      await client.close();
+      expect(observed).toContainEqual(expect.objectContaining({ kind: "agent", name: "claude" }));
+
+      const record: SessionRecord = {
+        def: { cmd: "claude", kind: "agent" }, cwd: root,
+        resume: { runtime: "claude", sessionId: "frozen-session" },
+        instance: { lifetime: "temporary", resumePolicy: "restartable", lifecycleHooks: true },
+        bridgeClient: { boundGeneration: 0, wired: true }, updatedAt: new Date(0).toISOString(),
+      };
+      let running = true;
+      let rebound = false;
+      const coordinator = Bridge.createClientRebind({
+        workspaceHash: workspaceId, bridgeInstanceId: transport.instanceId,
+        getState: <T>(key: string) => state.get(key) as T | undefined,
+        setState: (key, value) => state.set(key, value), getLedger: () => record,
+        listRunning: async () => ["claude"], kindOf: () => "agent", isRunning: async () => running,
+        canResume: async () => ({ kind: "ready" }), stopGracefully: async () => { running = false; },
+        hardKillSession: async () => { running = false; }, resume: async () => { running = true; rebound = true; },
+        stampBridgeClient: (_name, generation) => { record.bridgeClient = { boundGeneration: generation, wired: true }; },
+        markExpectedDeath: () => {}, notify: () => {}, getSettings: () => ({
+          onHostGenerationBump: "auto", graceMs: 0, stopTimeoutMs: 0, maxConcurrentRebinds: 1, circuitFailCount: 3,
+        }), auditPath: path.join(root, "rebind-audit.jsonl"),
+      });
+      await coordinator.onListenerReady();
+      expect(rebound).toBe(true);
+      expect(record.bridgeClient?.boundGeneration).toBe(1);
+      coordinator.dispose();
+    } finally {
+      await bridge.dispose();
+    }
+  });
 
   it("an agent's per-agent token authenticates end-to-end (a real MCP handshake)", async () => {
     const registry = new CallerIdentityRegistry(Buffer.from("k".repeat(64), "hex"));
