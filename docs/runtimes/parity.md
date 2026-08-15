@@ -63,7 +63,32 @@ For the Codex marks in rows 7, 9, and 12, **✓** is scoped to durable Agent Pro
 the authored, allowlisted native policy in a private `CODEX_HOME` before fresh spawn, restart, and
 resume. It does not claim to impose that policy on arbitrary legacy `cmd: codex …` definitions.
 
-Also real, uneven seams (not full matrix rows yet — see open gaps): **session-id strategy** (mint vs capture), **deterministic `transcriptPath`**, **session-ownership hooks** (Claude `--settings`), **model-label normalization** (Claude/Codex), **live/observed model provenance** (spec 378 plus the Hermes SQLite reader — claude/codex/grok/hermes can latch an observed model; opencode joined them in `t-4a4d30` once its Activity reader followed the store from JSON to SQLite — each message carries the model that answered; gemini/qwen/etc. stay declared-only), **probe effective-model proof** (SDD 473/474/476 — claude/grok prove from provider usage accounting, codex from its own correlated session rollout; the kinds are recorded distinctly and not treated as equal evidence), **composer suggestion vs human draft** (`t-aee74e` codex, `t-c5f29b` claude — both render suggestion text INSIDE an otherwise empty composer and both mark it entirely SGR-dim, so `ansiEmptyContentStyle: "all-dim"` separates it from a typed draft; `t-3eaa8b` then measured grok 0.2.112, opencode 1.18.4, pi 0.80.10 and hermes 0.18.2 across empty composer, typed draft AND completed turn — none renders suggestion text in any of those states, so none declares the rule: with nothing to exempt, declaring it would only weaken a real draft's protection), and **cross-runtime task continuation** (SDD 443 / `t-7551f9`: host focused handoff + new session on another agent — **not** native resume; edit-`cmd` while live is fail-closed via `t-6d09e6`).
+The seams once parked here were resolved by SDD 508 fatia 5 on **2026-08-15**; none remains as an
+undated promise:
+
+- **session-id strategy (mint vs capture)** stays out: it is a runtime-native implementation choice
+  behind row 4 Resume, while parity explicitly optimizes for equal outcomes rather than identical
+  protocols. A regression in either strategy is already a Resume failure.
+- **deterministic `transcriptPath`** stays out: it is the locator used by Resume and Activity, not a
+  separate user outcome. A path that stops resolving is already red on rows 4/8; a second dimension
+  would count the same failure twice.
+- **session-ownership hooks** became the typed `session-hooks` dimension in SDD 508 fatia 1
+  (**2026-08-15**), covering Claude, Codex and Grok explicitly.
+- **model-label normalization** stays out: row 10 Label/profile already requires the model aliases
+  peers use, while unknown observed ids deliberately take the validated open fallback. Alias breadth
+  is presentation policy, not a separate capability.
+- **live/observed model provenance** became typed dimension `observed-model-provenance`: Claude,
+  Codex and Grok are `wired` through their Activity normalizers plus the boundary-aware observed fact
+  from spec 378.
+- **probe effective-model proof** became typed dimension `probe-model-proof`: all three are `wired`;
+  Claude/Grok carry provider-usage evidence and Codex carries a correlated session-record, whose
+  weaker provenance remains named rather than treated as equal.
+- **composer suggestion vs human draft** stays out: this is a conditional classifier rule within row
+  3 Attention. Claude/Codex need `all-dim` because they render suggestions; Grok renders none, so
+  absence of the exemption is correct behavior rather than a parity gap.
+- **cross-runtime task continuation** became typed dimension `cross-runtime-task-continuation`: the
+  host-focused handoff plus new-session path is `wired` for Claude, Codex and Grok and remains
+  explicitly distinct from native resume.
 
 ### Soul identity delivery
 
