@@ -1,3 +1,4 @@
+import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, expect, it, afterEach, vi } from "vitest";
@@ -183,7 +184,7 @@ async function withCoordAndChild(composerLine = EMPTY_COMPOSER) {
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n", "utf8");
   const host = new FakeHost(mkdir());
   const { tmux, sent, panes, keys } = fakeTmux();
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
+  const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
   await ws.manager.spawn("coord", { cmd: "claude" });
   await ws.manager.spawn("child", { cmd: "opencode", parent: "coord" });
   const session = ws.manager.session("coord");

@@ -1,3 +1,4 @@
+import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
 /**
  * Headless dogfood — SDD 443 continue_task with real Grok runtime agents on real tmux.
  * Private TMUX_TMPDIR; does not touch the fleet socket.
@@ -164,7 +165,7 @@ describe(
       });
 
       const tmux = new TmuxService(defaultExecutor);
-      ws = await Workspace.createForTest(
+      ws = await createWorkspaceForTest(
         workspace,
         { host: dogfoodHost(path.join(base, "storage")), onViewsChanged: () => {} },
         { tmux, startBridge: false },

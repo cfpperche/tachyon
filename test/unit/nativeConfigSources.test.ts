@@ -1,3 +1,4 @@
+import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -193,7 +194,7 @@ describe("native config source ownership (t-59a11b)", () => {
     const authorityDir = path.join(root, ".tachyon", "authority");
     fs.mkdirSync(authorityDir, { recursive: true });
 
-    const ws = await Workspace.createForTest(
+    const ws = await createWorkspaceForTest(
       root,
       { host: new HeadlessHost(temporaryRoot("tachyon-sources-storage-")), onViewsChanged: () => {} },
       { tmux: new TmuxService(async () => ({ stdout: "", stderr: "" })), startBridge: false },
@@ -228,7 +229,7 @@ describe("native config source ownership (t-59a11b)", () => {
     const root = temporaryRoot("tachyon-grok-pending-");
     fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  grokkie:\n    cmd: grok\n");
 
-    const ws = await Workspace.createForTest(
+    const ws = await createWorkspaceForTest(
       root,
       { host: new HeadlessHost(temporaryRoot("tachyon-grok-pending-storage-")), onViewsChanged: () => {} },
       { tmux: new TmuxService(async () => ({ stdout: "", stderr: "" })), startBridge: false },
@@ -277,7 +278,7 @@ describe("native config source ownership (t-59a11b)", () => {
       "agents:\n  grokkie:\n    profile: .tachyon/agents/grokkie/agent.yml\n",
     );
 
-    const ws = await Workspace.createForTest(
+    const ws = await createWorkspaceForTest(
       root,
       { host: new HeadlessHost(temporaryRoot("tachyon-grok-profile-storage-")), onViewsChanged: () => {} },
       { tmux: new TmuxService(async () => ({ stdout: "", stderr: "" })), startBridge: false },

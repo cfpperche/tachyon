@@ -180,7 +180,6 @@ import {
   type NoticeQueueItem,
   type NoticeQueueMetadata,
 } from "./NoticeQueue.js";
-import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { CompanionPairingService } from "../companion/CompanionPairingService.js";
 import { CompanionLiveSync } from "../companion/CompanionLiveSync.js";
 import { CompanionTabChannel } from "../companion/CompanionTabChannel.js";
@@ -198,7 +197,6 @@ import {
   resolveApproval,
   type ApprovalDecision,
 } from "../approvals/approvalRequest.js";
-import { APPROVAL_CHANNEL_COMPANION_HTTP } from "../bridge/approvalChannels.js";
 import {
   COMPANION_HTTP_PREFIX,
   type CompanionAgentRow,
@@ -207,8 +205,12 @@ import {
   type IssuedPairCode,
   type SendPromptResponse,
 } from "../companion/protocol.js";
-import { composeAgentNotice, prepareAgentSummary } from "../bridge/notifyAgent.js";
-import { healUnknownBearerFromProc } from "../bridge/agentTokenHeal.js";
+import type {
+  WorkspaceBridgeClientRebind,
+  WorkspaceBridgeIdentityTransport,
+  WorkspaceBridgePort,
+  WorkspaceBridgeServer,
+} from "./WorkspaceBridgePort.js";
 import {
   agentProfileAuthoritiesSecretKey,
   hostActionSessionEpochStateKey,
@@ -306,6 +308,8 @@ function failureIsCurrent(failureTs: string, injectionTs: string): boolean {
 export interface WorkspaceDeps {
   /** spec 233 — the host port the engine calls instead of `vscode` (the VS Code shell passes a VsCodeHost). */
   host: EngineHost;
+  /** SDD 507 — app-owned transport composition; the engine never imports or constructs Bridge. */
+  bridgeTransport: WorkspaceBridgePort;
   /** refresh the (global) sidebar providers + the attention badge */
   onViewsChanged: (view: ViewKind) => void;
   /** host-side UI affordance for newly recorded human-approval requests. */
@@ -535,7 +539,7 @@ export class Workspace {
   private readonly awaitingLogin = new Map<string, Set<string>>();
   readonly scheduler: Scheduler;
   readonly proposals: ProposalStore;
-  readonly bridge: Bridge;
+  readonly bridge: WorkspaceBridgeServer;
   /** SDD 414 — Tachyon Companion pairing (loopback /companion/v1 on the Bridge listener). */
   readonly companion: CompanionPairingService;
   /** SDD 414 — companion SSE live state fan-out. */
@@ -557,7 +561,7 @@ export class Workspace {
    *  caller (kind "legacy") at all. */
   readonly legacyBridgeAuthEnabled: boolean;
   /** Transport-owned connection credentials, caller identity, and registry persistence. */
-  private readonly bridgeTransport: ReturnType<typeof Bridge.createWorkspaceTransport>;
+  private readonly bridgeTransport: WorkspaceBridgeIdentityTransport;
   /** t-50bbd4 — the formation lane's host port; undefined when the host key is unavailable. */
   private formationLifecycle: FormationLifecyclePort | undefined;
   /** SDD 490 — the adoption (write) host; undefined when the host key is unavailable. */
@@ -592,7 +596,7 @@ export class Workspace {
   private readonly hostActionAuditPath: string;
   private readonly hostActionSessionEpoch: number;
   /** spec 364 — host-driven Bridge-client rebind after generation bump (constructed after AgentManager). */
-  private clientRebind: ReturnType<typeof Bridge.createClientRebind> | undefined;
+  private clientRebind: WorkspaceBridgeClientRebind | undefined;
   private readonly bridgeClientRebindAuditPath: string;
   config: TachyonConfig | undefined;
   /** Profile-backed rows retained after a warm reload failure remain visible but cannot start anew. */
@@ -707,7 +711,7 @@ export class Workspace {
         // Preserve the historical default-on auth behavior when the file cannot be read.
       }
     }
-    this.bridgeTransport = Bridge.createWorkspaceTransport({
+    this.bridgeTransport = deps.bridgeTransport.createWorkspaceTransport({
       workspaceId: this.wsHash,
       storagePath: deps.host.globalStoragePath(),
       authEnabled: earlyConfig?.settings.auth ?? true,
@@ -1769,7 +1773,7 @@ export class Workspace {
         this.companionLive.pushEvent(event, data);
       },
     });
-    this.bridge = new Bridge(
+    this.bridge = deps.bridgeTransport.createServer(
       {
         workspaceRoot: this.workspaceRoot,
         // t-099be8 — agent self-edit gate for tachyon.yml (validate-then-write).
@@ -2146,7 +2150,7 @@ export class Workspace {
         healUnknownBearer: (bearer) => {
           const reg = this.bridgeTransport.callerRegistry;
           if (!reg) return undefined;
-          const healed = healUnknownBearerFromProc(reg, bearer, this.bridgeTransport.scope);
+          const healed = deps.bridgeTransport.healUnknownBearer(reg, bearer, this.bridgeTransport.scope);
           if (!healed.ok) return undefined;
           if (healed.adopted) {
             this.bridgeTransport.persistRegistry();
@@ -2166,7 +2170,7 @@ export class Workspace {
     this.watches = new WatchController(async () => {});
 
     // spec 364 — Bridge-client rebind coordinator (host-agnostic ports; after manager/bridge exist).
-    this.clientRebind = Bridge.createClientRebind({
+    this.clientRebind = deps.bridgeTransport.createClientRebind({
       workspaceHash: this.wsHash,
       bridgeInstanceId: this.bridgeInstanceId,
       getState: (key) => this.host.getState(key),
@@ -2211,17 +2215,17 @@ export class Workspace {
       getSettings: () => this.bridgeClientRebindSettings(),
       auditPath: this.bridgeClientRebindAuditPath,
       getReloadInitiator: () => {
-        const v = this.host.getState<string>(Bridge.reloadInitiatorStateKey(this.wsHash));
+        const v = this.host.getState<string>(this.deps.bridgeTransport.reloadInitiatorStateKey(this.wsHash));
         return typeof v === "string" && v.length > 0 ? v : undefined;
       },
-      clearReloadInitiator: () => this.host.setState(Bridge.reloadInitiatorStateKey(this.wsHash), undefined),
+      clearReloadInitiator: () => this.host.setState(this.deps.bridgeTransport.reloadInitiatorStateKey(this.wsHash), undefined),
     });
   }
 
   /** spec 364 — settings with defaults when the section is absent. */
   private bridgeClientRebindSettings() {
     const raw = this.config?.settings.bridgeClientRebind;
-    return Bridge.parseClientRebindSettings(raw ?? {});
+    return this.deps.bridgeTransport.parseClientRebindSettings(raw ?? {});
   }
 
   /** Allowlisted Runtime Ops read of Bridge-client state; excludes tokens, audit records, and session identity. */
@@ -2236,7 +2240,7 @@ export class Workspace {
     return {
       currentGeneration: this.clientRebind?.getGeneration() ?? 0,
       boundGeneration: durableBoundGeneration(record),
-      wired: Bridge.isClientWired(record),
+      wired: this.deps.bridgeTransport.isClientWired(record),
       ...(clientState ? { clientState } : {}),
     };
   }
@@ -2281,7 +2285,7 @@ export class Workspace {
     }
     // spec 364 / 359 — remember reload initiator so post-rebind can deliverNotice (persists across reload).
     if (input.action === "reloadWindow" && input.caller.kind === "agent" && input.caller.name) {
-      this.host.setState(Bridge.reloadInitiatorStateKey(this.wsHash), input.caller.name);
+      this.host.setState(this.deps.bridgeTransport.reloadInitiatorStateKey(this.wsHash), input.caller.name);
     }
     const paths = hostActionPolicyPaths(this.host.globalStoragePath());
     await restorePinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_JSON, VSCODE_RELOAD_WINDOW_POLICY_HASH);
@@ -2886,7 +2890,7 @@ export class Workspace {
       // so ensureWorkspaceFor / createForTest never leave callers on `uninitialized`.
       // start() still recomputes after rehydrate/GC (failed→ready retry + ledger truth).
       if (seams.startBridge !== false) {
-        const preferred = ws.config?.settings.bridgePort ?? derivePort(ws.wsHash);
+        const preferred = ws.config?.settings.bridgePort ?? deps.bridgeTransport.derivePort(ws.wsHash);
         const port = await ws.startBridgeListener(preferred);
         if (port !== preferred) {
           ws.host.notify(
@@ -2966,7 +2970,7 @@ export class Workspace {
     const runningAtBoot = await ws.manager.runningAgents();
     const stragglers = runningAtBoot.filter((name) => {
       const record = ws.ledger.get(name);
-      if (!Bridge.isClientWired(record)) return true;
+      if (!deps.bridgeTransport.isClientWired(record)) return true;
       return ws.bridgeClientRebindSettings().onHostGenerationBump !== "auto";
     });
     if (lastVersion && lastVersion !== currentVersion && stragglers.length > 0) {
@@ -3145,6 +3149,9 @@ export class Workspace {
     decision: ApprovalDecision,
   ): Promise<CompanionResolveApprovalResponse> {
     try {
+      // Keep the channel identifier at the write door: the value is supplied by the transport, while
+      // the static guard can still prove that this durable field never becomes an actor-shaped literal.
+      const APPROVAL_CHANNEL_COMPANION_HTTP = this.deps.bridgeTransport.companionApprovalChannel;
       const result = await resolveApproval({
         workspaceRoot: this.workspaceRoot,
         id,
@@ -3257,11 +3264,11 @@ export class Workspace {
         message: err instanceof Error ? err.message : String(err),
       };
     }
-    const summary = prepareAgentSummary(text);
+    const summary = this.deps.bridgeTransport.prepareAgentSummary(text);
     if (!summary) {
       return { ok: false, code: "empty", message: "Message is empty after sanitizing." };
     }
-    const line = composeAgentNotice("companion", name, summary);
+    const line = this.deps.bridgeTransport.composeAgentNotice("companion", name, summary);
     try {
       const result = await this.deliverNotice(name, line);
       return {
@@ -3315,7 +3322,7 @@ export class Workspace {
   private bridgeRestartTail: Promise<void> = Promise.resolve();
 
   async restartBridge(): Promise<number> {
-    const preferred = this.config?.settings.bridgePort ?? derivePort(this.wsHash);
+    const preferred = this.config?.settings.bridgePort ?? this.deps.bridgeTransport.derivePort(this.wsHash);
     let result!: number;
     let error: unknown;
     const turn = this.bridgeRestartTail.then(async () => {

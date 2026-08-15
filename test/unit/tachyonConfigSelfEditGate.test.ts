@@ -1,3 +1,4 @@
+import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -97,7 +98,7 @@ async function makeWs(
   const host = new FakeHost(path.join(root, ".storage"));
   for (const [key, value] of savedAgentSecrets(root, fixtures)) host.secrets.set(key, value);
   fs.mkdirSync(host.globalStoragePath(), { recursive: true });
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fakeTmux(), startBridge: false });
+  const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux: fakeTmux(), startBridge: false });
   return { ws, root, host, roster };
 }
 

@@ -210,7 +210,7 @@ const externalResolver = {
 // The manifest plugin hashes the exact emitted daemon and its only runtime media dependency.
 const engineDaemon = {
   absWorkingDir: path.resolve("packages/engine"),
-  entryPoints: ["src/engine-service/daemonMain.ts"],
+  entryPoints: ["src/bridge/daemonMain.ts"],
   bundle: true,
   outfile: outputPath("dist/engine/engine-daemon.cjs"),
   platform: "node",
