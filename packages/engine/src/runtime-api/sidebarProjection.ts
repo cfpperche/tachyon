@@ -30,6 +30,12 @@ const text = (max: number, min = 0) => z.string().min(min).max(max);
 const displayText = (max: number, min = 0, marker = "…") => z.string().min(min)
   .transform((value) => fitSidebarWireText(value, max, marker))
   .pipe(z.string().min(min).max(max));
+/** t-0c7049 — optional display prose: "" / whitespace is absence. A present value still
+ *  needs ≥1 character. Treating empty as omitted keeps one bad writer from refusing the fleet. */
+const optionalDisplayText = (max: number, marker = "…") => z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  displayText(max, 1, marker).optional(),
+);
 /** SDD 479 — the wire may only carry ids the catalog actually implements. */
 const cardComponentId = z.enum(CARD_COMPONENT_IDS as unknown as [CardComponentId, ...CardComponentId[]]);
 /** One complete card template. Shared by the project's base and by every resolved runtime override. */
@@ -60,7 +66,7 @@ const externalToolItem = z.object({
   id: text(256, 1),
   kind: text(64, 1),
   tool: text(128, 1),
-  title: displayText(512, 1).optional(),
+  title: optionalDisplayText(512),
   pid: z.number().int().positive().max(2_147_483_647).optional(),
   windowId: text(256, 1).optional(),
   startedAt: text(64, 1),
@@ -81,14 +87,14 @@ const externalTools = z.object({
 
 const persistenceHooks = z.object({
   state: z.enum(["active", "skipped", "failed", "unknown"]),
-  reason: displayText(1_000, 1).optional(),
-  path: displayText(4_096, 1).optional(),
+  reason: optionalDisplayText(1_000),
+  path: optionalDisplayText(4_096),
   updatedAt: text(64, 1).optional(),
 }).strict();
 
 const agent = z.object({
   name,
-  model: displayText(256, 1).optional(),
+  model: optionalDisplayText(256),
   modelSource: z.enum(["observed", "declared", "profile"]).optional(),
   modelObservedAt: text(64, 1).optional(),
   modelStale: z.boolean().optional(),
@@ -96,15 +102,15 @@ const agent = z.object({
   /** SDD 479 phase 3 — the runtime this row runs on; selects a per-runtime card template. */
   runtime: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/).optional(),
   status: agentStatus,
-  attention: displayText(256, 1).optional(),
+  attention: optionalDisplayText(256),
   parent: name.optional(),
   delegator: name.optional(),
   declaredOwner: name.optional(),
-  sub: displayText(2_000, 1).optional(),
-  worktree: displayText(512, 1).optional(),
-  liveBranch: displayText(512, 1).optional(),
+  sub: optionalDisplayText(2_000),
+  worktree: optionalDisplayText(512),
+  liveBranch: optionalDisplayText(512),
   branchDrift: z.boolean().optional(),
-  worktreePath: displayText(4_096, 1).optional(),
+  worktreePath: optionalDisplayText(4_096),
   resources: z.object({
     cpuPct: z.number().finite().min(0).max(999).optional(),
     memMb: count,
@@ -156,7 +162,7 @@ const pipelineNode = z.object({
   id: name,
   status: agentStatus,
   label: displayText(128, 1),
-  reason: displayText(2_000, 1).optional(),
+  reason: optionalDisplayText(2_000),
   agentName: name.optional(),
 }).strict();
 
@@ -186,14 +192,14 @@ const fleet = z.object({
       n: z.number().int().positive().max(SIDEBAR_ROW_LIMIT),
       label: displayText(8_192, 1),
       state: z.enum(["running", "passed", "failed", "skipped"]),
-      detail: displayText(256, 1).optional(),
+      detail: optionalDisplayText(256),
     }).strict()).max(SIDEBAR_ROW_LIMIT),
   }).strict()).max(SIDEBAR_ROW_LIMIT),
   pins: z.array(z.object({
     id: z.string().regex(/^p-[0-9a-f]{6}$/),
     text: displayText(SIDEBAR_PIN_TEXT_MAX, 1, "… — open the pin for full detail"),
     done: z.boolean(),
-    by: displayText(128, 1).optional(),
+    by: optionalDisplayText(128),
     tags: z.array(z.string().min(1)),
     detail: z.boolean().optional(),
     attachmentCount: count.optional(),
@@ -214,9 +220,9 @@ const fleet = z.object({
   proposals: z.array(z.object({
     id: z.string().regex(/^[a-f0-9]{12}$/),
     name,
-    by: displayText(128, 1).optional(),
-    reason: displayText(2_000, 1).optional(),
-    when: displayText(512, 1).optional(),
+    by: optionalDisplayText(128),
+    reason: optionalDisplayText(2_000),
+    when: optionalDisplayText(512),
   }).strict()).max(SIDEBAR_ROW_LIMIT),
   handoff: z.object({
     exists: z.boolean(),
