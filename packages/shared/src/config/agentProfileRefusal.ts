@@ -43,8 +43,24 @@ export const AGENT_PROFILE_REFUSAL_CODES = [
   "agent-profile/forget-agent-running",
   /** The session ledger still claims a checkout for the agent. */
   "agent-profile/forget-worktree-owned",
-  /** Canonical authority for the agent (or its declared owner) is absent or no longer matches. */
+  /** Canonical authority for the forgotten agent is absent or no longer matches. */
   "agent-profile/forget-authority-stale",
+  /** The worktree removal that precedes canonical forget refused uncommitted or unmeasurable dirt. */
+  "agent-profile/worktree-removal-dirty",
+  /** Canonical authority was still present after retirement reported success. */
+  "agent-profile/forget-authority-retirement-unconverged",
+  /** The owner's profile and authority did not converge on removing the ownership edge. */
+  "agent-profile/forget-ownership-unconverged",
+  /** The canonical profile home did not converge on its recoverable quarantine. */
+  "agent-profile/forget-profile-quarantine-unconverged",
+  /** The ownership projection incorrectly names the forgotten agent as its own owner. */
+  "agent-profile/forget-owner-self-reference",
+  /** The declared owner's host authority is absent or no longer matches its profile. */
+  "agent-profile/forget-owner-authority-stale",
+  /** Runtime state changed between forget's admission snapshot and commit decision. */
+  "agent-profile/forget-runtime-state-changed",
+  /** Canonical profile state changed between forget's admission snapshot and commit decision. */
+  "agent-profile/forget-profile-state-changed",
   /** t-4736b4 — a session still holds the agent while its worktree ownership is being released. */
   "agent-profile/worktree-release-agent-running",
   /**
