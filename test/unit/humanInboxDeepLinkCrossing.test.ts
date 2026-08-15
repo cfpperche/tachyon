@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { HumanInboxPanelManager, type HumanInboxDeps } from "../../apps/vscode-extension/src/webview/HumanInboxPanel.js";
-import { readyMessage } from "../../packages/webview-ui/src/webview/human-inbox/messages.js";
+import { readyMessage } from "@tachyon/webview-ui/webview/human-inbox/messages.js";
 import { routeHumanInboxItem } from "@tachyon/engine/engine-service/engineService.js";
 import { HUMAN_INBOX_KINDS, type HumanInboxKind } from "@tachyon/webview-ui/humanInbox/model";
 import { decodeHumanInboxDeepLink } from "../../apps/vscode-extension/src/humanInbox/deepLink.js";

@@ -7,7 +7,7 @@ import {
   runtimeOpsInspectSessionAction,
   runtimeOpsSessionInspectionMessage,
   type SessionInspectionState,
-} from "../../packages/webview-ui/src/webview/runtime-ops/messages.js";
+} from "@tachyon/webview-ui/webview/runtime-ops/messages.js";
 import type { InspectedSession } from "@tachyon/engine/runtimeOps/sessionInspection.js";
 
 /**

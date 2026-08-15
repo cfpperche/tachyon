@@ -6,7 +6,7 @@ import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { SAMPLE, type FleetVM } from "@tachyon/shared/sidebar/types.js";
-import { CONTROL_SECTION_NAV } from "../../packages/webview-ui/src/webview/sidebar/sectionNav.js";
+import { CONTROL_SECTION_NAV } from "@tachyon/webview-ui/webview/sidebar/sectionNav.js";
 
 /**
  * t-6e2952 — headless Visual QA for the Control TAB (the launcher grid inside the one sidebar panel).

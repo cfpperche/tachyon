@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ActivityItem } from "@tachyon/webview-ui/activity/activityView";
-import { buildSearchIndex, filterIndex, isCapped, tailFromSequence, SEARCH_BODY_CAP, TAIL_LIVE } from "../../packages/webview-ui/src/webview/activity/feedModel.js";
+import { buildSearchIndex, filterIndex, isCapped, tailFromSequence, SEARCH_BODY_CAP, TAIL_LIVE } from "@tachyon/webview-ui/webview/activity/feedModel.js";
 
 const item = (seq: number, over: Partial<ActivityItem> = {}): ActivityItem => ({ sequence: seq, kind: "message", role: "agent", title: `msg ${seq}`, ...over });
 

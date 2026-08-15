@@ -5,7 +5,7 @@ import {
   sanitizeFontMetrics,
   MIN_COLS,
   MIN_ROWS,
-} from "../../packages/webview-ui/src/webview/agent-pane/geometry.js";
+} from "@tachyon/webview-ui/webview/agent-pane/geometry.js";
 
 describe("computeGrid", () => {
   it("floors container pixels into cols×rows", () => {

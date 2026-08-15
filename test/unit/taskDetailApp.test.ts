@@ -11,7 +11,7 @@ import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js"
 import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE } from "../../apps/vscode-extension/src/webview/TaskDetailPanel.js";
 import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
 import { legacyTaskDetailTarget, type WorkspaceTaskDetailTarget } from "../../apps/vscode-extension/src/shell/TaskDetailTarget.js";
-import { readyMessage } from "../../packages/webview-ui/src/webview/shared/ready.js";
+import { readyMessage } from "@tachyon/webview-ui/webview/shared/ready.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import { ControlWorkspaceScope } from "../../apps/vscode-extension/src/webview/shared/ControlWorkspaceScope.js";
 

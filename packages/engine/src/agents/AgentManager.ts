@@ -2758,6 +2758,7 @@ export class AgentManager {
       lifecycleHooks: !temporary,
       cwd,
       configHome: spawnBuild.env.CLAUDE_CONFIG_DIR,
+      nativeSessionHooksInjected: binaryOf(def.cmd) === "grok" && !!(spawnBuild.env.GROK_HOME || spawnBridge.env.GROK_HOME),
     });
     return { originalCmd, adapter, resumeId, selfManaged, spawnBridge, spawnBuild, ownedSpawnCmd };
     })().catch(async (error) => {
@@ -3294,12 +3295,13 @@ export class AgentManager {
     // t-04052d — this option was called `declared`, and it never asked about storage: `!declared`
     // became `ownershipOnly`, i.e. "inject profile-backed lifecycle hooks, or ownership only?". It is
     // renamed to the question it actually asks, which is also the capability the ledger records.
-    opts: { lifecycleHooks: boolean; cwd: string; configHome?: string; preservePermissionMode?: boolean },
+    opts: { lifecycleHooks: boolean; cwd: string; configHome?: string; preservePermissionMode?: boolean; nativeSessionHooksInjected?: boolean },
   ): string {
     const binary = binaryOf(def.cmd);
     const adapter = adapterFor(def.cmd);
     if (adapter?.mintsId && managesOwnSession(def.cmd)) {
-      this.opts.onSessionHooksInjected?.(name, false);
+      // Grok mints its own session id but still loads Tachyon's private-home lifecycle hooks.
+      this.opts.onSessionHooksInjected?.(name, binary === "grok" && opts.nativeSessionHooksInjected === true);
       return cmd;
     }
     const ownershipOnly = !opts.lifecycleHooks;
@@ -3316,9 +3318,10 @@ export class AgentManager {
       });
     }
     if (binary !== "claude") {
-      // Grok/Hermes/OpenCode: no withSessionOwnership lifecycle injection today.
-      // Grok harness private-home hooks are trusted via seedGrokTrustedFolders at materialize time.
-      this.opts.onSessionHooksInjected?.(name, false);
+      // Grok hooks are materialized in its private home earlier in this launch pipeline. Carry that
+      // exact per-door result (create/restart/resume/fork) instead of treating unchanged argv as
+      // evidence that no hooks were injected. Hermes/OpenCode still have no lifecycle channel here.
+      this.opts.onSessionHooksInjected?.(name, binary === "grok" && opts.nativeSessionHooksInjected === true);
       return cmd;
     }
     if (/(^|\s)--settings(=|\s|$)/.test(def.cmd)) {
@@ -4456,6 +4459,7 @@ export class AgentManager {
       lifecycleHooks: !this.isTemporary(name),
       cwd,
       configHome: restartBuild.env.CLAUDE_CONFIG_DIR,
+      nativeSessionHooksInjected: binaryOf(def.cmd) === "grok" && !!(restartBuild.env.GROK_HOME || restartBridge.env.GROK_HOME),
     });
     // mint() revokes the incumbent credential. Wait until every fallible composition/materialization
     // step has completed so a preparation error cannot strand an unchanged live pane.
@@ -4877,6 +4881,7 @@ export class AgentManager {
         lifecycleHooks: hasLifecycleHooks(record),
         cwd,
         configHome: resumeBuild.env.CLAUDE_CONFIG_DIR ?? persistedResumeHomeEnv.CLAUDE_CONFIG_DIR,
+        nativeSessionHooksInjected: runtime === "grok" && !!(resumeBuild.env.GROK_HOME || persistedResumeHomeEnv.GROK_HOME || resumeBridge.env.GROK_HOME),
       }),
       cwd,
       env: { ...resumeBuild.env, ...persistedResumeHomeEnv, ...resumeBridge.env }, // spec 236 + 380 persisted home
@@ -5258,6 +5263,7 @@ export class AgentManager {
           lifecycleHooks: false,
           cwd,
           configHome: forkBuild.env.CLAUDE_CONFIG_DIR ?? this.defaultClaudeConfigHome(),
+          nativeSessionHooksInjected: src.runtime === "grok" && !!(forkBuild.env.GROK_HOME || forkBridge.env.GROK_HOME),
           // A user-created fork inherits the source command's permission posture; capture must not widen it.
           preservePermissionMode: true,
         }),

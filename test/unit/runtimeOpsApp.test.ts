@@ -9,7 +9,7 @@ import {
   runtimeOpsInspectSessionAction,
   runtimeOpsPollAction,
   runtimeOpsSetProviderObservationAction,
-} from "../../packages/webview-ui/src/webview/runtime-ops/messages.js";
+} from "@tachyon/webview-ui/webview/runtime-ops/messages.js";
 import { buildRuntimeOpsSnapshot } from "@tachyon/engine/runtimeOps/model.js";
 import type { RuntimeOpsSnapshot } from "@tachyon/webview-ui/runtimeOps/types";
 import type { InspectedSession } from "@tachyon/engine/runtimeOps/sessionInspection.js";

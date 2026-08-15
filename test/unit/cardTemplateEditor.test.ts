@@ -9,7 +9,7 @@ import {
   toYaml,
   toggleComponent,
   validate,
-} from "../../packages/webview-ui/src/webview/shared/control/cardTemplateEditor.js";
+} from "@tachyon/webview-ui/webview/shared/control/cardTemplateEditor.js";
 import {
   CARD_COMPONENT_IDS,
   CARD_REGIONS,

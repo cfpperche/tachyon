@@ -9,7 +9,7 @@ import {
   hiddenByActivityTypes,
   normalizeActivityFilters,
   toggleActivityFilter,
-} from "../../packages/webview-ui/src/webview/activity/feedModel.js";
+} from "@tachyon/webview-ui/webview/activity/feedModel.js";
 
 const item = (sequence: number, kind: ActivityItem["kind"], title: string): ActivityItem => ({ sequence, kind, title });
 

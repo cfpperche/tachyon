@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { REF_DISPLAY_MAX, middleTruncate, refDisplay } from "../../packages/webview-ui/src/webview/task-detail/refDisplay.js";
+import { REF_DISPLAY_MAX, middleTruncate, refDisplay } from "@tachyon/webview-ui/webview/task-detail/refDisplay.js";
 
 /**
  * `t-5564b4` — a long artifact ref must be readable at both ends and must never widen its container.

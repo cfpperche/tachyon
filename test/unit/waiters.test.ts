@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { Waiters } from "../../packages/engine/src/workspace/Waiters.js";
+import { Waiters } from "@tachyon/engine/workspace/Waiters.js";
 
 describe("Waiters", () => {
   beforeEach(() => vi.useFakeTimers());

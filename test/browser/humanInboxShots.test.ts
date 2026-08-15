@@ -7,8 +7,8 @@ import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "../../apps/vscode-extension/src/webview/human-inbox/viewModel.js";
 import { assembleUntrustedSrcdoc } from "@tachyon/shared/webview/shared/untrustedSrcdoc.js";
-import type { ApprovalViewItem } from "../../packages/webview-ui/src/webview/approval/viewModel.js";
-import type { ValidationViewItem } from "../../packages/webview-ui/src/webview/validations/viewModel.js";
+import type { ApprovalViewItem } from "@tachyon/webview-ui/webview/approval/viewModel.js";
+import type { ValidationViewItem } from "@tachyon/webview-ui/webview/validations/viewModel.js";
 import { buildSavedAgentProposalReview } from "../../apps/vscode-extension/src/agents/savedAgentProposalReview";
 import type { SavedAgentProposalReview } from "@tachyon/webview-ui/agents/savedAgentProposalReview";
 

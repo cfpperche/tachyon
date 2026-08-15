@@ -11,6 +11,7 @@ import type { NotifyLevel } from "@tachyon/engine/workspace/EngineHost.js";
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml } from "../helpers/savedAgentFixture.js";
 import type { AttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
 import { agentLogId } from "@tachyon/engine/activity/logStore.js";
+import { bridgeGrokHome } from "@tachyon/engine/harness/HarnessManager.js";
 
 /**
  * spec 241 — headless validation of the continuity WIRING (not just the pure classifier): drive the real
@@ -160,7 +161,7 @@ const priv = (ws: Workspace): WorkspacePrivates => ws as unknown as WorkspacePri
  * logged in — measured green on the maintainer's checkout and pending in every agent worktree with a
  * private, credential-free config home. Injected through the door production reads instead.
  */
-useDisposableRuntimeAuth(["claude", "codex"]);
+useDisposableRuntimeAuth(["claude", "codex", "grok"]);
 
 describe("continuity wiring (spec 241, headless via Workspace.createForTest)", () => {
   it("automatic injectContinuity stays silent and leaves discontinuity for runtime-native hooks", async () => {
@@ -251,6 +252,19 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     const { ws } = await makeWs("codex", "codex", { model: "gpt-5.6-sol", reasoningEffort: "xhigh" });
 
     expect(ws.persistenceHookHealth("codex")).toMatchObject({ state: "active" });
+  });
+
+  it("t-9547a8: a declared Grok agent receives continuity, Stop persistence, and failure logging", async () => {
+    const { ws, root } = await makeWs("grok", "grok");
+    const hooksRoot = path.join(bridgeGrokHome(root, "grok"), "hooks");
+    const start = fs.readFileSync(path.join(hooksRoot, "session-start.json"), "utf8");
+    const stop = fs.readFileSync(path.join(hooksRoot, "stop.json"), "utf8");
+
+    expect(start).toContain("continuity-pointer.cjs");
+    expect(start.match(/persistence-hooks-failures\.jsonl/g)).toHaveLength(3);
+    expect(stop).toContain("persistence-stop-record.cjs");
+    expect(stop.match(/persistence-hooks-failures\.jsonl/g)).toHaveLength(2);
+    expect(ws.persistenceHookHealth("grok")).toMatchObject({ state: "active" });
   });
 
   it("spec 312: no visible fallback remains when hook injection did not happen for this spawn", async () => {

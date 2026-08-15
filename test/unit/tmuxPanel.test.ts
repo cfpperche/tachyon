@@ -5,7 +5,7 @@ import { setNotificationProvider, type NotificationRequest } from "../../apps/vs
 import { TMUX_VIEW_TYPE, TmuxPanelManager, tmuxRefreshKind } from "../../apps/vscode-extension/src/webview/TmuxPanel.js";
 import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
 import { sectionPanelKey, type SectionPanelState } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
-import { readyMessage, refreshAction } from "../../packages/webview-ui/src/webview/inspector/messages.js";
+import { readyMessage, refreshAction } from "@tachyon/webview-ui/webview/inspector/messages.js";
 import type { InspectorDeps } from "../../apps/vscode-extension/src/webview/ServerInspector.js";
 import type { PaneSnapshot } from "@tachyon/engine/tmux/TmuxService.js";
 
