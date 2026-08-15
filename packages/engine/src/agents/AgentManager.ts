@@ -3649,9 +3649,25 @@ export class AgentManager {
       const pane = await this.captureForStop(session);
       // Enter goes out only while the composer provably holds exactly our text. Unreadable, already
       // cleared, or our text with something else beside it all mean a press would be blind, and a
-      // blind Enter answers whatever happens to be focused. The measured slash-command menu does not
-      // trip this: its rows carry no prompt glyph, so the region still reads exactly `/exit`.
-      if (pane === null || composerText(pane, composer) !== text.trim()) return;
+      // blind Enter answers whatever happens to be focused.
+      //
+      // t-ab2682 put this exact-text check here so a stop cannot submit a staged draft (the spawn
+      // brief losing the race: `── END BEFORE FINISHING ──/exit` went to the model as a prompt).
+      // That reason still holds — do not loosen it.
+      //
+      // t-328cc3 — `findComposerRegion` only walks `composer.tailLines` (8). Typing `/exit` opens
+      // Claude's slash-command menu, which is taller than that tail; a tailed read returns null
+      // and this guard withholds Enter even though the composer holds exactly `/exit` (menu rows
+      // carry no prompt glyph — the 2026-08-07 measurement that said the menu does not trip the
+      // check was a short menu). Walk the full capture: same exact-text condition, able to see
+      // the prompt. Waiting for the menu to close does not work — it stays open until selected
+      // or dismissed. Submitting `/exit` is the designed stop; an interloper beside it still
+      // withholds.
+      const lines = pane === null ? 0 : pane.split("\n").length;
+      const staged = pane === null
+        ? null
+        : composerText(pane, { ...composer, tailLines: Math.max(composer.tailLines, lines) });
+      if (staged !== text.trim()) return;
       await this.sendKeyForStop(session, "C-m");
       if (await this.waitForSessionDeath(session, AgentManager.STOP_TEXT_EXIT_GRACE_MS)) return;
     }
