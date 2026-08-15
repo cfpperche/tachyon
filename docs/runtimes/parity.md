@@ -123,16 +123,12 @@ normalization, composer suggestion vs human draft. Those are narrative on purpos
 dimension. The fatia 5 rule applies: an item without a date cannot remain.
 
 - **Native lane suppression** (formation gate table under §3.1) stays narrative, 2026-08-15.
-  Class: **not derivable**. There is no production per-runtime verdict to call. Formation's
-  live host (`createFormationLifecycleHost`) wires `verifyNativeSuppression: () => false` for
-  every adapter. The function `isNativeSuppressionConfirmed` lives in
-  `test/helpers/nativeLaneSuppression.ts` and is imported only by its own unit test; it reads a
-  hand-authored `evidence: "verified"` field, so deriving it would compare the registry to
-  itself (the row-15 tautology). `packages/engine/src/runtime/nativeLaneSuppression.ts` does
-  not exist — the path `parity.md` used to cite is residue from before the monorepo cut.
-  Memory disable is already row 15. Instructions-file suppression is a formation conjunction
-  of that row plus a control the host never consults. Counting the conjunction as a seventh
-  dimension would watch a test helper and double-count row 15.
+  Class: **not derivable**. `t-4c3d90` restored the production registry at
+  `packages/engine/src/runtime/nativeLaneSuppression.ts` and the host now calls
+  `isNativeSuppressionConfirmed` (no longer `verifyNativeSuppression: () => false`). The
+  combined gate is still a hand-authored `evidence: "verified"` field, so deriving a cell
+  would compare the registry to itself (the row-15 tautology). Memory disable is already
+  row 15. Counting the conjunction as a seventh dimension would double-count that row.
 
 - **Model preflight and post-launch readiness** (§3.2 tables) stay narrative, 2026-08-15.
   Class: **Claude catalog = cannot** (mechanism, not difficulty): `ClaudeLaunchPreflight.check`
@@ -424,10 +420,10 @@ it has a canonical profile adapter and remains `✗` because copied config can r
 external-provider memory. Human-approved selected memory is a separate Tachyon lane.
 
 **Native lane suppression (formation prerequisite, SDD 490 Fatia C):** the behavioral table below
-is the measured record, not a production per-runtime verdict. `createFormationLifecycleHost`
-wires `verifyNativeSuppression: () => false`. The combined-gate helper
-`isNativeSuppressionConfirmed` lives in `test/helpers/nativeLaneSuppression.ts` and is not
-imported by production (`t-f293c7`, 2026-08-15; follow-up `t-4c3d90`). Memory disable alone is
+is the measured record. `createFormationLifecycleHost` reads
+`packages/engine/src/runtime/nativeLaneSuppression.ts` through `isNativeSuppressionConfirmed`
+(`t-4c3d90`, 2026-08-15). Combined `verified` is still a hand-authored conjunction, so this
+stays narrative rather than a seventh typed dimension (`t-f293c7`). Memory disable alone is
 insufficient for a formation receipt — native **rules/instructions** delivery (`CLAUDE.md` /
 `AGENTS.md` / equivalents) must be suppressible too. Evidence:
 [`native-lane-suppression-sdd490-fatia-c.md`](../research/native-lane-suppression-sdd490-fatia-c.md).
@@ -1207,6 +1203,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
+| 2026-08-15 | **Formation native-suppression verify stopped being hardcoded false (`t-4c3d90`).** Fatia C's registry is back at `packages/engine/src/runtime/nativeLaneSuppression.ts`. `createFormationLifecycleHost` calls `isNativeSuppressionConfirmed` (the leftover `verifyNativeSuppression: () => false` is gone). Tests watch the host, not only the helper. Still not a 508 dimension — the combined field is hand-authored (row-15 tautology). |
 | 2026-08-12 | **Codex skill revocation reaches the worktree tree and stops pretending about the shared one (`t-f842f0`).** Measured at the point of use: `/home/goat/tachyon/.agents/skills` holds exactly the 11 plugin installs the lockfile claims (`skill-dir` + `runtime: codex`, no sidecar owner mark; this worktree has no `.agents` at all). The profile grant writes the same relative path under the launch cwd, marked only in the private-home manifest. Names collide, so unapply-by-name would delete the plugin install, and `unapplyContribution` is MCP-only (SDD 486 Phase C) — skills are Phase A and were not invented here. Codex 0.146.1 still has no discovery-root override (row 22). The product therefore does two honest things: (1) when `cwd !== workspaceRoot`, empty selection purges `<cwd>/.agents/skills` on the `materializeHome` door every Codex route already crosses (t-fc1df8's pattern); a leftover symlink is refused rather than followed into the workspace roster; (2) when `cwd` IS the workspace root, the installer directory is not swept — grant stays refused (`t-94d49a`) and revocation is recorded as structurally impossible in that directory. Evidence: `test/unit/harness.test.ts` (t-f842f0 + the Codex arm of t-987347, both confirmed red before the purge). |
 | 2026-08-12 | **Design Mode panel-land live remeasurement (`t-ba5027`), corrected by `t-a4060b`:** after four production-host offline refusals, a headless EDH brought the production route online. Codex 0.146.1 and Pi 0.80.10 each listed/called `design_mode_chat_reply`, sent `turnId`, used no markers, and landed exactly 1 nonce-bearing JSONL event + 1 DOM bubble. Pi moves `?` → `~`. Those calls were orphan/no-wait. The original explanation was false: Design Mode did not exclude Temporary agents because production rows expose `lifetime`, not the boolean `temporary` read by the old filter. The menu's empty result was an indistinguishable failure. Later, a live Saved Claude agent resolved host-issued pending turn `dm-turn-4fe022b5-58bd-46b5-9d48-44a72c57a477` through the tool; production JSONL ties user line 2 → host wait line 3 → `source:"tool"` agent line 4. Claude's turn bind and panel land move to `✓`; no other runtime is promoted. F1 remains blocked until F3 is green for the remaining applicable runtimes. Evidence: [`design-mode-panel-land-live-t-ba5027.md`](../research/design-mode-panel-land-live-t-ba5027.md). |
 | 2026-08-11 | **Row 22 added — write confinement / discovery root (`t-5313dc`).** The matrix had 21 dimensions and **none** of them asked whether a runtime can stop a tool call from writing outside a declared root, while three permanent documents were asserting that an agent is isolated to its worktree. `docs/project-guidance.md` called it one of "two product facts" and used it to justify why moving `main` is a human action; it is not a fact — an agent has a shell, and on 2026-07-30 one reached the primary checkout twice in a single session. That line now separates the real mechanism (the integrate door is record-only) from the convention (the agent is *instructed* to stay in its worktree), and `docs/tachyon-capability-matrix.md` says "Worktree isolada" means separate checkout and branch, **not** write confinement. Measured on the installed binaries — claude 2.1.227, codex-cli 0.146.1, grok 1.0.0, pi 0.80.10: Claude's OS sandbox covers `Bash` but not `Edit`/`Write`, and `bypassPermissions` skips the rules that do; Codex's `workspace-write` confines but admits `/tmp` and `$TMPDIR` by default; Grok's `--sandbox workspace` confines the whole process yet a **built-in** profile warns and continues when enforcement fails, so only a custom profile is a gate; Pi has no sandbox at all. Tachyon consumes none of the four, which caps every cell at `~` independent of the holes. Discovery root is `✗` across the board — each runtime pins its own CWD→repo-root convention with no portable replacement, which makes the codex `.agents/skills` collision (`t-f842f0`) structural rather than a bug, and agent-plugins.org does not close it (it standardizes the package format and explicitly leaves discovery, installation and permissions to each client). Measurement: [`runtime-write-discovery-isolation-t5313dc.md`](../research/runtime-write-discovery-isolation-t5313dc.md). No product code changed. |

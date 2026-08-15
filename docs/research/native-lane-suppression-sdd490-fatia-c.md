@@ -5,7 +5,7 @@ _Measured 2026-08-05. Agent f490c. Measurement only; does not wire launch argv b
 ## Why this exists
 
 Formation lane delivery refuses when `nativeSuppressionConfirmed(adapter)` is false
-(`src/agents/formation/lifecycleHost.ts`). The suppression receipt covers **every** enabled human
+(`packages/engine/src/agents/formation/lifecycleHost.ts`). The suppression receipt covers **every** enabled human
 lane at once (`humanLanes.ts:57-62`), so a receipt is only honest when the runtime can suppress
 native delivery of **all** formation-lane equivalents — not memory alone.
 
@@ -162,12 +162,12 @@ would be false.
 
 ## Combined gate (`nativeSuppressionConfirmed`)
 
-Implemented in `src/runtime/nativeLaneSuppression.ts`:
+Implemented in `packages/engine/src/runtime/nativeLaneSuppression.ts`:
 
 - `verified` only when **every** required surface for that adapter is `verified` (instructions +
   memory when mechanism is native).
 - Otherwise `declared` / `unsupported` with an explicit reason.
-- `Workspace.ts` reads the registry instead of hard-coding `false`.
+- `createFormationLifecycleHost` reads the registry instead of hard-coding `false`.
 
 | Adapter | instructions | memory (registry) | combined |
 |---------|--------------|-------------------|----------|

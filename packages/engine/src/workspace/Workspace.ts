@@ -804,6 +804,7 @@ export class Workspace {
       // instead of capturing an undefined that would never fill in.
       formation: {
         suppressionRequired: (agentName) => this.formationLifecycle?.suppressionRequired(agentName) ?? false,
+        nativeSuppressionConfirmed: (adapter) => this.formationLifecycle?.nativeSuppressionConfirmed(adapter) ?? false,
       },
       // SDD 369 T3 — ordinary Claude sessions inherit this account home. Capture and transcript
       // resolution must use the same value; an unknown external home then fails capture closed.
