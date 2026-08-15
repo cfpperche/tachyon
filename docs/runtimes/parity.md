@@ -164,8 +164,12 @@ undated promise:
   peers use, while unknown observed ids deliberately take the validated open fallback. Alias breadth
   is presentation policy, not a separate capability.
 - **live/observed model provenance** became typed dimension `observed-model-provenance`: Claude,
-  Codex and Grok have a projection guarded through their Activity normalizer registry; runtime
-  evidence remains independently unmeasured until the measurement slice records version and date.
+  Codex and Grok have a projection guarded through their Activity normalizer registry. Runtime
+  evidence is **uneven and that unevenness is the point**: Codex is `measured` (0.147.0,
+  2026-08-15 — the rollout Activity reads is the same file the probe adapter took the model from,
+  and an invented model key appears in neither); Claude and Grok stay `unmeasured` with the missing
+  channel named, because the probe JSON proves `modelUsage` on headless stdout, not the durable
+  file Activity reads.
   Table: `observed-model-provenance`. (Fatia 6: if this paragraph and the table disagree, the table wins.)
 - **probe effective-model proof** became typed dimension `probe-model-proof`: all three have a
   projection guarded by the registered adapter's proof declaration; runtime evidence and its kind
@@ -175,8 +179,11 @@ undated promise:
   3 Attention. Claude/Codex need `all-dim` because they render suggestions; Grok renders none, so
   absence of the exemption is correct behavior rather than a parity gap.
 - **cross-runtime task continuation** became typed dimension `cross-runtime-task-continuation`: the
-  projection is guarded by destination Agent admission plus opening-brief delivery; runtime behavior
-  remains independently unmeasured and the feature stays distinct from native resume.
+  projection is guarded by destination Agent admission plus opening-brief delivery, and runtime
+  behaviour is `measured` for all three (2026-08-15 — Claude 2.1.233, Codex 0.147.0, Grok 1.0.4),
+  scoped to the destination-brief half. The feature stays distinct from native resume: what is
+  measured is that a destination runtime accepts and delivers the opening brief, not that a
+  conversation continues.
   Table: `cross-runtime-task-continuation`. (Fatia 6: if this paragraph and the table disagree, the table wins.)
 
 ### Soul identity delivery
