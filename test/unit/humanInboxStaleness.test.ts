@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import { DEFAULT_STALE_AFTER_HOURS, buildHumanInbox, humanInboxCounts } from "@tachyon/webview-ui/humanInbox/model";
 import { buildHumanInboxViewModel } from "../../apps/vscode-extension/src/webview/human-inbox/viewModel.js";
-import type { ApprovalViewItem } from "../../packages/webview-ui/src/webview/approval/viewModel.js";
+import type { ApprovalViewItem } from "@tachyon/webview-ui/webview/approval/viewModel.js";
 
 /**
  * t-e4f662 — the Human Inbox's staleness threshold, configured rather than hardcoded.

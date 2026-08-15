@@ -8,7 +8,7 @@ import { PluginsPanelManager, PLUGINS_VIEW_TYPE, pluginsRefreshKind, sourceSpecA
 import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
 import type { SectionPanelState } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
 import { serializeLockfile, LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
-import { pollAction, readyMessage } from "../../packages/webview-ui/src/webview/plugins/messages.js";
+import { pollAction, readyMessage } from "@tachyon/webview-ui/webview/plugins/messages.js";
 import type { WorkspaceGitPresentationTarget } from "../../apps/vscode-extension/src/shell/WorkspacePresentation.js";
 
 /**

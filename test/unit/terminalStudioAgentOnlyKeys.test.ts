@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import { TERMINAL_STRIPPED_AGENT_KEYS, upsertAgent } from "@tachyon/engine/config/YamlConfigEditor.js";
 import { toTerminalEntry, type FormState } from "@tachyon/engine/webview/formLogic.js";
-import { blankTerminalFields } from "../../packages/webview-ui/src/webview/terminal-studio-shell/domain.js";
+import { blankTerminalFields } from "@tachyon/webview-ui/webview/terminal-studio-shell/domain.js";
 
 /**
  * t-b54ead — the Terminal Studio must never again offer a key the loader refuses for a terminal.

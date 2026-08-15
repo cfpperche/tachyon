@@ -10,7 +10,7 @@ import {
 import { ClientWorkspaceStudioTarget } from "../../apps/vscode-extension/src/shell/ClientWorkspaceStudioTarget.js";
 import { FakeWorkspaceClient } from "../helpers/FakeWorkspaceClient.js";
 import { CommandStudioAdapter } from "../../apps/vscode-extension/src/webview/CommandStudioAdapter.js";
-import { blankCommandFields } from "../../packages/webview-ui/src/webview/command-studio-shell/domain.js";
+import { blankCommandFields } from "@tachyon/webview-ui/webview/command-studio-shell/domain.js";
 import type { StudioDeps } from "../../apps/vscode-extension/src/webview/studioSubmit.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 import type { AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio.js";

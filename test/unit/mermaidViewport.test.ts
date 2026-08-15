@@ -14,7 +14,7 @@ import {
   fitTransform,
   MIN_SCALE,
   MAX_SCALE,
-} from "../../packages/webview-ui/src/webview/activity/mermaidViewport.js";
+} from "@tachyon/webview-ui/webview/activity/mermaidViewport.js";
 
 describe("mermaidViewport (spec 374)", () => {
   it("clampScale bounds and rejects non-finite", () => {

@@ -3,7 +3,7 @@ import path from "node:path";
 import { h } from "preact";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import type { InspectorModel } from "@tachyon/webview-ui/inspector/model";
-import type { InspectorScope, InspectorStrings } from "../../packages/webview-ui/src/webview/inspector/messages.js";
+import type { InspectorScope, InspectorStrings } from "@tachyon/webview-ui/webview/inspector/messages.js";
 
 /**
  * t-6b5dea — the tmux app opens on the project the SIDEBAR selected, and no session becomes unreachable.

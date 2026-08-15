@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderWebviewShell, parseShellCsp, type WebviewShellOptions } from "../../apps/vscode-extension/src/webview/shared/shell.js";
-import { readyMessage, browseMessage } from "../../packages/webview-ui/src/webview/agent-studio-shell/messages.js";
-import { decodeStudioMessage, STUDIO_PROTOCOL_VERSION } from "../../packages/webview-ui/src/webview/shared/studio/protocol.js";
+import { readyMessage, browseMessage } from "@tachyon/webview-ui/webview/agent-studio-shell/messages.js";
+import { decodeStudioMessage, STUDIO_PROTOCOL_VERSION } from "@tachyon/webview-ui/webview/shared/studio/protocol.js";
 
 // spec 280 — the PARITY gate (the dueto's real guard, not visual-only). For each panel migrated to
 // renderWebviewShell, assert the rendered shell's CSP directive SET + stylesheet/script ORDER + body class +

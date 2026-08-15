@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { renderMarkdownHtml } from "../../packages/webview-ui/src/webview/activity/markdownEngine.js";
-import { SANITIZE_ALLOWED_URI_REGEXP } from "../../packages/webview-ui/src/webview/activity/markdownSanitizeConfig.js";
+import { renderMarkdownHtml } from "@tachyon/webview-ui/webview/activity/markdownEngine.js";
+import { SANITIZE_ALLOWED_URI_REGEXP } from "@tachyon/webview-ui/webview/activity/markdownSanitizeConfig.js";
 
 // spec 335/356 — the Task Detail body and task journal entries are agent/human-authored and rendered through
 // the SAME pipeline Handoff/Activity use (MarkdownView: markdown-it html:false → DOMPurify). DOMPurify itself needs a real

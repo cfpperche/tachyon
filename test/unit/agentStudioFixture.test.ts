@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { loadMessage, saveMessage, cancelMessage } from "../../packages/webview-ui/src/webview/agent-studio-fixture/messages.js";
-import { STUDIO_PROTOCOL_VERSION } from "../../packages/webview-ui/src/webview/shared/studio/protocol.js";
+import { loadMessage, saveMessage, cancelMessage } from "@tachyon/webview-ui/webview/agent-studio-fixture/messages.js";
+import { STUDIO_PROTOCOL_VERSION } from "@tachyon/webview-ui/webview/shared/studio/protocol.js";
 import { agentStudioFixtureFixtures } from "../../scripts/webview-preview/fixtures/agent-studio-fixture.js";
-import type { AgentFixtureVM } from "../../packages/webview-ui/src/webview/agent-studio-fixture/types.js";
+import type { AgentFixtureVM } from "@tachyon/webview-ui/webview/agent-studio-fixture/types.js";
 
 // spec 350 T5 — Fake 2 (Agent-entity fixture): proves the message contract AND that the fixture data actually
 // exercises every dense domain component the spec names (quick-add chips, instructions, worktree

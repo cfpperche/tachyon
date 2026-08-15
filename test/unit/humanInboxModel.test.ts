@@ -6,8 +6,8 @@ import {
   validationAwaitsHuman,
   type HumanInboxItem,
 } from "@tachyon/webview-ui/humanInbox/model";
-import type { ApprovalViewItem } from "../../packages/webview-ui/src/webview/approval/viewModel.js";
-import type { ValidationViewItem } from "../../packages/webview-ui/src/webview/validations/viewModel.js";
+import type { ApprovalViewItem } from "@tachyon/webview-ui/webview/approval/viewModel.js";
+import type { ValidationViewItem } from "@tachyon/webview-ui/webview/validations/viewModel.js";
 
 /**
  * Human Inbox, phase 1 — the aggregate projection (t-e76acc).
@@ -48,7 +48,7 @@ describe("Human Inbox — a router, not a resolver", () => {
     // The module's whole contract. If a write ever appears here, the inbox has stopped being a
     // projection over the stores and become a second path into them — which is what the ratified
     // option B forbids.
-    const module = await import("../../packages/webview-ui/src/humanInbox/model.js");
+    const module = await import("@tachyon/webview-ui/humanInbox/model.js");
     const writes = Object.keys(module).filter((name) => /resolve|close|assign|cancel|approve|deny|write|save/i.test(name));
     expect(writes).toEqual([]);
   });

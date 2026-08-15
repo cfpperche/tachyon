@@ -3,8 +3,8 @@ import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { StudioPanelManagerBase, type StudioSurfaceConfig } from "../../apps/vscode-extension/src/webview/shared/studio/StudioPanelManagerBase.js";
 import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
-import { envelope } from "../../packages/webview-ui/src/webview/shared/studio/protocol.js";
-import type { StudioRestoreSnapshot } from "../../packages/webview-ui/src/webview/shared/studio/protocol.js";
+import { envelope } from "@tachyon/webview-ui/webview/shared/studio/protocol.js";
+import type { StudioRestoreSnapshot } from "@tachyon/webview-ui/webview/shared/studio/protocol.js";
 
 // spec 350 T2 — StudioPanelManagerBase exercised against a tiny in-memory fake adapter (the same style as
 // pinStudioPanel.test.ts's fake webview): lifecycle, dirty/patch tracking, save success/failure through the

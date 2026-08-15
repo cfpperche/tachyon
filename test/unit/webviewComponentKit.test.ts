@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
-import { cx } from "../../packages/webview-ui/src/webview/shared/ui/cx.js";
+import { cx } from "@tachyon/webview-ui/webview/shared/ui/cx.js";
 import { nonEmpty, workspaceRoot } from "../helpers/repositorySourceScan.js";
 
 const WEBVIEW_ROOT = `${workspaceRoot("@tachyon/webview-ui")}/src/webview`;
