@@ -76,6 +76,35 @@ export interface WorktreeEvidence {
   artifacts?: string[];
 }
 
+const SEVERITIES: readonly Severity[] = ["info", "warn", "error"];
+
+/** Defensive parse of one persisted evidence record — drops malformed input, never throws. */
+export function parseWorktreeEvidence(value: unknown): WorktreeEvidence | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const o = value as Record<string, unknown>;
+  const str = (v: unknown): v is string => typeof v === "string";
+  if (!str(o.id) || !str(o.targetAgent) || !str(o.producer) || !str(o.atCommit) || !str(o.producedAt)) return undefined;
+  if (!str(o.kind) || !str(o.summary)) return undefined;
+  if (!SEVERITIES.includes(o.severity as Severity)) return undefined;
+  return {
+    schemaVersion: EVIDENCE_SCHEMA_VERSION,
+    id: o.id,
+    targetAgent: o.targetAgent,
+    producer: o.producer,
+    ...(str(o.onBehalfOf) ? { onBehalfOf: o.onBehalfOf } : {}),
+    ...(str(o.sourceRunId) ? { sourceRunId: o.sourceRunId } : {}),
+    atCommit: o.atCommit,
+    ...(typeof o.worktreeDirtyAtProduction === "boolean" ? { worktreeDirtyAtProduction: o.worktreeDirtyAtProduction } : {}),
+    producedAt: o.producedAt,
+    kind: o.kind,
+    severity: o.severity as Severity,
+    summary: o.summary,
+    ...(str(o.detail) ? { detail: o.detail } : {}),
+    ...(o.data && typeof o.data === "object" && !Array.isArray(o.data) ? { data: o.data as Record<string, unknown> } : {}),
+    ...(Array.isArray(o.artifacts) ? { artifacts: o.artifacts.filter(str) } : {}),
+  };
+}
+
 /**
  * HEAD-only staleness: evidence is stale when the worktree HEAD
  * moved past the commit it was produced against. An unrelated DIRTY worktree does
@@ -150,10 +179,12 @@ export interface EvidenceBadgeCounts {
 }
 
 /** Distil a summary into the sidebar badge counts — undefined when there's nothing to show. Pure.
- *  warn/error reflect FRESH records only (a stale error must not keep lighting the badge red). */
+ *  total and warn/error reflect FRESH records only (a stale error must not keep lighting the badge). */
 export function evidenceBadge(summary: EvidenceSummary | undefined): EvidenceBadgeCounts | undefined {
-  if (!summary || summary.total === 0) return undefined;
-  return { total: summary.total, stale: summary.stale, warn: summary.freshBySeverity.warn, error: summary.freshBySeverity.error };
+  // t-1d198e — the badge is "there is something you have not seen about the CURRENT tree".
+  // Stale stays readable via list_evidence; it must not keep lighting the sidebar.
+  if (!summary || summary.fresh === 0) return undefined;
+  return { total: summary.fresh, stale: 0, warn: summary.freshBySeverity.warn, error: summary.freshBySeverity.error };
 }
 
 /**

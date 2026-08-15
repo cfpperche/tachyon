@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from "node:util";
 import { adapterForRuntime, type ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
 import { type EntryKind } from "../config/loadConfig.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
-import { appendCapped, EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence, type Severity } from "../worktree/evidence.js";
+import { appendCapped, parseWorktreeEvidence, type WorktreeEvidence } from "../worktree/evidence.js";
 import type { SharedDependencyState } from "../worktree/dependencySharing.js";
 import { spawnContractCompletion, type SpawnContract } from "../agents/spawnContract.js";
 
@@ -549,43 +549,10 @@ function parseDependencies(d: unknown): SharedDependencyState | undefined {
   };
 }
 
-const SEVERITIES: readonly Severity[] = ["info", "warn", "error"];
-
 /** Defensive parse of a persisted evidence array — drops malformed records, never throws. */
 function parseEvidenceArray(a: unknown): WorktreeEvidence[] {
   if (!Array.isArray(a)) return [];
-  const out: WorktreeEvidence[] = [];
-  for (const r of a) {
-    const rec = parseEvidence(r);
-    if (rec) out.push(rec);
-  }
-  return out;
-}
-
-function parseEvidence(r: unknown): WorktreeEvidence | undefined {
-  if (typeof r !== "object" || r === null) return undefined;
-  const o = r as Record<string, unknown>;
-  const str = (v: unknown): v is string => typeof v === "string";
-  if (!str(o.id) || !str(o.targetAgent) || !str(o.producer) || !str(o.atCommit) || !str(o.producedAt)) return undefined;
-  if (!str(o.kind) || !str(o.summary)) return undefined;
-  if (!SEVERITIES.includes(o.severity as Severity)) return undefined;
-  return {
-    schemaVersion: EVIDENCE_SCHEMA_VERSION,
-    id: o.id,
-    targetAgent: o.targetAgent,
-    producer: o.producer,
-    ...(str(o.onBehalfOf) ? { onBehalfOf: o.onBehalfOf } : {}),
-    ...(str(o.sourceRunId) ? { sourceRunId: o.sourceRunId } : {}),
-    atCommit: o.atCommit,
-    ...(typeof o.worktreeDirtyAtProduction === "boolean" ? { worktreeDirtyAtProduction: o.worktreeDirtyAtProduction } : {}),
-    producedAt: o.producedAt,
-    kind: o.kind,
-    severity: o.severity as Severity,
-    summary: o.summary,
-    ...(str(o.detail) ? { detail: o.detail } : {}),
-    ...(o.data && typeof o.data === "object" && !Array.isArray(o.data) ? { data: o.data as Record<string, unknown> } : {}),
-    ...(Array.isArray(o.artifacts) ? { artifacts: o.artifacts.filter(str) } : {}),
-  };
+  return a.map(parseWorktreeEvidence).filter((rec): rec is WorktreeEvidence => rec !== undefined);
 }
 
 function parseResume(r: unknown): SessionResume | undefined {

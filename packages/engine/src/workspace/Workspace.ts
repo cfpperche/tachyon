@@ -149,6 +149,7 @@ import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
 import os from "node:os";
 import { EVIDENCE_SCHEMA_VERSION, summarizeEvidence, viewEvidence, isSafeArtifactRef, type WorktreeEvidence, type EvidenceSummary, type EvidenceView } from "../worktree/evidence.js";
 import { copyEvidenceArtifacts } from "../worktree/evidenceArtifacts.js";
+import { loadEvidenceRecords, persistEvidenceRecord } from "../worktree/evidenceStore.js";
 import type { AttachEvidenceInput } from "../worktree/evidence.js";
 import { resolveCaptureId, resolveCaptureSession, resolveCurrentSession } from "../resume/resolvers.js";
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
@@ -4621,18 +4622,25 @@ export class Workspace {
 
   /** A compact, mechanical evidence summary for agent handoffs (undefined when none). */
   async evidenceHandoff(agent: string): Promise<EvidenceSummary | undefined> {
-    const wt = this.ledger.get(agent)?.worktree;
-    if (!wt) return undefined;
-    const records = this.ledger.getEvidence(agent);
+    const records = this.readEvidence(agent);
     if (records.length === 0) return undefined;
-    return summarizeEvidence(records, await this.worktreeHead(wt));
+    return summarizeEvidence(records, await this.evidenceHead(agent));
   }
 
   /** Read a worktree agent's evidence (fresh + stale-flagged), newest-first. */
   async listEvidence(agent: string): Promise<EvidenceView[]> {
+    return viewEvidence(this.readEvidence(agent), await this.evidenceHead(agent));
+  }
+
+  /** Disk is the home (t-1d198e). Ledger is only a fallback for records written before that. */
+  private readEvidence(agent: string): WorktreeEvidence[] {
+    return loadEvidenceRecords(this.workspaceRoot, agent, this.ledger.getEvidence(agent));
+  }
+
+  private async evidenceHead(agent: string): Promise<string> {
     const wt = this.ledger.get(agent)?.worktree;
-    if (!wt) return [];
-    return viewEvidence(this.ledger.getEvidence(agent), await this.worktreeHead(wt));
+    if (wt) return this.worktreeHead(wt);
+    return fs.existsSync(this.workspaceRoot) ? (await this.worktrees.headState(this.workspaceRoot)).headRef : "";
   }
 
   /**
@@ -4678,6 +4686,7 @@ export class Workspace {
       ...(input.data ? { data: input.data } : {}),
       ...(storedArtifacts && storedArtifacts.length ? { artifacts: storedArtifacts } : {}),
     };
+    persistEvidenceRecord(this.workspaceRoot, record);
     this.ledger.appendEvidence(input.targetAgent, record);
     this.refreshAgentsViews();
     return { ok: true, id };
@@ -5228,16 +5237,13 @@ export class Workspace {
     try {
       return await this.runAgentProfileStudioLifecycle(mutation);
     } catch (error) {
-      // t-9d7487 — the screen deliberately exposes only governed refusals, but the local engine log
-      // must retain EVERY cause. The real incident was a dirty-worktree refusal before the canonical
-      // transaction; neither that thrown error nor any of the seven transaction failures left a line,
-      // so once the panel flattened it there was no surviving diagnosis anywhere.
-      if (mutation.operation === "forget") {
-        console.error(
-          `[tachyon t-9d7487] agent profile lifecycle 'forget' failed for '${mutation.agentName}'`,
-          error,
-        );
-      }
+      // t-9d7487 / t-739151 — the screen exposes only governed refusals; the local engine log
+      // retains EVERY cause, for every Studio operation. Forget was the measured incident; rename,
+      // set-enabled, ownership and grant used the same door and were not logged.
+      console.error(
+        `[tachyon] agent profile lifecycle '${mutation.operation}' failed for '${mutation.agentName}'`,
+        error,
+      );
       if (!isAgentProfileRefusal(error)) throw error;
       return { schemaVersion: 1, kind: "refused", code: error.code, message: error.message };
     }
