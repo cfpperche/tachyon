@@ -13,12 +13,15 @@ const {
   assertPointerSessionIdle,
   assertDevHostWindowIdle,
   clear,
+  DEV_HOST_WORKTREE_BRANCH,
   fixtureNew,
   materializeWorkspaceMirror,
   pathsOf,
   point,
+  readWorktreeBranchTemplate,
   resolvePrimaryRepoRoot,
   resolveFixturePath,
+  stampDevHostWorktreeBranch,
   status,
 } = pointerMod as any;
 
@@ -229,6 +232,15 @@ describe("dev-host pointer", () => {
     expect(fs.existsSync(path.join(r.root, ".tachyon", "tasks", "t-fixture1.json"))).toBe(true);
     expect(fs.readFileSync(path.join(r.root, "README.md"), "utf8")).toMatch(/intent: focus/);
     expect(fs.readFileSync(path.join(r.root, "README.md"), "utf8")).toMatch(/metrics/);
+    // t-dc9cb0 — new fixtures name dogfood branches so they cannot be mistaken for fleet work.
+    expect(readWorktreeBranchTemplate(fs.readFileSync(path.join(r.root, "tachyon.yml"), "utf8")))
+      .toBe(DEV_HOST_WORKTREE_BRANCH);
+  });
+
+  it("fixtureNew metrics intent also names dogfood branches", () => {
+    const r = fixtureNew({ repoRoot: repo, worktree, slug: "load", spec: "386", intent: "metrics" });
+    expect(readWorktreeBranchTemplate(fs.readFileSync(path.join(r.root, "tachyon.yml"), "utf8")))
+      .toBe(DEV_HOST_WORKTREE_BRANCH);
   });
 
   it("clear removes only the pointer dir", async () => {
@@ -362,6 +374,54 @@ describe("dev-host pointer", () => {
     materializeWorkspaceMirror(mirror, fixture);
     expect(fs.lstatSync(mirror).isSymbolicLink()).toBe(false);
     expect(fs.existsSync(path.join(mirror, "README.md"))).toBe(true);
+  });
+
+  describe("t-dc9cb0: dogfood worktree branch names", () => {
+    it("stamps settings.worktree.branch onto a fixture that never chose one", () => {
+      const r = stampDevHostWorktreeBranch("agents:\n  a:\n    cmd: x\n");
+      expect(r.stamped).toBe(true);
+      expect(r.branch).toBe(DEV_HOST_WORKTREE_BRANCH);
+      expect(readWorktreeBranchTemplate(r.text)).toBe(DEV_HOST_WORKTREE_BRANCH);
+      expect(r.text).toContain("agents:");
+    });
+
+    it("inserts the template under an existing settings block", () => {
+      const r = stampDevHostWorktreeBranch("settings:\n  maxAgents: 8\n\nagents:\n  a:\n    cmd: x\n");
+      expect(r.stamped).toBe(true);
+      expect(r.text).toMatch(/settings:\n  worktree:\n    branch: tachyon\/dev-host\/\{agent\}\n  maxAgents: 8/);
+    });
+
+    it("inserts only the missing branch key when settings.worktree already exists", () => {
+      const r = stampDevHostWorktreeBranch("settings:\n  worktree:\n    base: ~/.cache/tachyon/worktrees\n");
+      expect(r.stamped).toBe(true);
+      expect(r.text).toMatch(/worktree:\n    branch: tachyon\/dev-host\/\{agent\}\n    base:/);
+    });
+
+    it("leaves a fixture that already chose a template alone", () => {
+      const src = "settings:\n  worktree:\n    branch: custom/{agent}\n";
+      const r = stampDevHostWorktreeBranch(src);
+      expect(r.stamped).toBe(false);
+      expect(r.branch).toBe("custom/{agent}");
+      expect(r.text).toBe(src);
+    });
+
+    it("does not invent YAML when settings is an inline mapping", () => {
+      const src = "settings: { maxAgents: 8 }\nagents: {}\n";
+      const r = stampDevHostWorktreeBranch(src);
+      expect(r.stamped).toBe(false);
+      expect(r.skipped).toBe("inline-settings");
+      expect(r.text).toBe(src);
+    });
+
+    it("stamps the mirror copy and never the tracked fixture", () => {
+      const sourceYml = fs.readFileSync(path.join(fixture, "tachyon.yml"), "utf8");
+      expect(readWorktreeBranchTemplate(sourceYml)).toBeNull();
+      const mirror = path.join(repo, ".tachyon", "dev-host", "workspace");
+      materializeWorkspaceMirror(mirror, fixture);
+      expect(fs.readFileSync(path.join(fixture, "tachyon.yml"), "utf8")).toBe(sourceYml);
+      expect(readWorktreeBranchTemplate(fs.readFileSync(path.join(mirror, "tachyon.yml"), "utf8")))
+        .toBe(DEV_HOST_WORKTREE_BRANCH);
+    });
   });
 
   it("copies mutable native runtime configuration into the disposable mirror", () => {
