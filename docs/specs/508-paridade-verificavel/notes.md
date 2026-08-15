@@ -240,3 +240,39 @@ Mesmas corridas. Chave inventada `tachyonInventedModel_ZZ9` ausente em todos.
 `docs/research/t-a68138-system-prompt-compact.md`, mesma máquina, mesmas versões, 2026-08-15,
 controles +/− (canário só pelo canal; sessão sem o canal devolve `ABSENT`; compact real). Não
 mede o orquestrador host `continue_task` — isso é a metade de projeção, já `wired`.
+
+## Fatia 6 — a prosa deixa de contradizer a tabela em silêncio
+
+2026-08-15, `t-904b2a`. A `parity.md` não foi reescrita. Ganhou: ponteiro para
+`packages/engine/src/runtime/parity.ts` como fonte verificável; as três naturezas
+(célula / narrativa-com-motivo / leftover); uma tabela de atestação das 23 linhas
+e das 4 dimensões tipadas que não são linha numerada.
+
+### Inventário
+
+- Célula tipada: `headless-probe` (row 13), `persistent-instructions-launch` (row 23),
+  `session-hooks`, `observed-model-provenance`, `probe-model-proof`,
+  `cross-runtime-task-continuation`.
+- Narrativa com motivo da fatia 2: rows 1–12, 14–22 (16 linhas). Soul herda o motivo
+  da row 1 (mesmo `runtimePromptAdapter`).
+- Costuras fora da tabela: já tinham motivo e data na fatia 5.
+
+### Desacordos prosa × tabela — a tabela NÃO foi tocada
+
+1. **`observed-model-provenance`.** A prosa do seam ainda diz que o runtime dos três
+   permanece `unmeasured`. A tabela tem Codex `measured` 0.147.0 / 2026-08-15; Claude e
+   Grok `unmeasured` com `needed`.
+2. **`cross-runtime-task-continuation`.** A prosa do seam ainda diz runtime
+   `unmeasured`. A tabela tem os três `measured` 2026-08-15 (metade brief do destino).
+
+Row 23 Claude `~` na matriz vs `cannot` na metade runtime da tabela **não** é
+desacordo: a nota ᵖ já traduz `cannot` de compact automático no mark combinado `~`.
+
+### Terceiro tipo (achado principal)
+
+Afirmações sobre claude/codex/grok sem célula e sem motivo da fatia 2:
+
+- Native lane suppression (tabela de formation gate em §3.1).
+- Model preflight e post-launch readiness nas tabelas §3.2.
+
+Não virou sétima dimensão. Cada um pede cartão próprio se o dono quiser classificá-los.

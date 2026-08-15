@@ -9,12 +9,12 @@ Escopo: **claude, codex, grok.** Os outros runtimes vêm depois destes três est
 
 ## Fatia 1 — o instrumento, provado em 2 ou 3 dimensões
 
-- [ ] Uma declaração tipada em código com célula por (runtime × dimensão), aceitando `wired`, `measured` e `cannot`.
-- [ ] `cannot` exige motivo escrito; `measured` exige versão do runtime e data. O teste recusa qualquer um dos dois sem o lastro.
-- [ ] Duas ou três dimensões deriváveis implementadas, escolhidas por "o produto já decide isso numa função que dá para chamar".
-- [ ] **Para cada uma, a prova de que o teste FICA VERMELHO quando o produto muda.** Sem isso a fatia não sai — um teste tautológico é verde e permanece verde.
-- [ ] Teste de completude: célula faltando é vermelho.
-- [ ] Uma das dimensões é a dos **hooks de sessão**, porque é o caso que originou a SDD e o único cuja falha já é conhecida.
+- [x] Uma declaração tipada em código com célula por (runtime × dimensão), aceitando `wired`, `measured` e `cannot`.
+- [x] `cannot` exige motivo escrito; `measured` exige versão do runtime e data. O teste recusa qualquer um dos dois sem o lastro.
+- [x] Duas ou três dimensões deriváveis implementadas, escolhidas por "o produto já decide isso numa função que dá para chamar".
+- [x] **Para cada uma, a prova de que o teste FICA VERMELHO quando o produto muda.** Sem isso a fatia não sai — um teste tautológico é verde e permanece verde.
+- [x] Teste de completude: célula faltando é vermelho.
+- [x] Uma das dimensões é a dos **hooks de sessão**, porque é o caso que originou a SDD e o único cuja falha já é conhecida.
 
 **Se o desenho não servir para as mais fáceis, ele não serve para as 22.** Pare e diga, em vez de forçar.
 
@@ -24,18 +24,18 @@ Escopo: **claude, codex, grok.** Os outros runtimes vêm depois destes três est
 
 Medição. Nada implementado além da classificação.
 
-- [ ] Cada dimensão classificada: derivável do código, só medível por dogfood, ou impossível para algum runtime.
-- [ ] O critério de cada classificação escrito — não "é difícil", mas o que exatamente impede a derivação.
-- [ ] Para as impossíveis, qual runtime e por quê.
-- [ ] Dito quantas das 22 caem em cada grupo. Se mais da metade for `measured`, isso é sinal contra o desenho e eu quero saber.
+- [x] Cada dimensão classificada: derivável do código, só medível por dogfood, ou impossível para algum runtime.
+- [x] O critério de cada classificação escrito — não "é difícil", mas o que exatamente impede a derivação.
+- [x] Para as impossíveis, qual runtime e por quê.
+- [x] Dito quantas das 22 caem em cada grupo. Se mais da metade for `measured`, isso é sinal contra o desenho e eu quero saber.
 
 ---
 
 ## Fatia 3 — as deriváveis restantes
 
-- [ ] Cada dimensão derivável com o seu teste, derivando do produto e não repetindo.
-- [ ] Cada uma com a prova de vermelho.
-- [ ] Qualquer desacordo entre o veredito derivado e o que a `parity.md` afirma hoje é **achado**: registre e abra cartão, não ajuste a tabela para bater.
+- [x] Cada dimensão derivável com o seu teste, derivando do produto e não repetindo.
+- [x] Cada uma com a prova de vermelho.
+- [x] Qualquer desacordo entre o veredito derivado e o que a `parity.md` afirma hoje é **achado**: registre e abra cartão, não ajuste a tabela para bater.
 
 ---
 
@@ -51,16 +51,16 @@ Medição. Nada implementado além da classificação.
 
 A `parity.md` linha 66 lista costuras conhecidas que nunca viraram dimensão. **Uma delas era session-ownership hooks** — o defeito que o dono encontrou.
 
-- [ ] Cada item da lista: vira dimensão, ou ganha motivo com data para continuar fora.
-- [ ] Um item sem data não pode permanecer na lista.
+- [x] Cada item da lista: vira dimensão, ou ganha motivo com data para continuar fora.
+- [x] Um item sem data não pode permanecer na lista.
 
 ---
 
 ## Fatia 6 — fechar
 
-- [ ] Cada afirmação de paridade na `parity.md` sobre claude, codex e grok tem contraparte na tabela, ou está declarada como narrativa.
-- [ ] Os desacordos encontrados viraram cartão.
-- [ ] `docs/runtimes/parity.md` aponta para a tabela como fonte verificável.
+- [x] Cada afirmação de paridade na `parity.md` sobre claude, codex e grok tem contraparte na tabela, ou está declarada como narrativa.
+- [x] Os desacordos encontrados viraram cartão.
+- [x] `docs/runtimes/parity.md` aponta para a tabela como fonte verificável.
 
 ---
 
