@@ -47,7 +47,7 @@ async function loadApp() {
 describe("t-6e2952 — Control is a tab in the existing sidebar row", () => {
   it("sits SECOND in the row, right after Attentions, with the Control command's icon", () => {
     expect(TABS.map((t) => t.id)).toEqual([
-      "Attentions", "Control", "Agents", "Terminals", "Pipelines", "Schedules", "Commands", "Runbooks", "Pins",
+      "Attentions", "Control", "Agents", "Terminals", "Pipelines", "Schedules", "Pins",
     ]);
     // $(dashboard) is what package.json declares for tachyon.openControl — same glyph, same product thing.
     expect(TABS[1]).toEqual({ id: "Control", icon: "dashboard" });

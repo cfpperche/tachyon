@@ -665,7 +665,7 @@ function ScheduleProposalDetail({ proposal, dispatch }: { proposal: ScheduleProp
         <dt>Name</dt><dd>{proposal.name}</dd>
         <dt>Proposed by</dt><dd>{proposal.by} <Badge tone="info">Bridge-resolved</Badge></dd>
         <dt>Timing</dt><dd>{proposal.schedule.every ? `every ${proposal.schedule.every}` : `daily at ${proposal.schedule.at}`}</dd>
-        <dt>Action</dt><dd>{proposal.schedule.spawn ? `spawn ${proposal.schedule.spawn}` : `run ${proposal.schedule.run}`}</dd>
+        <dt>Action</dt><dd>{proposal.schedule.spawn ? `spawn ${proposal.schedule.spawn}` : "spawn"}</dd>
         <dt>Expires</dt><dd>{proposal.expiresAt}</dd>
       </dl>
       <div class="hi-proposal-decide">

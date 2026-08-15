@@ -109,8 +109,6 @@ function sampleFleet(overrides: Partial<FleetVM["agents"][number]> = {}): FleetV
     terminals: [],
     pipelines: [],
     schedules: [],
-    commands: [],
-    runbooks: [],
     pins: [],
   };
 }
@@ -135,8 +133,6 @@ function poisonedFleet(sentinel: string): FleetVM {
     terminals: [{ kind: "terminal", name: `${sentinel}:terminal.name`, status: "running", sub: `${sentinel}:terminal.sub` }],
     pipelines: [],
     schedules: [],
-    commands: [{ name: `${sentinel}:command.name`, cmd: `${sentinel}:command.cmd`, state: "running", detail: `${sentinel}:command.detail` }],
-    runbooks: [{ name: `${sentinel}:runbook.name`, running: false, failed: false, detail: `${sentinel}:runbook.detail`, steps: [{ n: 1, label: `${sentinel}:runbook.step`, state: "passed", detail: `${sentinel}:runbook.step.detail` }] }],
     pins: [{ id: `${sentinel}:pin.id`, text: `${sentinel}:pin.text`, done: false, by: `${sentinel}:pin.by`, tags: [`${sentinel}:pin.tag`], detail: true, attachmentCount: 1 }],
     handoff: { exists: true, staleness: "needs_distill", pendingCount: 1 },
   };

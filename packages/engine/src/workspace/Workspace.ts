@@ -106,7 +106,7 @@ import {
   lkgSpawnRefusalMessage,
 } from "../config/configFailure.js";
 import { makeConfigDiscards, type ConfigDiscards } from "../config/configDiscards.js";
-import { upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule } from "../config/YamlConfigEditor.js";
+import { upsertSchedule, deleteSchedule } from "../config/YamlConfigEditor.js";
 import {
   cloneTerminalDeclaration,
   deleteLegacyTerminalDeclaration,
@@ -162,7 +162,7 @@ import { isEvidencedWorking } from "../prompts/injectFlow.js";
 import { contextRenewalGesture, type ContextRenewalMode } from "@tachyon/shared/anchor/compaction.js";
 import { authRequiredOf, describeAuthRequired, runtimeLoginCommand, type AuthRequiredEvidence } from "@tachyon/shared/runtime/authRequired.js";
 import { authRequiredLaunchNotice, loginFinishedNotice } from "./authRequiredNotice.js";
-import { LoginRunner } from "../commands/LoginRunner.js";
+import { LoginRunner } from "./LoginRunner.js";
 import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
 import { TemporaryBackstopMonitor, idleNotifyThresholdMs } from "@tachyon/shared/workspace/TemporaryBackstopMonitor.js";
 import {
@@ -178,7 +178,7 @@ import { appendDoorbellOverflowEvent, hasDoorbellRung } from "./doorbell.js";
 import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "@tachyon/shared/attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
-import { Waiters, CMD_WAIT_PREFIX } from "./Waiters.js";
+import { Waiters } from "./Waiters.js";
 import type { NoticeOrigin, NoticeQueueMetadata } from "@tachyon/shared/bridge/noticeQueue.js";
 import {
   DEFAULT_NOTICE_TTL_MS,
@@ -226,8 +226,7 @@ import { FileHashChainAuditSink, HostActionBroker, hostActionName, hostActionPol
 import { ReloadTransactionStore, type ReloadReattachBundle } from "../host-action/reloadTransaction.js";
 import { VsCodeHostActionAdapter } from "../agent-vscode/hostActionAdapter.js";
 import { VSCODE_RELOAD_WINDOW_POLICY_HASH, VSCODE_RELOAD_WINDOW_POLICY_JSON } from "../agent-vscode/reloadCapability.js";
-import { CommandRunner } from "../commands/CommandRunner.js";
-import { RunbookRunner } from "../commands/RunbookRunner.js";
+
 import { Scheduler } from "../schedule/Scheduler.js";
 import { ProposalStore, scheduleProposalExpired } from "../schedule/ProposalStore.js";
 import { readAgentProfileGrants } from "../config/agentProfileGrants.js";
@@ -527,8 +526,6 @@ export class Workspace {
   readonly continuityStore: ContinuityStore;
   readonly handoffStore: ProjectHandoffStore;
   readonly continuityState: ContinuityState;
-  readonly commandRunner: CommandRunner;
-  readonly runbookRunner: RunbookRunner;
   /** t-2656d7 — the governed per-runtime login pane the `Log in` action opens. */
   readonly loginRunner: LoginRunner;
   /**
@@ -1667,27 +1664,8 @@ export class Workspace {
     // spec 245 — shared per-project handoff. Path overridable via tachyon.yml `handoff.path` (default .tachyon/HANDOFF.md).
     this.handoffStore = new ProjectHandoffStore(workspaceRoot, { canonicalRelPath: this.config?.settings?.handoff?.path });
 
-    // One-shot commands + runbooks (F15/F21): own tmux namespaces, inverted lifecycle.
-    this.commandRunner = new CommandRunner({
-      tmux: this.tmux,
-      wsHash: this.wsHash,
-      workspaceRoot,
-      getConfig: () => this.config,
-      onRerun: (name) => this.terminals.close(`cmd:${name}`),
-      onFinished: (name, exitCode, durationMs) => {
-        this.waiters.notifyDead(`${CMD_WAIT_PREFIX}${name}`, exitCode);
-        deps.onViewsChanged("commands");
-        if (exitCode === 0) {
-          this.host.notify(this.t("command '{0}' passed ({1}s)", name, Math.round((durationMs ?? 0) / 1000)));
-        } else {
-          this.host.notify(this.t("command '{0}' failed (exit {1})", name, exitCode ?? "?"), "error", [
-            { label: this.t("Inspect"), run: () => this.openCommandPane(name) },
-          ]);
-        }
-      },
-    });
-    // t-2656d7 — its own tmux namespace, for the same reason CommandRunner has one: a pane whose job
-    // is to EXIT must not be read by the agent lifecycle as an agent that died.
+    // t-2656d7 — its own tmux namespace: a pane whose job is to EXIT must not be
+    // read by the agent lifecycle as an agent that died.
     this.loginRunner = new LoginRunner({
       tmux: this.tmux,
       wsHash: this.wsHash,
@@ -1695,25 +1673,8 @@ export class Workspace {
       realHomeEnv: (runtime) => realRuntimeAuthHomeEnv(runtime),
       onFinished: (runtime) => this.onLoginPaneFinished(runtime),
     });
-    this.runbookRunner = new RunbookRunner({
-      tmux: this.tmux,
-      wsHash: this.wsHash,
-      workspaceRoot,
-      getConfig: () => this.config,
-      onFinished: (job) => {
-        deps.onViewsChanged("commands");
-        if (job.outcome === "passed") {
-          this.host.notify(this.t("runbook '{0}' passed ({1} steps)", job.runbook, job.steps.length));
-        } else {
-          const failed = job.steps.find((st) => st.state === "failed");
-          this.host.notify(this.t("runbook '{0}' failed at step {1} ({2})", job.runbook, (failed?.index ?? 0) + 1, failed?.step ?? "?"), "error", [
-            { label: this.t("Inspect"), run: () => failed && this.openRunbookStepPane(job.runbook, failed.index) },
-          ]);
-        }
-      },
-    });
 
-    // Schedules (F23): a timer over the existing executors; fires only while the
+    // Schedules (F23): a timer over spawn; fires only while the
     // workspace is open. Agent proposals land inert in .tachyon/ until approved.
     this.proposals = new ProposalStore(workspaceRoot);
 
@@ -2084,8 +2045,6 @@ export class Workspace {
           }
         },
         waiters: this.waiters,
-        commands: this.commandRunner,
-        runbooks: this.runbookRunner,
         scheduler: this.scheduler,
         proposals: this.proposals,
         onScheduleProposed: (proposal) => {
@@ -2930,7 +2889,6 @@ export class Workspace {
       // dogfood p-5a2a83 follow-up: an autostart agent ADDED by a live tachyon.yml edit starts
       // now (parity with the Studio create path), without re-spawning a pre-existing/stopped one.
       void ws.autostartNewlyDeclared(agentsBefore);
-      deps.onViewsChanged("commands");
       if (ws.config?.settings.bridgePort !== portBefore) {
         ws.host.notify(ws.t("bridgePort changed — run Tachyon: Restart Bridge to apply it"), "warn");
       }
@@ -5787,10 +5745,8 @@ export class Workspace {
     if (this.lifecycleTrigger) clearTimeout(this.lifecycleTrigger);
     this.lifecycleTrigger = setTimeout(() => {
       void this.lifecycle.tick();
-      void this.commandRunner.tick();
       void this.loginRunner.tick();
       this.refreshAgentsViews();
-      this.deps.onViewsChanged("commands");
     }, 250);
   }
 
@@ -6207,7 +6163,6 @@ export class Workspace {
   /** the 3s heartbeat (engine events make these happen sooner, never different) */
   async tick(): Promise<void> {
     void this.lifecycle.tick();
-    void this.commandRunner.tick();
     // t-2656d7 — a login pane finishing is otherwise eventless: nothing else in the fleet moves when
     // a human finishes a device flow, so the offer of an explicit Retry would never be made.
     void this.loginRunner.tick();
@@ -6333,26 +6288,21 @@ export class Workspace {
   private async runSchedule(name: string, def: import("../config/loadConfig.js").ScheduleDef): Promise<void> {
     this.host.notify(this.t("schedule '{0}' fired", name));
     this.deps.onViewsChanged("schedules");
-    if (def.run !== undefined) {
-      if (this.config?.commands[def.run]) await this.commandRunner.run(def.run);
-      else if (this.config?.runbooks[def.run]) await this.runbookRunner.run(def.run);
-      this.deps.onViewsChanged("commands");
-    } else if (def.spawn !== undefined) {
-      const running = await this.manager.runningAgents();
-      if (!running.includes(def.spawn)) {
-        await this.manager.spawn(def.spawn, def.instructions ? { taskBrief: def.instructions } : undefined);
-      } else if (def.instructions) {
-        // The schedule definition is durable; this pane write is only its wake-up. Keep the receipt
-        // honest so a lost Enter is visible instead of reporting the scheduled work as submitted.
-        const receipt = await this.tmux.sendSubmittedLine(this.manager.session(def.spawn), def.instructions, {
-          composer: composerProfileFor(this.manager.defOf(def.spawn)?.cmd),
-        });
-        if (receipt.status === "submit-unconfirmed") {
-          this.host.notify(this.t("schedule '{0}' instructions were typed but submission could not be confirmed", name), "warn");
-        }
+    if (def.spawn === undefined) return;
+    const running = await this.manager.runningAgents();
+    if (!running.includes(def.spawn)) {
+      await this.manager.spawn(def.spawn, def.instructions ? { taskBrief: def.instructions } : undefined);
+    } else if (def.instructions) {
+      // The schedule definition is durable; this pane write is only its wake-up. Keep the receipt
+      // honest so a lost Enter is visible instead of reporting the scheduled work as submitted.
+      const receipt = await this.tmux.sendSubmittedLine(this.manager.session(def.spawn), def.instructions, {
+        composer: composerProfileFor(this.manager.defOf(def.spawn)?.cmd),
+      });
+      if (receipt.status === "submit-unconfirmed") {
+        this.host.notify(this.t("schedule '{0}' instructions were typed but submission could not be confirmed", name), "warn");
       }
-      this.refreshAgentsViews();
     }
+    this.refreshAgentsViews();
   }
 
   /** Approve a pending agent proposal: write it into tachyon.yml, drop the proposal. */
@@ -6822,7 +6772,6 @@ export class Workspace {
     this.reloadConfig();
     this.rebuildWatches();
     this.refreshAgentsViews();
-    this.deps.onViewsChanged("commands");
     for (const warning of check.warnings) this.host.notify(warning, "warn");
     return { ok: true, warnings: check.warnings };
   }
@@ -6926,8 +6875,7 @@ export class Workspace {
   /** Config-backed Studio submit pipeline — webview forms and the internal test seam. */
   studioSubmit = (submit: StudioSubmit): string[] | undefined => {
     const kind = submit.state.kind;
-    const takenMap =
-      kind === "command" ? this.config?.commands : kind === "runbook" ? this.config?.runbooks : kind === "schedule" ? this.config?.schedules : this.config?.agents;
+    const takenMap = kind === "schedule" ? this.config?.schedules : this.config?.agents;
     const issues = kind === "terminal"
       ? validateTerminalForm(submit.state, Object.keys(takenMap ?? {}), submit.editingName)
       : validateForm(submit.state, Object.keys(takenMap ?? {}), submit.editingName);
@@ -6953,13 +6901,8 @@ export class Workspace {
         : this.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name));
       return undefined;
     }
-    const isScheduleOrCommandOrRunbook = kind === "command" || kind === "runbook" || kind === "schedule";
     const doUpsert = (text: string | undefined) =>
-      kind === "command"
-        ? upsertCommand(text, submit.state.name, entry, submit.editingName)
-        : kind === "runbook"
-          ? upsertRunbook(text, submit.state.name, entry as { steps: string[] }, submit.editingName)
-          : upsertSchedule(text, submit.state.name, entry, submit.editingName !== undefined);
+      upsertSchedule(text, submit.state.name, entry, submit.editingName !== undefined);
     // codex 228-review B1 — validate the resulting FULL config BEFORE persisting. The harness form is
     // intentionally shallow (loadConfig is authoritative for ${VAR}-env / server shape), so a
     // structurally-valid-YAML-but-invalid harness must not silently break the whole tachyon.yml. Surface
@@ -6976,17 +6919,11 @@ export class Workspace {
     if (cfg.errors.length > 0) return cfg.errors;
     const ok = this.mutateConfig(
       () => candidate,
-      () => this.deps.onViewsChanged(kind === "schedule" ? "schedules" : isScheduleOrCommandOrRunbook ? "commands" : "agents"),
+      () => this.deps.onViewsChanged(kind === "schedule" ? "schedules" : "agents"),
     );
     if (!ok) return [this.t("could not write tachyon.yml — see the notification")];
     if (kind === "schedule") this.scheduler.activate(); // anchor a freshly-created schedule
-    this.host.notify(
-      kind === "command"
-        ? this.t("command '{0}' saved — ▶ in the sidebar (or run_command) runs it", submit.state.name)
-        : kind === "runbook"
-          ? this.t("runbook '{0}' saved — ▶ in the sidebar (or run_runbook) runs it", submit.state.name)
-          : this.t("schedule '{0}' saved — it's now active", submit.state.name),
-    );
+    this.host.notify(this.t("schedule '{0}' saved — it's now active", submit.state.name));
     return undefined;
   };
 
@@ -6995,7 +6932,6 @@ export class Workspace {
       extensionUri: this.host.webviewRoot() as never,
       detectClis: detectInstalledClis,
       takenNames: () => Object.keys(this.config?.agents ?? {}),
-      commandNames: () => Object.keys(this.config?.commands ?? {}),
       defaultCwd: this.workspaceRoot,
       suggestKindForCommand,
       onSubmit: this.studioSubmit,
@@ -7153,14 +7089,6 @@ export class Workspace {
   promoteTerminalDeclaration(name: string, cmd: string): boolean {
     upsertTerminalDeclaration(this.workspaceRoot, name, { cmd, kind: "terminal" });
     return this.reloadConfig();
-  }
-
-  openCommandPane(name: string): void {
-    this.terminals.open(`cmd:${name}`, this.commandRunner.session(name), undefined, `$ ${name}`);
-  }
-
-  openRunbookStepPane(runbook: string, index: number): void {
-    this.terminals.open(`rb:${runbook}:${index}`, this.runbookRunner.stepSession(runbook, index), undefined, `$ ${runbook}#${index + 1}`);
   }
 
   /**

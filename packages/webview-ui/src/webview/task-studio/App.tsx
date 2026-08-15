@@ -82,7 +82,7 @@ function readAssets(): RichDocAssets | undefined {
 
 /**
  * t-610705 (SDD 410 Phase D, D2) — Control-hosted now: props-driven, same split as every other
- * migrated studio (command-studio-shell/App.tsx's doc comment has the full rationale for
+ * migrated studio (the shared studio host has the full rationale for
  * routeKey/mountNonce/useStudioFreeze/eager ref updates). Ported from the standalone
  * task-studio/main.tsx's `Root` component (retired), which used to decode the raw postMessage
  * envelope itself and hand this component already-parsed props — that decoding now happens HERE,

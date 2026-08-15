@@ -35,7 +35,7 @@ import { TaskDetailStore, hashBody } from "@tachyon/engine/tasks/TaskDetailStore
 import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
-import { blankCommandFields } from "../../packages/webview-ui/src/webview/command-studio-shell/domain.js";
+import { blankTerminalFields } from "../../packages/webview-ui/src/webview/terminal-studio-shell/domain.js";
 import type { StudioDeps } from "../../apps/vscode-extension/src/webview/studioSubmit.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-engine-dogfood-"));
@@ -339,10 +339,10 @@ try {
     detectClis: async () => [],
     operationId: () => "dogfood-operation-studio-0001",
   });
-  const studioSubmit = { state: { ...blankCommandFields(), name: "dogfood-check", cmd: "printf dogfood" } };
+  const studioSubmit = { state: { ...blankTerminalFields(), name: "dogfood-check", cmd: "printf dogfood" } };
   if (await studio.studioSubmit(studioSubmit) !== undefined
     || await studio.studioSubmit(studioSubmit) !== undefined
-    || studio.config?.commands["dogfood-check"]?.cmd !== "printf dogfood") {
+    || studio.config?.agents["dogfood-check"]?.cmd !== "printf dogfood") {
     throw new Error("idempotent remote Studio submit did not persist through the engine");
   }
   await expectAgentStopped(first, "after Studio config reload");

@@ -24,8 +24,6 @@ function source(): SidebarFleetSource {
     worktrees: { currentBranch: async () => "main" },
     config: undefined,
     configFailure: undefined,
-    commandRunner: { list: async () => [] },
-    runbookRunner: { list: () => [] },
     handoffStore: { snapshot: () => ({ exists: false, staleness: "missing", pendingCount: 0 }) },
     pinStore: { list: () => [] },
     proposals: { list: () => [] },

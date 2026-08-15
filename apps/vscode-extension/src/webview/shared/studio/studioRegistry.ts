@@ -16,9 +16,7 @@ import type { StudioHostAdapter } from "@tachyon/engine/webview/shared/studio/ad
 import type { WorkspaceStudioTarget, WorkspaceAgentStudioTarget } from "../../../shell/WorkspacePresentation.js";
 import type { WorkspaceTaskStudioTarget } from "../../../shell/TaskStudioTarget.js";
 import type { WorkspacePinStudioTarget } from "../../../shell/PinStudioTarget.js";
-import { CommandStudioAdapter } from "../../CommandStudioAdapter.js";
 import { TerminalStudioAdapter } from "../../TerminalStudioAdapter.js";
-import { RunbookStudioAdapter } from "../../RunbookStudioAdapter.js";
 import { ScheduleStudioAdapter } from "../../ScheduleStudioAdapter.js";
 import { AgentStudioAdapter } from "../../AgentStudioAdapter.js";
 import { TaskStudioAdapter } from "../../TaskStudioAdapter.js";
@@ -63,8 +61,8 @@ export interface StudioRegistryEntry {
   handleDomainMessage?: (ws: WorkspaceStudioTarget, ctx: StudioDomainContext, message: { type: string }) => void;
 }
 
-/** Shared by every studio whose only domain message is "browse" (command, terminal — a working-
- *  directory folder picker); Runbook/Schedule register no domain messages at all. */
+/** Shared by every studio whose only domain message is "browse" (terminal — a working-
+ *  directory folder picker); Schedule registers no domain messages. */
 async function browseForCwd(ws: WorkspaceStudioTarget, ctx: StudioDomainContext): Promise<void> {
   const picked = await vscode.window.showOpenDialog({
     canSelectFiles: false,
@@ -88,19 +86,10 @@ function handleBrowseDomainMessage(ws: WorkspaceStudioTarget, ctx: StudioDomainC
 // widens every entry to the SAME shape for consumers while `satisfies` still enforces the exhaustive-
 // key check at the literal (round-2 F14's rule, unchanged).
 export const STUDIO_REGISTRY: Record<StudioId, StudioRegistryEntry> = {
-  command: {
-    legacyViewType: "tachyonCommandStudioShell",
-    makeAdapter: (ws) => new CommandStudioAdapter(ws) as unknown as Adapter,
-    handleDomainMessage: handleBrowseDomainMessage,
-  },
   terminal: {
     legacyViewType: "tachyonTerminalStudioShell",
     makeAdapter: (ws) => new TerminalStudioAdapter(ws) as unknown as Adapter,
     handleDomainMessage: handleBrowseDomainMessage,
-  },
-  runbook: {
-    legacyViewType: "tachyonRunbookStudioShell",
-    makeAdapter: (ws) => new RunbookStudioAdapter(ws) as unknown as Adapter,
   },
   schedule: {
     legacyViewType: "tachyonScheduleStudioShell",

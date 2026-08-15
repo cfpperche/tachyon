@@ -34,9 +34,7 @@ integração ou remoção sem autoridade e evidência suficiente é governança.
 | Harness isolado | MCPs, skills, regras e hooks por agente. | **Qualquer — opt-in** | Sim. |
 | Worktree isolada | Checkout e branch separados — **local de trabalho, não confinamento de escrita**. O agente recebe a worktree e a instrução de ficar nela; nenhum runtime medido impõe essa fronteira, e o Pi não tem sandbox nenhum. Ver [paridade, dimensão 22](runtimes/parity.md). | **Qualquer — opt-in** | Sim. |
 | Delivery canônica | Uma worktree reutilizada sequencialmente pelos participantes da mesma mudança. | **Qualquer — governado** | Pode ser evitada usando delegação sem `gate`. |
-| Commands | Comandos curados acionados por humanos ou agentes. | **Qualquer — opt-in** | Sim. |
-| Runbooks | Procedimentos sequenciais com resultado por etapa. | **Qualquer — opt-in** | Sim. |
-| Pipelines | Encadeamento de agentes e comandos. | **Qualquer — opt-in** | Sim. |
+| Pipelines | Encadeamento de agentes. | **Qualquer — opt-in** | Sim. |
 | Schedules | Execuções temporizadas enquanto o workspace está aberto. | **Qualquer — opt-in** | Sim. |
 | Multi-root | Engine, Bridge e estado separados por pasta. | **Qualquer — padrão** | Só entra em efeito quando um workspace multi-root é usado. |
 | Plugins e skills | Capacidades adicionais materializadas por projeto ou agente. | **Qualquer — opt-in** | Sim. |

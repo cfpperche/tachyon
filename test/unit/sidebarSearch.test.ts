@@ -7,8 +7,6 @@ const baseFleet: FleetVM = {
   terminals: [],
   pipelines: [],
   schedules: [],
-  commands: [],
-  runbooks: [],
   pins: [],
 };
 

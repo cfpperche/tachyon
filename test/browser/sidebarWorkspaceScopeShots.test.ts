@@ -54,7 +54,7 @@ const beta: FleetVM = {
   folder: { hash: "hash-beta", name: "a-second-project-with-a-long-name" },
   handoff: { exists: true, staleness: "old", pendingCount: 0 },
   agents: [{ name: "BETA-LEAKED-ROW", status: "running", kind: "agent" }],
-  terminals: [], pipelines: [], schedules: [], commands: [], runbooks: [], pins: [],
+  terminals: [], pipelines: [], schedules: [], pins: [],
   // the case the owner named: an agent stuck in the project the sidebar is NOT showing
   notices: [{ id: "n-b", level: "error", message: "[deployer] blocked, waiting on a human", at: "2026-08-05T11:00:00.000Z", collapsedCount: 1, read: false, actions: [], actionsLive: false }],
 };

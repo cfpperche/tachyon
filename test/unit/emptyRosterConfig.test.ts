@@ -93,8 +93,6 @@ function fleetSource(ws: Workspace, tmux: TmuxService): SidebarFleetSource {
     worktrees: ws.worktrees,
     config: ws.config,
     configFailure: ws.configFailure,
-    commandRunner: ws.commandRunner,
-    runbookRunner: ws.runbookRunner,
     handoffStore: { snapshot: () => ({ exists: false, staleness: "missing", pendingCount: 0 }) },
     pinStore: ws.pinStore,
     proposals: { list: () => [] },
@@ -113,7 +111,6 @@ function fleetSource(ws: Workspace, tmux: TmuxService): SidebarFleetSource {
 describe("t-f67185 empty roster workspace", () => {
   it.each([
     ["agents: {}", "agents: {}\n"],
-    ["commands-only", "commands:\n  build:\n    cmd: npm run build\n"],
     ["neither block", "settings:\n  maxAgents: 2\n"],
   ] as const)("attaches %s with empty fleet; pins and board tasks work", async (_label, yaml) => {
     const parsed = parseConfig(yaml);
@@ -153,10 +150,10 @@ describe("t-f67185 empty roster workspace", () => {
   // Discarding is safe here in the only direction that matters — the entries it could not read are
   // ABSENT, never half-built, so nothing is spawnable that the file did not successfully declare.
   it("discards a malformed agents block and keeps the rest of the file", async () => {
-    const { config, errors, warnings } = parseConfig('agents: "olá"\ncommands:\n  build:\n    cmd: x\n');
+    const { config, errors, warnings } = parseConfig('agents: "olá"\nsettings:\n  maxAgents: 2\n');
     expect(errors).toEqual([]);
     expect(config?.agents).toEqual({});
-    expect(config?.commands.build?.cmd).toBe("x");
+    expect(config?.settings.maxAgents).toBe(2);
     expect(warnings.some((e) => e.includes("'agents'") && e.includes("mapping"))).toBe(true);
   });
 });

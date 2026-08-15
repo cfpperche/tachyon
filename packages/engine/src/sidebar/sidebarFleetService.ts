@@ -1,8 +1,6 @@
 import { hasLifecycleHooks } from "../agents/agentInstancePolicy.js";
 import type { AgentManager } from "../agents/AgentManager.js";
 import type { AgentAttention } from "@tachyon/shared/attention/AttentionMonitor.js";
-import type { CommandRunner } from "../commands/CommandRunner.js";
-import type { RunbookRunner } from "../commands/RunbookRunner.js";
 import type { ConfigFailure } from "../config/configFailure.js";
 import { degradedRosterExtras, toConfigErrorVM } from "../config/configFailure.js";
 import { toConfigDiscardsVM, type ConfigDiscards } from "../config/configDiscards.js";
@@ -50,8 +48,6 @@ export interface SidebarFleetSource {
    * roster must not degrade — this only says some of what was written is not running.
    */
   configDiscards?: ConfigDiscards | undefined;
-  commandRunner: Pick<CommandRunner, "list">;
-  runbookRunner: Pick<RunbookRunner, "list">;
   handoffStore: Pick<ProjectHandoffStore, "snapshot">;
   pinStore: Pick<PinStore, "list">;
   proposals: Pick<ProposalStore, "list">;
@@ -308,32 +304,6 @@ export async function buildSidebarFleet(
     }
   }
 
-  const commands = (await source.commandRunner.list()).map((command) => {
-    const duration = command.lastRun?.finishedAt !== undefined
-      ? command.lastRun.finishedAt - command.lastRun.startedAt
-      : undefined;
-    const detail = command.state === "running" ? "running"
-      : command.state === "passed" ? (duration !== undefined ? `exit 0 · ${Math.round(duration / 1000)}s` : "exit 0")
-        : command.state === "failed" ? `exit ${command.exitCode ?? "?"}`
-          : "never run";
-    return { name: command.name, cmd: source.config?.commands?.[command.name]?.cmd ?? "", state: command.state, detail };
-  });
-  const runbooks = source.runbookRunner.list().map((runbook) => {
-    const job = runbook.lastJob;
-    const failed = job?.outcome === "failed";
-    const detail = runbook.running ? "running"
-      : job?.outcome === "passed" ? `passed · ${job.steps.length} steps`
-        : failed ? `failed at step ${(job.steps.find((step) => step.state === "failed")?.index ?? 0) + 1}`
-          : "never run";
-    const steps = (job?.steps ?? []).map((step) => ({
-      n: step.index + 1,
-      label: step.step,
-      state: step.state,
-      detail: step.state === "passed" ? (step.durationMs !== undefined ? `${Math.round(step.durationMs / 1000)}s` : undefined)
-        : step.state === "failed" ? `exit ${step.exitCode ?? "?"}` : undefined,
-    }));
-    return { name: runbook.name, running: runbook.running, failed, detail, steps };
-  });
   const handoffSnapshot = source.handoffStore.snapshot(source.lastActivityAt());
   const pins = source.pinStore.list().map((pin) => ({
     id: pin.id,
@@ -385,8 +355,6 @@ export async function buildSidebarFleet(
     bridge: { port: source.bridge.port?.toString() ?? "—", connected: !!source.bridge.url },
     agents,
     terminals,
-    commands,
-    runbooks,
     pins,
     notices,
     schedules,
@@ -428,10 +396,9 @@ function relativeTime(milliseconds: number, now: number): string {
   return delta >= 0 ? `in ${unit}` : `${unit} ago`;
 }
 
-function scheduleSummary(definition: { every?: string; at?: string; run?: string; spawn?: string }): string {
+function scheduleSummary(definition: { every?: string; at?: string; spawn?: string }): string {
   const when = definition.every ? `every ${definition.every}` : `at ${definition.at}`;
-  const what = definition.run ? `run ${definition.run}` : `spawn ${definition.spawn}`;
-  return `${when} · ${what}`;
+  return `${when} · spawn ${definition.spawn}`;
 }
 
 function nodeStatus(status: string): AgentStatus {

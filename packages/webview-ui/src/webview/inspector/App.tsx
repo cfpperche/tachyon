@@ -30,7 +30,7 @@ function SessionStatus({ s, sess }: { s: InspectorStrings; sess: InspectorSessio
 }
 
 const kindLabel = (s: InspectorStrings, kind: InspectorSession["kind"]): string =>
-  ({ session: s.kindSession, command: s.kindCommand, runbook: s.kindRunbook, login: s.kindLogin, anchor: s.kindAnchor, unknown: s.kindUnknown }[kind] ?? kind);
+  ({ session: s.kindSession, login: s.kindLogin, anchor: s.kindAnchor, unknown: s.kindUnknown }[kind] ?? kind);
 
 type Action = { type: "refresh" | "reapDead" | "reapOrphans" } | { type: "open" | "kill"; session: string };
 
@@ -237,7 +237,7 @@ export function App(p: InspectorAppProps) {
               <option value="all">
                 {s.kind}: {s.all}
               </option>
-              {(["session", "command", "runbook", "anchor", "unknown"] as const).map((k) => (
+              {(["session", "login", "anchor", "unknown"] as const).map((k) => (
                 <option value={k} key={k}>
                   {kindLabel(s, k)}
                 </option>

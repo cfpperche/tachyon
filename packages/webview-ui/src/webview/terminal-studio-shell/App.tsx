@@ -15,7 +15,7 @@ import type { TerminalStudioEntity, TerminalStudioFields, TerminalStudioHostMess
 
 /**
  * t-610705 (SDD 410 Phase D, D1a) — Control-hosted, same props-driven split D0 established for
- * Command Studio (command-studio-shell/App.tsx's doc comment has the full rationale: routeKey/
+ * the shared studio host (routeKey/
  * mountNonce mount handshake, eager ref updates for the synchronous freeze checkpoint, useStudioFreeze
  * for the nav-transaction freeze). Nothing here is Terminal-specific except the field UI and the
  * domain compute functions — the generic machinery is a straight port.

@@ -1,4 +1,1 @@
-
-commands:
-  hello:
-    cmd: "echo prompt-templates-dogfood-ok"
+# empty roster fixture

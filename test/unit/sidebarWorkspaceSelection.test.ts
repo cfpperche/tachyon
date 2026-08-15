@@ -29,8 +29,8 @@ import type { WorkspaceSidebarTarget } from "../../apps/vscode-extension/src/she
 
 const repoRoot = path.resolve(__dirname, "../..");
 
-/** The seven tabs that render one project's lists. Attentions and Control are deliberately absent. */
-const SCOPED_TABS: TabId[] = ["Agents", "Terminals", "Pipelines", "Schedules", "Commands", "Runbooks", "Pins"];
+/** The five tabs that render one project's lists. Attentions and Control are deliberately absent. */
+const SCOPED_TABS: TabId[] = ["Agents", "Terminals", "Pipelines", "Schedules", "Pins"];
 
 const alpha: FleetVM = {
   ...SAMPLE,
@@ -44,8 +44,6 @@ const alpha: FleetVM = {
   terminals: [{ name: "alpha-term", status: "running", kind: "terminal" }],
   pipelines: [{ name: "alpha-pipe", status: "idle", nodes: [] }],
   schedules: [{ name: "alpha-sched", when: "daily", next: "in 1h", paused: false }],
-  commands: [{ name: "alpha-cmd", cmd: "npm test", state: "idle", detail: "never run" }],
-  runbooks: [{ name: "alpha-book", detail: "never run", steps: [], running: false, failed: false }],
   pins: [{ text: "alpha-pin", id: "p-alpha", tags: ["alphatag"], done: false }],
   notices: [{ id: "n-alpha", level: "info", message: "alpha needs you", at: "2026-08-05T10:00:00.000Z", collapsedCount: 1, read: false, actions: [], actionsLive: false }],
 };
@@ -59,8 +57,6 @@ const beta: FleetVM = {
   terminals: [{ name: "beta-term", status: "running", kind: "terminal" }],
   pipelines: [{ name: "beta-pipe", status: "idle", nodes: [] }],
   schedules: [{ name: "beta-sched", when: "weekly", next: "in 3d", paused: false }],
-  commands: [{ name: "beta-cmd", cmd: "npm run lint", state: "idle", detail: "never run" }],
-  runbooks: [{ name: "beta-book", detail: "never run", steps: [], running: false, failed: false }],
   pins: [{ text: "beta-pin", id: "p-beta", tags: ["betatag"], done: false }],
   notices: [{ id: "n-beta", level: "warn", message: "beta needs you", at: "2026-08-05T11:00:00.000Z", collapsedCount: 1, read: false, actions: [], actionsLive: false }],
 };
@@ -209,9 +205,9 @@ describe("t-72ff5a — one project is in focus for the whole sidebar", () => {
     expect(src).toMatch(/if \(it\.wsHash && it\.wsHash !== selectedHash\) selectWorkspace\(it\.wsHash\);/);
   });
 
-  it("still has nine tabs — this is a scope change, not a navigation change", () => {
+  it("still has seven tabs — this is a scope change, not a navigation change", () => {
     expect(TABS.map((t) => t.id)).toEqual([
-      "Attentions", "Control", "Agents", "Terminals", "Pipelines", "Schedules", "Commands", "Runbooks", "Pins",
+      "Attentions", "Control", "Agents", "Terminals", "Pipelines", "Schedules", "Pins",
     ]);
     expect(SCOPED_TABS.length + 2).toBe(TABS.length);
   });

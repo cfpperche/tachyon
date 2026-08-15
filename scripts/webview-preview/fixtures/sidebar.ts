@@ -17,8 +17,6 @@ const base: Omit<FleetVM, "agents"> = {
   pipelines: [],
   proposals: [],
   schedules: [],
-  commands: [],
-  runbooks: [],
   pins: [],
 };
 

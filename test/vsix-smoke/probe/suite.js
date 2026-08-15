@@ -114,19 +114,19 @@ exports.run = async function run() {
 
   // DOOR 2 — the engine answers. The daemon runs from a staged runtime outside the editor, and this
   // query crosses the control socket to reach it. A workspace that never attached answers with an
-  // empty list, so the door asserts the declared command instead of a bare "it did not throw".
+  // empty list, so the door asserts the declared terminal instead of a bare "it did not throw".
   try {
-    const rows = (await vscode.commands.executeCommand("tachyon._commands")) ?? [];
+    const rows = (await vscode.commands.executeCommand("tachyon._agents")) ?? [];
     const named = rows.some((row) => row && row.name === ENGINE_COMMAND);
     door(
       "engine",
       named
-        ? `the persistent engine answered commands.list with '${ENGINE_COMMAND}'`
-        : `commands.list returned ${rows.length} row(s) and none was '${ENGINE_COMMAND}'`,
+        ? `the persistent engine answered agents.list with '${ENGINE_COMMAND}'`
+        : `agents.list returned ${rows.length} row(s) and none was '${ENGINE_COMMAND}'`,
       named,
     );
   } catch (error) {
-    door("engine", `commands.list threw: ${describeError(error)}`, false);
+    door("engine", `agents.list threw: ${describeError(error)}`, false);
   }
 
   // DOOR 3 — the command surface. Every command the manifest promises the palette must exist, or the

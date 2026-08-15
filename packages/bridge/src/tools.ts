@@ -29,7 +29,6 @@ import { registerTaskTools } from "./tools/tasks.js";
 import { registerValidationTools } from "./tools/verification-validations.js";
 import { registerContinuityTools } from "./tools/coordination-continuity.js";
 import { registerHandoffTools } from "./tools/coordination-handoff.js";
-import { registerCommandTools } from "./tools/automation-commands.js";
 import { registerWaitTools } from "./tools/communication-waits.js";
 import { registerScheduleTools } from "./tools/automation-schedules.js";
 import { registerApprovalTools } from "./tools/human-approvals.js";
@@ -58,7 +57,6 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   registerValidationTools(mcp, deps);
   registerContinuityTools(mcp, deps);
   registerHandoffTools(mcp, deps);
-  registerCommandTools(mcp, deps);
   registerWaitTools(mcp, deps);
   registerScheduleTools(mcp, deps);
   registerApprovalTools(mcp, deps);

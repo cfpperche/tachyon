@@ -39,8 +39,6 @@ export interface SidebarPinPreview {
 export type SidebarShellCommandContext =
   | { kind: "workspace" }
   | { kind: "agent"; agentName: string; contextValue: string }
-  | { kind: "command"; commandName: string }
-  | { kind: "runbook"; runbookName: string }
   | { kind: "pin"; pinId: string }
   | { kind: "schedule"; scheduleName: string }
   | { kind: "pipeline"; pipelineName: string; nodeId?: string };
@@ -142,8 +140,6 @@ function legacyShellCommandArgs(source: LegacySidebarSource, context: SidebarShe
   if (context.kind === "agent") {
     return [{ ws: source, agentName: context.agentName, contextValue: context.contextValue }];
   }
-  if (context.kind === "command") return [{ ws: source, commandName: context.commandName }];
-  if (context.kind === "runbook") return [{ ws: source, runbookName: context.runbookName }];
   if (context.kind === "pin") return [{ ws: source, pinId: context.pinId }];
   if (context.kind === "schedule") return [{ ws: source, scheduleName: context.scheduleName }];
   const run = source.pipelines.allRuns().find((candidate) => candidate.pipeline.name === context.pipelineName && runStatus(candidate) !== "completed");
@@ -155,8 +151,6 @@ function legacyShellCommandArgs(source: LegacySidebarSource, context: SidebarShe
 function shellContextFields(context: SidebarShellCommandContext): Record<string, unknown> {
   if (context.kind === "workspace") return {};
   if (context.kind === "agent") return { agentName: context.agentName, contextValue: context.contextValue };
-  if (context.kind === "command") return { commandName: context.commandName };
-  if (context.kind === "runbook") return { runbookName: context.runbookName };
   if (context.kind === "pin") return { pinId: context.pinId };
   if (context.kind === "schedule") return { scheduleName: context.scheduleName };
   return { pipelineName: context.pipelineName, ...(context.nodeId === undefined ? {} : { nodeId: context.nodeId }) };

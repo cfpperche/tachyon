@@ -39,8 +39,6 @@ export function scheduleStudioShellMakeMessage(vm: ScheduleStudioShellFixtureVM)
 }
 
 const referenceData: ScheduleStudioReferenceData = {
-  commandNames: ["lint", "test", "build-web"],
-  runbookNames: ["release-preview", "nightly-maintenance"],
   agentNames: ["claude", "codex", "reviewer"],
 };
 
@@ -55,8 +53,8 @@ const denseEntity: ScheduleStudioEntity = {
     name: "nightly-release-check",
     schedTiming: "at",
     schedAt: "21:30",
-    schedAction: "run",
-    schedTarget: "release-preview",
+    schedAction: "spawn",
+    schedTarget: "claude",
     catchUp: true,
   },
 };

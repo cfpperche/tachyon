@@ -37,12 +37,12 @@ describe("Workspace extension target", () => {
 
     await expect(target.query({ action: "agents.list" }))
       .resolves.toEqual([{ name: "worker", running: false }]);
-    await expect(target.invoke({ action: "config.command.delete", name: "lint" }))
+    await expect(target.invoke({ action: "config.agent.delete", agent: "lint", removeWorktree: false }))
       .resolves.toEqual({ changed: true });
     expect(fake.queries).toEqual([{ schemaVersion: 1, method: "extension.query", input: { action: "agents.list" } }]);
     expect(fake.invocations[0]).toMatchObject({
       operationId: expect.stringMatching(/^extension:[0-9a-f-]{36}$/),
-      command: { method: "extension.invoke", input: { action: "config.command.delete", name: "lint" } },
+      command: { method: "extension.invoke", input: { action: "config.agent.delete", agent: "lint", removeWorktree: false } },
     });
   });
 

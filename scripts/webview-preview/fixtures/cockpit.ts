@@ -1012,15 +1012,6 @@ export const cockpitFixtures: Record<string, Fixture<SectionsModel>> = {
   // runbook/schedule/agent studios all parent there per the registry table). `studioMountNonce` is
   // a fixture-only stand-in for the real host's per-binding nonce — this static harness has no live
   // host to hand one out, and the client doesn't validate it against anything here anyway.
-  "studio-command": {
-    provenance: "synthetic-edge",
-    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("command", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
-  },
-  "studio-command-edit": {
-    provenance: "synthetic-edge",
-    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("command", "b349073a", "verify-ui"), studioMountNonce: "fixture-mount-nonce" },
-  },
-  // t-610705 (Phase D, D1a) — same pattern as studio-command/-edit above for the 3 D1a studios.
   "studio-terminal": {
     provenance: "synthetic-edge",
     vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("terminal", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
@@ -1028,14 +1019,6 @@ export const cockpitFixtures: Record<string, Fixture<SectionsModel>> = {
   "studio-terminal-edit": {
     provenance: "synthetic-edge",
     vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("terminal", "b349073a", "dev-server"), studioMountNonce: "fixture-mount-nonce" },
-  },
-  "studio-runbook": {
-    provenance: "synthetic-edge",
-    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("runbook", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
-  },
-  "studio-runbook-edit": {
-    provenance: "synthetic-edge",
-    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("runbook", "b349073a", "release-preview"), studioMountNonce: "fixture-mount-nonce" },
   },
   "studio-schedule": {
     provenance: "synthetic-edge",

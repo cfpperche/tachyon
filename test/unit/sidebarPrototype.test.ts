@@ -50,9 +50,7 @@ function fakeWorkspace(pins: Pin[] = [], opts: {
     attentionOf: opts.attentionOf ?? (() => undefined),
     continuityBadge: opts.continuityBadge ?? (() => undefined),
     persistenceHookHealth: () => undefined,
-    commandRunner: { list: async () => [] },
     config: {},
-    runbookRunner: { list: () => [] },
     handoffStore: { snapshot: () => ({ exists: false, staleness: "fresh", pendingCount: 0 }) },
     lastActivityAt: () => null,
     pinStore: {
@@ -348,7 +346,7 @@ describe("SidebarPrototypeProvider", () => {
         by: "codex",
         createdAt: "2026-07-14T00:00:00.000Z",
         expiresAt: "2026-07-15T00:00:00.000Z",
-        schedule: { every: "1h", run: "test" },
+        schedule: { every: "1h", spawn: "claude" },
       }],
     });
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
