@@ -10,13 +10,22 @@ describe("release command", () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")) as {
       scripts: Record<string, string>;
     };
+    const extensionManifest = JSON.parse(fs.readFileSync(
+      path.join(repoRoot, "apps/vscode-extension/package.json"),
+      "utf8",
+    )) as { scripts: Record<string, string> };
 
     expect(manifest.scripts.release).toBe("node scripts/release.mjs");
     expect(manifest.scripts.package).toBe(manifest.scripts.release);
     expect(manifest.scripts["package:assert"]).toBe("node scripts/prepare-package.mjs");
     expect(manifest.scripts["package:prepare"]).toBeUndefined();
-    expect(manifest.scripts["vscode:prepublish"]).toBe("npm run package:assert");
+    expect(manifest.scripts["vscode:prepublish"]).toBeUndefined();
+    expect(extensionManifest.scripts).toEqual({
+      "plugin:validate": "node dist/plugin-validate.cjs",
+      "vscode:prepublish": "npm run --prefix ../.. package:assert",
+    });
     expect(Object.values(manifest.scripts).join("\n")).not.toMatch(/(?:^|\s)vsce\s+package(?:\s|$)/m);
+    expect(Object.values(extensionManifest.scripts).join("\n")).not.toMatch(/(?:^|\s)vsce\s+package(?:\s|$)/m);
   });
 
   it("runs stable build, assertion, packaging, and smoke in order", async () => {
