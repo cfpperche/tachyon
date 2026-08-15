@@ -3636,6 +3636,58 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(cmds.at(-1)).toMatch(/TASK: do the thing/);
   });
 
+  it.each([
+    ["claude", "--append-system-prompt-file"],
+    ["grok", "--rules 'PROFILE_CANARY'"],
+    ["codex", "-c 'developer_instructions=\"PROFILE_CANARY\"'"],
+  ] as const)("projects canonical %s persistent instructions before its startup brief", async (runtime, expected) => {
+    const h = resumeHarness(`agents:\n  owner:\n    cmd: ${runtime}\n    instructions: PROFILE_CANARY\n`);
+    const def = asAgent(h.manager.defOf("owner"))!;
+    def.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+
+    await h.manager.spawn("owner");
+
+    const launched = h.cmds.at(-1)!;
+    expect(launched, `persistent-instructions-launch/${runtime}`).toContain(expected);
+    expect(launched.indexOf(expected)).toBeLessThan(launched.indexOf("PROFILE_CANARY", launched.indexOf(expected) + expected.length));
+    if (runtime === "claude") {
+      const file = path.join(h.ws, ".tachyon", "instructions", "launch", "owner.md");
+      expect(fs.readFileSync(file, "utf8")).toBe("PROFILE_CANARY");
+      expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    }
+  });
+
+  it.each(["claude", "codex", "grok"])("adds no persistent-instructions flag for a canonical %s profile without instructions", async (runtime) => {
+    const h = resumeHarness(`agents:\n  empty:\n    cmd: ${runtime}\n`);
+    asAgent(h.manager.defOf("empty"))!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+    await h.manager.spawn("empty");
+    expect(h.cmds.at(-1)).not.toMatch(/append-system-prompt-file|--rules|developer_instructions/);
+  });
+
+  it("refuses an oversized canonical profile before creating a pane and names the runtime", async () => {
+    const h = resumeHarness("agents:\n  owner:\n    cmd: grok\n");
+    const def = asAgent(h.manager.defOf("owner"))!;
+    def.instructions = "x".repeat(131_001);
+    def.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+    await expect(h.manager.spawn("owner")).rejects.toThrow("agent 'owner' grok persistent instructions are 131001 UTF-8 bytes");
+    expect(h.sessions.size).toBe(0);
+  });
+
   it("kill of a Temporary agent deletes its durable activity log (pin p-4dadd3 dogfood follow-up: kill→remove path)", async () => {
     const { manager, ledger, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n", {});
     await manager.spawn("oneshot", { cmd: "opencode", parent: "main" }); // Temporary → gets a session + ledger row

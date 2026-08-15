@@ -1,6 +1,7 @@
 # t-a68138 — system/developer prompt through compact
 
-Measured on 2026-08-15. This slice changes no product code.
+Measured on 2026-08-15. Fatias 1 and 2 changed no product code; the implementation
+follow-through is recorded below.
 
 Fatia 2 below distinguishes manual compact from automatic compact and measures the
 transport/exposure boundary of each launch mechanism. “Automatic” is claimed only
@@ -15,7 +16,29 @@ command.
 | Codex CLI | 0.147.0 | `developer_instructions` config, passable at launch with `-c` | `measured` | canary present before compact and after compact plus process resume |
 | Grok Build | 1.0.4 (`d846eb93d9`) | `--rules` | `measured` | canary present before and after a completed `/compact` |
 
-`measured` here means a real authenticated model session, with runtime version and date, not merely help text or config parsing. None is `wired`: Tachyon does not yet project persistent instructions through these launch mechanisms.
+`measured` here means a real authenticated model session, with runtime version and date, not merely help text or config parsing. At measurement time none was wired; `t-d3ace4` subsequently consumed these results.
+
+## Implementation follow-through — `t-d3ace4`
+
+Canonical Agent Profiles now pass the already-resolved `projected.instructions` text to the three
+launch mechanisms: Claude `--append-system-prompt-file`, Grok `--rules`, and Codex
+`-c developer_instructions=<TOML string>`. Resolution and sha256 checking remain owned by
+`agentProfileProjection.ts`; the launcher does not read `instructions.md` again. Profiles without
+instructions add no option.
+
+The product uses a conservative 131,000-byte UTF-8 source ceiling and additionally checks Codex's
+exact serialized argument against the measured 131,071-byte single-argument ceiling. Exceeding
+either bound refuses launch with agent, runtime, byte count and ceiling; content is never truncated.
+This is deliberately a **transport** policy. It does not claim a semantic/model limit.
+
+Claude receives a generated mode-0600 file containing the resolved text. Grok and Codex remain
+inline and therefore expose the full value in `ps`; all three retain the consumed text in the
+runtime artifacts named under “Exposure” below. These are same-user visibility facts, not secrecy
+claims.
+
+This wiring does not upgrade Claude's automatic-compaction evidence. Its automatic cell remains
+**`cannot`** after two `compact_result=failed` / `too_few_groups` results. Only the successful manual
+compact is established for Claude; Codex and Grok retain their completed automatic measurements.
 
 ## Method and controls
 
@@ -263,7 +286,7 @@ Recommended design:
 |---|---|---|
 | Claude | launch with `--append-system-prompt-file` | Tachyon lifecycle channel |
 | Grok | launch with `--rules` | Tachyon lifecycle channel |
-| Codex | launch with strictly TOML-serialized `-c developer_instructions=...` | Tachyon lifecycle channel if argument size/exposure is rejected |
+| Codex | launch with strictly TOML-serialized `-c developer_instructions=...` | fail legibly if the encoded transport ceiling is exceeded |
 
 Do not use or loosen the plugin hook-projection door. These are runtime launch mechanisms; the already-existing Tachyon lifecycle channel is the separate fallback.
 

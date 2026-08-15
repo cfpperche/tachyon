@@ -21,6 +21,7 @@ export function removeDerivedAgentFiles(workspaceRoot: string, agent: string): v
   for (const file of [
     path.join(workspaceRoot, ".tachyon", "briefs", "spawn", `${agent}.md`),
     path.join(workspaceRoot, ".tachyon", "anchors", `${agent}.md`),
+    path.join(workspaceRoot, ".tachyon", "instructions", "launch", `${agent}.md`),
   ]) {
     try { fs.rmSync(file, { force: true }); } catch (error) { failures.push(error); }
   }
