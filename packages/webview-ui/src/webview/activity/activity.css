@@ -5,89 +5,110 @@
      panel and never unloads, and cockpit.css (the shell owner, linked last) already pins body padding
      with !important. Bare layout-element selectors are banned in co-loadable sheets — see
      webviewCssScope.test.ts. */
+  /* SDD 505 slice 8 (t-7cb9fe) — this sheet's DISTANCES and its LABEL SIZES come from the host now.
+     Every padding/margin/gap is a step of `--ds-spacing-size*` (the ten steps of the VS Code 1.133 size
+     registry, tokens.css) and every literal label size is a step of the operator ramp
+     (`--ds-operator-label3/2/1` = 10/11/12px). Measured before it was trusted: a webview created by
+     `createWebviewPanel` in VS Code 1.133.0 receives all ten spacing tokens and the four fontSize ones
+     on its documentElement (t-7cb9fe journal, runtime probe under xvfb) — the fallbacks in tokens.css
+     are for hosts older than 1.133, not for this one.
+     Off-scale values took the NEAREST step; on a tie, the step the host itself uses more in its own
+     already-migrated CSS won (benchmark.md §2.4: 4 > 2 > 8 > 6 > 12 > 24 > 16 > 10 > 32 > 20). So
+     3→4, 5→4, 7→8, 9→8, 11→12, 14→12, 18→16, 22→24, 38→32, 48→32, and 1px→2px (1px is stroke, never
+     distance, in all three references the benchmark measured).
+     NOT migrated, each for a stated reason, never invented: border-radius, width/height, position
+     offsets and z-index (slice 4 declared no token for any of them); the highlight.js Dark+/Light+
+     syntax hexes and `--vscode-badge-*`/`--vscode-gitDecoration-*`/`--vscode-editor-foreground`
+     (no `--ds-*` role exists and adding one is not this slice's to add); `.md h1…h6`'s `em` sizes
+     (the ramp declares absolute roles — swapping relative for absolute would re-cut the transcript's
+     heading hierarchy, which is a design decision and not the scale); and `.degrade .codicon`'s 28px,
+     which is an ICON size and has no ramp role (the host's own icon tokens are 16 and 12). */
 
   /* Header: scan summary + the terminal escape hatch */
-  .activity-chrome.ds-page-chrome { position: sticky; top: 0; z-index: 2; margin: 0 0 var(--ds-page-chrome-margin-bottom); padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-3); background: var(--vscode-editor-background); border-bottom: var(--ds-border-width) solid var(--ds-border); align-items: flex-start; box-sizing: border-box; }
-.activity-head-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--ds-3); flex-wrap: wrap; padding: var(--ds-3) var(--ds-4); background: var(--vscode-editor-background); border-bottom: 1px solid var(--ds-border); }
-  .head .stat { color: var(--ds-muted); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
+  .activity-chrome.ds-page-chrome { position: sticky; top: 0; z-index: 2; margin: 0 0 var(--ds-page-chrome-margin-bottom); padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-spacing-size120); background: var(--ds-editor-bg); border-bottom: var(--ds-border-width) solid var(--ds-border); align-items: flex-start; box-sizing: border-box; }
+.activity-head-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-spacing-size80); }
+  .head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--ds-spacing-size120); flex-wrap: wrap; padding: var(--ds-spacing-size120) var(--ds-spacing-size160); background: var(--ds-editor-bg); border-bottom: 1px solid var(--ds-border); }
+  .head .stat { color: var(--ds-muted); font-size: var(--ds-operator-label1); display: inline-flex; align-items: center; gap: var(--ds-spacing-size40); }
   .head .stat.err { color: var(--ds-err); }
-  .head .term { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--ds-border); border-radius: 4px; }
-  .head .term:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
-  .ver { font-size: 11px; color: var(--ds-muted); opacity: .8; }
-  .stale { font-size: 11px; color: var(--vscode-list-warningForeground, #cca700); }
+  .head .term { margin-left: auto; display: inline-flex; align-items: center; gap: var(--ds-spacing-size60); padding: var(--ds-spacing-size40) var(--ds-spacing-size100); border: 1px solid var(--ds-border); border-radius: 4px; }
+  .head .term:hover { background: var(--ds-hover); }
+  .ver { font-size: var(--ds-operator-label2); color: var(--ds-muted); opacity: .8; }
+  .stale { font-size: var(--ds-operator-label2); color: var(--ds-warn, #cca700); }
   /* Recent-window search (filters the loaded/capped items only — the placeholder states the scope) */
-  .head .search { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border: 1px solid var(--ds-border); border-radius: 4px; background: var(--vscode-input-background); }
-  .head .search .codicon-search { font-size: 12px; color: var(--ds-muted); }
-  .head .search input { border: none; outline: none; background: none; color: var(--vscode-input-foreground); font: inherit; font-size: 12px; width: 170px; }
+  .head .search { display: inline-flex; align-items: center; gap: var(--ds-spacing-size40); padding: var(--ds-spacing-size20) var(--ds-spacing-size80); border: 1px solid var(--ds-border); border-radius: 4px; background: var(--ds-input-bg); }
+  .head .search .codicon-search { font-size: var(--ds-operator-label1); color: var(--ds-muted); }
+  .head .search input { border: none; outline: none; background: none; color: var(--ds-input-fg); font: inherit; font-size: var(--ds-operator-label1); width: 170px; }
   .head .search .sclear { display: inline-flex; color: var(--ds-muted); }
-  .head .search .sclear:hover { color: var(--vscode-foreground); }
+  .head .search .sclear:hover { color: var(--ds-fg); }
   .type-filter { position: relative; }
-  .type-filter-btn { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 2px 8px; border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-muted); background: var(--vscode-input-background); font: inherit; font-size: 12px; }
-  .type-filter-btn:hover, .type-filter-btn:focus-visible, .type-filter-btn[aria-expanded="true"] { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
-  .type-filter-btn.active { border-color: var(--ds-accent); color: var(--vscode-foreground); }
-  .filter-count { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); font-size: 10px; font-variant-numeric: tabular-nums; }
-  .type-menu { position: absolute; right: 0; top: 28px; z-index: 30; min-width: 168px; padding: 6px; border: 1px solid var(--ds-border); border-radius: 6px; background: var(--vscode-menu-background, var(--vscode-editorWidget-background)); color: var(--vscode-menu-foreground, var(--vscode-foreground)); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
-  .type-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 4px; font-size: 12px; }
-  .type-row:hover { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); }
+  .type-filter-btn { display: inline-flex; align-items: center; gap: var(--ds-spacing-size40); height: 24px; padding: var(--ds-spacing-size20) var(--ds-spacing-size80); border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-muted); background: var(--ds-input-bg); font: inherit; font-size: var(--ds-operator-label1); }
+  .type-filter-btn:hover, .type-filter-btn:focus-visible, .type-filter-btn[aria-expanded="true"] { color: var(--ds-fg); background: var(--ds-hover); }
+  .type-filter-btn.active { border-color: var(--ds-accent); color: var(--ds-fg); }
+  .filter-count { min-width: 16px; height: 16px; padding: 0 var(--ds-spacing-size40); border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); font-size: var(--ds-operator-label3); font-variant-numeric: tabular-nums; }
+  .type-menu { position: absolute; right: 0; top: 28px; z-index: 30; min-width: 168px; padding: var(--ds-spacing-size60); border: 1px solid var(--ds-border); border-radius: 6px; background: var(--ds-menu-bg); color: var(--ds-menu-fg); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+  .type-row { display: flex; align-items: center; gap: var(--ds-spacing-size80); padding: var(--ds-spacing-size40) var(--ds-spacing-size60); border-radius: 4px; font-size: var(--ds-operator-label1); }
+  .type-row:hover { background: var(--ds-menu-selection-bg); }
   .type-row input { margin: 0; }
-  .type-menu-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; padding: 6px 6px 0; border-top: 1px solid var(--ds-border); color: var(--ds-muted); font-size: 11px; }
+  .type-menu-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-spacing-size120); margin-top: var(--ds-spacing-size40); padding: var(--ds-spacing-size60) var(--ds-spacing-size60) 0; border-top: 1px solid var(--ds-border); color: var(--ds-muted); font-size: var(--ds-operator-label2); }
   .type-menu-foot button { color: var(--ds-link); }
   .type-menu-foot button:hover { text-decoration: underline; }
 
   /* Chat transcript: human bubbles right, agent bubbles left, activity chips threaded on the agent side */
-  .feed { padding: 0 var(--ds-page-pad-x) var(--ds-page-pad-bottom); display: flex; flex-direction: column; gap: var(--ds-2); max-width: none; margin: 0; box-sizing: border-box; }
+  .feed { padding: 0 var(--ds-page-pad-x) var(--ds-page-pad-bottom); display: flex; flex-direction: column; gap: var(--ds-spacing-size80); max-width: none; margin: 0; box-sizing: border-box; }
   /* Perf: older (offscreen) items skip layout/paint; the browser remembers their measured size (auto keyword).
      The live tail is NOT given this class (App.tsx) so bottom-stick height stays exact. */
   .feed > .cv { content-visibility: auto; contain-intrinsic-size: auto 60px; }
   /* Visible recent-window cap notice — replaces the silent drop of the oldest items */
-  .capnote { align-self: center; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ds-muted); padding: 3px 12px; margin-bottom: 4px; border: 1px solid var(--ds-border); border-radius: 12px; }
-  .capnote:hover { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
-  .capnote .codicon { font-size: 12px; }
+  .capnote { align-self: center; display: inline-flex; align-items: center; gap: var(--ds-spacing-size60); font-size: var(--ds-operator-label2); color: var(--ds-muted); padding: var(--ds-spacing-size40) var(--ds-spacing-size120); margin-bottom: var(--ds-spacing-size40); border: 1px solid var(--ds-border); border-radius: 12px; }
+  .capnote:hover { color: var(--ds-fg); background: var(--ds-hover); }
+  .capnote .codicon { font-size: var(--ds-operator-label1); }
   .msg { display: flex; }
   .msg.user { justify-content: flex-end; }
   .msg.agent { justify-content: flex-start; }
-  .msg .bubble { max-width: 80%; padding: 8px 38px 8px 12px; border-radius: 14px; line-height: 1.45; position: relative; }
+  /* the right pad is the room the share button (22px wide, inset 4px) needs; 38px was not a step and 32 is */
+  .msg .bubble { max-width: 80%; padding: var(--ds-spacing-size80) var(--ds-spacing-size320) var(--ds-spacing-size80) var(--ds-spacing-size120); border-radius: 14px; line-height: 1.45; position: relative; }
   /* spec 345 (t-8d2f81): reading font on BOTH sides of the transcript — the human's own words are as
      much conversation prose as the agent's reply; splitting them by sender read as two typefaces in
      one conversation. Metadata/ids/timestamps/chips/code/raw output stay mono elsewhere, untouched. */
   .msg .btext { overflow-wrap: anywhere; font-family: var(--tachyon-font-reading); }
   .msg.user .btext { white-space: pre-wrap; }
-  .msg .btime { font-size: 10px; opacity: .6; margin-top: 3px; text-align: right; }
+  .msg .btime { font-size: var(--ds-operator-label3); opacity: .6; margin-top: var(--ds-spacing-size40); text-align: right; }
   /* "working…" typing indicator (agent side) + a needs-input hint */
-  .bubble.typing { display: inline-flex; gap: 4px; align-items: center; padding: 11px 14px; }
+  .bubble.typing { display: inline-flex; gap: var(--ds-spacing-size40); align-items: center; padding: var(--ds-spacing-size120) var(--ds-spacing-size120); }
   .bubble.typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--ds-muted); animation: blink 1.2s infinite both; }
   .bubble.typing span:nth-child(2) { animation-delay: .2s; }
   .bubble.typing span:nth-child(3) { animation-delay: .4s; }
   @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
-  .needs { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--vscode-list-warningForeground, #cca700); padding: 2px 6px; }
-  .needs .codicon { font-size: 12px; }
-  .msg.user .bubble { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-bottom-right-radius: 4px; }
-  .msg.agent .bubble { background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--vscode-foreground); border: 1px solid var(--ds-border); border-bottom-left-radius: 4px; }
-  .share-actions { display: inline-flex; position: relative; align-items: center; margin-left: 6px; opacity: 0; transition: opacity .1s; vertical-align: middle; }
+  .needs { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--ds-spacing-size60); font-size: var(--ds-operator-label2); color: var(--ds-warn, #cca700); padding: var(--ds-spacing-size20) var(--ds-spacing-size60); }
+  .needs .codicon { font-size: var(--ds-operator-label1); }
+  .msg.user .bubble { background: var(--ds-btn-bg); color: var(--ds-btn-fg); border-bottom-right-radius: 4px; }
+  .msg.agent .bubble { background: var(--ds-card); color: var(--ds-fg); border: 1px solid var(--ds-border); border-bottom-left-radius: 4px; }
+  .share-actions { display: inline-flex; position: relative; align-items: center; margin-left: var(--ds-spacing-size60); opacity: 0; transition: opacity .1s; vertical-align: middle; }
   .share-trigger { width: 22px; height: 22px; display: inline-grid; place-items: center; border-radius: 4px; color: var(--ds-muted); }
-  .share-trigger:hover, .share-trigger:focus-visible, .share-trigger[aria-expanded="true"] { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
+  .share-trigger:hover, .share-trigger:focus-visible, .share-trigger[aria-expanded="true"] { color: var(--ds-fg); background: var(--ds-hover); }
   .bubble > .share-actions { position: absolute; top: 4px; right: 4px; margin-left: 0; }
   :is(.bubble, .aline, .nudgeline, .cmdline, .boundary, .think-head, .contextline):hover .share-actions,
   .share-actions:focus-within { opacity: 1; }
-  .share-menu { position: absolute; right: 0; top: 24px; z-index: 20; min-width: 188px; padding: 4px; border: 1px solid var(--ds-border); border-radius: 6px; background: var(--vscode-menu-background, var(--vscode-editorWidget-background)); color: var(--vscode-menu-foreground, var(--vscode-foreground)); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
-  .share-menu button { width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 4px; text-align: left; white-space: nowrap; color: inherit; }
-  .share-menu button:hover, .share-menu button:focus-visible { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-menu-selectionForeground, var(--vscode-foreground)); }
-  .rawmd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--ds-mono); font-size: 12px; max-height: 60vh; overflow: auto; }
+  .share-menu { position: absolute; right: 0; top: 24px; z-index: 20; min-width: 188px; padding: var(--ds-spacing-size40); border: 1px solid var(--ds-border); border-radius: 6px; background: var(--ds-menu-bg); color: var(--ds-menu-fg); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+  .share-menu button { width: 100%; display: flex; align-items: center; gap: var(--ds-spacing-size80); padding: var(--ds-spacing-size80) var(--ds-spacing-size80); border-radius: 4px; text-align: left; white-space: nowrap; color: inherit; }
+  .share-menu button:hover, .share-menu button:focus-visible { background: var(--ds-menu-selection-bg); color: var(--ds-menu-selection-fg); }
+  .rawmd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--ds-mono); font-size: var(--ds-operator-label1); max-height: 60vh; overflow: auto; }
 
   /* Markdown inside an agent bubble */
   .md { font-family: var(--tachyon-font-reading); }
-  .md p { margin: 0 0 6px; white-space: pre-wrap; }
+  .md p { margin: 0 0 var(--ds-spacing-size60); white-space: pre-wrap; }
   .md p:last-child { margin-bottom: 0; }
-  .md .md-h { font-weight: 600; margin: 4px 0; }
-  .md ul, .md ol { margin: 4px 0; padding-left: 20px; }
-  .md li { margin: 1px 0; }
-  .md code { font-family: var(--ds-mono); font-size: .92em; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.18)); padding: 0 4px; border-radius: 3px; }
-  .md pre { margin: 0; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; overflow-x: auto; }
+  .md .md-h { font-weight: 600; margin: var(--ds-spacing-size40) 0; }
+  .md ul, .md ol { margin: var(--ds-spacing-size40) 0; padding-left: var(--ds-spacing-size200); }
+  .md li { margin: var(--ds-spacing-size20) 0; }
+  .md code { font-family: var(--ds-mono); font-size: .92em; background: var(--ds-code-bg); padding: 0 var(--ds-spacing-size40); border-radius: 3px; }
+  .md pre { margin: 0; padding: var(--ds-spacing-size80) var(--ds-spacing-size100); background: var(--ds-code-bg); border-radius: 6px; overflow-x: auto; }
   .md pre code { background: none; padding: 0; }
   .md a { color: var(--ds-link); }
   /* highlight.js theme — VS Code dark+ palette by default; light override under a light theme.
-     The tachyon.activity.codeTheme setting can force a side via the body class (tac-theme-dark/light). */
+     The tachyon.activity.codeTheme setting can force a side via the body class (tac-theme-dark/light).
+     These stay raw: they are a SYNTAX palette, and the token layer names no syntax roles (nor should
+     this slice invent them). The gate's exception row for this file is exactly them. */
   .hljs { color: var(--vscode-editor-foreground, #d4d4d4); }
   .hljs-comment, .hljs-quote { color: #6a9955; font-style: italic; }
   .hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-name, .hljs-tag { color: #569cd6; }
@@ -115,102 +136,103 @@
   /* markdown-it block elements */
   .md > :first-child { margin-top: 0; }
   .md > :last-child { margin-bottom: 0; }
-  .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 8px 0 4px; font-weight: 600; line-height: 1.3; }
+  .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: var(--ds-spacing-size80) 0 var(--ds-spacing-size40); font-weight: 600; line-height: 1.3; }
   .md h1 { font-size: 1.4em; } .md h2 { font-size: 1.25em; } .md h3 { font-size: 1.12em; } .md h4, .md h5, .md h6 { font-size: 1em; }
-  .md blockquote { margin: 6px 0; padding: 2px 10px; border-left: 3px solid var(--ds-border); color: var(--ds-muted); }
-  .md hr { border: 0; border-top: 1px solid var(--ds-border); margin: 10px 0; }
+  .md blockquote { margin: var(--ds-spacing-size60) 0; padding: var(--ds-spacing-size20) var(--ds-spacing-size100); border-left: 3px solid var(--ds-border); color: var(--ds-muted); }
+  .md hr { border: 0; border-top: 1px solid var(--ds-border); margin: var(--ds-spacing-size100) 0; }
   .md del { opacity: .7; }
-  .md table { border-collapse: collapse; margin: 6px 0; display: block; overflow-x: auto; max-width: 100%; }
-  .md th, .md td { border: 1px solid var(--ds-border); padding: 4px 9px; text-align: left; }
-  .md th { background: var(--vscode-editorWidget-background, rgba(128,128,128,.12)); font-weight: 600; }
-  .md tr:nth-child(even) td { background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent); }
-  .md ul.contains-task-list { list-style: none; padding-left: 18px; }
+  .md table { border-collapse: collapse; margin: var(--ds-spacing-size60) 0; display: block; overflow-x: auto; max-width: 100%; }
+  .md th, .md td { border: 1px solid var(--ds-border); padding: var(--ds-spacing-size40) var(--ds-spacing-size80); text-align: left; }
+  .md th { background: var(--ds-card); font-weight: 600; }
+  .md tr:nth-child(even) td { background: color-mix(in srgb, var(--ds-fg) 4%, transparent); }
+  .md ul.contains-task-list { list-style: none; padding-left: var(--ds-spacing-size160); }
   .md .task-list-item { list-style: none; }
-  /* task-list checkbox rendered as a glyph span (see markdownEngine.fixTaskCheckboxes) — read-only transcript */
-  .md .task-check { display: inline-block; box-sizing: border-box; width: 13px; height: 13px; margin: 0 6px 0 -18px; border: 1px solid var(--ds-muted); border-radius: 3px; vertical-align: -2px; position: relative; }
-  .md .task-check.checked { background: var(--vscode-textLink-foreground, #4daafc); border-color: transparent; }
-  .md .task-check.checked::after { content: ""; position: absolute; left: 4px; top: 1px; width: 3px; height: 6px; border: solid var(--vscode-editor-background, #1e1e1e); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  /* task-list checkbox rendered as a glyph span (see markdownEngine.fixTaskCheckboxes) — read-only transcript.
+     Its negative margin is the pair of the list's own padding-left, so both moved 18→16 together. */
+  .md .task-check { display: inline-block; box-sizing: border-box; width: 13px; height: 13px; margin: 0 var(--ds-spacing-size60) 0 calc(-1 * var(--ds-spacing-size160)); border: 1px solid var(--ds-muted); border-radius: 3px; vertical-align: -2px; position: relative; }
+  .md .task-check.checked { background: var(--ds-link, #4daafc); border-color: transparent; }
+  .md .task-check.checked::after { content: ""; position: absolute; left: 4px; top: 1px; width: 3px; height: 6px; border: solid var(--ds-editor-bg, #1e1e1e); border-width: 0 2px 2px 0; transform: rotate(45deg); }
   /* KaTeX math (lazy) */
-  .tac-math[data-display="1"] { display: block; overflow-x: auto; text-align: center; margin: 6px 0; }
+  .tac-math[data-display="1"] { display: block; overflow-x: auto; text-align: center; margin: var(--ds-spacing-size60) 0; }
   .katex { font-size: 1.05em; }
   /* mermaid block chrome lives in shared/mermaid-block.css (spec 374) */
   /* fenced code block with a copy button */
-  .codeblock { position: relative; margin: 6px 0; }
-  .codeblock .copy { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; color: var(--ds-muted); background: var(--vscode-editorWidget-background, var(--vscode-input-background)); opacity: 0; transition: opacity .1s; }
+  .codeblock { position: relative; margin: var(--ds-spacing-size60) 0; }
+  .codeblock .copy { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; color: var(--ds-muted); background: var(--ds-card); opacity: 0; transition: opacity .1s; }
   .codeblock:hover .copy, .codeblock .copy:focus-visible { opacity: 1; }
-  .codeblock .copy:hover { color: var(--vscode-foreground); }
+  .codeblock .copy:hover { color: var(--ds-fg); }
   .codeblock .copy.fail { opacity: 1; color: var(--ds-err); }
   /* long-message clamp + fade + toggle */
   .btext.clamp { max-height: 17em; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent); mask-image: linear-gradient(to bottom, #000 72%, transparent); }
-  .more { margin-top: 4px; font-size: 11px; color: var(--ds-link); }
+  .more { margin-top: var(--ds-spacing-size40); font-size: var(--ds-operator-label2); color: var(--ds-link); }
   .more:hover { text-decoration: underline; }
-  .msg.user .md a { color: var(--vscode-button-foreground); text-decoration: underline; }
+  .msg.user .md a { color: var(--ds-btn-fg); text-decoration: underline; }
   .msg.user .md code { background: rgba(255,255,255,.2); }
 
   /* Day separator */
-  .daysep { text-align: center; margin: 8px 0 2px; }
-  .daysep span { font-size: 10px; color: var(--ds-muted); background: var(--vscode-editorWidget-background, var(--vscode-input-background)); border: 1px solid var(--ds-border); border-radius: 10px; padding: 1px 10px; }
+  .daysep { text-align: center; margin: var(--ds-spacing-size80) 0 var(--ds-spacing-size20); }
+  .daysep span { font-size: var(--ds-operator-label3); color: var(--ds-muted); background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: 10px; padding: var(--ds-spacing-size20) var(--ds-spacing-size100); }
 
   /* Compaction boundary — a full-width "context compacted" rule (history before it is retained) */
-  .boundary { display: flex; align-items: center; gap: 8px; margin: 10px 2px; color: var(--ds-muted); font-size: 11px; }
+  .boundary { display: flex; align-items: center; gap: var(--ds-spacing-size80); margin: var(--ds-spacing-size100) var(--ds-spacing-size20); color: var(--ds-muted); font-size: var(--ds-operator-label2); }
   .boundary::before, .boundary::after { content: ""; flex: 1; height: 1px; background: var(--ds-border); }
-  .boundary .codicon { font-size: 12px; opacity: .8; }
+  .boundary .codicon { font-size: var(--ds-operator-label1); opacity: .8; }
   .boundary .bmeta { opacity: .7; font-variant-numeric: tabular-nums; }
-  .boundary .bsum { color: var(--ds-link); font-size: 11px; }
+  .boundary .bsum { color: var(--ds-link); font-size: var(--ds-operator-label2); }
   .boundary .bsum:hover { text-decoration: underline; }
-  .boundary.interrupted { color: var(--vscode-list-warningForeground, #cca700); }
-  .boundary.interrupted::before, .boundary.interrupted::after { background: color-mix(in srgb, var(--vscode-list-warningForeground, #cca700) 42%, var(--ds-border)); }
+  .boundary.interrupted { color: var(--ds-warn, #cca700); }
+  .boundary.interrupted::before, .boundary.interrupted::after { background: color-mix(in srgb, var(--ds-warn, #cca700) 42%, var(--ds-border)); }
   .boundary.interrupted .blabel { opacity: .9; }
-  .boundary-summary { margin: 2px 12px 8px; padding: 8px 12px; border: 1px solid var(--ds-border); border-radius: 8px; background: var(--vscode-editorWidget-background, var(--vscode-input-background)); color: var(--ds-muted); font-size: 12px; max-height: 40vh; overflow: auto; }
+  .boundary-summary { margin: var(--ds-spacing-size20) var(--ds-spacing-size120) var(--ds-spacing-size80); padding: var(--ds-spacing-size80) var(--ds-spacing-size120); border: 1px solid var(--ds-border); border-radius: 8px; background: var(--ds-card); color: var(--ds-muted); font-size: var(--ds-operator-label1); max-height: 40vh; overflow: auto; }
 
   /* Slash-command marker — a subtle centered line (the human ran a command; not a chat bubble) */
-  .cmdline { align-self: center; display: inline-flex; align-items: center; gap: 5px; color: var(--ds-muted); font-size: 11px; font-family: var(--ds-mono); opacity: .85; margin: 2px 0; }
-  .cmdline .codicon { font-size: 12px; }
-  .nudgeline { align-self: center; max-width: 88%; display: inline-flex; align-items: center; gap: 6px; color: var(--ds-muted); font-size: 11px; opacity: .9; margin: 3px 0; padding: 2px 9px; border: 1px dashed var(--vscode-widget-border, rgba(128,128,128,.35)); border-radius: 10px; }
-  .nudgeline .codicon { font-size: 12px; opacity: .8; }
-  .contextline { align-self: center; max-width: 88%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--ds-muted); font-size: 11px; opacity: .82; margin: 3px 0; padding: 2px 9px; border: 1px dashed var(--vscode-widget-border, rgba(128,128,128,.35)); border-radius: 10px; }
-  .context-toggle { min-width: 0; display: inline-flex; align-items: center; gap: 6px; color: inherit; font: inherit; }
-  .context-toggle:hover { color: var(--vscode-foreground); }
-  .context-toggle .codicon { font-size: 12px; flex: none; opacity: .8; }
+  .cmdline { align-self: center; display: inline-flex; align-items: center; gap: var(--ds-spacing-size40); color: var(--ds-muted); font-size: var(--ds-operator-label2); font-family: var(--ds-mono); opacity: .85; margin: var(--ds-spacing-size20) 0; }
+  .cmdline .codicon { font-size: var(--ds-operator-label1); }
+  .nudgeline { align-self: center; max-width: 88%; display: inline-flex; align-items: center; gap: var(--ds-spacing-size60); color: var(--ds-muted); font-size: var(--ds-operator-label2); opacity: .9; margin: var(--ds-spacing-size40) 0; padding: var(--ds-spacing-size20) var(--ds-spacing-size80); border: 1px dashed var(--ds-border); border-radius: 10px; }
+  .nudgeline .codicon { font-size: var(--ds-operator-label1); opacity: .8; }
+  .contextline { align-self: center; max-width: 88%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-spacing-size60); color: var(--ds-muted); font-size: var(--ds-operator-label2); opacity: .82; margin: var(--ds-spacing-size40) 0; padding: var(--ds-spacing-size20) var(--ds-spacing-size80); border: 1px dashed var(--ds-border); border-radius: 10px; }
+  .context-toggle { min-width: 0; display: inline-flex; align-items: center; gap: var(--ds-spacing-size60); color: inherit; font: inherit; }
+  .context-toggle:hover { color: var(--ds-fg); }
+  .context-toggle .codicon { font-size: var(--ds-operator-label1); flex: none; opacity: .8; }
   .context-label { font-weight: 600; }
   .context-meta { font-family: var(--ds-mono); opacity: .75; }
   .context-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .context-body { flex-basis: 100%; margin: 4px 0 3px 20px; padding: 7px 9px; max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-left: 2px solid var(--ds-border); color: var(--ds-muted); font-family: var(--ds-mono); font-size: 11px; line-height: 1.4; }
+  .context-body { flex-basis: 100%; margin: var(--ds-spacing-size40) 0 var(--ds-spacing-size40) var(--ds-spacing-size200); padding: var(--ds-spacing-size80) var(--ds-spacing-size80); max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-left: 2px solid var(--ds-border); color: var(--ds-muted); font-family: var(--ds-mono); font-size: var(--ds-operator-label2); line-height: 1.4; }
 
   /* Thinking — collapsible reasoning on the agent side */
   .think { align-self: flex-start; max-width: 82%; }
-  .think-head { display: flex; align-items: center; gap: 4px; }
-  .think-toggle { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ds-muted); font-style: italic; max-width: 100%; }
-  .think-toggle:hover { color: var(--vscode-foreground); }
-  .think-toggle .codicon { font-size: 12px; flex: none; }
+  .think-head { display: flex; align-items: center; gap: var(--ds-spacing-size40); }
+  .think-toggle { display: flex; align-items: center; gap: var(--ds-spacing-size40); font-size: var(--ds-operator-label2); color: var(--ds-muted); font-style: italic; max-width: 100%; }
+  .think-toggle:hover { color: var(--ds-fg); }
+  .think-toggle .codicon { font-size: var(--ds-operator-label1); flex: none; }
   .think-prev { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .think-body { margin: 4px 0 2px 18px; padding: 6px 10px; border-left: 2px solid var(--ds-border); color: var(--ds-muted); font-size: 12px; }
+  .think-body { margin: var(--ds-spacing-size40) 0 var(--ds-spacing-size20) var(--ds-spacing-size160); padding: var(--ds-spacing-size60) var(--ds-spacing-size100); border-left: 2px solid var(--ds-border); color: var(--ds-muted); font-size: var(--ds-operator-label1); }
 
   /* Image bubble */
-  .bubble.img { padding: 4px; }
+  .bubble.img { padding: var(--ds-spacing-size40); }
   .bubble.img img { max-width: min(340px, 100%); max-height: 340px; border-radius: 8px; display: block; cursor: zoom-in; }
-  .img-ph { display: inline-flex; align-items: center; gap: 6px; color: var(--ds-muted); font-size: 12px; padding: 14px 22px; }
+  .img-ph { display: inline-flex; align-items: center; gap: var(--ds-spacing-size60); color: var(--ds-muted); font-size: var(--ds-operator-label1); padding: var(--ds-spacing-size120) var(--ds-spacing-size240); }
 
   /* Activity lines (tool / file / error) — compact, muted, left-aligned (the agent's side).
      Bespoke log rows, NOT design-system chips — named `aline` so they don't shadow the kit's reserved token. */
   .aline-wrap { align-self: flex-start; max-width: 92%; min-width: 0; }
   .aline-wrap.err .cname, .aline-wrap.err .aline > .codicon { color: var(--ds-err); }
-  .aline { display: flex; align-items: baseline; gap: 6px; padding: 0 0 0 6px; font-size: 11px; color: var(--ds-muted); }
-  .aline .codicon { font-size: 12px; flex: none; align-self: center; }
+  .aline { display: flex; align-items: baseline; gap: var(--ds-spacing-size60); padding: 0 0 0 var(--ds-spacing-size60); font-size: var(--ds-operator-label2); color: var(--ds-muted); }
+  .aline .codicon { font-size: var(--ds-operator-label1); flex: none; align-self: center; }
   .aline .cname { font-weight: 600; flex: none; }
   .aline .ct, .aline .flink { font-family: var(--ds-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .aline .flink { color: var(--ds-link); text-decoration: none; }
   .aline .flink:hover { text-decoration: underline; }
   .aline .cres { opacity: .75; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .aline .cexp { color: var(--ds-muted); display: inline-flex; flex: none; }
-  .aline .cexp:hover { color: var(--vscode-foreground); }
+  .aline .cexp:hover { color: var(--ds-fg); }
   .aline .codicon-loading { animation: spin 1.1s linear infinite; }
-  .cfull { margin: 3px 0 4px 18px; padding: 8px 10px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); border-radius: 6px; font-family: var(--ds-mono); font-size: 11px; line-height: 1.4; white-space: pre-wrap; overflow: auto; max-height: 340px; }
+  .cfull { margin: var(--ds-spacing-size40) 0 var(--ds-spacing-size40) var(--ds-spacing-size160); padding: var(--ds-spacing-size80) var(--ds-spacing-size100); background: var(--ds-code-bg); border-radius: 6px; font-family: var(--ds-mono); font-size: var(--ds-operator-label2); line-height: 1.4; white-space: pre-wrap; overflow: auto; max-height: 340px; }
   /* TUI-style unified diff (Edit/Write): per-line gutter + sign + syntax-highlighted code + add/del backgrounds */
-  .cfull.diffv { padding: 6px 0; white-space: normal; }
-  .diffv .dvhunk { color: var(--ds-muted); padding: 4px 10px 2px; font-size: 10px; opacity: .8; }
-  .diffv .dvrow { display: grid; grid-template-columns: 3.2em 3.2em 1.1em 1fr; align-items: baseline; padding: 0 8px; }
-  .diffv .dvno { color: var(--ds-muted); opacity: .6; text-align: right; padding-right: 6px; user-select: none; font-size: 10px; }
+  .cfull.diffv { padding: var(--ds-spacing-size60) 0; white-space: normal; }
+  .diffv .dvhunk { color: var(--ds-muted); padding: var(--ds-spacing-size40) var(--ds-spacing-size100) var(--ds-spacing-size20); font-size: var(--ds-operator-label3); opacity: .8; }
+  .diffv .dvrow { display: grid; grid-template-columns: 3.2em 3.2em 1.1em 1fr; align-items: baseline; padding: 0 var(--ds-spacing-size80); }
+  .diffv .dvno { color: var(--ds-muted); opacity: .6; text-align: right; padding-right: var(--ds-spacing-size60); user-select: none; font-size: var(--ds-operator-label3); }
   .diffv .dvsign { user-select: none; opacity: .8; }
   .diffv .dvcode { white-space: pre-wrap; word-break: break-word; background: none; padding: 0; }
   .diffv .dv-add { background: rgba(78,201,126,.13); }
@@ -219,16 +241,16 @@
   .diffv .dv-del .dvsign { color: var(--vscode-gitDecoration-deletedResourceForeground, #f08080); }
 
   /* Jump-to-latest */
-  .jump { position: fixed; right: 18px; bottom: 18px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 16px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); box-shadow: 0 2px 10px rgba(0,0,0,.4); z-index: 5; }
-  .jump:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
+  .jump { position: fixed; right: 18px; bottom: 18px; display: inline-flex; align-items: center; gap: var(--ds-spacing-size60); padding: var(--ds-spacing-size60) var(--ds-spacing-size120); border-radius: 16px; background: var(--ds-btn-bg); color: var(--ds-btn-fg); box-shadow: 0 2px 10px rgba(0,0,0,.4); z-index: 5; }
+  .jump:hover { background: var(--ds-btn-hover); }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .degrade { padding: 48px 24px; text-align: center; color: var(--ds-muted); }
-  .degrade .codicon { font-size: 28px; opacity: .5; display: block; margin: 0 auto 10px; }
-  .degrade .term { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; padding: 5px 12px; border-radius: 4px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .degrade { padding: var(--ds-spacing-size320) var(--ds-spacing-size240); text-align: center; color: var(--ds-muted); }
+  .degrade .codicon { font-size: 28px; opacity: .5; display: block; margin: 0 auto var(--ds-spacing-size100); }
+  .degrade .term { display: inline-flex; align-items: center; gap: var(--ds-spacing-size60); margin-top: var(--ds-spacing-size120); padding: var(--ds-spacing-size40) var(--ds-spacing-size120); border-radius: 4px; background: var(--ds-btn-bg); color: var(--ds-btn-fg); }
 
   /* Image lightbox — full-size overlay (click-out or Escape closes) */
-  .lightbox { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 32px; background: rgba(0,0,0,.72); cursor: zoom-out; }
+  .lightbox { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: var(--ds-spacing-size320); background: rgba(0,0,0,.72); cursor: zoom-out; }
   .lightbox img { max-width: 100%; max-height: 100%; border-radius: 6px; box-shadow: 0 6px 30px rgba(0,0,0,.5); cursor: default; }
   .lb-close { position: fixed; top: 14px; right: 16px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 6px; color: #fff; background: rgba(255,255,255,.14); }
   .lb-close:hover { background: rgba(255,255,255,.28); }
