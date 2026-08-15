@@ -1445,7 +1445,7 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.existsSync(home)).toBe(false);
   });
 
-  it("t-53e5f2/t-6b3a0d: real Grok homes receive ownership and native Stop attention without silent persistence", () => {
+  it("t-53e5f2/t-6b3a0d/t-9547a8: real Grok homes log failures for every hook without silent persistence", () => {
     const realGrokHome = path.join(path.dirname(ws), "real-grok-lifecycle");
     fs.mkdirSync(realGrokHome, { recursive: true });
     fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"token":"GROK"}');
@@ -1458,8 +1458,10 @@ describe("HarnessManager materialize (fs)", () => {
     expect(temporaryStart).toContain("session-owners.jsonl");
     expect(temporaryStart).not.toContain("HANDOFF.md");
     expect(temporaryStart).not.toContain("continuity");
+    expect(temporaryStart.match(/persistence-hooks-failures\.jsonl/g)).toHaveLength(1);
     expect(fs.readFileSync(path.join(temporaryHome, "hooks", "stop.json"), "utf8")).toContain("runtime-status-publish.cjs");
     expect(fs.readFileSync(path.join(temporaryHome, "hooks", "stop.json"), "utf8")).not.toContain("persistence-stop-record.cjs");
+    expect(fs.readFileSync(path.join(temporaryHome, "hooks", "stop.json"), "utf8")).toContain("persistence-hooks-failures.jsonl");
 
     for (const agent of ["declared", "canonical"]) {
       const home = mgr.materializeBridgeMcpGrok(agent, bridge, ws, { lifecycle: { handoffPath: handoff } });
@@ -1467,8 +1469,10 @@ describe("HarnessManager materialize (fs)", () => {
       expect(start).toContain("session-owners.jsonl");
       expect(start).toContain("HANDOFF.md");
       expect(start).not.toContain("continuity");
+      expect(start.match(/persistence-hooks-failures\.jsonl/g)).toHaveLength(2);
       expect(fs.readFileSync(path.join(home, "hooks", "stop.json"), "utf8")).toContain("runtime-status-publish.cjs");
       expect(fs.readFileSync(path.join(home, "hooks", "stop.json"), "utf8")).not.toContain("persistence-stop-record.cjs");
+      expect(fs.readFileSync(path.join(home, "hooks", "stop.json"), "utf8")).toContain("persistence-hooks-failures.jsonl");
     }
   });
 

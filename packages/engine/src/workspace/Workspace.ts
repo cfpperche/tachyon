@@ -891,7 +891,12 @@ export class Workspace {
             adapter,
             cwd,
             this.bridgeEntry(),
-            adapter.runtime === "grok" ? this.projectedSessionHooks("grok", name) : undefined,
+            adapter.runtime === "grok"
+              ? {
+                silentPersistence: this.silentPersistenceHooksDesired(name),
+                ...this.projectedSessionHooks("grok", name),
+              }
+              : undefined,
           );
         }
         if (adapter.runtime === "claude" && (def.profileLifecycle || def.profileFork || def.profileNativeConfig)) {
@@ -941,7 +946,10 @@ export class Workspace {
               ...(def.profileNativeConfig ? { nativeConfig: def.profileNativeConfig } : {}),
               // Canonical profiles are declared/saved; profileFork is a Temporary sibling and stays
               // ownership-only even though it reuses this native-config materialization door.
-              ...(def.profileLifecycle ? { lifecycle: { handoffPath: this.handoffStore.canonicalPath } } : {}),
+              ...(def.profileLifecycle ? { lifecycle: {
+                handoffPath: this.handoffStore.canonicalPath,
+                silentPersistence: this.silentPersistenceHooksDesired(name),
+              } } : {}),
               ...this.projectedSessionHooks("grok", name),
             },
           );
@@ -993,7 +1001,10 @@ export class Workspace {
             exactTrust: declared?.profileLifecycle !== undefined,
             // t-26f508 — must match the canonical branch above: this port runs last on every spawn.
             ...(declared?.profileNativeConfig ? { nativeConfig: declared.profileNativeConfig } : {}),
-            ...(declared ? { lifecycle: { handoffPath: this.handoffStore.canonicalPath } } : {}),
+            ...(declared ? { lifecycle: {
+              handoffPath: this.handoffStore.canonicalPath,
+              silentPersistence: this.silentPersistenceHooksDesired(name),
+            } } : {}),
             // t-836be3 — the gate for every non-harness Grok agent, Temporary ones included: the plan is a
             // pure function of (lockfile, classification, runtime) and never of the agent's declaration,
             // so an undeclared child is projected exactly like a Saved agent.
@@ -4010,17 +4021,19 @@ export class Workspace {
     return this.manager.kindOf(agent) === "agent" && !!this.config?.agents?.[agent];
   }
 
-  /** spec 312 — persisted Claude/Codex agents use runtime-native silent hooks by default. This also suppresses
+  /** spec 312/t-9547a8 — persisted Claude/Codex/Grok agents use runtime-native silent hooks by default. This also suppresses
    *  automatic pane nudges; manual UI reinjection remains explicit and visible. */
   private silentPersistenceHooksDesired(agent: string): boolean {
-    // t-7bcba6 — silent hooks are the only supported mode for eligible declared Claude/Codex
-    // agents. The obsolete settings.persistence.silentHooks kill switch was removed; a false
+    // t-7bcba6/t-9547a8 — silent hooks are the only supported mode for eligible declared agents.
+    // Grok 1.0.4 was measured with a real private-home command hook on 2026-08-15: one completed
+    // headless turn wrote Stop(end_turn) to disk (and a second Stop(shutdown) on process exit).
+    // The obsolete settings.persistence.silentHooks kill switch was removed; a false
     // override can no longer disable injection or claim to restore visible pane reminders.
     if (!this.automaticPersistenceNudgesAllowed(agent)) return false;
     const def = this.config?.agents?.[agent];
     if (!def || managesOwnSession(def.cmd)) return false;
     const binary = binaryOf(def.cmd);
-    return binary === "claude" || binary === "codex";
+    return binary === "claude" || binary === "codex" || binary === "grok";
   }
 
   /**
