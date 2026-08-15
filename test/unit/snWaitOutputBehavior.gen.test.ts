@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Bridge } from "@tachyon/engine/bridge/Bridge.js";
-import { CallerIdentityRegistry } from "@tachyon/engine/bridge/callerIdentity.js";
+import { Bridge } from "@tachyon/bridge/Bridge.js";
+import { CallerIdentityRegistry } from "@tachyon/bridge/callerIdentity.js";
 import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import { parseConfig } from "@tachyon/engine/config/loadConfig.js";

@@ -1,4 +1,4 @@
-import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
+import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";

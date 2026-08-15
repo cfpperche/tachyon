@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Bridge, derivePort, DERIVED_PORT_BASE, DERIVED_PORT_SPAN, type BridgeRequestCompleteInfo } from "@tachyon/engine/bridge/Bridge.js";
+import { Bridge, derivePort, DERIVED_PORT_BASE, DERIVED_PORT_SPAN, type BridgeRequestCompleteInfo } from "@tachyon/bridge/Bridge.js";
 import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import { TmuxQueueError, TmuxService, sessionName, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
@@ -18,7 +18,7 @@ import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, type Worktree
 import type { ChangedFile } from "@tachyon/engine/worktree/review.js";
 import { readDoorbellEvents } from "@tachyon/engine/workspace/doorbell.js";
 import { projectRuntimeCondition, NO_QUOTA_CHANNEL } from "@tachyon/engine/runtimeOps/runtimeCondition.js";
-import type { NoticeSourceMetadata } from "@tachyon/engine/bridge/tools.js";
+import type { NoticeSourceMetadata } from "@tachyon/bridge/tools.js";
 import { resolveAgentFocus } from "@tachyon/engine/sidebar/agentFocus.js";
 import { SIDEBAR_FOCUS_FULL_MAX, SIDEBAR_PIN_TEXT_MAX } from "@tachyon/engine/sidebar/wireText.js";
 import { parseSidebarViewV1 } from "@tachyon/engine/runtime-api/sidebarProjection.js";

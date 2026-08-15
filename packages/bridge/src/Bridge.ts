@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { handleCompanionHttp, isCompanionPath, type CompanionHttpSurface } from "../companion/CompanionHttp.js";
+import { handleCompanionHttp, isCompanionPath, type CompanionHttpSurface } from "@tachyon/engine/companion/CompanionHttp.js";
 import { registerTools, type BridgeDeps } from "./tools.js";
 import { resolveCaller, type CallerIdentityRegistry, type CallerScope, type CallerSnapshot } from "./callerIdentity.js";
 import { WorkspaceBridgeTransport, type WorkspaceBridgeTransportOptions } from "./workspaceBridgeTransport.js";

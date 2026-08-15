@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
+import { registerTools, type BridgeDeps } from "@tachyon/bridge/tools.js";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import type { TaskNotificationEvent } from "@tachyon/engine/tasks/taskNotificationPolicy.js";
 

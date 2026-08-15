@@ -927,6 +927,7 @@
     "@radix-ui/react-popover": "1.1.18",
     "@radix-ui/react-select": "2.3.2",
     "@radix-ui/react-tooltip": "1.2.11",
+    "@tachyon/bridge": "0.91.0",
     "@tachyon/engine": "0.91.0",
     "@tachyon/shared": "0.91.0",
     "@tachyon/webview-ui": "0.91.0",

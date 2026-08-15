@@ -8,7 +8,7 @@ import {
   SUPERSEDE_GRACE_MS,
   type CallerScope,
   type SecretPort,
-} from "@tachyon/engine/bridge/callerIdentity.js";
+} from "@tachyon/bridge/callerIdentity.js";
 
 /**
  * spec 351 (layer B, T1) — the digest-only registry + resolution + actor helper, in isolation from

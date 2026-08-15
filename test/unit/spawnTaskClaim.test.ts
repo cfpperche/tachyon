@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { selectAssignedWork } from "@tachyon/engine/agents/assignmentSelection.js";
 import { sessionRecordManifest } from "@tachyon/engine/agents/sessionWorkRecord.js";
-import { registerTools } from "@tachyon/engine/bridge/tools.js";
-import { decideSpawnTaskClaim } from "@tachyon/engine/bridge/spawnTaskClaim.js";
+import { registerTools } from "@tachyon/bridge/tools.js";
+import { decideSpawnTaskClaim } from "@tachyon/bridge/spawnTaskClaim.js";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import type { Task } from "@tachyon/shared/tasks/types.js";
 

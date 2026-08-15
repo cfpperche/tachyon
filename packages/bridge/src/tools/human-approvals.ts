@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { buildApprovalRequest, recordApprovalRequest, listPendingApprovalRequests, readOwnApprovalRequest, cancelOwnApprovalRequest } from "../../approvals/approvalRequest.js";
+import { buildApprovalRequest, recordApprovalRequest, listPendingApprovalRequests, readOwnApprovalRequest, cancelOwnApprovalRequest } from "@tachyon/engine/approvals/approvalRequest.js";
 import { type BridgeDeps, fail, ok } from "./shared.js";
 
 export function registerApprovalTools(mcp: McpServer, deps: BridgeDeps): void {

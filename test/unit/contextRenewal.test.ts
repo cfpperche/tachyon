@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contextRenewalRequestRefusal } from "@tachyon/engine/bridge/tools.js";
+import { contextRenewalRequestRefusal } from "@tachyon/bridge/tools.js";
 
 describe("renew_context governance (t-6f0377)", () => {
   const safe = {

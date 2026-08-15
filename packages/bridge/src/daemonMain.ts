@@ -1,5 +1,5 @@
-import { runEngineDaemon as runEngineDaemonCore } from "../engine-service/daemonMain.js";
-import type { RunningDaemonEngineService } from "../engine-service/engineService.js";
+import { runEngineDaemon as runEngineDaemonCore } from "@tachyon/engine/engine-service/daemonMain.js";
+import type { RunningDaemonEngineService } from "@tachyon/engine/engine-service/engineService.js";
 import { workspaceBridgePort } from "./workspaceComposition.js";
 
 /** Product composition root: the transport is chosen here, outside the engine. */

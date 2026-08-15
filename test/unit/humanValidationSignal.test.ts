@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
+import { registerTools, type BridgeDeps } from "@tachyon/bridge/tools.js";
 import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
 import { routeHumanValidationPending } from "@tachyon/engine/engine-service/engineService.js";
-import type { CallerSnapshot } from "@tachyon/engine/bridge/callerIdentity.js";
+import type { CallerSnapshot } from "@tachyon/bridge/callerIdentity.js";
 
 /**
  * Symmetric human signals for validations (t-e76acc, report § 1.1 "Human signals: **none**").

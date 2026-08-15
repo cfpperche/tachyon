@@ -34,8 +34,9 @@ The split is shipped and its source ownership is represented by npm workspaces:
   is intentionally ephemeral and does not own managers, stores, the Bridge or agent lifecycle.
 - `packages/engine/src/engine-service/protocol.ts` plus `controlClient.ts`/`controlServer.ts` form the typed engine-shell
   transport; editor-only requests are brokered explicitly.
-- tmux, agents, tasks, Delivery/worktrees, validation, schedules, Activity and the Bridge remain engine
-  state. Closing or reloading the editor does not transfer ownership back to the shell.
+- tmux, agents, tasks, Delivery/worktrees, validation, schedules and Activity remain engine state.
+  The Bridge is a transport package composed against the engine-owned `WorkspaceBridgePort`; closing
+  or reloading the editor does not transfer engine state ownership back to the shell or transport.
 
 The current packaging still ships engine and shell together in the VSIX, and VS Code remains the only
 distributed human shell. Engine-first describes the ownership boundary, not a claim that a standalone
@@ -47,6 +48,7 @@ Tachyon CLI or web product already ships.
 package.json                         orchestration, workspaces, gates; no product manifest
 apps/vscode-extension/               extension manifest, activation, VS Code hosts, shipped auxiliary entries
 packages/engine/                     persistent engine and shell-neutral protocols
+packages/bridge/                     HTTP/MCP transport and product composition root
 packages/shared/                     runtime vocabulary used by engine and browser
 packages/webview-ui/                 the 27 browser entrypoints and their UI dependencies
 src/                                 17 repository-support modules + 8 compatibility shims
@@ -59,11 +61,15 @@ exception list. `check:engine-boundary` separately forbids `vscode` from `packag
 
 ## 3. The boundary — engine / host-port / shell
 
-Three buckets, not two:
+Four buckets, not two:
 
-- **Engine** (no `vscode`, ever): `Workspace`, `AgentManager`, `Bridge`, tmux/control-mode, pipelines,
+- **Engine** (no `vscode`, ever): `Workspace`, `AgentManager`, tmux/control-mode, pipelines,
   `Scheduler`, `AttentionMonitor`/`LifecycleMonitor`, ledgers, `WorktreeManager`, `HarnessManager`, config
   load + mutation. Token **policy** (auth on/off) is engine.
+- **Transport** (depends on engine, never the reverse): `packages/bridge` implements HTTP/MCP,
+  authentication/rebind mechanics and the engine-declared `WorkspaceBridgePort`. Its `daemonMain.ts`
+  is the product composition root that selects this transport and invokes the transport-neutral daemon
+  core in `packages/engine/src/engine-service/daemonMain.ts`.
 - **Host-port** (an interface the engine calls; each host implements it): one-way notices/focus, file
   watching, optional terminal presentation, settings, storage/secrets and workspace-change events.
   Two-way editor interactions are explicit shell/UI requests, not hidden window calls in engine code.
@@ -71,8 +77,9 @@ Three buckets, not two:
   + webviews (Studio/Inspector), editor terminals, `vscode.diff` / settings UI / walkthroughs / clipboard /
   open-document.
 
-The `Bridge` stays **engine**: it is pure HTTP/MCP, its `BridgeDeps` (`bridge/tools.ts:15`) already binds
-*engine* capabilities (not UI objects), and its durable state lives in tmux, not VS Code (`Bridge.ts:22`).
+The dependency direction is mechanically enforced: `@tachyon/bridge` declares `@tachyon/engine`, while
+`@tachyon/engine` does not declare `@tachyon/bridge`. `check:package-boundary` therefore rejects any
+engine import of the transport, and the engine→bridge ruler remains at zero.
 
 ## 4. Host ports — small and composed, not one fat object
 
@@ -97,12 +104,13 @@ There are **two** integration depths, and both seams exist today:
 
 1. **Shell client** — attach through the engine control protocol (`WorkspaceClient` / `controlClient`) and
    render state/events. Host-only editor operations travel as explicit brokered requests.
-2. **Loose MCP client** — anything that speaks MCP: the `Bridge` exposes orchestration as tools over HTTP
+2. **Loose MCP client** — anything that speaks MCP: `@tachyon/bridge` exposes orchestration as tools over HTTP
    (`spawn_agent`, `list_agents`, `write_input`, `complete_node`, …). Any MCP client drives a running
    Tachyon with **no VS Code at all** — this is exactly how a codex pipeline node calls `complete_node`.
 
-The Bridge is the runtime-neutral control surface; the deep port is for shells that also render state and
-own terminals. The design must keep the Bridge a first-class, shell-independent entry point.
+The Bridge is the shipped runtime-neutral control surface; the engine owns only the port it needs from a
+transport. A second transport can implement and compose that port outside `packages/engine`; the deep host
+port remains for shells that also render state and own terminals.
 
 ## 6. State model — snapshots + events, not a render tree
 

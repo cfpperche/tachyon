@@ -1,12 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { AgentManager } from "../../agents/AgentManager.js";
-import { readPaneTranscript } from "../../agents/paneTranscript.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
+import { readPaneTranscript } from "@tachyon/engine/agents/paneTranscript.js";
 import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
-import { isEvidencedWorking } from "../../prompts/injectFlow.js";
+import { isEvidencedWorking } from "@tachyon/engine/prompts/injectFlow.js";
 import { agentSummaryRefusal, composeBoundedAgentNotice, prepareAgentSummary } from "../notifyAgent.js";
-import { appendDoorbellEvent, findDoorbellDelivery, readDoorbellEventsFor, READ_NOTICES_MAX } from "../../workspace/doorbell.js";
-import { redactSecrets } from "../../utils/redactSecrets.js";
+import { appendDoorbellEvent, findDoorbellDelivery, readDoorbellEventsFor, READ_NOTICES_MAX } from "@tachyon/engine/workspace/doorbell.js";
+import { redactSecrets } from "@tachyon/engine/utils/redactSecrets.js";
 import { type BridgeDeps, AGENT_NAME, deliverNoticeFallback, fail, lifecycleScopeGuard, limitText, managedEntry, ok, resolveDeclaredActor } from "./shared.js";
 
 export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): void {

@@ -3,8 +3,8 @@
  * Registration always follows ideBrowserRequest wiring (see ideBrowserToolsOffline.test.ts).
  */
 import { describe, expect, it } from "vitest";
-import { registerIdeBrowserTools } from "@tachyon/engine/bridge/tools/ide-browser.js";
-import type { BridgeDeps } from "@tachyon/engine/bridge/tools/shared.js";
+import { registerIdeBrowserTools } from "@tachyon/bridge/tools/ide-browser.js";
+import type { BridgeDeps } from "@tachyon/bridge/tools/shared.js";
 import {
   IDE_BROWSER_DISABLED_CODE,
   IDE_BROWSER_DISABLED_ERROR,

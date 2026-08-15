@@ -2,7 +2,7 @@ import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
+import { registerTools, type BridgeDeps } from "@tachyon/bridge/tools.js";
 import { listSavedAgentProposals, readSavedAgentProposalWitness, recordSavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposalStore.js";
 import { proposedWorktreeEnabled, REFUSED_PROPOSAL_WORKSPACE_KEYS } from "@tachyon/engine/agents/savedAgentProposal.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "@tachyon/engine/config/agentProfileGrants.js";

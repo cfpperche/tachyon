@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { Severity } from "../../worktree/evidence.js";
+import type { Severity } from "@tachyon/engine/worktree/evidence.js";
 import { type BridgeDeps, AGENT_NAME, fail, ok, resolveDeclaredActor } from "./shared.js";
 
 export function registerVerificationCoreTools(mcp: McpServer, deps: BridgeDeps): void {

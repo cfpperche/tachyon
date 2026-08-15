@@ -1,4 +1,4 @@
-import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
+import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 /**
  * t-2656d7 (SDD 495, first slice) — the owner's case, through the door production uses.
  *

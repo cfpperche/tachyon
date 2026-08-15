@@ -18,7 +18,7 @@ import {
   writeApprovalRequest,
   type ApprovalRequest,
 } from "@tachyon/engine/approvals/approvalRequest.js";
-import { APPROVAL_CHANNEL_VSCODE_COMMAND } from "@tachyon/engine/bridge/approvalChannels.js";
+import { APPROVAL_CHANNEL_VSCODE_COMMAND } from "@tachyon/bridge/approvalChannels.js";
 
 /**
  * spec t-7d8bdf Phase 1 — the human-approval protocol BACKBONE, proven at the level the security

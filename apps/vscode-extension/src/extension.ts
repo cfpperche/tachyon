@@ -117,7 +117,7 @@ import { Terminals } from "./presentation/Terminals.js";
 import { SessionViewportRegistry } from "./presentation/sessionViewport.js";
 import { connectPackagedWorkspaceClient } from "./shell/WorkspaceClient.js";
 import { collectLegacyEngineStateMigration } from "@tachyon/engine/engine-service/stateMigration.js";
-import { bridgeStateMigrationStorage } from "@tachyon/engine/bridge/stateMigrationStorage.js";
+import { bridgeStateMigrationStorage } from "@tachyon/bridge/stateMigrationStorage.js";
 import { ENGINE_UI_CAPABILITY } from "@tachyon/engine/engine-service/uiRequestBroker.js";
 import type { WorkspaceCommandResultV1 } from "@tachyon/engine/engine-service/protocol.js";
 import { assertMarkedDevHostWorkspace, engineShellReleasePolicy } from "./engine-service/devHostBoundary.js";

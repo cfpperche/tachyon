@@ -1,17 +1,17 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { cancelSavedAgentProposal, readLiveSavedAgentProposalQueue, recordSavedAgentProposal } from "../../agents/savedAgentProposalStore.js";
-import { cancelSavedAgentRemovalProposal, readLiveSavedAgentRemovalProposalQueue, recordSavedAgentRemovalProposal } from "../../agents/savedAgentRemovalProposalStore.js";
-import { readAgentProfileGrants, workspaceConfigSha256 } from "../../config/agentProfileGrants.js";
+import { cancelSavedAgentProposal, readLiveSavedAgentProposalQueue, recordSavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposalStore.js";
+import { cancelSavedAgentRemovalProposal, readLiveSavedAgentRemovalProposalQueue, recordSavedAgentRemovalProposal } from "@tachyon/engine/agents/savedAgentRemovalProposalStore.js";
+import { readAgentProfileGrants, workspaceConfigSha256 } from "@tachyon/engine/config/agentProfileGrants.js";
 import type { AgentOwnershipRosterV1 } from "@tachyon/shared/config/agentProfileStudio.js";
-import { parentCwdRefusalFor } from "../../agents/spawnContract.js";
+import { parentCwdRefusalFor } from "@tachyon/engine/agents/spawnContract.js";
 import type { Task } from "@tachyon/shared/tasks/types.js";
-import { NO_QUOTA_CHANNEL } from "../../runtimeOps/runtimeCondition.js";
-import { validateSpawnContract, composeSpawnContractBrief, notifyParentGuidance, noInteractivePromptGuidance, identityLine, idleSpawnGuidance, normalizeField } from "../../agents/spawnContract.js";
-import type { SpawnContract } from "../../agents/spawnContract.js";
+import { NO_QUOTA_CHANNEL } from "@tachyon/engine/runtimeOps/runtimeCondition.js";
+import { validateSpawnContract, composeSpawnContractBrief, notifyParentGuidance, noInteractivePromptGuidance, identityLine, idleSpawnGuidance, normalizeField } from "@tachyon/engine/agents/spawnContract.js";
+import type { SpawnContract } from "@tachyon/engine/agents/spawnContract.js";
 import { decideSpawnTaskClaim } from "../spawnTaskClaim.js";
 import type { SpawnTaskClaimDecision } from "../spawnTaskClaim.js";
-import { collectAgentTouchedFiles } from "../../worktree/agentTouchedFiles.js";
+import { collectAgentTouchedFiles } from "@tachyon/engine/worktree/agentTouchedFiles.js";
 import { admitAgentRuntimeCommand, SUPPORTED_AGENT_RUNTIME_NAMES } from "@tachyon/shared/agents/agentRuntimeAdmission.js";
 import { type BridgeDeps, AGENT_NAME, TASK_ID, dismissOwnedWorktree, dismissReceipt, emitTaskNotification, fail, lifecycleScopeGuard, managedEntry, ok, outputCapabilities, releaseSpawnClaim, resolveDeclaredActor, taskNotificationActor } from "./shared.js";
 

@@ -1,4 +1,4 @@
-import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
+import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 /**
  * Headless dogfood — SDD 443 continue_task with real Grok runtime agents on real tmux.
  * Private TMUX_TMPDIR; does not touch the fleet socket.

@@ -1,4 +1,4 @@
-import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
+import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, it, expect, afterEach, vi } from "vitest";
@@ -11,7 +11,7 @@ import { resolveAgentProfileHomeDir, Workspace } from "@tachyon/engine/workspace
 import { ResumeUnavailableError } from "@tachyon/engine/agents/AgentManager.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "@tachyon/engine/workspace/EngineHost.js";
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
-import { registerTools } from "@tachyon/engine/bridge/tools.js";
+import { registerTools } from "@tachyon/bridge/tools.js";
 import type { NotifyLevel } from "@tachyon/engine/workspace/EngineHost.js";
 import { ActivityLog, agentLogId } from "@tachyon/engine/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";

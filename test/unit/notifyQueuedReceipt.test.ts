@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
+import { registerTools, type BridgeDeps } from "@tachyon/bridge/tools.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 /**

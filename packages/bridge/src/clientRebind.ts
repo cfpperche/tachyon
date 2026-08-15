@@ -12,7 +12,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { durableBoundGeneration, type SessionRecord } from "../resume/SessionLedger.js";
+import { durableBoundGeneration, type SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
 
 export type BridgeClientRebindPolicy = "auto" | "notify" | "off";
 

@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
-import { CALLER_IDENTITY_HMAC_SECRET_KEY } from "../workspace/operationalStateKeys.js";
-import type { SpawnActorKind } from "../agents/spawnActor.js";
+import { CALLER_IDENTITY_HMAC_SECRET_KEY } from "@tachyon/engine/workspace/operationalStateKeys.js";
+import type { SpawnActorKind } from "@tachyon/engine/agents/spawnActor.js";
 
 /**
  * spec 351 (layer B) — the Bridge RESOLVES the caller instead of trusting self-declared params. This

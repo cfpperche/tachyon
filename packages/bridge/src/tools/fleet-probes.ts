@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { runningEnvelope } from "../../probe/taxonomy.js";
-import type { ProbeEnvelope } from "../../probe/taxonomy.js";
+import { runningEnvelope } from "@tachyon/engine/probe/taxonomy.js";
+import type { ProbeEnvelope } from "@tachyon/engine/probe/taxonomy.js";
 import { type BridgeDeps, fail, ok, resolveDeclaredActor } from "./shared.js";
 
 export function registerProbeTools(mcp: McpServer, deps: BridgeDeps): void {

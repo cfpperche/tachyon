@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { registerTools } from "@tachyon/engine/bridge/tools.js";
-import type { LifecycleOwnershipSource } from "@tachyon/engine/bridge/lifecycleScope.js";
+import { registerTools } from "@tachyon/bridge/tools.js";
+import type { LifecycleOwnershipSource } from "@tachyon/bridge/lifecycleScope.js";
 import { executeExtensionCommand } from "@tachyon/engine/engine-service/extensionOperationService.js";
 import type { WorktreeRecord } from "@tachyon/engine/worktree/WorktreeManager.js";
 

@@ -24,6 +24,7 @@
   "references": [
     { "path": "./packages/shared" },
     { "path": "./packages/engine" },
+    { "path": "./packages/bridge" },
     { "path": "./packages/webview-ui" }
   ],
   "exclude": ["node_modules", "dist", ".vscode-test", "src/webview/cockpit", "src/webview/sidebar", "src/webview/activity", "src/webview/pin-studio", "src/webview/handoff", "src/webview/inspector", "src/webview/plugins", "src/webview/shared/ui", "src/webview/agent-studio", "src/webview/rich-doc", "src/webview/task-studio", "src/webview/runtime-ops", "src/webview/ui-gate", "src/webview/pipeline-studio", "src/webview/agent-studio-fixture", "src/webview/section-app-fixture", "test/browser"]

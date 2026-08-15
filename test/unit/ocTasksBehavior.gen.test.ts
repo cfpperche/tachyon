@@ -5,7 +5,7 @@ import nodePath from "node:path";
 import { TaskStore, taskSummary } from "@tachyon/engine/tasks/TaskStore.js";
 import { orderTaskViewsForListing, LISTING_STATUS_ORDER } from "@tachyon/engine/tasks/listOrder.js";
 import { TASK_STATUSES, type TaskStatus, type TaskView } from "@tachyon/shared/tasks/types.js";
-import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
+import { registerTools, type BridgeDeps } from "@tachyon/bridge/tools.js";
 
 /** A fake MCP server that just captures tool handlers (mirrors test/unit/probeBridge.test.ts). */
 class FakeMcp {
@@ -38,7 +38,7 @@ function wireListTasks(store: TaskStore) {
  */
 
 function callToolListingLayer(store: TaskStore, { limit = 100, status }: { limit?: number; status?: TaskStatus } = {}) {
-  // Mirrors packages/engine/src/bridge/tools.ts list_tasks handler (t-f64a90): full bounded read, then sort/filter, then cap.
+  // Mirrors packages/bridge/src/tools.ts list_tasks handler (t-f64a90): full bounded read, then sort/filter, then cap.
   const all = store.listViews(500);
   const ordered = orderTaskViewsForListing(all, status);
   return ordered.slice(0, limit).map(taskSummary);

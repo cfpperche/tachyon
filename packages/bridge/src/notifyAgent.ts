@@ -5,7 +5,7 @@
  * sanitizer (dueto F2).
  */
 
-import { truncateByCodePoint } from "../utils/truncateByCodePoint.js";
+import { truncateByCodePoint } from "@tachyon/engine/utils/truncateByCodePoint.js";
 
 /** Cap on the delivered summary (after sanitize + collapse), so the envelope stays one bounded line. */
 const SUMMARY_CAP = 500;
