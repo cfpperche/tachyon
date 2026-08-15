@@ -187,13 +187,17 @@ versão e data em toda célula `measured`.
 
 ### Contagem
 
+Sobre as 15 células do cartão (5×3):
+
 | estado | células |
 |---|---:|
 | `measured` | **12** |
 | `cannot` | **0** |
 | `unmeasured` + `needed` | **3** |
 
-Não é sinal contra o desenho desta tabela de 15: a maioria tem lastro de binário. As 3 restantes
+Enquanto esta fatia media, `main` acrescentou `persistent-instructions-launch` (t-d3ace4): Claude
+`cannot` (compact automático falhou), Codex e Grok `measured` 2026-08-15. A tabela passou a 18
+células. Não é sinal contra o desenho das 15: a maioria tem lastro de binário. As 3 restantes
 nomeiam o canal que faltou, não um backlog mudo.
 
 ### session-hooks
