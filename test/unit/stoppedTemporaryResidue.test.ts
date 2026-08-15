@@ -4,7 +4,7 @@ import {
   formatResidueNames,
   partitionStoppedTemporaryResidue,
 } from "@tachyon/engine/agents/stoppedTemporaryResidue.js";
-import type { SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
+import type { SessionRecord } from "@tachyon/engine/resume/sessionRecord.js";
 
 function temp(rec: Partial<SessionRecord> & Pick<SessionRecord, "def">): SessionRecord {
   return {

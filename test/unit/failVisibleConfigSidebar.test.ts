@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { degradedRosterExtras, toConfigErrorVM } from "@tachyon/engine/config/configFailure.js";
 import { toAgentVM } from "@tachyon/engine/sidebar/agentModel.js";
 import type { AgentVM, FleetVM } from "@tachyon/shared/sidebar/types.js";
-import type { SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
+import type { SessionRecord } from "@tachyon/engine/resume/sessionRecord.js";
 
 function buildDegradedFleet(opts: {
   failure: { path: string; file: string; errors: string[]; at: string };

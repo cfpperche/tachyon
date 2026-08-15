@@ -1,7 +1,7 @@
 import type { SpawnOptions } from "../agents/AgentManager.js";
 import type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
 import { sendManagedAgentInput, type ManagedAgentInputSource } from "../agents/agentInputService.js";
-import type { SessionRecord } from "../resume/SessionLedger.js";
+import type { SessionRecord } from "../resume/sessionRecord.js";
 import type { HandoffDistillInputV1 } from "../runtime-api/handoffCommands.js";
 import { parseHandoffDistillInputV1 } from "../runtime-api/handoffCommands.js";
 import {

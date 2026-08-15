@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LoggedEvent } from "@tachyon/engine/activity/logStore.js";
-import type { SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
+import type { SessionRecord } from "@tachyon/engine/resume/sessionRecord.js";
 import type { RuntimeOpsProviderObservationSnapshotInput } from "@tachyon/engine/runtimeOps/providerProjection.js";
 import { RuntimeOpsSnapshotService } from "@tachyon/engine/runtimeOps/snapshotService.js";
 import { admitVitestRun } from "@tachyon/engine/host/vitestBudget.js";

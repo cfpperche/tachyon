@@ -18,7 +18,8 @@ import {
   type BridgeClientRebindSettings,
   type RebindResumeReadiness,
 } from "@tachyon/bridge/clientRebind.js";
-import { SessionLedger, durableBoundGeneration, type SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
+import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
+import { durableBoundGeneration, type SessionRecord } from "@tachyon/engine/resume/sessionRecord.js";
 import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 
 function tmpDir(): string {

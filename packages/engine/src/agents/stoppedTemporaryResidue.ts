@@ -11,7 +11,7 @@
  */
 
 import { isTemporaryInstance } from "./agentInstancePolicy.js";
-import type { SessionRecord } from "../resume/SessionLedger.js";
+import type { SessionRecord } from "../resume/sessionRecord.js";
 
 export type StoppedTemporaryDisposition = "auto-collect" | "human-review";
 

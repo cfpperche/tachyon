@@ -22,7 +22,7 @@ import {
   TOKEN_ENV_REF_CLAUDE,
 } from "@tachyon/engine/registration/adapters.js";
 import { makeTempDir } from "../helpers/tempDir.js";
-import type { SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
+import type { SessionRecord } from "@tachyon/engine/resume/sessionRecord.js";
 
 const URL_ = "http://127.0.0.1:43210/mcp";
 
