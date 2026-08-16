@@ -99,7 +99,7 @@ a second, silent source.
 | 15 | Runtime-managed native memory | narrative | `measured` — the registry itself splits declared/verified/refuted; comparing it to itself is tautology |
 | 16 | Auth-required detection | narrative | `measured` — matcher fixtures ≠ the current CLI still emitting the turn-attached signal |
 | 17 | Temporary Agent (`spawn_agent`) | narrative | `derivable` — `isSupportedAgentRuntime` / admission; no typed cell yet |
-| 18 | Internal checklist telemetry | narrative | `measured` — no product function decides support; file names do not prove emission. Reaffirmed 2026-08-16 (`t-c2209d`): hunt found no callable door; native surfaces remesured on 2.1.233 / 0.147.0 / 1.0.4 still do not make a cell |
+| 18 | Internal checklist telemetry | narrative | `measured` — no product function decides support; file names do not prove emission. Reaffirmed 2026-08-16 (`t-c2209d`): hunt found no callable door; native surfaces remeasured on 2.1.233 / 0.147.0 / 1.0.4 still do not make a cell |
 | 19 | Design Mode chat reply | narrative | `measured` — list+call+land crosses model/Bridge/UI; the definition itself requires dated dogfood |
 | 20 | Auth status probe (pre-launch) | narrative | `measured` — the matrix itself says Tachyon does not consume `RUNTIME_AUTH_PREFLIGHT` for these three |
 | 21 | Native login surface | narrative | `measured` — `RUNTIME_LOGIN` is the command; PTY/paste-back/device-code are CLI facts |
@@ -368,7 +368,7 @@ the package format and explicitly leaves "discovery directories, installation me
 each client. Consequence for the product's own words: an agent is *given* a worktree and *instructed*
 to stay in it; that is a convention, not a boundary (see `docs/project-guidance.md` § integrate).
 
-¶ **Internal checklist telemetry (2026-07-28, remesured 2026-08-16, `t-c2209d`):** this row distinguishes
+¶ **Internal checklist telemetry (2026-07-28, remeasured 2026-08-16, `t-c2209d`):** this row distinguishes
 runtime-native capability from current Tachyon integration. Claude 2.1.233 still has the richest native model
 (IDs, owner and dependency DAG) but only partial externally supported observation; Codex 0.147.0 still exposes
 the clearest structured `turn/plan/updated` app-server event, but Tachyon has not wired it
@@ -379,7 +379,7 @@ session GET + `todo.updated`, but Tachyon has not wired it; Grok 1.0.4 still exp
 runtimes, Hermes is `~` through native todo + ACP plan observation; a generic “Outros” command
 is `✗`. No mark implies that Tachyon may mutate the list or that checklist completion proves a
 Board Task/Delivery complete. The dimension stays **narrative**: there is still no product function
-that decides support, so it does not enter `RUNTIME_PARITY`. Evidence, remesure, vocabulary map:
+that decides support, so it does not enter `RUNTIME_PARITY`. Evidence, remeasure, vocabulary map:
 [`runtime-internal-checklist-capabilities.md`](../research/runtime-internal-checklist-capabilities.md).
 
 ⁿ **Grok fork** is native for legacy/Temporary instances and, since `t-ee5c05`, covered for a durable Agent Profile

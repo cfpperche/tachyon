@@ -4,8 +4,8 @@
 OpenCode, Pi and Hermes
 
 The 2026-08-16 addendum at the bottom answers the rewritten card: dimension 18 stays
-narrative. Native surfaces were remesured on today's versions; no Tachyon product
-function decides checklist support. OpenCode, Pi and Hermes were not remesured.
+narrative. Native surfaces were remeasured on today's versions; no Tachyon product
+function decides checklist support. OpenCode, Pi and Hermes were not remeasured.
 
 ## Executive finding
 
@@ -268,7 +268,7 @@ ambient session file or user checklist was opened. Cost: **USD 0.00**.
 ## 2026-08-16 addendum — dimension 18 stays narrative
 
 **Task:** `t-c2209d` · **Agent:** checkgrok · **Scope:** Claude, Codex, Grok only.
-No integration was implemented. OpenCode, Pi and Hermes were not remesured.
+No integration was implemented. OpenCode, Pi and Hermes were not remeasured.
 
 ### What the 2026-07-28 research already covers
 
@@ -285,17 +285,17 @@ It also proposed a Tachyon-side observation type and the old vocabulary
 `verified | limited | unsupported | unproven`. That vocabulary is **not** a second
 matrix. Map it; do not reintroduce it in `parity.ts`.
 
-### What needed remesurement, and why
+### What needed remeasurement, and why
 
 Version drift against the 2026-07-28 install, on 2026-08-16, same machine:
 
-| Runtime | 2026-07-28 | 2026-08-16 PATH | Why remesure |
+| Runtime | 2026-07-28 | 2026-08-16 PATH | Why remeasure |
 |---|---|---|---|
 | Claude Code | 2.1.220 | 2.1.233 | patch; same baseline `RUNTIME_PARITY` already cites |
 | Codex CLI | 0.145.0 | 0.147.0 | two minors; same baseline the table already cites |
-| Grok | 0.2.112 | 1.0.4 (`d846eb93d9`) | **major**. Remesure was mandatory |
+| Grok | 0.2.112 | 1.0.4 (`d846eb93d9`) | **major**. Remeasure was mandatory |
 
-No other remesure was justified. Lifecycle cells that the original left `unproven`
+No other remeasure was justified. Lifecycle cells that the original left `unproven`
 (fork copy, compact survival, full Claude update stream) were **never** measured, so
 they are not “already measured.” They also cannot become a table cell without a
 product reader. The 508 canary method (`docs/research/t-a68138-system-prompt-compact.md`)

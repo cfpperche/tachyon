@@ -291,9 +291,9 @@ only `account/rateLimits/read`); Board `TaskStore` / `PinStore` / Tiptap `TaskLi
 (Tachyon-owned lists). Inventing a boolean to derive `projection: cannot` would implement
 the missing door and treat unwired as cannot.
 
-Native surfaces remesured on PATH 2026-08-16 because versions drifted: Claude 2.1.233,
+Native surfaces remeasured on PATH 2026-08-16 because versions drifted: Claude 2.1.233,
 Codex 0.147.0, Grok 1.0.4. Existence persists (positive + invented-name negative control).
-That is CLI research, not a cell. OpenCode/Pi/Hermes not remesured.
+That is CLI research, not a cell. OpenCode/Pi/Hermes not remeasured.
 
 `unproven` (2026-07-28) = `runtime: unmeasured` + `needed`. Five old columns do not fit one
 cell — written as a finding, not forced. Detail:
