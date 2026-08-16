@@ -4,6 +4,60 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.3 — um plugin pode ser de um agente só, e sem custar espaço em disco
+
+### Um plugin instalado para um agente não vaza para os outros
+
+Até aqui, instalar um plugin escrevia nos destinos do workspace: `.claude/skills`, `.mcp.json`,
+`.codex/config.toml`. Todos os agentes enxergavam tudo. Autorizar um agente e não os outros era uma
+intenção sem mecanismo.
+
+Agora o destino pode ser o harness privado de um agente. As skills, o MCP e os hooks daquele plugin
+vão para `.tachyon/harness/<agente>/` e **não aparecem nos destinos compartilhados**.
+
+Onde não dá para isolar, o produto recusa em vez de improvisar:
+
+    agente inexistente          recusa
+    isolamento so de transcript recusa — nao e harness completo
+    skill de codex              recusa — nao ha raiz de descoberta isolada
+
+Nenhum desses casos cai de volta para o destino global. Recusar é o comportamento; não é falta de
+implementação.
+
+### O isolamento não cobra por agente
+
+A conta foi medida antes de existir código, porque ela decidia o desenho. O maior plugin instalado
+aqui ocupa **6.492.222 bytes**. Se cada agente recebesse uma cópia, dois agentes custariam mais 6,4 MB
+só nesse plugin, e três custariam mais 13 MB.
+
+O payload continua sendo **uma cópia só**. O que o agente recebe é um destino apontando para ela.
+Dois agentes, dois destinos, **zero byte extra**.
+
+Remover um agente tira o destino dele e deixa o plugin de pé para os outros.
+
+### Consentimento que não pode ser reaproveitado
+
+Se o estado de isolamento do agente muda entre a hora em que você aprova e a hora em que a instalação
+acontece, o apply **falha fechado** e pede aprovação nova. Aprovar para um destino não vale para outro.
+
+### A tela de leitura de pin voltou a bater com o editor
+
+O corpo do pin copiava o tamanho do editor de texto rico — 14px, escrito à mão nos dois lugares. O
+editor foi para 16px na escala de leitura e o pin ficou para trás, sozinho em 14.
+
+O conserto não foi copiar o número novo. O pin agora **aponta para o mesmo papel** que o editor usa.
+Os dois não podem mais divergir sem alguém mudar o papel de propósito.
+
+Nessa passada: 25 distâncias fora da escala foram a zero e os 7 tamanhos de texto viraram token.
+
+### Três regras de estilo que ninguém renderizava
+
+O Activity carregava três regras CSS sem consumidor. Elas não mudavam pixel nenhum — e continham
+justamente os dois maiores desalinhamentos que a auditoria de design tinha contado naquela tela.
+
+A dívida daquela superfície estava inflada por regras invisíveis. Vale conferir a mesma sombra nas
+outras antes de repetir a conta.
+
 ## 0.93.2 — o espaçamento passa a vir do tema, e duas telas somem
 
 A primeira versão em que **o espaço acompanha o VS Code**, do mesmo jeito que a cor sempre acompanhou.
