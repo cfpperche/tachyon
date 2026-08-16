@@ -115,6 +115,7 @@ import {
   readLinuxRunDelayMs,
   shouldNotifyHostLag,
 } from "./workspace/hostEventLoopLag.js";
+import { startHostSyncIoProbe, takeHostSyncIoHit } from "./workspace/hostSyncIoProbe.js";
 import { detectInstalledClis } from "@tachyon/engine/webview/cliDetect.js";
 import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
 import { registerDisposePanelSerializer, registerTrustedPanelSerializer } from "./webview/shared/panelSerializer.js";
@@ -1428,6 +1429,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   let prevHostLagElu = performance.eventLoopUtilization();
   let prevHostLagCpu = process.cpuUsage();
   let prevHostLagRunDelay = readLinuxRunDelayMs();
+  startHostSyncIoProbe();
+  takeHostSyncIoHit();
   const bridgeLagTimer = setInterval(() => {
     const now = Date.now();
     const hr = process.hrtime.bigint();
@@ -1454,8 +1457,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     prevHostLagRunDelay = runDelay;
     if (shouldNotifyHostLag(sample) && now - lastBridgeLagNoticeAt > 60_000) {
       lastBridgeLagNoticeAt = now;
-      recordShellNote("host-event-loop-lag", formatHostLagLog(sample));
+      recordShellNote("host-event-loop-lag", formatHostLagLog(sample, takeHostSyncIoHit()));
       notify(localizeHostLagNotice(vscode.l10n, sample.cause, sample.wallLagMs), "warn");
+    } else {
+      takeHostSyncIoHit();
     }
   }, HOST_LAG_INTERVAL_MS);
   context.subscriptions.push({ dispose: () => clearInterval(bridgeLagTimer) });

@@ -88,9 +88,12 @@ export function localizeHostLagNotice(
   }
 }
 
-export function formatHostLagLog(sample: HostLagSample): string {
+export function formatHostLagLog(
+  sample: HostLagSample,
+  syncIo?: { op: string; ms: number; totalMs?: number; calls?: number; path?: string; site?: string },
+): string {
   const delay = sample.runDelayMs === undefined ? "n/a" : String(Math.round(sample.runDelayMs));
-  return [
+  const fields = [
     `cause=${sample.cause}`,
     `lagMs=${Math.round(sample.wallLagMs)}`,
     `hrLagMs=${Math.round(sample.hrLagMs)}`,
@@ -99,7 +102,16 @@ export function formatHostLagLog(sample: HostLagSample): string {
     `cpuRatio=${sample.cpuRatio.toFixed(3)}`,
     `load=${sample.loadavg1.toFixed(2)}/${sample.cpuCount}`,
     `runDelayMs=${delay}`,
-  ].join(" ");
+  ];
+  // t-17674a — extra fields only. Classification above is untouched.
+  if (syncIo && (syncIo.ms > 0 || (syncIo.totalMs ?? 0) > 0)) {
+    fields.push(`syncOp=${syncIo.op}`, `syncMs=${Math.round(syncIo.ms)}`);
+    if (typeof syncIo.totalMs === "number") fields.push(`syncTotalMs=${Math.round(syncIo.totalMs)}`);
+    if (typeof syncIo.calls === "number") fields.push(`syncCalls=${syncIo.calls}`);
+    if (syncIo.site) fields.push(`syncSite=${syncIo.site}`);
+    if (syncIo.path) fields.push(`syncPath=${syncIo.path}`);
+  }
+  return fields.join(" ");
 }
 
 /** Best-effort; undefined on non-Linux or if /proc is unreadable. */

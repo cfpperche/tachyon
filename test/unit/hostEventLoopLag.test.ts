@@ -96,7 +96,37 @@ describe("t-0bf709 host event-loop lag classifier", () => {
     const line = formatHostLagLog(sample);
     expect(line).toContain("cause=cpu-contention");
     expect(line).toContain("lagMs=6079");
+    expect(line).not.toContain("syncOp=");
     expect(line).not.toMatch(FORBIDDEN_NOTICE);
+  });
+
+  it("appends the longest sync I/O hit without changing classification (t-17674a)", () => {
+    const sample = classifyHostLag({
+      wallLagMs: 24048,
+      hrLagMs: 24048,
+      eluActiveMs: 21500,
+      eluIdleMs: 2500,
+      cpuMs: 2561,
+      loadavg1: 2.16,
+      cpuCount: 24,
+      runDelayMs: 6,
+    });
+    expect(sample.cause).toBe("sync-work");
+    const line = formatHostLagLog(sample, {
+      op: "readFileSync",
+      ms: 24010,
+      totalMs: 24010,
+      calls: 1,
+      site: "tailReader.ts:52",
+      path: "/tmp/activity.jsonl",
+    });
+    expect(line).toContain("cause=sync-work");
+    expect(line).toContain("syncOp=readFileSync");
+    expect(line).toContain("syncMs=24010");
+    expect(line).toContain("syncTotalMs=24010");
+    expect(line).toContain("syncCalls=1");
+    expect(line).toContain("syncSite=tailReader.ts:52");
+    expect(line).toContain("syncPath=/tmp/activity.jsonl");
   });
 
   it("fails if the live notice again suggests Bridge recovery (t-0bf709 red proof)", () => {
