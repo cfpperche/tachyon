@@ -500,7 +500,7 @@ export class Workspace {
   private readonly temporaryBackstop: TemporaryBackstopMonitor;
   /** t-875700 — host-fallback for gated omit-doorbell. */
   private readonly gatedCompletion: GatedCompletionMonitor;
-  /** t-73885b — one remprompt when a required-kind turn ends sem-plano. */
+  /** t-73885b — one reprompt when a required-kind turn ends sem-plano. */
   private readonly internalPlanReprompt: InternalPlanRepromptMonitor;
   /** t-458497 — pokes the coordinator when a runtime's quota window comes back with room. */
   private readonly runtimeSlack: RuntimeSlackMonitor;

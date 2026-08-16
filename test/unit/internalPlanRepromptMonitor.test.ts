@@ -9,7 +9,7 @@ import type { InternalPlanTurnJudgment } from "@tachyon/engine/runtime/internalP
 /**
  * t-73885b — the host that Workspace.tick drives. It must call
  * considerInternalPlanReprompt (see internalPlanReprompt.test.ts) and
- * must not remprompt twice, block, or accuse sem-canal/pending.
+ * must not reprompt twice, block, or accuse sem-canal/pending.
  */
 
 const SEM_PLANO: InternalPlanTurnJudgment = { state: "verdict", verdict: "sem-plano" };
@@ -75,7 +75,7 @@ function harness(opts: {
 }
 
 describe("t-73885b — InternalPlanRepromptMonitor", () => {
-  it("sends exactly one remprompt for sem-plano + required kind", async () => {
+  it("sends exactly one reprompt for sem-plano + required kind", async () => {
     const h = harness({});
     await h.monitor.tick();
     expect(h.sent).toHaveLength(1);
@@ -92,7 +92,7 @@ describe("t-73885b — InternalPlanRepromptMonitor", () => {
     expect(h.warnings).toEqual([{ agent: "worker", taskId: "t-73885b" }]);
   });
 
-  it("does not remprompt on sem-canal", async () => {
+  it("does not reprompt on sem-canal", async () => {
     const h = harness({ judgment: SEM_CANAL });
     await h.monitor.tick();
     expect(h.sent).toEqual([]);
@@ -100,19 +100,19 @@ describe("t-73885b — InternalPlanRepromptMonitor", () => {
     expect(h.warnings).toEqual([]);
   });
 
-  it("does not remprompt on pending", async () => {
+  it("does not reprompt on pending", async () => {
     const h = harness({ judgment: PENDING });
     await h.monitor.tick();
     expect(h.sent).toEqual([]);
   });
 
-  it("does not remprompt when the kind is not required", async () => {
+  it("does not reprompt when the kind is not required", async () => {
     const h = harness({ task: { id: "t-73885b", kind: "chore" }, exigirEm: ["feature"] });
     await h.monitor.tick();
     expect(h.sent).toEqual([]);
   });
 
-  it("does not remprompt a stop it has already seen", async () => {
+  it("does not reprompt a stop it has already seen", async () => {
     const h = harness({});
     await h.monitor.tick();
     await h.monitor.tick();
@@ -137,7 +137,7 @@ describe("t-73885b — InternalPlanRepromptMonitor", () => {
     expect(h.warnings).toHaveLength(1);
   });
 
-  it("clears the spent remprompt after a later com-plano", async () => {
+  it("clears the spent reprompt after a later com-plano", async () => {
     const h = harness({});
     await h.monitor.tick();
     expect(h.sent).toHaveLength(1);

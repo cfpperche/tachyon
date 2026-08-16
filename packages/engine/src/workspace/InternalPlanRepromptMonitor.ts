@@ -8,8 +8,8 @@
  * Actor × trigger:
  *   Tachyon × Stop row → consider
  *   Tachyon × tick with no new Stop → none
- *   Tachyon × restart → loadState, so the one remprompt is not resent
- *   Interface / Agent / Bridge → cannot enqueue a remprompt here
+ *   Tachyon × restart → loadState, so the one reprompt is not resent
+ *   Interface / Agent / Bridge → cannot enqueue a reprompt here
  */
 import { considerInternalPlanReprompt } from "../runtime/internalPlanReprompt.js";
 import type { InternalPlanTurnJudgment } from "../runtime/internalPlanTurn.js";
@@ -43,7 +43,7 @@ export interface InternalPlanRepromptDeps {
   warnHuman(agent: string, taskId?: string): void;
 }
 
-export function rempromptStateKey(agent: string, taskId: string | undefined): string {
+export function repromptStateKey(agent: string, taskId: string | undefined): string {
   return `${agent}\t${taskId ?? ""}`;
 }
 
@@ -90,7 +90,7 @@ export class InternalPlanRepromptMonitor {
       this.seen.add(id);
 
       const task = this.deps.assignedTask(row.agent);
-      const key = rempromptStateKey(row.agent, task?.id);
+      const key = repromptStateKey(row.agent, task?.id);
       const judgment = this.deps.judgeTurn(row.agent);
 
       if (judgment.state === "verdict" && judgment.verdict === "com-plano") {
@@ -116,7 +116,7 @@ export class InternalPlanRepromptMonitor {
           state[key] = "asked";
           dirty = true;
         } catch {
-          /* best-effort: a failed send must not count as the one remprompt */
+          /* best-effort: a failed send must not count as the one reprompt */
         }
         continue;
       }

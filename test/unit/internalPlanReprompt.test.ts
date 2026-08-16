@@ -8,7 +8,7 @@ import type { InternalPlanTurnJudgment } from "@tachyon/engine/runtime/internalP
 /**
  * t-73885b — fatia 4. These tests import `considerInternalPlanReprompt` —
  * the host door that consumes a fatia-2 verdict. A helper that always
- * remprompts, or that remprompts on `sem-canal` / `pending`, turns the
+ * reprompts, or that reprompts on `sem-canal` / `pending`, turns the
  * suite red.
  */
 
@@ -118,7 +118,7 @@ describe("t-73885b — considerInternalPlanReprompt (production door)", () => {
     expect(parsed.warnings.some((w) => w.includes("exigir_em"))).toBe(true);
   });
 
-  it("sem-plano + required kind remprompts once and only once", () => {
+  it("sem-plano + required kind reprompts once and only once", () => {
     const first = consider({ taskKind: "feature", exigirEm: ["feature"] });
     expect(first.action).toBe("reprompt");
     expect(first.prompt).toMatch(/plan/i);
@@ -135,20 +135,20 @@ describe("t-73885b — considerInternalPlanReprompt (production door)", () => {
     expect(second.journal).toMatch(/not blocked|does not block/i);
   });
 
-  it("sem-canal does not remprompt", () => {
+  it("sem-canal does not reprompt", () => {
     expect(consider({ judgment: SEM_CANAL, taskKind: "feature", exigirEm: ["feature"] }).action).toBe("none");
   });
 
-  it("pending (turn-open and turn-not-completed) does not remprompt", () => {
+  it("pending (turn-open and turn-not-completed) does not reprompt", () => {
     expect(consider({ judgment: PENDING_OPEN, taskKind: "feature", exigirEm: ["feature"] }).action).toBe("none");
     expect(consider({ judgment: PENDING_DEAD, taskKind: "feature", exigirEm: ["feature"] }).action).toBe("none");
   });
 
-  it("com-plano does not remprompt", () => {
+  it("com-plano does not reprompt", () => {
     expect(consider({ judgment: COM_PLANO, taskKind: "feature", exigirEm: ["feature"] }).action).toBe("none");
   });
 
-  it("a task whose kind is not required does not remprompt", () => {
+  it("a task whose kind is not required does not reprompt", () => {
     expect(consider({ taskKind: "chore", exigirEm: ["feature"] }).action).toBe("none");
   });
 
