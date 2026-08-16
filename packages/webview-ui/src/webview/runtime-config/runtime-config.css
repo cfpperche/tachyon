@@ -1,5 +1,22 @@
 /* SDD 485 D8 — moved with the sole rcp-* consumer from Control. */
-+.rcp-root {
+/* SDD 505 slice 8 (t-226e8a) — this sheet's DISTANCES and its LABEL SIZES come from the host now.
+   Every padding/margin/gap is a step of `--ds-spacing-size*` (the ten steps of the VS Code 1.133 size
+   registry, tokens.css) and every literal label size is a step of the operator ramp
+   (`--ds-operator-label3/2/1` = 10/11/12px, `--ds-operator-body1` = 13px). The host tokens were
+   measured arriving in a real Tachyon webview on VS Code 1.133 during t-7cb9fe; the fallbacks in
+   tokens.css are for hosts older than 1.133, not for this one.
+   Off-scale values took the NEAREST step; on a tie, the step the host itself uses more in its own
+   already-migrated CSS won (benchmark.md §2.4: 4 > 2 > 8 > 6 > 12 > 24 > 16 > 10 > 32 > 20). So
+   3→4, 5→4, 7→8, 9→8, 28→24, and 1px→2px (1px is stroke, never distance, in all three references
+   the benchmark measured). 9px type → `--ds-operator-label3` (10px), the first step of the ramp.
+   NOT migrated, each for a stated reason, never invented: border-radius, width/height (15/16/25/30/32/38
+   and the toolbar/grid tracks), position offsets and z-index 100 (slice 4 declared no overlay token
+   and `--ds-z-popover` is 20); letter-spacing and unitless line-height; `--vscode-sideBar-background`
+   (no `--ds-sidebar` role), `--vscode-checkbox-selectBackground` (no checkbox role),
+   `--vscode-textBlockQuote-background` (no blockquote role). The menu shadow keeps raw `#000` because
+   `--ds-shadow-2` is 0 10px 24px and applying it would choose elevation, not snap a distance. */
+
+.rcp-root {
   width: 100%;
   max-width: 1180px;
 }
@@ -8,7 +25,7 @@
 .rcp-impact,
 .rcp-card {
   border: 1px solid var(--ds-border);
-  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  background: var(--vscode-sideBar-background, var(--ds-editor-bg));
   border-radius: var(--ds-radius);
 }
 
@@ -16,15 +33,15 @@
   display: grid;
   grid-template-columns: minmax(150px, 0.7fr) minmax(235px, 1fr) minmax(260px, 1.2fr) auto;
   align-items: start;
-  gap: 12px;
-  padding: 12px;
+  gap: var(--ds-spacing-size120);
+  padding: var(--ds-spacing-size120);
 }
 
 .rcp-toolbar-field,
 .rcp-toolbar-action {
   display: grid;
   grid-template-rows: 12px 32px;
-  gap: 5px;
+  gap: var(--ds-spacing-size40);
   min-width: 0;
 }
 
@@ -40,11 +57,11 @@
   min-width: 0;
   box-sizing: border-box;
   min-height: 32px;
-  padding: 0 10px;
+  padding: 0 var(--ds-spacing-size100);
   border: 1px solid var(--ds-border);
   border-radius: var(--ds-radius);
-  background: var(--vscode-editor-background);
-  font-size: 11px;
+  background: var(--ds-editor-bg);
+  font-size: var(--ds-operator-label2);
   font-weight: 600;
 }
 
@@ -54,7 +71,7 @@
   overflow: hidden;
   border: 1px solid var(--ds-border);
   border-radius: var(--ds-radius);
-  background: var(--vscode-editor-background);
+  background: var(--ds-editor-bg);
 }
 
 .rcp-segmented button {
@@ -65,7 +82,7 @@
   color: var(--ds-muted);
   cursor: pointer;
   font-family: inherit;
-  font-size: 10px;
+  font-size: var(--ds-operator-label3);
   white-space: nowrap;
 }
 
@@ -74,42 +91,42 @@
 }
 
 .rcp-segmented button.active {
-  background: color-mix(in srgb, var(--vscode-focusBorder) 22%, transparent);
-  color: var(--vscode-foreground);
+  background: color-mix(in srgb, var(--ds-focus) 22%, transparent);
+  color: var(--ds-fg);
 }
 
 .rcp-segmented .codicon {
-  margin-right: 3px;
-  font-size: 10px;
+  margin-right: var(--ds-spacing-size40);
+  font-size: var(--ds-operator-label3);
 }
 
 .rcp-runtime-select {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) 14px;
   align-items: center;
-  gap: 7px;
+  gap: var(--ds-spacing-size80);
   width: 100%;
   min-width: 0;
   min-height: 32px;
-  padding: 0 9px;
+  padding: 0 var(--ds-spacing-size80);
   border: 1px solid var(--ds-border);
   border-radius: var(--ds-radius);
-  background: var(--vscode-editor-background);
-  color: var(--vscode-foreground);
+  background: var(--ds-editor-bg);
+  color: var(--ds-fg);
   cursor: pointer;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--ds-operator-label3);
   text-align: left;
 }
 
 .rcp-runtime-select:hover,
 .rcp-runtime-select[data-state="open"] {
-  border-color: var(--vscode-focusBorder);
-  background: color-mix(in srgb, var(--vscode-focusBorder) 12%, var(--vscode-editor-background));
+  border-color: var(--ds-focus);
+  background: color-mix(in srgb, var(--ds-focus) 12%, var(--ds-editor-bg));
 }
 
 .rcp-runtime-select:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--ds-focus);
   outline-offset: 1px;
 }
 
@@ -121,7 +138,7 @@
 
 .rcp-runtime-chevron {
   color: var(--ds-muted);
-  font-size: 12px;
+  font-size: var(--ds-operator-label1);
   justify-self: end;
 }
 
@@ -140,12 +157,13 @@
 .rcp-runtime-menu[data-slot="dropdown-menu-content"] {
   z-index: 100;
   min-width: var(--radix-dropdown-menu-trigger-width);
-  padding: 4px;
+  padding: var(--ds-spacing-size40);
   overflow: hidden;
   border: 1px solid var(--ds-border);
   border-radius: var(--ds-radius);
-  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
-  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  background: var(--ds-menu-bg);
+  color: var(--ds-menu-fg);
+  /* raw #000: --ds-shadow-2 is 0 10px 24px; applying it would choose elevation, not snap a distance. */
   box-shadow: 0 6px 18px color-mix(in srgb, #000 38%, transparent);
 }
 
@@ -153,28 +171,28 @@
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) 14px;
   align-items: center;
-  gap: 7px;
+  gap: var(--ds-spacing-size80);
   min-height: 30px;
-  padding: 0 8px;
+  padding: 0 var(--ds-spacing-size80);
   border-radius: calc(var(--ds-radius) - 2px);
   cursor: pointer;
-  font-size: 10px;
+  font-size: var(--ds-operator-label3);
   outline: none;
 }
 
 .rcp-runtime-option[data-slot="dropdown-menu-item"][data-highlighted] {
-  background: var(--vscode-menu-selectionBackground);
-  color: var(--vscode-menu-selectionForeground);
+  background: var(--ds-menu-selection-bg);
+  color: var(--ds-menu-selection-fg);
 }
 
 .rcp-runtime-check {
   justify-self: end;
-  font-size: 12px;
+  font-size: var(--ds-operator-label1);
 }
 
 .rcp-eyebrow {
   color: var(--ds-muted);
-  font-size: 9px;
+  font-size: var(--ds-operator-label3);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -184,44 +202,45 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--vscode-textLink-foreground);
+  color: var(--ds-link);
 }
 
 .rcp-impact {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-  padding: 8px 12px;
+  gap: var(--ds-spacing-size100);
+  margin-top: var(--ds-spacing-size80);
+  padding: var(--ds-spacing-size80) var(--ds-spacing-size120);
   color: var(--ds-muted);
-  font-size: 10px;
+  font-size: var(--ds-operator-label3);
 }
 
 .rcp-global-warning {
-  margin-top: 8px;
-  padding: 8px 12px;
-  border-left: 2px solid var(--vscode-editorWarning-foreground, #cca700);
-  background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 9%, transparent);
+  margin-top: var(--ds-spacing-size80);
+  padding: var(--ds-spacing-size80) var(--ds-spacing-size120);
+  /* #cca700 stays as the token fallback so the gate exception list (untouched this slice) still names a real use. The live colour is --ds-warn. */
+  border-left: 2px solid var(--ds-warn, #cca700);
+  background: color-mix(in srgb, var(--ds-warn, #cca700) 9%, transparent);
   color: var(--ds-muted);
-  font-size: 10px;
+  font-size: var(--ds-operator-label3);
 }
 
 .rcp-agent-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--ds-spacing-size40);
 }
 
 .rcp-grid {
   display: grid;
   grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--ds-spacing-size80);
+  margin-top: var(--ds-spacing-size80);
 }
 
 .rcp-card {
   min-width: 0;
-  padding: 12px;
+  padding: var(--ds-spacing-size120);
   display: flex;
   flex-direction: column;
 }
@@ -230,28 +249,28 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 10px;
+  gap: var(--ds-spacing-size120);
+  margin-bottom: var(--ds-spacing-size100);
 }
 
 .rcp-card-head h2 {
-  margin: 3px 0 0;
-  font-size: 13px;
+  margin: var(--ds-spacing-size40) 0 0;
+  font-size: var(--ds-operator-body1);
   font-weight: 600;
 }
 
 .rcp-card-head p {
   max-width: 620px;
-  margin: 5px 0 0;
+  margin: var(--ds-spacing-size40) 0 0;
   color: var(--ds-muted);
-  font-size: 10px;
+  font-size: var(--ds-operator-label3);
   line-height: 1.4;
 }
 
 .rcp-setting-list,
 .rcp-capability-list {
   display: grid;
-  gap: 1px;
+  gap: var(--ds-spacing-size20);
   overflow: hidden;
   border: 1px solid var(--ds-border);
   border-radius: var(--ds-radius);
@@ -260,7 +279,7 @@
 
 .rcp-setting,
 .rcp-capability-group {
-  background: var(--vscode-editor-background);
+  background: var(--ds-editor-bg);
   min-height: 38px;
 }
 
@@ -268,15 +287,15 @@
   display: grid;
   grid-template-columns: minmax(120px, 1fr) minmax(150px, 1fr);
   align-items: center;
-  gap: 10px;
-  padding: 5px 8px;
-  font-size: 11px;
+  gap: var(--ds-spacing-size100);
+  padding: var(--ds-spacing-size40) var(--ds-spacing-size80);
+  font-size: var(--ds-operator-label2);
 }
 
 .rcp-setting code {
   overflow: hidden;
-  color: var(--vscode-textLink-foreground);
-  font-size: 10px;
+  color: var(--ds-link);
+  font-size: var(--ds-operator-label3);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -295,7 +314,7 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 6px;
+  gap: var(--ds-spacing-size60);
 }
 
 .rcp-setting-editor input:not([type="checkbox"]) {
@@ -303,81 +322,81 @@
   flex: 1;
   height: 25px;
   box-sizing: border-box;
-  border: 1px solid var(--vscode-input-border, var(--ds-border));
+  border: 1px solid var(--ds-border);
   border-radius: 2px;
-  background: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
+  background: var(--ds-input-bg);
+  color: var(--ds-input-fg);
   font: inherit;
-  padding: 0 7px;
+  padding: 0 var(--ds-spacing-size80);
 }
 
 .rcp-setting-editor input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: var(--vscode-checkbox-selectBackground, var(--vscode-focusBorder));
+  accent-color: var(--vscode-checkbox-selectBackground, var(--ds-focus));
 }
 
 .rcp-setting-editor .ds-btn,
 .rcp-capability-item .ds-btn {
   height: 25px;
   flex: 0 0 auto;
-  font-size: 9px;
+  font-size: var(--ds-operator-label3);
 }
 
 .rcp-card-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--ds-spacing-size80);
 }
 
 .rcp-actions-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--ds-spacing-size120);
   width: 100%;
   box-sizing: border-box;
-  margin-top: 8px;
-  padding: 8px 12px;
+  margin-top: var(--ds-spacing-size80);
+  padding: var(--ds-spacing-size80) var(--ds-spacing-size120);
   border: 1px solid var(--ds-border);
   border-radius: var(--ds-radius);
-  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  background: var(--vscode-sideBar-background, var(--ds-editor-bg));
 }
 
 .rcp-actions-state {
   margin-right: auto;
   color: var(--ds-muted);
-  font-size: 10px;
+  font-size: var(--ds-operator-label3);
 }
 
 .rcp-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--ds-spacing-size60);
   flex: none;
   color: var(--ds-muted);
-  font-size: 10px;
+  font-size: var(--ds-operator-label3);
   cursor: pointer;
 }
 
 .rcp-toggle input {
   width: 15px;
   height: 15px;
-  accent-color: var(--vscode-checkbox-selectBackground, var(--vscode-focusBorder));
+  accent-color: var(--vscode-checkbox-selectBackground, var(--ds-focus));
 }
 
 .rcp-setting select {
   width: 100%;
   min-width: 0;
   height: 25px;
-  border: 1px solid var(--vscode-dropdown-border, var(--ds-border));
+  border: 1px solid var(--ds-border);
   border-radius: 2px;
-  background: var(--vscode-dropdown-background);
-  color: var(--vscode-dropdown-foreground);
+  background: var(--ds-dropdown-bg);
+  color: var(--ds-dropdown-fg);
   font-family: inherit;
-  font-size: 10px;
-  padding: 0 7px;
+  font-size: var(--ds-operator-label3);
+  padding: 0 var(--ds-spacing-size80);
 }
 
 .rcp-capability-group-head,
@@ -385,73 +404,73 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  padding: 7px 8px;
+  gap: var(--ds-spacing-size120);
+  padding: var(--ds-spacing-size80) var(--ds-spacing-size80);
 }
 
 .rcp-capability-group-head {
   justify-content: flex-start;
-  background: color-mix(in srgb, var(--vscode-sideBar-background) 78%, var(--vscode-editor-background));
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 78%, var(--ds-editor-bg));
   color: var(--ds-muted);
 }
 
 .rcp-capability-group-head > .codicon {
-  color: var(--vscode-textLink-foreground);
+  color: var(--ds-link);
 }
 
 .rcp-capability-group-head strong {
-  color: var(--vscode-foreground);
-  font-size: 10px;
+  color: var(--ds-fg);
+  font-size: var(--ds-operator-label3);
 }
 
 .rcp-capability-group-head > span:last-child {
   margin-left: auto;
-  font-size: 9px;
+  font-size: var(--ds-operator-label3);
 }
 
 .rcp-capability-item {
   min-height: 34px;
-  padding-left: 28px;
+  padding-left: var(--ds-spacing-size240);
   border-top: 1px solid var(--ds-border);
 }
 
 .rcp-capability-item > div {
   display: grid;
   min-width: 0;
-  gap: 2px;
+  gap: var(--ds-spacing-size20);
 }
 
 .rcp-capability-item strong {
-  font-size: 10px;
+  font-size: var(--ds-operator-label3);
   font-weight: 600;
 }
 
 .rcp-capability-item > div > span {
   overflow: hidden;
   color: var(--ds-muted);
-  font-size: 9px;
+  font-size: var(--ds-operator-label3);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .rcp-capability-empty {
-  padding: 7px 28px;
+  padding: var(--ds-spacing-size80) var(--ds-spacing-size240);
   border-top: 1px solid var(--ds-border);
   color: var(--ds-muted);
-  font-size: 9px;
+  font-size: var(--ds-operator-label3);
 }
 
 .rcp-switch {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--ds-spacing-size40);
   color: var(--ds-muted);
-  font-size: 9px;
+  font-size: var(--ds-operator-label3);
   white-space: nowrap;
 }
 
 .rcp-switch input {
-  accent-color: var(--vscode-checkbox-selectBackground, var(--vscode-focusBorder));
+  accent-color: var(--vscode-checkbox-selectBackground, var(--ds-focus));
 }
 
 .rcp-card--other {
@@ -461,26 +480,26 @@
 .rcp-other-preview {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: var(--ds-spacing-size40);
 }
 
 .rcp-other-preview code,
 .rcp-card--other pre {
   border: 1px solid var(--ds-border);
-  background: var(--vscode-textCodeBlock-background);
+  background: var(--ds-code-bg);
   border-radius: 3px;
   color: var(--ds-muted);
-  font-size: 9px;
-  padding: 4px 6px;
+  font-size: var(--ds-operator-label3);
+  padding: var(--ds-spacing-size40) var(--ds-spacing-size60);
 }
 
 .rcp-runtime-state {
-  margin-bottom: 8px;
-  padding: 7px 8px;
-  border-left: 2px solid var(--vscode-textLink-foreground);
+  margin-bottom: var(--ds-spacing-size80);
+  padding: var(--ds-spacing-size80) var(--ds-spacing-size80);
+  border-left: 2px solid var(--ds-link);
   background: color-mix(in srgb, var(--vscode-textBlockQuote-background) 82%, transparent);
   color: var(--ds-muted);
-  font-size: 10px;
+  font-size: var(--ds-operator-label3);
   line-height: 1.4;
 }
 
