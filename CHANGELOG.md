@@ -50,6 +50,16 @@ Os dois não podem mais divergir sem alguém mudar o papel de propósito.
 
 Nessa passada: 25 distâncias fora da escala foram a zero e os 7 tamanhos de texto viraram token.
 
+### Sem Node no sistema, o Tachyon volta a recusar em vez de fingir que subiu
+
+Num computador sem Node no `PATH`, a extensão **terminava a ativação com sucesso** — e nada
+funcionava depois. Agora ela recusa dizendo o nome do problema.
+
+A causa foi um conserto anterior aplicado longe demais. A versão passada ensinou o Tachyon a não
+perder a janela inteira quando uma pasta falha ao abrir, o que está certo. Só que "não há Node neste
+computador" caiu no mesmo caminho — e isso não é falha de uma pasta. Todas falham igual, e o botão
+Repetir não instala Node.
+
 ### Três regras de estilo que ninguém renderizava
 
 O Activity carregava três regras CSS sem consumidor. Elas não mudavam pixel nenhum — e continham
