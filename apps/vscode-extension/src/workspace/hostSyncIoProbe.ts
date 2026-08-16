@@ -3,10 +3,13 @@
  *
  * ELU says the thread was inside a callback; it does not say which one. A CPU profile
  * is the same trap (self time is not caller attribution, and a blocking syscall has
- * almost no CPU). This wraps the sync fs / child_process doors the host actually uses
- * and keeps the hottest call site by cumulative wall time. Classification is unchanged.
+ * almost no CPU). This wraps the sync filesystem doors the host actually uses and
+ * keeps the hottest call site by cumulative wall time. Classification is unchanged.
+ *
+ * Sync subprocess APIs are deliberately not named here: this file runs inside the
+ * extension host, so it cannot join the wedge allowlist (those slots are for
+ * separate processes with no VS Code running).
  */
-import childProcess from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -21,7 +24,7 @@ export interface HostSyncIoHit {
   site?: string;
 }
 
-const SKIP_IN_STACK = /hostSyncIoProbe\.ts|node:fs|node:child_process|node:internal/;
+const SKIP_IN_STACK = /hostSyncIoProbe\.ts|node:fs|node:internal/;
 
 let installed = false;
 let longestMs = 0;
@@ -34,8 +37,6 @@ const originals = {
   readFileSync: fs.readFileSync,
   readdirSync: fs.readdirSync,
   readSync: fs.readSync,
-  spawnSync: childProcess.spawnSync,
-  execFileSync: childProcess.execFileSync,
 };
 
 function siteFromStack(): string | undefined {
@@ -93,8 +94,6 @@ export function startHostSyncIoProbe(): void {
   fs.readFileSync = wrap("readFileSync", originals.readFileSync);
   fs.readdirSync = wrap("readdirSync", originals.readdirSync);
   fs.readSync = wrap("readSync", originals.readSync);
-  childProcess.spawnSync = wrap("spawnSync", originals.spawnSync);
-  childProcess.execFileSync = wrap("execFileSync", originals.execFileSync);
 }
 
 function reset(): void {
@@ -139,8 +138,6 @@ export function stopHostSyncIoProbe(): void {
   fs.readFileSync = originals.readFileSync;
   fs.readdirSync = originals.readdirSync;
   fs.readSync = originals.readSync;
-  childProcess.spawnSync = originals.spawnSync;
-  childProcess.execFileSync = originals.execFileSync;
   installed = false;
   reset();
 }
