@@ -5,7 +5,9 @@ import path from "node:path";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import { EDITOR_HUMAN_ACTOR } from "@tachyon/engine/validations/types.js";
 import { buildBoardSnapshot } from "@tachyon/engine/tasks/boardSnapshot.js";
+import { projectBoard } from "@tachyon/engine/runtime-api/boardProjection.js";
 import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
+import type { TaskStatus } from "@tachyon/shared/tasks/types.js";
 
 let root: string;
 let store: TaskStore;
@@ -164,4 +166,51 @@ describe("buildBoardSnapshot", () => {
     expect(serialized).not.toContain("sensitive journal text");
     expect(serialized).not.toContain("\"journal\":[");
   });
+
+  // t-236345 — production door: engineService `task.board` and legacyBoardTarget both call
+  // buildBoardSnapshot, then projectBoard on the engine path. A mixed listViews(500) ranks
+  // dropped last (list_tasks order), so 360 done + 76 landed + 64 inbox fill the cap and the
+  // Dropped column reads as empty. Watch this composition, not a listing helper.
+  it("keeps dropped tasks in the board snapshot when done/landed/open already fill the 500-view cap", () => {
+    seedTasksByStatus(root, { inbox: 64, landed: 76, done: 360, dropped: 87 });
+
+    const snap = buildBoardSnapshot({ store, declaredAgents: [] });
+    const droppedIds = snap.views.filter((view) => view.task.status === "dropped").map((view) => view.task.id);
+
+    expect(droppedIds).toHaveLength(87);
+    expect(snap.views.length).toBeLessThanOrEqual(500);
+
+    const projected = projectBoard(snap);
+    expect(projected.views.filter((view) => view.task.status === "dropped")).toHaveLength(87);
+  });
+
+  it("task.board host doors still assemble views through buildBoardSnapshot", () => {
+    const engine = fs.readFileSync("packages/engine/src/engine-service/engineService.ts", "utf8");
+    const legacy = fs.readFileSync("apps/vscode-extension/src/shell/BoardTarget.ts", "utf8");
+    expect(engine).toMatch(/if \(query\.method === "task\.board"\)[\s\S]*?projectBoard\(buildBoardSnapshot\(/);
+    expect(legacy).toMatch(/boardSnapshot: async \(liveTemporaryAgents\) => buildBoardSnapshot\(/);
+  });
 });
+
+function seedTasksByStatus(workspaceRoot: string, counts: Partial<Record<TaskStatus, number>>): void {
+  const dir = path.join(workspaceRoot, ".tachyon", "tasks");
+  fs.mkdirSync(dir, { recursive: true });
+  let n = 0;
+  for (const [status, count] of Object.entries(counts) as Array<[TaskStatus, number]>) {
+    for (let i = 0; i < count; i++, n++) {
+      const id = `t-${n.toString(16).padStart(6, "0")}`;
+      const ts = new Date(Date.UTC(2026, 7, 1, 0, 0, n)).toISOString();
+      fs.writeFileSync(
+        path.join(dir, `${id}.json`),
+        `${JSON.stringify({
+          id,
+          title: `${status}-${i}`,
+          status,
+          author: "human",
+          createdAt: ts,
+          updatedAt: ts,
+        }, null, 2)}\n`,
+      );
+    }
+  }
+}

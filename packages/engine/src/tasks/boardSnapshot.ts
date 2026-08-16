@@ -1,6 +1,6 @@
 import { nextTask } from "@tachyon/shared/tasks/nextTask.js";
 import { allowedTransitions, type TaskStore } from "./TaskStore.js";
-import type { NextTaskResult, Task, TaskDerived, TaskStatus, TaskView } from "@tachyon/shared/tasks/types.js";
+import { TASK_STATUSES, type NextTaskResult, type Task, type TaskDerived, type TaskStatus, type TaskView } from "@tachyon/shared/tasks/types.js";
 import { discoverValidationCandidates } from "../validations/discovery.js";
 import { validationSummary, type ValidationSummary, type ValidationStore } from "../validations/ValidationStore.js";
 import type { ValidationCandidate } from "../validations/types.js";
@@ -44,7 +44,8 @@ export interface BoardSnapshotInput {
   /** Temporary instance names currently alive in the managed-entry ledger/sidebar. Declared agents are passed
    *  separately and remain listed even when stopped. */
   liveTemporaryAgents?: Iterable<string>;
-  /** bounded like `listViews` (default 500 — the store's own max clamp; see the scale-envelope criterion). */
+  /** Board envelope (default 500 — the store's own max clamp; see the scale-envelope criterion). Shared
+   *  fairly across every status so a mixed `listViews` slice cannot starve a column (t-236345). */
   limit?: number;
   validationStore?: ValidationStore;
   workspaceRoot?: string;
@@ -54,7 +55,7 @@ export interface BoardSnapshotInput {
  *  imported) is called once per chip against that SAME derived map — never `TaskStore.next()` per chip, which
  *  would re-list and re-derive from disk per call (dueto F4). */
 export function buildBoardSnapshot(input: BoardSnapshotInput): BoardSnapshot {
-  const views = input.store.listViews(input.limit ?? 500);
+  const views = listBoardViews(input.store, input.limit ?? 500);
   const tasks: Task[] = views.map((v) => v.task);
   const derived: Record<string, TaskDerived> = {};
   for (const view of views) {
@@ -79,6 +80,47 @@ export function buildBoardSnapshot(input: BoardSnapshotInput): BoardSnapshot {
     ...validationSnapshot(input),
     ...attachmentCountsFor(input, tasks),
   };
+}
+
+/**
+ * t-236345 — the board is a kanban, not list_tasks. A single mixed `listViews(limit)` inherits
+ * `compareTasksForListing` (dropped last) and silently cuts that column once done/landed/open fill
+ * the 500 envelope. List each status, then share the same envelope round-robin so no nonempty
+ * column is starved. `clampBoardViewLimit` mirrors `TaskStore`'s unpublished `clampLimit`.
+ */
+function listBoardViews(store: TaskStore, requestedLimit: number): TaskView[] {
+  const limit = clampBoardViewLimit(requestedLimit);
+  const counts = TASK_STATUSES.map((status) => store.count({ status }));
+  const take = allocateBoardViewBudgets(counts, limit);
+  return TASK_STATUSES.flatMap((status, i) => {
+    const n = take[i] ?? 0;
+    return n > 0 ? store.listViews(n, { status }) : [];
+  });
+}
+
+function clampBoardViewLimit(limit: number): number {
+  if (!Number.isInteger(limit) || limit < 1) return 100;
+  return Math.min(limit, 500);
+}
+
+function allocateBoardViewBudgets(counts: number[], limit: number): number[] {
+  const take = counts.map(() => 0);
+  let remaining = limit;
+  let progressed = true;
+  while (remaining > 0 && progressed) {
+    progressed = false;
+    for (let i = 0; i < counts.length; i++) {
+      if (remaining === 0) break;
+      const have = take[i] ?? 0;
+      const want = counts[i] ?? 0;
+      if (have < want) {
+        take[i] = have + 1;
+        remaining -= 1;
+        progressed = true;
+      }
+    }
+  }
+  return take;
 }
 
 function attachmentCountsFor(input: BoardSnapshotInput, tasks: Task[]): Pick<BoardSnapshot, "attachmentCounts"> {
