@@ -103,6 +103,12 @@ export interface EnsureDaemonEngineOptions {
   migrationProvider?: EngineStateMigrationProvider;
   launcher?: EngineDaemonLauncher;
   stopper?: EngineDaemonStopper;
+  /**
+   * Test/platform seam. Production asks systemd whether the workspace-derived unit is loaded.
+   * A true result is the ownership line for boot-path zombie recovery; false keeps the
+   * existing CONTROL_UNAVAILABLE refusal.
+   */
+  unitLoaded?: (unitName: string) => Promise<boolean>;
   startTimeoutMs?: number;
   pollMs?: number;
   /** Test/platform adapter overrides. Production derives private per-user locations. */
@@ -161,19 +167,65 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
   // t-13cc6e — the entry probe shares the transient window of the wait loops: another shell's
   // just-launched daemon may have bound the socket without answering health yet (750ms request
   // budget, easily outlived under load). Poll a bound-but-unverifiable endpoint until the deadline
-  // instead of hard-failing the first probe; a still-unverifiable endpoint at the deadline re-raises
-  // CONTROL_UNAVAILABLE, and the launch path below stays reachable only through a proven-absent probe.
+  // instead of hard-failing the first probe.
+  // t-d244e1 — a still-unverifiable endpoint at the deadline used to re-raise CONTROL_UNAVAILABLE
+  // and stop. That is the measured dead end: the unit is ours, health never comes, and the
+  // operator had to `systemctl --user stop` by hand. The deadline itself stays; after it, if the
+  // workspace-derived unit is loaded, this boot path stops that unit and continues into launch.
+  // A foreign or unprovable unit still refuses — and the error now offers the stop command.
+  const unitName = engineSystemdUnitName(canonicalRoot);
+  const unitLoaded = options.unitLoaded ?? workspaceDerivedUnitLoaded;
   const entryDeadline = Date.now() + timeoutMs;
   let existing: EngineServiceIdentityV1 | undefined;
+  let entryUnverifiable: EngineSupervisorError | undefined;
   for (;;) {
     try {
       existing = await probeHealthyEngine(controlSocketPath, canonicalRoot, hash);
+      entryUnverifiable = undefined;
       break;
     } catch (error) {
       if (!(error instanceof EngineSupervisorError && error.code === "CONTROL_UNAVAILABLE")) throw error;
-      if (Date.now() >= entryDeadline) throw error;
+      entryUnverifiable = error;
+      if (Date.now() >= entryDeadline) break;
       await delay(pollMs);
     }
+  }
+  let zombieReplace: { transitionId: string; unitName: string } | undefined;
+  if (entryUnverifiable) {
+    const ours = await proveWorkspaceUnitLoaded(unitName, unitLoaded);
+    if (!ours) throw offerManualStop(entryUnverifiable, unitName);
+    const transitionId = randomUUID();
+    appendUpgradeAudit(storageRoot, {
+      schemaVersion: 1,
+      at: new Date().toISOString(),
+      transitionId,
+      phase: "zombie-replace-prepared",
+      reason: "entry-probe-mute-deadline",
+      unitName,
+      socket: controlSocketPath,
+    });
+    try {
+      await stopper({
+        workspaceRoot: canonicalRoot,
+        workspaceHash: hash,
+        controlSocketPath,
+        unitName,
+        timeoutMs,
+        pollMs,
+      });
+    } catch (error) {
+      appendUpgradeAudit(storageRoot, {
+        schemaVersion: 1,
+        at: new Date().toISOString(),
+        transitionId,
+        phase: "zombie-replace-failed",
+        reason: "entry-probe-mute-deadline",
+        unitName,
+        error: boundedError(error),
+      });
+      throw error;
+    }
+    zombieReplace = { transitionId, unitName };
   }
   if (existing) {
     const action = classifyRunningBundle(existing, options.bundle, manifest);
@@ -224,6 +276,17 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
     pollMs,
     unitName: launchInput.unitName,
   });
+  if (zombieReplace) {
+    appendUpgradeAudit(storageRoot, {
+      schemaVersion: 1,
+      at: new Date().toISOString(),
+      transitionId: zombieReplace.transitionId,
+      phase: "zombie-replaced",
+      reason: "entry-probe-mute-deadline",
+      unitName: zombieReplace.unitName,
+      to: auditIdentity(identity),
+    });
+  }
   return {
     identity,
     controlSocketPath,
@@ -1165,6 +1228,33 @@ function systemdLaunchError(input: { error?: unknown; code?: number | null; outp
     return new EngineSupervisorError("SYSTEMD_USER_UNAVAILABLE", "Tachyon cannot start its persistent engine because Linux user services are unavailable.", detail);
   }
   return new EngineSupervisorError("SYSTEMD_RUN_FAILED", "Tachyon could not start its persistent engine. Run Tachyon: Doctor and retry.", detail);
+}
+
+async function workspaceDerivedUnitLoaded(unitName: string): Promise<boolean> {
+  const state = await runSystemctl(["--user", "show", "--property=LoadState", "--value", unitName]);
+  if (state.code !== 0) return false;
+  const loadState = state.output.trim();
+  return loadState !== "" && loadState !== "not-found";
+}
+
+async function proveWorkspaceUnitLoaded(
+  unitName: string,
+  probe: (unitName: string) => Promise<boolean>,
+): Promise<boolean> {
+  try {
+    return await probe(unitName);
+  } catch {
+    // Cannot prove the unit is ours — keep the refusal rather than stop a foreign engine.
+    return false;
+  }
+}
+
+function offerManualStop(error: EngineSupervisorError, unitName: string): EngineSupervisorError {
+  return new EngineSupervisorError(
+    error.code,
+    `${error.message} If this is this workspace's engine, stop it with: systemctl --user stop ${unitName}`,
+    error.technicalDetail,
+  );
 }
 
 function runSystemctl(args: string[]): Promise<{ code: number | null; output: string }> {
