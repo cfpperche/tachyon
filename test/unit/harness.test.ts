@@ -2088,6 +2088,11 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "session-owner-record.cjs"))).toBe(true);
     expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "handoff-pointer.cjs"))).toBe(true);
     expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "runtime-status-publish.cjs"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "codex-tool-hook-record.cjs"))).toBe(true);
+    const values = config as string[];
+    expect(values.some((value) => value.startsWith("hooks.PreToolUse="))).toBe(true);
+    expect(values.some((value) => value.startsWith("hooks.PostToolUse="))).toBe(true);
+    expect(values.find((value) => value.startsWith("hooks.PreToolUse="))).toContain("codex-tool-hook-record.cjs");
   });
 
   it("spec 312: materializeCodexSessionStartHookConfig can add continuity and Stop persistence hooks", () => {
