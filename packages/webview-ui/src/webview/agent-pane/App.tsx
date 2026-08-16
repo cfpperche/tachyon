@@ -123,6 +123,7 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
     let lastGrid: GridSize = { cols: 0, rows: 0 };
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 
+    const readTerminalTheme = () => terminalThemeFromComputedStyle(getComputedStyle(document.documentElement));
     const term = new Terminal({
       cursorBlink: true,
       fontFamily: FALLBACK_FONT.fontFamily,
@@ -132,7 +133,7 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
       lineHeight: 1,
       letterSpacing: 0,
       overviewRulerWidth: 14,
-      theme: terminalThemeFromComputedStyle(getComputedStyle(document.documentElement)),
+      theme: readTerminalTheme(),
       allowProposedApi: true,
       convertEol: false,
       scrollback: 5000,
@@ -141,6 +142,16 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(el);
+
+    // Interface theme change is the same actor as construct, other door: VS Code flips
+    // body.vscode-light / vscode-dark without remounting the webview. xterm's theme is a
+    // JS snapshot, so re-sample or Light+ keeps the Dark+ rectangle the owner named.
+    const applyTerminalTheme = () => {
+      term.options.theme = readTerminalTheme();
+    };
+    const themeMo = new MutationObserver(applyTerminalTheme);
+    themeMo.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    themeMo.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 
     const reportGrid = (force = false) => {
       if (disposed || !fontReady) return;
@@ -262,6 +273,7 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
     return () => {
       disposed = true;
       if (resizeTimer !== undefined) clearTimeout(resizeTimer);
+      themeMo.disconnect();
       unsub();
       ro.disconnect();
       dataDisp.dispose();
