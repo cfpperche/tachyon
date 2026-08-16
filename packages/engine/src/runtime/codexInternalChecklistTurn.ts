@@ -6,16 +6,16 @@
  *   start     `turn/started` (or the first event for that turnId)
  *   end       `turn/completed` for that turnId
  *   success   `turn.status === "completed"`
- *   fail      `turn.status` is `failed` or `interrupted` — not `sem-plano`
+ *   fail      `turn.status` is `failed` or `interrupted` — not `absent`
  *
  * Plan event: `turn/plan/updated` with the same turnId. The last such
  * notification is the plan (fatia 1). Not a plan: `item/plan/delta`,
  * `turn.completed.items` (summary).
  *
  * Channel: `turn/plan/updated` is in the 0.147.0 ServerNotification enum.
- * `sem-canal` needs positive evidence the session's protocol omits it
+ * `no-channel` needs positive evidence the session's protocol omits it
  * (`knownNotifications` without that method). A mute completed turn on
- * a session that has the method is `sem-plano`.
+ * a session that has the method is `absent`.
  *
  * TUI (docs/research/poc-plano-interno-codex-tui.md, measured 2026-08-16):
  *   identity  top-level `turn_id` on hook stdin (and `turnId` on the recorder row)
@@ -28,18 +28,18 @@
  * window because the product recorder discarded the field. TUI signals
  * are sufficient; app-server is not required.
  */
-import { CODEX_INTERNAL_PLAN_NOTIFICATION } from "./codexInternalPlanReader.js";
-import { decideInternalPlanTurnVerdict, type InternalPlanTurnJudgment } from "./internalPlanTurn.js";
+import { CODEX_INTERNAL_CHECKLIST_NOTIFICATION } from "./codexInternalChecklistReader.js";
+import { decideInternalChecklistTurnVerdict, type InternalChecklistTurnJudgment } from "./internalChecklistTurn.js";
 
 export const CODEX_TUI_PLAN_TOOL = "update_plan";
-export const CODEX_TUI_PLAN_HOOK_EVENTS = ["PreToolUse", "PostToolUse"] as const;
+export const CODEX_TUI_CHECKLIST_HOOK_EVENTS = ["PreToolUse", "PostToolUse"] as const;
 
-export function judgeCodexInternalPlanTurn(input: {
+export function judgeCodexInternalChecklistTurn(input: {
   notifications: readonly unknown[];
   turnId?: string;
   knownNotifications?: readonly string[];
   knownHookEvents?: readonly string[];
-}): InternalPlanTurnJudgment {
+}): InternalChecklistTurnJudgment {
   const turns = new Map<string, { ended: boolean; success: boolean; plan: boolean; lastIndex: number }>();
   let lastSeen: string | undefined;
 
@@ -65,10 +65,10 @@ export function judgeCodexInternalPlanTurn(input: {
     input.knownHookEvents,
   );
 
-  return decideInternalPlanTurnVerdict({
+  return decideInternalChecklistTurnVerdict({
     turnEnded: row?.ended === true,
     turnCompletedSuccessfully: row?.success === true,
-    planEventInWindow: row?.plan === true,
+    checklistEventInWindow: row?.plan === true,
     channelPresent,
   });
 }
@@ -80,8 +80,8 @@ export function codexPlanChannelPresent(
 ): boolean {
   if (sawPlanEvent) return true;
   if (knownNotifications === undefined && knownHookEvents === undefined) return true;
-  if (knownNotifications?.includes(CODEX_INTERNAL_PLAN_NOTIFICATION)) return true;
-  if (knownHookEvents?.some((event) => (CODEX_TUI_PLAN_HOOK_EVENTS as readonly string[]).includes(event))) {
+  if (knownNotifications?.includes(CODEX_INTERNAL_CHECKLIST_NOTIFICATION)) return true;
+  if (knownHookEvents?.some((event) => (CODEX_TUI_CHECKLIST_HOOK_EVENTS as readonly string[]).includes(event))) {
     return true;
   }
   return false;
@@ -113,7 +113,7 @@ function classifyCodexNotification(raw: unknown): CodexMark | undefined {
   if (!turnId) return undefined;
 
   if (typeof raw.method === "string") {
-    if (raw.method === CODEX_INTERNAL_PLAN_NOTIFICATION) return { kind: "plan", turnId };
+    if (raw.method === CODEX_INTERNAL_CHECKLIST_NOTIFICATION) return { kind: "plan", turnId };
     if (raw.method === "turn/started" || raw.method === "turn/start") {
       return { kind: "turn-start", turnId };
     }

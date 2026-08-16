@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { buildSidebarFleet, type SidebarFleetSource } from "@tachyon/engine/sidebar/sidebarFleetService.js";
-import type { InternalPlanRead } from "@tachyon/engine/runtime/internalPlan.js";
-import type { InternalPlanTurnJudgment } from "@tachyon/engine/runtime/internalPlanTurn.js";
+import type { InternalChecklistRead } from "@tachyon/engine/runtime/internalChecklist.js";
+import type { InternalChecklistTurnJudgment } from "@tachyon/engine/runtime/internalChecklistTurn.js";
 
 function source(
-  plans: Record<string, { snapshot: InternalPlanRead; judgment: InternalPlanTurnJudgment }>,
+  plans: Record<string, { snapshot: InternalChecklistRead; judgment: InternalChecklistTurnJudgment }>,
 ): SidebarFleetSource {
   return {
     workspaceRoot: "/workspace",
@@ -37,29 +37,29 @@ function source(
     persistenceHookHealth: () => undefined,
     evidenceHandoff: async () => undefined,
     readConfigLkg: () => null,
-    internalPlan: (agent: string) => plans[agent] ?? { snapshot: { state: "mute" }, judgment: { state: "pending", reason: "turn-open" } },
+    internalChecklist: (agent: string) => plans[agent] ?? { snapshot: { state: "mute" }, judgment: { state: "pending", reason: "turn-open" } },
   } as unknown as SidebarFleetSource;
 }
 
 describe("t-281339 — fleet projection of the plan line", () => {
-  it("projects the current step and a sem-plano mark, and never a sem-canal field", async () => {
+  it("projects the current step and a absent mark, and never a no-channel field", async () => {
     const fleet = await buildSidebarFleet(source({
       claude: {
-        snapshot: { state: "snapshot", items: [{ texto: "write the line", status: "in-progress" }] },
-        judgment: { state: "verdict", verdict: "com-plano" },
+        snapshot: { state: "snapshot", items: [{ text: "write the line", status: "in-progress" }] },
+        judgment: { state: "verdict", verdict: "present" },
       },
       grok: {
         snapshot: { state: "mute" },
-        judgment: { state: "verdict", verdict: "sem-plano" },
+        judgment: { state: "verdict", verdict: "absent" },
       },
       pi: {
-        snapshot: { state: "snapshot", items: [{ texto: "should not appear", status: "pending" }] },
-        judgment: { state: "verdict", verdict: "sem-canal" },
+        snapshot: { state: "snapshot", items: [{ text: "should not appear", status: "pending" }] },
+        judgment: { state: "verdict", verdict: "no-channel" },
       },
     }));
-    expect(fleet.agents.find((a) => a.name === "claude")?.plan).toEqual({ kind: "step", text: "write the line" });
-    expect(fleet.agents.find((a) => a.name === "grok")?.plan).toEqual({ kind: "sem-plano" });
-    expect(fleet.agents.find((a) => a.name === "pi")?.plan).toBeUndefined();
-    expect(JSON.stringify(fleet.agents)).not.toContain("sem-canal");
+    expect(fleet.agents.find((a) => a.name === "claude")?.checklist).toEqual({ kind: "step", text: "write the line" });
+    expect(fleet.agents.find((a) => a.name === "grok")?.checklist).toEqual({ kind: "absent" });
+    expect(fleet.agents.find((a) => a.name === "pi")?.checklist).toBeUndefined();
+    expect(JSON.stringify(fleet.agents)).not.toContain("no-channel");
   });
 });

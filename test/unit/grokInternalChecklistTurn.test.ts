@@ -2,13 +2,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { grokInternalPlanUpdatesPath } from "@tachyon/engine/runtime/grokInternalPlanReader.js";
-import { judgeGrokInternalPlanTurn } from "@tachyon/engine/runtime/grokInternalPlanTurn.js";
+import { grokInternalChecklistUpdatesPath } from "@tachyon/engine/runtime/grokInternalChecklistReader.js";
+import { judgeGrokInternalChecklistTurn } from "@tachyon/engine/runtime/grokInternalChecklistTurn.js";
 
 /**
  * t-011136 — Grok end-of-turn verdict. These tests import
- * `judgeGrokInternalPlanTurn` — the host door that opens the session's
- * `updates.jsonl`. A helper that treats mid-turn silence as `sem-plano`,
+ * `judgeGrokInternalChecklistTurn` — the host door that opens the session's
+ * `updates.jsonl`. A helper that treats mid-turn silence as `absent`,
  * or that reads `plan.json` / `events.jsonl` as the plan channel, turns
  * the suite red.
  */
@@ -47,7 +47,7 @@ function writeSession(
   sessionId: string,
   files: { updates?: readonly unknown[]; events?: readonly unknown[] },
 ): void {
-  const updates = grokInternalPlanUpdatesPath({ configHome: home, cwd, sessionId });
+  const updates = grokInternalChecklistUpdatesPath({ configHome: home, cwd, sessionId });
   expect(updates).toBeTypeOf("string");
   const dir = path.dirname(updates!);
   fs.mkdirSync(dir, { recursive: true });
@@ -66,38 +66,38 @@ function sessionUpdate(update: Record<string, unknown>, meta: Record<string, unk
   return { method: "session/update", params: { update, _meta: meta } };
 }
 
-describe("t-011136 — judgeGrokInternalPlanTurn (production door)", () => {
-  it("emits com-plano for the measured induce updates.jsonl", () => {
+describe("t-011136 — judgeGrokInternalChecklistTurn (production door)", () => {
+  it("emits present for the measured induce updates.jsonl", () => {
     expect(
-      judgeGrokInternalPlanTurn({
+      judgeGrokInternalChecklistTurn({
         configHome: FIXTURE_HOME,
         cwd: INDUCE.cwd,
         sessionId: INDUCE.sessionId,
       }),
-    ).toEqual({ state: "verdict", verdict: "com-plano" });
+    ).toEqual({ state: "verdict", verdict: "present" });
   });
 
-  it("emits sem-plano for the measured trivial turn", () => {
+  it("emits absent for the measured trivial turn", () => {
     expect(
-      judgeGrokInternalPlanTurn({
+      judgeGrokInternalChecklistTurn({
         configHome: FIXTURE_HOME,
         cwd: TRIVIAL.cwd,
         sessionId: TRIVIAL.sessionId,
       }),
-    ).toEqual({ state: "verdict", verdict: "sem-plano" });
+    ).toEqual({ state: "verdict", verdict: "absent" });
   });
 
-  it("emits com-plano for the measured empty-list write — the channel spoke", () => {
+  it("emits present for the measured empty-list write — the channel spoke", () => {
     expect(
-      judgeGrokInternalPlanTurn({
+      judgeGrokInternalChecklistTurn({
         configHome: FIXTURE_HOME,
         cwd: EMPTY.cwd,
         sessionId: EMPTY.sessionId,
       }),
-    ).toEqual({ state: "verdict", verdict: "com-plano" });
+    ).toEqual({ state: "verdict", verdict: "present" });
   });
 
-  it("does not emit sem-plano while turn_completed is missing (the 7-minute silence)", () => {
+  it("does not emit absent while turn_completed is missing (the 7-minute silence)", () => {
     const home = tempHome();
     const cwd = "/tmp/mid-turn-silence";
     const sessionId = "aaaaaaaa-bbbb-4ccc-8ddd-111111111111";
@@ -115,12 +115,12 @@ describe("t-011136 — judgeGrokInternalPlanTurn (production door)", () => {
         ),
       ],
     });
-    const mid = judgeGrokInternalPlanTurn({ configHome: home, cwd, sessionId });
+    const mid = judgeGrokInternalChecklistTurn({ configHome: home, cwd, sessionId });
     expect(mid).toEqual({ state: "pending", reason: "turn-open" });
-    expect(mid).not.toEqual({ state: "verdict", verdict: "sem-plano" });
+    expect(mid).not.toEqual({ state: "verdict", verdict: "absent" });
   });
 
-  it("becomes com-plano only after the late plan and turn_completed arrive", () => {
+  it("becomes present only after the late plan and turn_completed arrive", () => {
     const home = tempHome();
     const cwd = "/tmp/late-plan";
     const sessionId = "aaaaaaaa-bbbb-4ccc-8ddd-222222222222";
@@ -133,7 +133,7 @@ describe("t-011136 — judgeGrokInternalPlanTurn (production door)", () => {
       ),
     ];
     writeSession(home, cwd, sessionId, { updates: prefix });
-    expect(judgeGrokInternalPlanTurn({ configHome: home, cwd, sessionId })).toEqual({
+    expect(judgeGrokInternalChecklistTurn({ configHome: home, cwd, sessionId })).toEqual({
       state: "pending",
       reason: "turn-open",
     });
@@ -154,28 +154,28 @@ describe("t-011136 — judgeGrokInternalPlanTurn (production door)", () => {
         ),
       ],
     });
-    expect(judgeGrokInternalPlanTurn({ configHome: home, cwd, sessionId })).toEqual({
+    expect(judgeGrokInternalChecklistTurn({ configHome: home, cwd, sessionId })).toEqual({
       state: "verdict",
-      verdict: "com-plano",
+      verdict: "present",
     });
   });
 
-  it("emits sem-canal when turn-end is only on events.jsonl — distinct from sem-plano", () => {
+  it("emits no-channel when turn-end is only on events.jsonl — distinct from absent", () => {
     const home = tempHome();
     const cwd = "/tmp/events-only";
     const sessionId = "aaaaaaaa-bbbb-4ccc-8ddd-333333333333";
     writeSession(home, cwd, sessionId, {
       events: [{ type: "turn_ended", prompt_id: "events-only" }],
     });
-    const withoutChannel = judgeGrokInternalPlanTurn({ configHome: home, cwd, sessionId });
-    expect(withoutChannel).toEqual({ state: "verdict", verdict: "sem-canal" });
+    const withoutChannel = judgeGrokInternalChecklistTurn({ configHome: home, cwd, sessionId });
+    expect(withoutChannel).toEqual({ state: "verdict", verdict: "no-channel" });
 
-    const withChannel = judgeGrokInternalPlanTurn({
+    const withChannel = judgeGrokInternalChecklistTurn({
       configHome: FIXTURE_HOME,
       cwd: TRIVIAL.cwd,
       sessionId: TRIVIAL.sessionId,
     });
-    expect(withChannel).toEqual({ state: "verdict", verdict: "sem-plano" });
+    expect(withChannel).toEqual({ state: "verdict", verdict: "absent" });
     expect(withoutChannel).not.toEqual(withChannel);
   });
 
@@ -199,19 +199,19 @@ describe("t-011136 — judgeGrokInternalPlanTurn (production door)", () => {
         sessionUpdate({ sessionUpdate: "turn_completed", prompt_id: "p2", stop_reason: "end_turn" }),
       ],
     });
-    expect(judgeGrokInternalPlanTurn({ configHome: home, cwd, sessionId, promptId: "p2" })).toEqual({
+    expect(judgeGrokInternalChecklistTurn({ configHome: home, cwd, sessionId, promptId: "p2" })).toEqual({
       state: "verdict",
-      verdict: "sem-plano",
+      verdict: "absent",
     });
-    expect(judgeGrokInternalPlanTurn({ configHome: home, cwd, sessionId, promptId: "p1" })).toEqual({
+    expect(judgeGrokInternalChecklistTurn({ configHome: home, cwd, sessionId, promptId: "p1" })).toEqual({
       state: "verdict",
-      verdict: "com-plano",
+      verdict: "present",
     });
   });
 
-  it("a missing session is pending, not sem-plano — post-dismiss is not evidence", () => {
+  it("a missing session is pending, not absent — post-dismiss is not evidence", () => {
     expect(
-      judgeGrokInternalPlanTurn({
+      judgeGrokInternalChecklistTurn({
         configHome: tempHome(),
         cwd: INDUCE.cwd,
         sessionId: INDUCE.sessionId,
@@ -240,18 +240,18 @@ describe("t-011136 — judgeGrokInternalPlanTurn (production door)", () => {
         sessionUpdate({ sessionUpdate: "turn_completed", prompt_id: "canary", stop_reason: "end_turn" }),
       ],
     });
-    expect(judgeGrokInternalPlanTurn({ configHome: home, cwd, sessionId })).toEqual({
+    expect(judgeGrokInternalChecklistTurn({ configHome: home, cwd, sessionId })).toEqual({
       state: "verdict",
-      verdict: "com-plano",
+      verdict: "present",
     });
   });
 
   it("this suite calls the production judge, not a test-local stand-in", () => {
-    const source = fs.readFileSync(path.resolve("test/unit/grokInternalPlanTurn.test.ts"), "utf8");
-    expect(source).toMatch(/from "@tachyon\/engine\/runtime\/grokInternalPlanTurn\.js"/);
-    expect(source).toMatch(/judgeGrokInternalPlanTurn\(/);
-    expect(source).not.toMatch(/function judgeGrokInternalPlanTurn\(/);
-    const impl = fs.readFileSync(path.resolve("packages/engine/src/runtime/grokInternalPlanTurn.ts"), "utf8");
+    const source = fs.readFileSync(path.resolve("test/unit/grokInternalChecklistTurn.test.ts"), "utf8");
+    expect(source).toMatch(/from "@tachyon\/engine\/runtime\/grokInternalChecklistTurn\.js"/);
+    expect(source).toMatch(/judgeGrokInternalChecklistTurn\(/);
+    expect(source).not.toMatch(/function judgeGrokInternalChecklistTurn\(/);
+    const impl = fs.readFileSync(path.resolve("packages/engine/src/runtime/grokInternalChecklistTurn.ts"), "utf8");
     expect(impl).not.toMatch(/["']plan\.json["']/);
   });
 });

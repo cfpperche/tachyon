@@ -336,21 +336,6 @@
       "deprecated": true,
       "description": "Deprecated — the named-layouts feature was retired (use VS Code's native editor groups). This block is accepted for backward compatibility but ignored."
     },
-    "plano": {
-      "description": "When an agent's turn ends without an internal plan, require one for the listed task kinds and reprompt once. Kind is a free string (not an enum). Comparison is case-insensitive with trim. '*' means every kind, including a task with no kind. '!kind' excludes that kind; exclusion wins. A list of only exclusions is treated as '* plus those exclusions'. Quote '*' and '!kind' in YAML. Absent or [] requires nobody. Invalid values warn and are ignored — the product never blocks on this block.",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "exigir_em": {
-          "description": "Task kinds that require an internal plan. Free strings, plus '*' (all) and '!kind' (exclude). Quote special tokens in YAML.",
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
-      }
-    },
     "settings": {
       "type": "object",
       "additionalProperties": false,
@@ -359,6 +344,21 @@
           "description": "Max concurrently running agents in this workspace (fork-bomb guardrail). Overrides the tachyon.maxAgents editor setting.",
           "type": "integer",
           "minimum": 1
+        },
+        "checklist": {
+          "description": "When an agent's turn ends without a checklist, require one for the listed task kinds and reprompt once. Kind is a free string (not an enum). Comparison is case-insensitive with trim. '*' means every kind, including a task with no kind. '!kind' excludes that kind; exclusion wins. A list of only exclusions is treated as '* plus those exclusions'. Quote '*' and '!kind' in YAML. Absent or [] requires nobody. Invalid values warn and are ignored — the product never blocks on this block.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requireIn": {
+              "description": "Task kinds that require a checklist. Free strings, plus '*' (all) and '!kind' (exclude). Quote special tokens in YAML.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
         },
         "bridgePort": {
           "description": "Fixed port for the Bridge MCP server. Default: a stable per-workspace port derived from the workspace path (41000-42999) — registrations survive editor restarts either way.",

@@ -451,11 +451,11 @@ export const sidebarFixtures: Record<string, Fixture<SidebarFixtureVM>> = {
   /**
    * t-281339 — ANCHOR (written before the line existed): four agents, one
    * glance, no panel. An in-progress step is the line; with no in-progress
-   * the next pending is shown; all-completed and sem-canal occupy no line;
-   * sem-plano is a discrete --ds-warn mark. Long step text is one line with
+   * the next pending is shown; all-completed and no-channel occupy no line;
+   * absent is a discrete --ds-warn mark. Long step text is one line with
    * ellipsis. Measured at 880 and 360.
    */
-  "internal-plan-line": {
+  "internal-checklist-line": {
     provenance: "synthetic-edge",
     vm: {
       ...base,
@@ -463,17 +463,17 @@ export const sidebarFixtures: Record<string, Fixture<SidebarFixtureVM>> = {
         {
           name: "claude", model: "Opus 4.8", modelSource: "declared", status: "running", kind: "agent", runtime: "claude",
           focus: { source: "task", taskId: "t-281339", taskStatus: "active", text: "sidebar plan line", full: "sidebar plan line" },
-          plan: { kind: "step", text: "write the current plan step on the sidebar card without growing the row" },
+          checklist: { kind: "step", text: "write the current checklist step on the sidebar card without growing the row" },
         },
         {
           name: "grok", model: "grok-4", modelSource: "declared", status: "running", kind: "agent", runtime: "grok",
           focus: { source: "task", taskId: "t-904de5", taskStatus: "active", text: "grok reader", full: "grok reader" },
-          plan: { kind: "step", text: "Steep the tea" },
+          checklist: { kind: "step", text: "Steep the tea" },
         },
         {
           name: "cartagrok", model: "grok-4", modelSource: "declared", status: "idle", kind: "agent", runtime: "grok",
           focus: { source: "task", taskId: "t-011136", taskStatus: "active", text: "turn verdict", full: "turn verdict" },
-          plan: { kind: "sem-plano" },
+          checklist: { kind: "absent" },
         },
         {
           name: "syspromptcodex", model: "GPT-5.1 Codex", modelSource: "declared", status: "running", kind: "agent", runtime: "codex",

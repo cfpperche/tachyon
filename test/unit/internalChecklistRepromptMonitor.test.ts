@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
-  InternalPlanRepromptMonitor,
-  type InternalPlanRepromptState,
+  InternalChecklistRepromptMonitor,
+  type InternalChecklistRepromptState,
   type PersistenceStopRow,
-} from "@tachyon/engine/workspace/InternalPlanRepromptMonitor.js";
-import type { InternalPlanTurnJudgment } from "@tachyon/engine/runtime/internalPlanTurn.js";
+} from "@tachyon/engine/workspace/InternalChecklistRepromptMonitor.js";
+import type { InternalChecklistTurnJudgment } from "@tachyon/engine/runtime/internalChecklistTurn.js";
 
 /**
  * t-73885b — the host that Workspace.tick drives. It must call
- * considerInternalPlanReprompt (see internalPlanReprompt.test.ts) and
- * must not reprompt twice, block, or accuse sem-canal/pending.
+ * considerInternalChecklistReprompt (see internalChecklistReprompt.test.ts) and
+ * must not reprompt twice, block, or accuse no-channel/pending.
  */
 
-const SEM_PLANO: InternalPlanTurnJudgment = { state: "verdict", verdict: "sem-plano" };
-const SEM_CANAL: InternalPlanTurnJudgment = { state: "verdict", verdict: "sem-canal" };
-const PENDING: InternalPlanTurnJudgment = { state: "pending", reason: "turn-not-completed" };
-const COM_PLANO: InternalPlanTurnJudgment = { state: "verdict", verdict: "com-plano" };
+const ABSENT: InternalChecklistTurnJudgment = { state: "verdict", verdict: "absent" };
+const NO_CHANNEL: InternalChecklistTurnJudgment = { state: "verdict", verdict: "no-channel" };
+const PENDING: InternalChecklistTurnJudgment = { state: "pending", reason: "turn-not-completed" };
+const PRESENT: InternalChecklistTurnJudgment = { state: "verdict", verdict: "present" };
 
 const STOP: PersistenceStopRow = {
   agent: "worker",
@@ -27,21 +27,21 @@ const STOP: PersistenceStopRow = {
 
 function harness(opts: {
   stops?: PersistenceStopRow[];
-  judgment?: InternalPlanTurnJudgment;
+  judgment?: InternalChecklistTurnJudgment;
   task?: { id: string; kind?: string };
-  exigirEm?: readonly string[];
-  state?: InternalPlanRepromptState;
+  requireIn?: readonly string[];
+  state?: InternalChecklistRepromptState;
 }) {
   let stops = opts.stops ?? [STOP];
-  let judgment = opts.judgment ?? SEM_PLANO;
-  let store: InternalPlanRepromptState = { ...(opts.state ?? {}) };
+  let judgment = opts.judgment ?? ABSENT;
+  let store: InternalChecklistRepromptState = { ...(opts.state ?? {}) };
   const sent: string[] = [];
   const journals: Array<{ taskId: string; text: string }> = [];
   const warnings: Array<{ agent: string; taskId?: string }> = [];
-  const monitor = new InternalPlanRepromptMonitor({
+  const monitor = new InternalChecklistRepromptMonitor({
     listStopRows: () => stops,
     assignedTask: (agent) => (agent === "worker" ? opts.task ?? { id: "t-73885b", kind: "feature" } : undefined),
-    exigirEm: () => opts.exigirEm ?? ["feature"],
+    requireIn: () => opts.requireIn ?? ["feature"],
     judgeTurn: () => judgment,
     loadState: () => ({ ...store }),
     saveState: (next) => {
@@ -68,18 +68,18 @@ function harness(opts: {
     setStops(next: PersistenceStopRow[]) {
       stops = next;
     },
-    setJudgment(next: InternalPlanTurnJudgment) {
+    setJudgment(next: InternalChecklistTurnJudgment) {
       judgment = next;
     },
   };
 }
 
-describe("t-73885b — InternalPlanRepromptMonitor", () => {
-  it("sends exactly one reprompt for sem-plano + required kind", async () => {
+describe("t-73885b — InternalChecklistRepromptMonitor", () => {
+  it("sends exactly one reprompt for absent + required kind", async () => {
     const h = harness({});
     await h.monitor.tick();
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0]).toMatch(/plan/i);
+    expect(h.sent[0]).toMatch(/checklist/i);
     expect(h.journals).toEqual([]);
     expect(h.warnings).toEqual([]);
 
@@ -92,8 +92,8 @@ describe("t-73885b — InternalPlanRepromptMonitor", () => {
     expect(h.warnings).toEqual([{ agent: "worker", taskId: "t-73885b" }]);
   });
 
-  it("does not reprompt on sem-canal", async () => {
-    const h = harness({ judgment: SEM_CANAL });
+  it("does not reprompt on no-channel", async () => {
+    const h = harness({ judgment: NO_CHANNEL });
     await h.monitor.tick();
     expect(h.sent).toEqual([]);
     expect(h.journals).toEqual([]);
@@ -107,7 +107,7 @@ describe("t-73885b — InternalPlanRepromptMonitor", () => {
   });
 
   it("does not reprompt when the kind is not required", async () => {
-    const h = harness({ task: { id: "t-73885b", kind: "chore" }, exigirEm: ["feature"] });
+    const h = harness({ task: { id: "t-73885b", kind: "chore" }, requireIn: ["feature"] });
     await h.monitor.tick();
     expect(h.sent).toEqual([]);
   });
@@ -137,15 +137,15 @@ describe("t-73885b — InternalPlanRepromptMonitor", () => {
     expect(h.warnings).toHaveLength(1);
   });
 
-  it("clears the spent reprompt after a later com-plano", async () => {
+  it("clears the spent reprompt after a later present", async () => {
     const h = harness({});
     await h.monitor.tick();
     expect(h.sent).toHaveLength(1);
-    h.setJudgment(COM_PLANO);
+    h.setJudgment(PRESENT);
     h.setStops([STOP, { ...STOP, ts: "2026-08-16T18:05:00.000Z" }]);
     await h.monitor.tick();
     expect(h.journals).toEqual([]);
-    h.setJudgment(SEM_PLANO);
+    h.setJudgment(ABSENT);
     h.setStops([
       STOP,
       { ...STOP, ts: "2026-08-16T18:05:00.000Z" },

@@ -12,21 +12,21 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
-  isInternalPlanStatus,
-  type InternalPlanItem,
-  type InternalPlanRead,
-  type InternalPlanStatus,
-} from "./internalPlan.js";
+  isInternalChecklistStatus,
+  type InternalChecklistItem,
+  type InternalChecklistRead,
+  type InternalChecklistStatus,
+} from "./internalChecklist.js";
 
 /** Plan-channel tools. Distinct from the subagent family `Task` / `TaskOutput` / `TaskStop`. */
-export const CLAUDE_INTERNAL_PLAN_TOOLS = ["TaskCreate", "TaskGet", "TaskList", "TaskUpdate"] as const;
+export const CLAUDE_INTERNAL_CHECKLIST_TOOLS = ["TaskCreate", "TaskGet", "TaskList", "TaskUpdate"] as const;
 export const CLAUDE_SUBAGENT_TOOLS = ["Task", "TaskOutput", "TaskStop"] as const;
 
-export function claudeInternalPlanToolsPresent(initTools: readonly string[]): boolean {
-  return CLAUDE_INTERNAL_PLAN_TOOLS.every((name) => initTools.includes(name));
+export function claudeInternalChecklistToolsPresent(initTools: readonly string[]): boolean {
+  return CLAUDE_INTERNAL_CHECKLIST_TOOLS.every((name) => initTools.includes(name));
 }
 
-const STATUS_ALIASES: Record<string, InternalPlanStatus> = {
+const STATUS_ALIASES: Record<string, InternalChecklistStatus> = {
   pending: "pending",
   completed: "completed",
   "in-progress": "in-progress",
@@ -34,10 +34,10 @@ const STATUS_ALIASES: Record<string, InternalPlanStatus> = {
   inProgress: "in-progress",
 };
 
-export function readClaudeInternalPlan(input: {
+export function readClaudeInternalChecklist(input: {
   configHome: string;
   sessionId: string;
-}): InternalPlanRead {
+}): InternalChecklistRead {
   const sessionDir = claudeTaskStoreDir(input.configHome, input.sessionId);
   if (!sessionDir || !fs.existsSync(sessionDir)) return { state: "mute" };
   let entries: fs.Dirent[];
@@ -46,13 +46,13 @@ export function readClaudeInternalPlan(input: {
   } catch {
     return { state: "mute" };
   }
-  const items: InternalPlanItem[] = [];
+  const items: InternalChecklistItem[] = [];
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
     const item = readStoreItem(path.join(sessionDir, entry.name));
     if (item) items.push(item);
   }
-  items.sort(comparePlanItems);
+  items.sort(compareChecklistItems);
   return { state: "snapshot", items };
 }
 
@@ -64,7 +64,7 @@ export function claudeTaskStoreDir(configHome: string, sessionId: string): strin
   return path.join(configHome, "tasks", sessionId);
 }
 
-function readStoreItem(file: string): InternalPlanItem | undefined {
+function readStoreItem(file: string): InternalChecklistItem | undefined {
   let parsed: unknown;
   try {
     parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
@@ -73,31 +73,31 @@ function readStoreItem(file: string): InternalPlanItem | undefined {
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
   const row = parsed as Record<string, unknown>;
-  const texto = typeof row.subject === "string" ? row.subject.trim() : "";
-  if (!texto) return undefined;
+  const text = typeof row.subject === "string" ? row.subject.trim() : "";
+  if (!text) return undefined;
   const status = mapStatus(row.status);
   if (!status) return undefined;
-  const item: InternalPlanItem = { texto, status };
+  const item: InternalChecklistItem = { text, status };
   if (typeof row.id === "string" && row.id.length > 0) {
     return { ...item, id: row.id, ...blockedByField(row.blockedBy) };
   }
   return { ...item, ...blockedByField(row.blockedBy) };
 }
 
-function mapStatus(value: unknown): InternalPlanStatus | undefined {
+function mapStatus(value: unknown): InternalChecklistStatus | undefined {
   if (typeof value !== "string") return undefined;
   const mapped = STATUS_ALIASES[value];
   if (mapped) return mapped;
-  return isInternalPlanStatus(value) ? value : undefined;
+  return isInternalChecklistStatus(value) ? value : undefined;
 }
 
-function blockedByField(value: unknown): Pick<InternalPlanItem, "blockedBy"> | {} {
+function blockedByField(value: unknown): Pick<InternalChecklistItem, "blockedBy"> | {} {
   if (!Array.isArray(value)) return {};
   const ids = value.filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
   return ids.length > 0 ? { blockedBy: ids } : {};
 }
 
-function comparePlanItems(a: InternalPlanItem, b: InternalPlanItem): number {
+function compareChecklistItems(a: InternalChecklistItem, b: InternalChecklistItem): number {
   const aId = a.id ?? "";
   const bId = b.id ?? "";
   const aNum = Number(aId);

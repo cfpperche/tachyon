@@ -4,15 +4,15 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   GROK_INTERNAL_PLAN_UPDATES,
-  grokInternalPlanUpdatesPath,
-  readGrokInternalPlan,
-} from "@tachyon/engine/runtime/grokInternalPlanReader.js";
+  grokInternalChecklistUpdatesPath,
+  readGrokInternalChecklist,
+} from "@tachyon/engine/runtime/grokInternalChecklistReader.js";
 
 /**
  * t-904de5 — the production Grok plan reader, driven by updates.jsonl a real authenticated
  * session wrote (PoC 2026-08-16, grok 1.0.4, sessions 6bc8226f / 188ca393 / 1202ad7c).
  *
- * These tests import `readGrokInternalPlan` — the host door. A helper-only parser that
+ * These tests import `readGrokInternalChecklist` — the host door. A helper-only parser that
  * the host never calls will not satisfy them. Disconnecting the reader (always mute, or a
  * canned projection that does not open updates.jsonl) turns the suite red.
  */
@@ -51,7 +51,7 @@ function writeUpdates(
   sessionId: string,
   lines: readonly unknown[],
 ): void {
-  const file = grokInternalPlanUpdatesPath({ configHome: home, cwd, sessionId });
+  const file = grokInternalChecklistUpdatesPath({ configHome: home, cwd, sessionId });
   expect(file).toBeTypeOf("string");
   fs.mkdirSync(path.dirname(file!), { recursive: true });
   fs.writeFileSync(file!, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
@@ -61,9 +61,9 @@ function sessionUpdate(update: Record<string, unknown>): unknown {
   return { method: "session/update", params: { update } };
 }
 
-describe("t-904de5 — readGrokInternalPlan (production door)", () => {
+describe("t-904de5 — readGrokInternalChecklist (production door)", () => {
   it("projects the measured authenticated induce session with todo_write ids preserved", () => {
-    const plan = readGrokInternalPlan({
+    const plan = readGrokInternalChecklist({
       configHome: FIXTURE_HOME,
       cwd: INDUCE.cwd,
       sessionId: INDUCE.sessionId,
@@ -71,9 +71,9 @@ describe("t-904de5 — readGrokInternalPlan (production door)", () => {
     expect(plan).toEqual({
       state: "snapshot",
       items: [
-        { id: "alpha", texto: "step one", status: "pending" },
-        { id: "beta", texto: "step two", status: "pending" },
-        { id: "gamma", texto: "step three", status: "pending" },
+        { id: "alpha", text: "step one", status: "pending" },
+        { id: "beta", text: "step two", status: "pending" },
+        { id: "gamma", text: "step three", status: "pending" },
       ],
     });
     if (plan.state === "snapshot") {
@@ -85,14 +85,14 @@ describe("t-904de5 — readGrokInternalPlan (production door)", () => {
 
   it("is mute when the plan channel never spoke, even if a leftover plan.json exists", () => {
     expect(
-      readGrokInternalPlan({
+      readGrokInternalChecklist({
         configHome: FIXTURE_HOME,
         cwd: TRIVIAL.cwd,
         sessionId: TRIVIAL.sessionId,
       }),
     ).toEqual({ state: "mute" });
     expect(
-      readGrokInternalPlan({
+      readGrokInternalChecklist({
         configHome: tempHome(),
         cwd: INDUCE.cwd,
         sessionId: INDUCE.sessionId,
@@ -102,7 +102,7 @@ describe("t-904de5 — readGrokInternalPlan (production door)", () => {
 
   it("is an empty snapshot when the channel spoke with zero items, not mute", () => {
     expect(
-      readGrokInternalPlan({
+      readGrokInternalChecklist({
         configHome: FIXTURE_HOME,
         cwd: EMPTY.cwd,
         sessionId: EMPTY.sessionId,
@@ -126,7 +126,7 @@ describe("t-904de5 — readGrokInternalPlan (production door)", () => {
         },
       }),
     ]);
-    expect(readGrokInternalPlan({ configHome: home, cwd, sessionId })).toEqual({
+    expect(readGrokInternalChecklist({ configHome: home, cwd, sessionId })).toEqual({
       state: "snapshot",
       items: [],
     });
@@ -153,9 +153,9 @@ describe("t-904de5 — readGrokInternalPlan (production door)", () => {
         },
       }),
     ]);
-    expect(readGrokInternalPlan({ configHome: home, cwd, sessionId })).toEqual({
+    expect(readGrokInternalChecklist({ configHome: home, cwd, sessionId })).toEqual({
       state: "snapshot",
-      items: [{ id: "canary", texto: "CANARY_UPDATES_READ", status: "completed" }],
+      items: [{ id: "canary", text: "CANARY_UPDATES_READ", status: "completed" }],
     });
   });
 
@@ -164,7 +164,7 @@ describe("t-904de5 — readGrokInternalPlan (production door)", () => {
     const cwd = "/tmp/plan-json-is-not-the-store";
     const sessionId = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
     const sessionDir = path.dirname(
-      grokInternalPlanUpdatesPath({ configHome: home, cwd, sessionId })!,
+      grokInternalChecklistUpdatesPath({ configHome: home, cwd, sessionId })!,
     );
     fs.mkdirSync(sessionDir, { recursive: true });
     fs.writeFileSync(
@@ -173,7 +173,7 @@ describe("t-904de5 — readGrokInternalPlan (production door)", () => {
         todos: { decoy: { content: "WRONG_FROM_PLAN_JSON", status: "completed" } },
       }),
     );
-    expect(readGrokInternalPlan({ configHome: home, cwd, sessionId })).toEqual({ state: "mute" });
+    expect(readGrokInternalChecklist({ configHome: home, cwd, sessionId })).toEqual({ state: "mute" });
 
     writeUpdates(home, cwd, sessionId, [
       sessionUpdate({
@@ -181,9 +181,9 @@ describe("t-904de5 — readGrokInternalPlan (production door)", () => {
         entries: [{ content: "from updates", status: "in_progress" }],
       }),
     ]);
-    expect(readGrokInternalPlan({ configHome: home, cwd, sessionId })).toEqual({
+    expect(readGrokInternalChecklist({ configHome: home, cwd, sessionId })).toEqual({
       state: "snapshot",
-      items: [{ texto: "from updates", status: "in-progress" }],
+      items: [{ text: "from updates", status: "in-progress" }],
     });
   });
 
@@ -191,38 +191,38 @@ describe("t-904de5 — readGrokInternalPlan (production door)", () => {
     const home = tempHome();
     const cwd = INDUCE.cwd;
     const sessionId = INDUCE.sessionId;
-    const src = grokInternalPlanUpdatesPath({
+    const src = grokInternalChecklistUpdatesPath({
       configHome: FIXTURE_HOME,
       cwd,
       sessionId,
     });
-    const dest = grokInternalPlanUpdatesPath({ configHome: home, cwd, sessionId });
+    const dest = grokInternalChecklistUpdatesPath({ configHome: home, cwd, sessionId });
     expect(src).toBeTypeOf("string");
     expect(dest).toBeTypeOf("string");
     fs.mkdirSync(path.dirname(dest!), { recursive: true });
     fs.copyFileSync(src!, dest!);
 
-    const live = readGrokInternalPlan({ configHome: home, cwd, sessionId });
+    const live = readGrokInternalChecklist({ configHome: home, cwd, sessionId });
     expect(live).toEqual({
       state: "snapshot",
       items: [
-        { id: "alpha", texto: "step one", status: "pending" },
-        { id: "beta", texto: "step two", status: "pending" },
-        { id: "gamma", texto: "step three", status: "pending" },
+        { id: "alpha", text: "step one", status: "pending" },
+        { id: "beta", text: "step two", status: "pending" },
+        { id: "gamma", text: "step three", status: "pending" },
       ],
     });
 
     fs.rmSync(path.dirname(dest!), { recursive: true, force: true });
-    expect(readGrokInternalPlan({ configHome: home, cwd, sessionId })).toEqual({ state: "mute" });
+    expect(readGrokInternalChecklist({ configHome: home, cwd, sessionId })).toEqual({ state: "mute" });
   });
 
   it("this suite calls the production reader, not a test-local stand-in", () => {
-    const source = fs.readFileSync(path.resolve("test/unit/grokInternalPlanReader.test.ts"), "utf8");
-    expect(source).toMatch(/from "@tachyon\/engine\/runtime\/grokInternalPlanReader\.js"/);
-    expect(source).toMatch(/readGrokInternalPlan\(/);
-    expect(source).not.toMatch(/function readGrokInternalPlan\(/);
+    const source = fs.readFileSync(path.resolve("test/unit/grokInternalChecklistReader.test.ts"), "utf8");
+    expect(source).toMatch(/from "@tachyon\/engine\/runtime\/grokInternalChecklistReader\.js"/);
+    expect(source).toMatch(/readGrokInternalChecklist\(/);
+    expect(source).not.toMatch(/function readGrokInternalChecklist\(/);
     const reader = fs.readFileSync(
-      path.resolve("packages/engine/src/runtime/grokInternalPlanReader.ts"),
+      path.resolve("packages/engine/src/runtime/grokInternalChecklistReader.ts"),
       "utf8",
     );
     expect(reader).toMatch(new RegExp(GROK_INTERNAL_PLAN_UPDATES.replace(".", "\\.")));

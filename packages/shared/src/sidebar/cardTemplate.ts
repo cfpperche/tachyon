@@ -72,7 +72,7 @@ export const CARD_COMPONENT_IDS = [
   "persistence-hooks",
   // footer
   "focus",
-  "plan",
+  "checklist",
   "metrics-lanes",
   "actions",
 ] as const;
@@ -125,7 +125,7 @@ export const CARD_CATALOG: Readonly<Record<CardComponentId, CardComponentSpec>> 
   "persistence-hooks": { region: "meta", describes: "Runtime persistence hook health (spec 316)" },
 
   focus: { region: "footer", describes: "What the agent is working on (spec 390)" },
-  plan: { region: "footer", describes: "Current internal-plan step, or a discrete sem-plano mark (t-281339)" },
+  checklist: { region: "footer", describes: "Current checklist step, or a discrete absent mark (t-281339)" },
   "metrics-lanes": { region: "footer", describes: "Expanded CPU/memory lanes (spec 386)" },
   actions: { region: "footer", describes: "Inline actions and the overflow menu" },
 };
@@ -222,7 +222,7 @@ export const DEFAULT_CARD_TEMPLATE: CardTemplate = {
     "continuity",
     "persistence-hooks",
   ],
-  footer: ["focus", "plan", "metrics-lanes", "actions"],
+  footer: ["focus", "checklist", "metrics-lanes", "actions"],
 };
 
 export function isCardComponentId(value: string): value is CardComponentId {

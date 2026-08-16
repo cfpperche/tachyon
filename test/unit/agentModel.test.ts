@@ -168,13 +168,13 @@ describe("agentModel.toAgentVM (spec 237)", () => {
     expect(vm).toMatchObject({ name: "reviewer", delegator: "codex", declaredOwner: "claude" });
     expect(vm.parent).toBeUndefined();
   });
-  it("t-281339: passes through the plan line and omits it when absent", () => {
+  it("t-281339: passes through the checklist line and omits it when absent", () => {
     expect(toAgentVM(raw({ name: "claude", running: true }), {
-      plan: { kind: "step", text: "write the line" },
-    }).plan).toEqual({ kind: "step", text: "write the line" });
-    expect(toAgentVM(raw({ name: "pi", running: true })).plan).toBeUndefined();
-    expect(toAgentVM(raw({ name: "grok", running: true }), { plan: { kind: "sem-plano" } }).plan).toEqual({
-      kind: "sem-plano",
+      checklist: { kind: "step", text: "write the line" },
+    }).checklist).toEqual({ kind: "step", text: "write the line" });
+    expect(toAgentVM(raw({ name: "pi", running: true })).checklist).toBeUndefined();
+    expect(toAgentVM(raw({ name: "grok", running: true }), { checklist: { kind: "absent" } }).checklist).toEqual({
+      kind: "absent",
     });
   });
   it("spec 316: passes through persistence hook health", () => {

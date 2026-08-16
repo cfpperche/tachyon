@@ -553,23 +553,23 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
     return null;
   },
 
-  /* t-281339 — one operator line: the current plan step, or a discrete
-     "No plan" mark. The verdict enum stays on data-plan; the painted
+  /* t-281339 — one operator line: the current checklist step, or a discrete
+     "No checklist" mark. The verdict enum stays on data-checklist; the painted
      label is English, like Running / Needs input / Throttled.
-     sem-canal is absence (the projector omitted the field). */
-  plan: ({ a }) => {
-    const plan = a.plan;
-    if (!plan) return null;
-    if (plan.kind === "sem-plano") {
+     no-channel is absence (the projector omitted the field). */
+  checklist: ({ a }) => {
+    const checklist = a.checklist;
+    if (!checklist) return null;
+    if (checklist.kind === "absent") {
       return (
-        <div class="row-plan sem-plano" data-testid="agent-plan-line" data-plan="sem-plano" title="No plan">
-          <span class="plan-mark">No plan</span>
+        <div class="row-checklist absent" data-testid="agent-checklist-line" data-checklist="absent" title="No checklist">
+          <span class="checklist-mark">No checklist</span>
         </div>
       );
     }
     return (
-      <div class="row-plan" data-testid="agent-plan-line" data-plan="step" title={plan.text}>
-        <span class="plan-text">{plan.text}</span>
+      <div class="row-checklist" data-testid="agent-checklist-line" data-checklist="step" title={checklist.text}>
+        <span class="checklist-text">{checklist.text}</span>
       </div>
     );
   },

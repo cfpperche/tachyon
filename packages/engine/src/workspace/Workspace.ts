@@ -173,19 +173,19 @@ import {
   type GatedCompletionFacts,
 } from "./GatedCompletionMonitor.js";
 import {
-  InternalPlanRepromptMonitor,
+  InternalChecklistRepromptMonitor,
   parsePersistenceStopRows,
-  type InternalPlanRepromptState,
-} from "./InternalPlanRepromptMonitor.js";
-import { judgeClaudeInternalPlanTurn } from "../runtime/claudeInternalPlanTurn.js";
-import { judgeCodexInternalPlanTurn } from "../runtime/codexInternalPlanTurn.js";
-import { judgeGrokInternalPlanTurn } from "../runtime/grokInternalPlanTurn.js";
+  type InternalChecklistRepromptState,
+} from "./InternalChecklistRepromptMonitor.js";
+import { judgeClaudeInternalChecklistTurn } from "../runtime/claudeInternalChecklistTurn.js";
+import { judgeCodexInternalChecklistTurn } from "../runtime/codexInternalChecklistTurn.js";
+import { judgeGrokInternalChecklistTurn } from "../runtime/grokInternalChecklistTurn.js";
 import { readClaudeTurnEvidence } from "../runtime/claudeTurnEvidence.js";
 import { readCodexTurnEvidence } from "../runtime/codexTurnEvidence.js";
 import { selectAssignedWork } from "../agents/assignmentSelection.js";
-import type { InternalPlanRead } from "../runtime/internalPlan.js";
-import type { InternalPlanTurnJudgment } from "../runtime/internalPlanTurn.js";
-import { readAgentInternalPlan } from "../sidebar/readAgentInternalPlan.js";
+import type { InternalChecklistRead } from "../runtime/internalChecklist.js";
+import type { InternalChecklistTurnJudgment } from "../runtime/internalChecklistTurn.js";
+import { readAgentInternalChecklist } from "../sidebar/readAgentInternalChecklist.js";
 import { isVerifiedSince } from "./verifyRecordReader.js";
 import { defaultGitExec } from "../worktree/WorktreeManager.js";
 import { appendDoorbellOverflowEvent, hasDoorbellRung } from "./doorbell.js";
@@ -502,8 +502,8 @@ export class Workspace {
   private readonly temporaryBackstop: TemporaryBackstopMonitor;
   /** t-875700 — host-fallback for gated omit-doorbell. */
   private readonly gatedCompletion: GatedCompletionMonitor;
-  /** t-73885b — one reprompt when a required-kind turn ends sem-plano. */
-  private readonly internalPlanReprompt: InternalPlanRepromptMonitor;
+  /** t-73885b — one reprompt when a required-kind turn ends absent. */
+  private readonly internalChecklistReprompt: InternalChecklistRepromptMonitor;
   /** t-458497 — pokes the coordinator when a runtime's quota window comes back with room. */
   private readonly runtimeSlack: RuntimeSlackMonitor;
   /** t-9552f3 — session-local completion doorbell latch (in-memory). */
@@ -1545,7 +1545,7 @@ export class Workspace {
       saveCandidates: (c) => this.saveGatedCompletionCandidates(c),
     });
 
-    this.internalPlanReprompt = new InternalPlanRepromptMonitor({
+    this.internalChecklistReprompt = new InternalChecklistRepromptMonitor({
       listStopRows: () => {
         try {
           return parsePersistenceStopRows(fs.readFileSync(persistenceStopFile(this.workspaceRoot), "utf8"));
@@ -1560,10 +1560,10 @@ export class Workspace {
         const full = this.taskStore.find(current.id);
         return { id: current.id, ...(full?.kind ? { kind: full.kind } : {}) };
       },
-      exigirEm: () => this.config?.plano?.exigir_em,
-      judgeTurn: (agent) => this.judgeInternalPlanTurn(agent),
-      loadState: () => this.loadInternalPlanRepromptState(),
-      saveState: (state) => this.saveInternalPlanRepromptState(state),
+      requireIn: () => this.config?.settings?.checklist?.requireIn,
+      judgeTurn: (agent) => this.judgeInternalChecklistTurn(agent),
+      loadState: () => this.loadInternalChecklistRepromptState(),
+      saveState: (state) => this.saveInternalChecklistRepromptState(state),
       sendReprompt: async (agent, text) => {
         await this.deliverNotice(agent, `[tachyon] ${text}`);
       },
@@ -1573,12 +1573,12 @@ export class Workspace {
       warnHuman: (agent, taskId) => {
         const message = taskId
           ? this.t(
-              "Agent '{0}' finished a turn without an internal plan on {1} after one reminder. Delivery is not blocked.",
+              "Agent '{0}' finished a turn without a checklist on {1} after one reminder. Delivery is not blocked.",
               agent,
               taskId,
             )
           : this.t(
-              "Agent '{0}' finished a turn without an internal plan after one reminder. Delivery is not blocked.",
+              "Agent '{0}' finished a turn without a checklist after one reminder. Delivery is not blocked.",
               agent,
             );
         this.host.notify(message, "warn");
@@ -6234,7 +6234,7 @@ export class Workspace {
     await this.temporaryBackstop.tick();
     await this.runtimeSlack.tick().catch(() => undefined);
     await this.gatedCompletion.tick().catch(() => undefined);
-    await this.internalPlanReprompt.tick().catch(() => undefined);
+    await this.internalChecklistReprompt.tick().catch(() => undefined);
     // States with durations ("idle 2m") need periodic re-render even without transitions.
     this.refreshAgentsViews();
   }
@@ -6321,18 +6321,18 @@ export class Workspace {
   }
 
   /**
-   * t-281339 — snapshot + verdict for the sidebar plan line. Missing
-   * evidence is mute/pending, never an invented sem-plano or sem-canal mark.
+   * t-281339 — snapshot + verdict for the sidebar checklist line. Missing
+   * evidence is mute/pending, never an invented absent or no-channel mark.
    */
-  internalPlan(agent: string): { snapshot: InternalPlanRead; judgment: InternalPlanTurnJudgment } {
+  internalChecklist(agent: string): { snapshot: InternalChecklistRead; judgment: InternalChecklistTurnJudgment } {
     return {
-      snapshot: this.readInternalPlanSnapshot(agent),
-      judgment: this.judgeInternalPlanTurn(agent),
+      snapshot: this.readInternalChecklistSnapshot(agent),
+      judgment: this.judgeInternalChecklistTurn(agent),
     };
   }
 
-  private readInternalPlanSnapshot(agent: string): InternalPlanRead {
-    const mute: InternalPlanRead = { state: "mute" };
+  private readInternalChecklistSnapshot(agent: string): InternalChecklistRead {
+    const mute: InternalChecklistRead = { state: "mute" };
     const def = this.manager.defOf(agent);
     const rec = this.ledger.get(agent);
     if (!def || !rec) return mute;
@@ -6340,7 +6340,7 @@ export class Workspace {
     const owner = runtime === "claude"
       ? latestOwnerFor(readSessionOwners(sessionOwnersFile(this.workspaceRoot)), agent, rec.cwd)
       : undefined;
-    return readAgentInternalPlan({
+    return readAgentInternalChecklist({
       runtime: runtime ?? undefined,
       workspaceRoot: this.workspaceRoot,
       agent,
@@ -6352,11 +6352,11 @@ export class Workspace {
 
   /**
    * t-73885b — consume the fatia-2 judges. Missing evidence is pending,
-   * never an invented sem-plano. Codex uses the TUI hook ledgers and
-   * `judgeCodexInternalPlanTurn`; it does not open the plan-snapshot reader.
+   * never an invented absent. Codex uses the TUI hook ledgers and
+   * `judgeCodexInternalChecklistTurn`; it does not open the plan-snapshot reader.
    */
-  private judgeInternalPlanTurn(agent: string): InternalPlanTurnJudgment {
-    const pending: InternalPlanTurnJudgment = { state: "pending", reason: "turn-open" };
+  private judgeInternalChecklistTurn(agent: string): InternalChecklistTurnJudgment {
+    const pending: InternalChecklistTurnJudgment = { state: "pending", reason: "turn-open" };
     const def = this.manager.defOf(agent);
     const rec = this.ledger.get(agent);
     if (!def || !rec) return pending;
@@ -6364,7 +6364,7 @@ export class Workspace {
     if (runtime === "grok") {
       const sessionId = rec.resume?.sessionId;
       if (!sessionId) return pending;
-      return judgeGrokInternalPlanTurn({
+      return judgeGrokInternalChecklistTurn({
         configHome: rec.resume?.configHome ?? "",
         cwd: rec.cwd,
         sessionId,
@@ -6375,33 +6375,33 @@ export class Workspace {
       if (!owner?.transcriptPath) return pending;
       const evidence = readClaudeTurnEvidence(owner.transcriptPath);
       if (!evidence) return pending;
-      return judgeClaudeInternalPlanTurn(evidence);
+      return judgeClaudeInternalChecklistTurn(evidence);
     }
     if (runtime === "codex") {
       const evidence = readCodexTurnEvidence(this.workspaceRoot, agent);
       if (!evidence) return pending;
-      return judgeCodexInternalPlanTurn(evidence);
+      return judgeCodexInternalChecklistTurn(evidence);
     }
     return pending;
   }
 
-  private internalPlanRepromptStatePath(): string {
-    return path.join(this.workspaceRoot, ".tachyon", "internal-plan-reprompt.json");
+  private internalChecklistRepromptStatePath(): string {
+    return path.join(this.workspaceRoot, ".tachyon", "internal-checklist-reprompt.json");
   }
 
-  private loadInternalPlanRepromptState(): InternalPlanRepromptState {
-    const file = this.internalPlanRepromptStatePath();
+  private loadInternalChecklistRepromptState(): InternalChecklistRepromptState {
+    const file = this.internalChecklistRepromptStatePath();
     try {
       if (!fs.existsSync(file)) return {};
-      const raw = JSON.parse(fs.readFileSync(file, "utf8")) as { entries?: InternalPlanRepromptState };
+      const raw = JSON.parse(fs.readFileSync(file, "utf8")) as { entries?: InternalChecklistRepromptState };
       return raw.entries && typeof raw.entries === "object" ? raw.entries : {};
     } catch {
       return {};
     }
   }
 
-  private saveInternalPlanRepromptState(entries: InternalPlanRepromptState): void {
-    const file = this.internalPlanRepromptStatePath();
+  private saveInternalChecklistRepromptState(entries: InternalChecklistRepromptState): void {
+    const file = this.internalChecklistRepromptStatePath();
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, `${JSON.stringify({ schemaVersion: 1, entries }, null, 2)}\n`, "utf8");

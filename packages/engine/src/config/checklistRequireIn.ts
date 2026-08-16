@@ -1,5 +1,5 @@
 /**
- * t-73885b — `plano.exigir_em` in tachyon.yml.
+ * t-73885b / t-c94207 — `settings.checklist.requireIn` in tachyon.yml.
  *
  * Kind is a free string, not an enum. Invalid input warns and is ignored;
  * the product never blocks on this block. A kind that no task uses does
@@ -7,8 +7,8 @@
  * project.
  */
 
-export interface PlanoConfig {
-  exigir_em: string[];
+export interface ChecklistConfig {
+  requireIn: string[];
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -22,53 +22,53 @@ function normalizeKind(value: string | undefined): string | undefined {
 }
 
 /**
- * Read the `plano:` mapping. Bad shape or a non-list `exigir_em` discards
- * the whole block (nobody is required). Bad items in an otherwise valid
- * list are dropped; the rest stay.
+ * Read the `settings.checklist` mapping. Bad shape or a non-list `requireIn`
+ * discards the whole block (nobody is required). Bad items in an otherwise
+ * valid list are dropped; the rest stay.
  */
-export function parsePlanoBlock(raw: unknown, discarded: string[]): PlanoConfig | undefined {
+export function parseChecklistBlock(raw: unknown, discarded: string[]): ChecklistConfig | undefined {
   if (!isPlainObject(raw)) {
-    discarded.push("plano: must be a mapping");
+    discarded.push("settings.checklist: must be a mapping");
     return undefined;
   }
   for (const key of Object.keys(raw)) {
-    if (key !== "exigir_em") discarded.push(`plano: unknown key '${key}'`);
+    if (key !== "requireIn") discarded.push(`settings.checklist: unknown key '${key}'`);
   }
-  if (raw.exigir_em === undefined) return { exigir_em: [] };
-  if (!Array.isArray(raw.exigir_em)) {
-    discarded.push("plano.exigir_em: must be a list of kind strings");
+  if (raw.requireIn === undefined) return { requireIn: [] };
+  if (!Array.isArray(raw.requireIn)) {
+    discarded.push("settings.checklist.requireIn: must be a list of kind strings");
     return undefined;
   }
-  const exigir_em: string[] = [];
-  raw.exigir_em.forEach((item, index) => {
+  const requireIn: string[] = [];
+  raw.requireIn.forEach((item, index) => {
     if (typeof item !== "string") {
-      discarded.push(`plano.exigir_em[${index}]: must be a string`);
+      discarded.push(`settings.checklist.requireIn[${index}]: must be a string`);
       return;
     }
     if (item.trim() === "") {
-      discarded.push(`plano.exigir_em[${index}]: must be a non-empty string`);
+      discarded.push(`settings.checklist.requireIn[${index}]: must be a non-empty string`);
       return;
     }
-    exigir_em.push(item);
+    requireIn.push(item);
   });
-  return { exigir_em };
+  return { requireIn };
 }
 
-type ExigirTokens = {
+type RequireInTokens = {
   includeAll: boolean;
   excludeAll: boolean;
   include: Set<string>;
   exclude: Set<string>;
 };
 
-function tokensOf(exigirEm: readonly unknown[] | undefined): ExigirTokens | undefined {
-  if (!exigirEm || exigirEm.length === 0) return undefined;
+function tokensOf(requireIn: readonly unknown[] | undefined): RequireInTokens | undefined {
+  if (!requireIn || requireIn.length === 0) return undefined;
   const include = new Set<string>();
   const exclude = new Set<string>();
   let includeAll = false;
   let excludeAll = false;
   let hasPositive = false;
-  for (const raw of exigirEm) {
+  for (const raw of requireIn) {
     if (typeof raw !== "string") continue;
     const token = raw.trim();
     if (!token) continue;
@@ -96,9 +96,9 @@ function tokensOf(exigirEm: readonly unknown[] | undefined): ExigirTokens | unde
   return { includeAll, excludeAll, include, exclude };
 }
 
-/** Whether `plano.exigir_em` requires a plan for this task kind. */
-export function planoRequiresKind(exigirEm: readonly unknown[] | undefined, taskKind?: string): boolean {
-  const tokens = tokensOf(exigirEm);
+/** Whether `settings.checklist.requireIn` requires a checklist for this task kind. */
+export function checklistRequiresKind(requireIn: readonly unknown[] | undefined, taskKind?: string): boolean {
+  const tokens = tokensOf(requireIn);
   if (!tokens || tokens.excludeAll) return false;
   const kind = normalizeKind(taskKind);
   if (kind && tokens.exclude.has(kind)) return false;

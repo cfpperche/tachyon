@@ -14,7 +14,7 @@
  *
  * Channel: live `updates.jsonl`. `events.jsonl` names `todo_write` and
  * records `turn_ended` but does not carry the plan — a turn-end seen only
- * there is `sem-canal`, not `sem-plano`. Post-dismiss wipe (t-23ee99) is
+ * there is `no-channel`, not `absent`. Post-dismiss wipe (t-23ee99) is
  * not evidence; a missing session is `turn-open`, not mute.
  *
  * A measured TUI turn ran ~7 minutes with no plan and then wrote one.
@@ -22,31 +22,31 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { grokInternalPlanUpdatesPath } from "./grokInternalPlanReader.js";
-import { decideInternalPlanTurnVerdict, type InternalPlanTurnJudgment } from "./internalPlanTurn.js";
+import { grokInternalChecklistUpdatesPath } from "./grokInternalChecklistReader.js";
+import { decideInternalChecklistTurnVerdict, type InternalChecklistTurnJudgment } from "./internalChecklistTurn.js";
 
 const GROK_EVENTS_FILE = "events.jsonl";
 
-export function judgeGrokInternalPlanTurn(input: {
+export function judgeGrokInternalChecklistTurn(input: {
   configHome: string;
   cwd: string;
   sessionId: string;
   promptId?: string;
-}): InternalPlanTurnJudgment {
-  const updates = grokInternalPlanUpdatesPath(input);
+}): InternalChecklistTurnJudgment {
+  const updates = grokInternalChecklistUpdatesPath(input);
   if (updates && fs.existsSync(updates)) {
     let text: string;
     try {
       text = fs.readFileSync(updates, "utf8");
     } catch {
-      return decideInternalPlanTurnVerdict({
+      return decideInternalChecklistTurnVerdict({
         turnEnded: false,
         turnCompletedSuccessfully: false,
-        planEventInWindow: false,
+        checklistEventInWindow: false,
         channelPresent: true,
       });
     }
-    return judgeGrokInternalPlanLines({
+    return judgeGrokInternalChecklistLines({
       lines: text.split("\n"),
       promptId: input.promptId,
       channelPresent: true,
@@ -56,27 +56,27 @@ export function judgeGrokInternalPlanTurn(input: {
   const sessionDir = updates ? path.dirname(updates) : undefined;
   const eventsFile = sessionDir ? path.join(sessionDir, GROK_EVENTS_FILE) : undefined;
   if (eventsFile && fs.existsSync(eventsFile) && eventsJsonlHasTurnEnded(eventsFile, input.promptId)) {
-    return decideInternalPlanTurnVerdict({
+    return decideInternalChecklistTurnVerdict({
       turnEnded: true,
       turnCompletedSuccessfully: true,
-      planEventInWindow: false,
+      checklistEventInWindow: false,
       channelPresent: false,
     });
   }
 
-  return decideInternalPlanTurnVerdict({
+  return decideInternalChecklistTurnVerdict({
     turnEnded: false,
     turnCompletedSuccessfully: false,
-    planEventInWindow: false,
+    checklistEventInWindow: false,
     channelPresent: false,
   });
 }
 
-export function judgeGrokInternalPlanLines(input: {
+export function judgeGrokInternalChecklistLines(input: {
   lines: readonly string[];
   promptId?: string;
   channelPresent: boolean;
-}): InternalPlanTurnJudgment {
+}): InternalChecklistTurnJudgment {
   const turns: GrokTurn[] = [];
   let current: GrokTurn | undefined;
 
@@ -108,10 +108,10 @@ export function judgeGrokInternalPlanLines(input: {
 
   const turn = pickTurn(turns, input.promptId);
   const success = turn?.ended === true && grokTurnSucceeded(turn.stopReason);
-  return decideInternalPlanTurnVerdict({
+  return decideInternalChecklistTurnVerdict({
     turnEnded: turn?.ended === true,
     turnCompletedSuccessfully: success,
-    planEventInWindow: turn?.plan === true,
+    checklistEventInWindow: turn?.plan === true,
     channelPresent: input.channelPresent,
   });
 }

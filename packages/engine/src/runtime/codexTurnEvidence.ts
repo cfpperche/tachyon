@@ -1,18 +1,18 @@
 /**
- * t-73885b — gather Codex TUI hook rows for `judgeCodexInternalPlanTurn`.
+ * t-73885b — gather Codex TUI hook rows for `judgeCodexInternalChecklistTurn`.
  * Does not decide the verdict. Stop without a turn_id, or no Stop at all,
- * is absence of evidence — not `sem-plano`.
+ * is absence of evidence — not `absent`.
  *
  * Does not read the Codex plan snapshot. The parallel TUI reader owns that.
  */
 import fs from "node:fs";
 import { codexToolHookFile, persistenceStopFile } from "../activity/sessionOwners.js";
-import { CODEX_TUI_PLAN_HOOK_EVENTS } from "./codexInternalPlanTurn.js";
+import { CODEX_TUI_CHECKLIST_HOOK_EVENTS } from "./codexInternalChecklistTurn.js";
 
 export const CODEX_TUI_KNOWN_HOOK_EVENTS = [
   "SessionStart",
   "Stop",
-  ...CODEX_TUI_PLAN_HOOK_EVENTS,
+  ...CODEX_TUI_CHECKLIST_HOOK_EVENTS,
 ] as const;
 
 export function readCodexTurnEvidence(

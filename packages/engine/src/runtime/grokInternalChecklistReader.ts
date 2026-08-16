@@ -13,15 +13,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
-  isInternalPlanStatus,
-  type InternalPlanItem,
-  type InternalPlanRead,
-  type InternalPlanStatus,
-} from "./internalPlan.js";
+  isInternalChecklistStatus,
+  type InternalChecklistItem,
+  type InternalChecklistRead,
+  type InternalChecklistStatus,
+} from "./internalChecklist.js";
 
 export const GROK_INTERNAL_PLAN_UPDATES = "updates.jsonl";
 
-const STATUS_ALIASES: Record<string, InternalPlanStatus> = {
+const STATUS_ALIASES: Record<string, InternalChecklistStatus> = {
   pending: "pending",
   completed: "completed",
   "in-progress": "in-progress",
@@ -29,7 +29,7 @@ const STATUS_ALIASES: Record<string, InternalPlanStatus> = {
   inProgress: "in-progress",
 };
 
-export function grokInternalPlanUpdatesPath(input: {
+export function grokInternalChecklistUpdatesPath(input: {
   configHome: string;
   cwd: string;
   sessionId: string;
@@ -45,12 +45,12 @@ export function grokInternalPlanUpdatesPath(input: {
   );
 }
 
-export function readGrokInternalPlan(input: {
+export function readGrokInternalChecklist(input: {
   configHome: string;
   cwd: string;
   sessionId: string;
-}): InternalPlanRead {
-  const file = grokInternalPlanUpdatesPath(input);
+}): InternalChecklistRead {
+  const file = grokInternalChecklistUpdatesPath(input);
   if (!file || !fs.existsSync(file)) return { state: "mute" };
   let text: string;
   try {
@@ -59,9 +59,9 @@ export function readGrokInternalPlan(input: {
     return { state: "mute" };
   }
   let spoke = false;
-  let items: InternalPlanItem[] = [];
+  let items: InternalChecklistItem[] = [];
   for (const line of text.split("\n")) {
-    const projected = projectPlanLine(line);
+    const projected = projectChecklistLine(line);
     if (!projected) continue;
     spoke = true;
     items = carryIds(items, projected);
@@ -69,7 +69,7 @@ export function readGrokInternalPlan(input: {
   return spoke ? { state: "snapshot", items } : { state: "mute" };
 }
 
-function projectPlanLine(line: string): InternalPlanItem[] | undefined {
+function projectChecklistLine(line: string): InternalChecklistItem[] | undefined {
   const trimmed = line.trim();
   if (!trimmed) return undefined;
   let parsed: unknown;
@@ -82,7 +82,7 @@ function projectPlanLine(line: string): InternalPlanItem[] | undefined {
   if (!update) return undefined;
   const fromTodos = projectTodosUpdated(update);
   if (fromTodos !== undefined) return fromTodos;
-  return projectPlanEntries(update);
+  return projectChecklistEntries(update);
 }
 
 function extractUpdate(record: unknown): Record<string, unknown> | undefined {
@@ -95,7 +95,7 @@ function extractUpdate(record: unknown): Record<string, unknown> | undefined {
   return undefined;
 }
 
-function projectTodosUpdated(update: Record<string, unknown>): InternalPlanItem[] | undefined {
+function projectTodosUpdated(update: Record<string, unknown>): InternalChecklistItem[] | undefined {
   if (!isPlainObject(update.rawOutput)) return undefined;
   const raw = update.rawOutput;
   if (raw.type !== "Todo" || !isPlainObject(raw.TodosUpdated)) return undefined;
@@ -107,15 +107,15 @@ function projectTodosUpdated(update: Record<string, unknown>): InternalPlanItem[
   return [];
 }
 
-function projectPlanEntries(update: Record<string, unknown>): InternalPlanItem[] | undefined {
+function projectChecklistEntries(update: Record<string, unknown>): InternalChecklistItem[] | undefined {
   if (update.sessionUpdate !== "plan") return undefined;
   if (update.entries === undefined) return [];
   if (!Array.isArray(update.entries)) return undefined;
   return projectTodoList(update.entries);
 }
 
-function projectTodoMap(todos: Record<string, unknown>): InternalPlanItem[] {
-  const items: InternalPlanItem[] = [];
+function projectTodoMap(todos: Record<string, unknown>): InternalChecklistItem[] {
+  const items: InternalChecklistItem[] = [];
   for (const [id, row] of Object.entries(todos)) {
     const item = projectTodoRow(row);
     if (!item) continue;
@@ -124,8 +124,8 @@ function projectTodoMap(todos: Record<string, unknown>): InternalPlanItem[] {
   return items;
 }
 
-function projectTodoList(rows: readonly unknown[]): InternalPlanItem[] {
-  const items: InternalPlanItem[] = [];
+function projectTodoList(rows: readonly unknown[]): InternalChecklistItem[] {
+  const items: InternalChecklistItem[] = [];
   for (const row of rows) {
     const item = projectTodoRow(row);
     if (item) items.push(item);
@@ -133,36 +133,36 @@ function projectTodoList(rows: readonly unknown[]): InternalPlanItem[] {
   return items;
 }
 
-function projectTodoRow(value: unknown): InternalPlanItem | undefined {
+function projectTodoRow(value: unknown): InternalChecklistItem | undefined {
   if (!isPlainObject(value)) return undefined;
-  const texto = typeof value.content === "string" ? value.content.trim() : "";
-  if (!texto) return undefined;
+  const text = typeof value.content === "string" ? value.content.trim() : "";
+  if (!text) return undefined;
   const status = mapStatus(value.status);
   if (!status) return undefined;
-  const item: InternalPlanItem = { texto, status };
+  const item: InternalChecklistItem = { text, status };
   if (typeof value.id === "string" && value.id.length > 0) {
     return { ...item, id: value.id };
   }
   return item;
 }
 
-function carryIds(previous: readonly InternalPlanItem[], next: InternalPlanItem[]): InternalPlanItem[] {
+function carryIds(previous: readonly InternalChecklistItem[], next: InternalChecklistItem[]): InternalChecklistItem[] {
   if (previous.length !== next.length) return next;
   return next.map((item, index) => {
     if (item.id) return item;
     const prior = previous[index];
-    if (prior?.id && prior.texto === item.texto && prior.status === item.status) {
+    if (prior?.id && prior.text === item.text && prior.status === item.status) {
       return { ...item, id: prior.id };
     }
     return item;
   });
 }
 
-function mapStatus(value: unknown): InternalPlanStatus | undefined {
+function mapStatus(value: unknown): InternalChecklistStatus | undefined {
   if (typeof value !== "string") return undefined;
   const mapped = STATUS_ALIASES[value];
   if (mapped) return mapped;
-  return isInternalPlanStatus(value) ? value : undefined;
+  return isInternalChecklistStatus(value) ? value : undefined;
 }
 
 function isSafePathSegment(value: string): boolean {
