@@ -12,6 +12,7 @@ import path from "node:path";
 import type { Runtime, ToolLaunchPolicy } from "./manifest.js";
 import { SUPPORTED_RUNTIMES, TOOL_PLATFORM_KEYS, parseLaunchPolicy, normalizeCandidateNames } from "./manifest.js";
 import { isContainedRelPath } from "./paths.js";
+import { parseInstallScope, type InstallScope } from "./installScope.js";
 
 export const LOCKFILE_REL_PATH = ".tachyon/plugins.lock.json";
 
@@ -38,6 +39,11 @@ export interface MaterializedTarget {
    * the user editing the config and never deletes a user's own entry). The lockfile stores it verbatim.
    */
   removal?: unknown;
+  /**
+   * t-54cdb2 — dest scope this target was written under. Absent = workspace (old locks stay valid).
+   * Agent dests record `{type:"agent", name}` so a second agent's install cannot stale-delete the first.
+   */
+  scope?: InstallScope;
 }
 
 /** Git provenance — enough to re-hydrate the EXACT bytes on a clone (the resolved commit pins it). */
@@ -442,6 +448,14 @@ function parseTarget(raw: unknown, where: string, errors: string[]): Materialize
     target.ref = raw.ref;
   }
   if (raw.removal !== undefined) target.removal = raw.removal; // opaque — the adapter validates its own removal record
+  if (raw.scope !== undefined) {
+    const parsed = parseInstallScope(raw.scope, `${where}.scope`);
+    if (parsed.error) {
+      errors.push(parsed.error);
+      return null;
+    }
+    if (parsed.scope && parsed.scope.type === "agent") target.scope = parsed.scope;
+  }
   return target;
 }
 

@@ -34,6 +34,25 @@ import { parseCodexHooksBlock } from "@tachyon/engine/plugins/adapters/codex.js"
 import { parseGrokHooksBlock } from "@tachyon/engine/plugins/adapters/grok.js";
 import { readFile, atomicWrite } from "./fsx.js";
 import { PLUGIN_PAYLOAD_ROOT, PLUGIN_SKILLS_DIR } from "@tachyon/engine/plugins/paths.js";
+import {
+  WORKSPACE_INSTALL_SCOPE,
+  type InstallScope,
+} from "@tachyon/engine/plugins/installScope.js";
+
+export { WORKSPACE_INSTALL_SCOPE } from "@tachyon/engine/plugins/installScope.js";
+export type { InstallScope } from "@tachyon/engine/plugins/installScope.js";
+import {
+  WORKSPACE_DESTS,
+  isHarnessSkillDest,
+  materializeSkillDest,
+  resolveInstallDests,
+  targetMatchesScope,
+  validMcpDestPath,
+  validSettingsDestPath,
+  validSkillDestPath,
+  type HarnessIdentity,
+  type RuntimeDestLayout,
+} from "@tachyon/engine/plugins/agentDest.js";
 import { MCP_SERVER_NAME, readMcpConfig, renderMcp, setMcpServer, setMcpFromRemoval, removeMcpServerText, currentMcp, mcpRepEquals, writeMcpConfig } from "./mcpConfig.js";
 import { parseSource, parseSemverTag, compareSemver, rewriteRef } from "./source.js";
 import { fetchSource, defaultGitRun, resolveLatestSemverTag, type GitRun } from "./fetcher.js";
@@ -103,11 +122,11 @@ interface AdapterSpec {
   mcpRel: string | null;
 }
 const ADAPTERS: Record<Runtime, AdapterSpec> = {
-  claude: { settingsRel: ".claude/settings.json", parseBlock: parseClaudeHooksBlock, skillsRel: ".claude/skills", mcpRel: ".mcp.json" },
-  codex: { settingsRel: ".codex/hooks.json", parseBlock: parseCodexHooksBlock, skillsRel: ".agents/skills", mcpRel: ".codex/config.toml" },
+  claude: { settingsRel: WORKSPACE_DESTS.claude.settingsRel, parseBlock: parseClaudeHooksBlock, skillsRel: WORKSPACE_DESTS.claude.skillsRel, mcpRel: WORKSPACE_DESTS.claude.mcpRel },
+  codex: { settingsRel: WORKSPACE_DESTS.codex.settingsRel, parseBlock: parseCodexHooksBlock, skillsRel: WORKSPACE_DESTS.codex.skillsRel, mcpRel: WORKSPACE_DESTS.codex.mcpRel },
   // t-2f99e7 — guide-measured layout (see adapters/grok.ts). mcpRel is null: Grok's project MCP
   // schema is not the codex codec; hooks + skills install without inventing a wrong MCP path.
-  grok: { settingsRel: ".grok/hooks/tachyon-plugins.json", parseBlock: parseGrokHooksBlock, skillsRel: ".grok/skills", mcpRel: null },
+  grok: { settingsRel: WORKSPACE_DESTS.grok.settingsRel, parseBlock: parseGrokHooksBlock, skillsRel: WORKSPACE_DESTS.grok.skillsRel, mcpRel: WORKSPACE_DESTS.grok.mcpRel },
 };
 
 /**
@@ -604,12 +623,12 @@ export function runtimeSupportsSkills(runtime: Runtime): boolean {
  * absent from the workspace OR with no skills loader is skipped. PURE — no I/O and no collision check yet
  * (Step 3 reads the filesystem to detect a destination collision and apply the human's Keep/Replace choice).
  */
-export function planSkillTargets(plugin: LoadedPlugin, present: ReadonlySet<Runtime>): SkillTarget[] {
+export function planSkillTargets(plugin: LoadedPlugin, present: ReadonlySet<Runtime>, dests: Record<Runtime, RuntimeDestLayout> = WORKSPACE_DESTS): SkillTarget[] {
   const targets: SkillTarget[] = [];
   for (const rt of SUPPORTED_RUNTIMES) {
     if (!plugin.manifest.runtimes.includes(rt) || !present.has(rt)) continue;
-    const skillsRel = ADAPTERS[rt].skillsRel;
-    if (!skillsRel) continue; // runtime has no skills loader → skip
+    const skillsRel = dests[rt].skillsRel;
+    if (!skillsRel) continue; // runtime has no skills loader, or agent dest cannot isolate it → skip
     for (const skill of plugin.skills) {
       targets.push({
         runtime: rt,
@@ -643,11 +662,11 @@ export function runtimeSupportsMcp(runtime: Runtime): boolean {
  * from the workspace OR with no MCP loader is skipped (declare-and-skip). PURE — no I/O and no collision check
  * yet (Step 4 reads the config to detect a server-name collision and apply the human's Keep/Replace choice).
  */
-export function planMcpTargets(plugin: LoadedPlugin, present: ReadonlySet<Runtime>): McpTarget[] {
+export function planMcpTargets(plugin: LoadedPlugin, present: ReadonlySet<Runtime>, dests: Record<Runtime, RuntimeDestLayout> = WORKSPACE_DESTS): McpTarget[] {
   const targets: McpTarget[] = [];
   for (const rt of SUPPORTED_RUNTIMES) {
     if (!plugin.manifest.runtimes.includes(rt) || !present.has(rt)) continue;
-    const mcpRel = ADAPTERS[rt].mcpRel;
+    const mcpRel = dests[rt].mcpRel;
     if (!mcpRel) continue; // runtime has no MCP loader → skip
     for (const server of plugin.mcp) {
       targets.push({ runtime: rt, server, ref: server.name, destRel: mcpRel });
@@ -686,7 +705,7 @@ interface McpConfigSnapshot {
 /** A mcp-server target is only legitimate if its file is EXACTLY the runtime's MCP config path — so a
  *  corrupted lockfile can't make remove touch an arbitrary file. */
 function validMcpDest(runtime: Runtime, file: string): boolean {
-  return ADAPTERS[runtime].mcpRel !== null && file === ADAPTERS[runtime].mcpRel;
+  return validMcpDestPath(runtime, file);
 }
 
 /** A recorded `removal` is shape-valid for `runtime` only if it looks like something Tachyon actually rendered
@@ -837,6 +856,10 @@ export interface InstallPreview {
   /** spec 276 — the DIRECT declared dependencies' install-time states (satisfied/out-of-range/missing); the
    *  consent drawer surfaces these. Advisory: a missing/out-of-range dep never blocks install. */
   requires: DependencyState[];
+  /** t-54cdb2 — dest scope this plan writes. Absent/workspace = current shared dests. Bound into the fingerprint. */
+  scope?: InstallScope;
+  /** Isolated-harness identity when scope is agent; absent/null for workspace. Bound into the fingerprint. */
+  harnessIdentity?: HarnessIdentity | null;
 }
 
 /** Absolute materialized payload root for a plugin (where `${PLUGIN_ROOT}` resolves for MCP render). */
@@ -844,7 +867,7 @@ function pluginPayloadAbs(workspaceRoot: string, pluginName: string): string {
   return path.join(workspaceRoot, PAYLOAD_ROOT, pluginName);
 }
 
-function fingerprintOf(plugin: LoadedPlugin, workspaceRoot: string, targetRuntimes: Runtime[], steps: InstallStep[], skillTargets: SkillPlanItem[], mcpTargets: McpPlanItem[], mcpConfigBefore: McpConfigSnapshot[], gitHookTargets: GitHookPlanItem[], gitState: GitHookState | undefined, toolTargets: ToolPlanItem[], dataTargets: DataPlanItem[], viewTargets: ViewTarget[], payloadHash: string): string {
+function fingerprintOf(plugin: LoadedPlugin, workspaceRoot: string, targetRuntimes: Runtime[], steps: InstallStep[], skillTargets: SkillPlanItem[], mcpTargets: McpPlanItem[], mcpConfigBefore: McpConfigSnapshot[], gitHookTargets: GitHookPlanItem[], gitState: GitHookState | undefined, toolTargets: ToolPlanItem[], dataTargets: DataPlanItem[], viewTargets: ViewTarget[], payloadHash: string, scope: InstallScope = WORKSPACE_INSTALL_SCOPE, harnessIdentity: HarnessIdentity | null = null): string {
   const pluginRoot = pluginPayloadAbs(workspaceRoot, plugin.manifest.name);
   const basis = {
     name: plugin.manifest.name,
@@ -883,6 +906,10 @@ function fingerprintOf(plugin: LoadedPlugin, workspaceRoot: string, targetRuntim
     // spec 284 — bind the DATA plan to its integrity facts (platform + declared URL + content sha + leaf). Added
     // ONLY when there's data, so a plugin with no data hashes BYTE-IDENTICALLY to before this feature (codex C3).
     ...(dataTargets.length > 0 ? { data: dataTargets.map((d) => ({ name: d.name, platform: d.resolvedPlatform, declaredUrl: d.declaredUrl, sha256: d.sha256, fileName: d.fileName })) } : {}),
+    // t-54cdb2 — dest scope + harness identity. An agent that gains/loses/swaps isolated harness
+    // between preview and apply must fail closed and re-consent. Workspace installs omit this so
+    // existing fingerprints stay byte-identical.
+    ...(scope.type === "workspace" && !harnessIdentity ? {} : { dest: { scope, harness: harnessIdentity } }),
   };
   return crypto.createHash("sha256").update(JSON.stringify(basis)).digest("hex");
 }
@@ -929,12 +956,17 @@ function skillToolPlaceholderWarnings(plugin: LoadedPlugin): string[] {
 
 /** Plan an install WITHOUT writing: preflight payload, read each runtime's config + the lockfile fail-closed,
  *  compute the merges, return the diff + wired commands + a consent fingerprint. */
-export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, target: ReadonlySet<Runtime>, gitState?: GitHookState, toolPlan?: ToolPlan, dataPlan?: DataPlan): InstallPreview {
+export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, target: ReadonlySet<Runtime>, gitState?: GitHookState, toolPlan?: ToolPlan, dataPlan?: DataPlan, scope: InstallScope = WORKSPACE_INSTALL_SCOPE): InstallPreview {
   const { manifest } = plugin;
-  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], gitHookTargets: [], toolTargets: [], dataTargets: [], externalTargets: [], viewTargets: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "", requires: [] });
+  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], gitHookTargets: [], toolTargets: [], dataTargets: [], externalTargets: [], viewTargets: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "", requires: [], scope, harnessIdentity: null });
 
   const payload = preflightPayload(plugin.dir);
   if (payload.errors.length > 0) return empty(payload.errors);
+
+  const destRes = resolveInstallDests(workspaceRoot, scope);
+  if ("error" in destRes) return empty([destRes.error]);
+  const dests = destRes.dests;
+  const harnessIdentity = destRes.identity;
 
   const lockRead = readLockfile(workspaceRoot);
   if (!lockRead.lockfile) return empty(lockRead.errors);
@@ -956,16 +988,16 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
   const noHookRuntimes = new Set<Runtime>();
 
   for (const rt of compat.installable) {
-    const spec = ADAPTERS[rt];
+    const settingsRel = dests[rt].settingsRel;
     const block = plugin.blocks[rt];
     const rootRel = plugin.rootRel[rt];
     if (!block || !rootRel) {
       noHookRuntimes.add(rt);
       continue;
     }
-    const prior = priorOwned(lock, rt, spec.settingsRel);
+    const prior = priorOwned(lock, rt, settingsRel);
     if (prior.errors.length > 0) return empty(prior.errors);
-    const read = readSettings(path.join(workspaceRoot, spec.settingsRel));
+    const read = readSettings(path.join(workspaceRoot, settingsRel));
     if (!read.settings) {
       errors.push(...read.errors);
       continue;
@@ -978,7 +1010,7 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
     }
     steps.push({
       runtime: rt,
-      settingsRel: spec.settingsRel,
+      settingsRel,
       before: read.settings,
       after: merge.settings,
       owned: merge.owned,
@@ -988,8 +1020,8 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
 
   // spec 251 Step 3 — plan skill materializations + detect collisions. A dest already present that is NOT one
   // of THIS plugin's prior skill-dirs (from the lockfile) is a USER collision → needs an explicit Keep/Replace.
-  const priorSkillDests = new Set((lock?.targets ?? []).filter((t) => t.kind === "skill-dir").map((t) => t.file));
-  const skillTargets: SkillPlanItem[] = planSkillTargets(plugin, target).map((t) => ({
+  const priorSkillDests = new Set((lock?.targets ?? []).filter((t) => t.kind === "skill-dir" && targetMatchesScope(t, scope)).map((t) => t.file));
+  const skillTargets: SkillPlanItem[] = planSkillTargets(plugin, target, dests).map((t) => ({
     ...t,
     collision: !priorSkillDests.has(t.destRel) && fs.existsSync(path.join(workspaceRoot, t.destRel)),
   }));
@@ -998,7 +1030,7 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
   // lockfile claim: a server is "ours" (not a collision) only if a prior mcp-server target records it AND the
   // current on-disk entry equals that target's recorded `removal`. A present same-name server we don't own is a
   // USER collision → Keep/Replace. Prior targets are validated fail-closed; configs read fail-closed.
-  const mcpPlan = planMcpTargets(plugin, target);
+  const mcpPlan = planMcpTargets(plugin, target, dests);
   const priorMcpTargets = (lock?.targets ?? []).filter((t): t is MaterializedTarget & { runtime: Runtime; ref: string } => t.kind === "mcp-server" && !!t.runtime && typeof t.ref === "string");
   for (const t of priorMcpTargets) {
     if (!validMcpDest(t.runtime, t.file) || typeof t.ref !== "string" || !MCP_SERVER_NAME.test(t.ref) || !validMcpRemoval(t.runtime, t.ref, t.removal)) {
@@ -1036,7 +1068,8 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
   }
 
   // spec 264 — plan git-hook materializations from the injected git state (runtime-agnostic).
-  const gitHookTargets = planGitHooks(plugin, gitState, errors);
+  // Git hooks are repo-global; an agent dest must not write them (they are not a private harness dest).
+  const gitHookTargets = scope.type === "agent" ? [] : planGitHooks(plugin, gitState, errors);
 
   // spec 265 — the injected tool plan (resolved off the running host). Tools that can't be provisioned for this
   // host surface as warnings; a git-hook leaf referencing a missing tool fails closed at materialization (task 10).
@@ -1065,11 +1098,18 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
   for (const w of placeholderTypoWarnings(plugin)) warnings.push(w);
   for (const w of skillToolPlaceholderWarnings(plugin)) warnings.push(w);
 
-  const viewTargets = planViewTargets(plugin, errors);
+  const viewTargets = scope.type === "agent" ? [] : planViewTargets(plugin, errors);
 
-  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, workspaceRoot, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, gitState, toolTargets, dataTargets, viewTargets, payload.hash);
+  if (scope.type === "agent" && plugin.skills.length > 0 && skillTargets.length === 0) {
+    const isolable = SUPPORTED_RUNTIMES.some((rt) => plugin.manifest.runtimes.includes(rt) && dests[rt].skillsRel);
+    if (!isolable) {
+      errors.push("agent dest cannot isolate this plugin's skills (no isolated discovery root for the declared runtimes; refusing workspace fallback)");
+    }
+  }
+
+  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, workspaceRoot, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, gitState, toolTargets, dataTargets, viewTargets, payload.hash, scope, harnessIdentity);
   const requires = dependencyStates(manifest.dependencies, lockRead.lockfile); // spec 276 — direct deps vs lockfile
-  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, toolTargets, dataTargets, externalTargets, viewTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash, requires };
+  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, toolTargets, dataTargets, externalTargets, viewTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash, requires, scope, harnessIdentity };
 }
 
 function planViewTargets(plugin: LoadedPlugin, errors: string[]): ViewTarget[] {
@@ -1129,6 +1169,8 @@ export interface InstallResult {
  *  settings, staging + hash-checking the payload copy and lost-update-checking each settings file first. */
 interface ApplyOpts {
   provenance?: InstallProvenance;
+  /** t-54cdb2 — dest scope. Default workspace. Must match the preview's scope (fingerprint-bound). */
+  scope?: InstallScope;
   skillDecisions?: Record<string, "keep" | "replace">;
   mcpDecisions?: Record<string, "keep" | "replace">;
   mcpConfirmed?: boolean;
@@ -1337,9 +1379,7 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
       return `skill destination ${st.destRel} appeared since preview — re-preview and re-consent`;
     }
     try {
-      fs.rmSync(destAbs, { recursive: true, force: true });
-      fs.mkdirSync(path.dirname(destAbs), { recursive: true });
-      fs.cpSync(srcAbs, destAbs, { recursive: true, dereference: false });
+      materializeSkillDest(srcAbs, destAbs, isHarnessSkillDest(st.destRel) ? "link" : "copy");
     } catch (e) {
       return partial(`writing skill '${st.skill}' to ${st.destRel}`, e);
     }
@@ -1358,11 +1398,10 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
   const pluginRoot = pluginPayloadAbs(workspaceRoot, plugin.manifest.name);
   const mcpBefore = new Map(fresh.mcpConfigBefore.map((c) => [c.destRel, c.text]));
   const appliedMcp = new Set(appliedRefs.filter((r) => r.kind === "mcp").map((r) => r.name));
-  const priorMcpRuntimes = priorMcpTargets.map((t) => t.runtime).filter((rt): rt is Runtime => rt !== undefined);
-  const mcpRuntimes = new Set<Runtime>([...mcpToWrite.map((m) => m.runtime), ...priorMcpRuntimes]);
-  for (const rt of mcpRuntimes) {
-    const mcpRel = ADAPTERS[rt].mcpRel;
-    if (!mcpRel) continue;
+  const mcpDests = new Map<string, Runtime>();
+  for (const m of mcpToWrite) mcpDests.set(m.destRel, m.runtime);
+  for (const t of priorMcpTargets) if (t.file && t.runtime) mcpDests.set(t.file, t.runtime);
+  for (const [mcpRel, rt] of mcpDests) {
     const file = path.join(workspaceRoot, mcpRel);
     const rd = readMcpConfig(workspaceRoot, rt, mcpRel);
     if (rd.error) return `partial install: payload + lockfile recorded, but ${rd.error} — run remove '${plugin.manifest.name}' to clean up, then retry`;
@@ -1370,14 +1409,14 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
       return `${mcpRel} changed since preview — re-preview and re-consent before installing`;
     }
     let text = rd.text;
-    const writeRefs = new Set(mcpToWrite.filter((m) => m.runtime === rt && appliedMcp.has(m.ref)).map((m) => m.ref));
+    const writeRefs = new Set(mcpToWrite.filter((m) => m.runtime === rt && m.destRel === mcpRel && appliedMcp.has(m.ref)).map((m) => m.ref));
     try {
       for (const t of priorMcpTargets) {
-        if (t.runtime !== rt || !t.ref || writeRefs.has(t.ref)) continue;
+        if (t.runtime !== rt || t.file !== mcpRel || !t.ref || writeRefs.has(t.ref)) continue;
         if (!appliedMcp.has(t.ref)) continue; // never applied — nothing on disk that is ours to drop
         if (mcpRepEquals(currentMcp(rt, text, t.ref), t.removal)) text = removeMcpServerText(rt, text, t.ref);
       }
-      for (const m of mcpToWrite.filter((x) => x.runtime === rt && appliedMcp.has(x.ref))) text = setMcpServer(rt, text, m.server, pluginRoot);
+      for (const m of mcpToWrite.filter((x) => x.runtime === rt && x.destRel === mcpRel && appliedMcp.has(x.ref))) text = setMcpServer(rt, text, m.server, pluginRoot);
       if (text !== rd.text) writeMcpConfig(file, text ?? "");
     } catch (e) {
       return partial(`writing ${mcpRel}`, e);
@@ -1425,7 +1464,8 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   const hasData = Object.keys(plugin.manifest.data).length > 0;
   const dataPlan = hasData ? await gatherDataPlan(plugin, { resolveFinalUrl: opts.resolveFinalUrl }) : undefined;
 
-  const fresh = previewInstall(plugin, workspaceRoot, target, gitState, toolPlan, dataPlan);
+  const scope = opts.scope ?? WORKSPACE_INSTALL_SCOPE;
+  const fresh = previewInstall(plugin, workspaceRoot, target, gitState, toolPlan, dataPlan, scope);
   if (fresh.errors.length > 0) return { installed: false, runtimes: [], errors: fresh.errors };
   if (!fresh.fingerprint || fresh.fingerprint !== preview.fingerprint) {
     return { installed: false, runtimes: [], errors: ["workspace changed since preview — re-preview and re-consent before installing"] };
@@ -1443,8 +1483,9 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   const priorGitHooks = lockfile.plugins[plugin.manifest.name]?.gitHooks ?? [];
   const priorErr = validatePriorTargets(plugin.manifest.name, priorTargets);
   if (priorErr) return { installed: false, runtimes: [], errors: [priorErr] };
-  // the skill-dirs THIS plugin already owns (validated above) — authorize wiping our prior copy + drop stale dirs.
-  const priorSkillDests = new Set(priorTargets.filter((t) => t.kind === "skill-dir").map((t) => t.file));
+  // skill-dirs THIS plugin already owns under THIS dest scope — a second agent's dests stay out of this set
+  // so update cleanup cannot stale-delete them.
+  const priorSkillDests = new Set(priorTargets.filter((t) => t.kind === "skill-dir" && targetMatchesScope(t, scope)).map((t) => t.file));
 
   const skillRes = resolveSkillWrites(fresh.skillTargets, opts.skillDecisions ?? {});
   if ("error" in skillRes) return { installed: false, runtimes: [], errors: [skillRes.error] };
@@ -1461,7 +1502,9 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
     }
   }
 
-  const { runtimes, targets } = buildInstallTargets(fresh, skillsToWrite, mcpToWrite, pluginPayloadAbs(workspaceRoot, plugin.manifest.name));
+  const planned = buildInstallTargets(fresh, skillsToWrite, mcpToWrite, pluginPayloadAbs(workspaceRoot, plugin.manifest.name));
+  const targets = planned.targets.map((t) => scope.type === "agent" ? { ...t, scope } : t);
+  const runtimes = planned.runtimes;
   if (runtimes.length === 0 && fresh.gitHookTargets.length === 0 && fresh.viewTargets.length === 0) {
     return { installed: false, runtimes: [], errors: ["nothing to install: every compatible skill/MCP server was kept and there are no hooks or views"] };
   }
@@ -1560,17 +1603,21 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   // 2) lockfile (uninstall identity). 3) settings LAST (activates the hooks). The lockfile records ALL
   // runtimes BEFORE any settings write, so if a later settings write fails the partial state is removable
   // (applyRemove un-merges every recorded runtime, including the one that didn't get activated → no-op there).
+  const priorLock = lockfile.plugins[plugin.manifest.name];
+  const keptTargets = (priorLock?.targets ?? []).filter((t) => !targetMatchesScope(t, scope));
+  const mergedRuntimes = [...new Set([...(priorLock?.runtimes ?? []), ...runtimes])];
+  const nextGitHooks = scope.type === "agent" ? priorLock?.gitHooks : (gitHookLocks.length > 0 ? gitHookLocks : priorLock?.gitHooks);
   lockfile.plugins[plugin.manifest.name] = {
     name: plugin.manifest.name,
     version: plugin.manifest.version,
-    runtimes,
-    targets,
-    ...(createdAncestors.length > 0 ? { createdAncestors } : {}),
-    ...(gitHookLocks.length > 0 ? { gitHooks: gitHookLocks } : {}),
-    ...(toolLocks.length > 0 ? { tools: toolLocks } : {}),
-    ...(dataLocks.length > 0 ? { data: dataLocks } : {}),
-    ...(externalReqs.length > 0 ? { externalTools: externalReqs } : {}),
-    ...(opts.provenance ? { source: opts.provenance.source, integrity: opts.provenance.integrity } : {}),
+    runtimes: mergedRuntimes,
+    targets: [...keptTargets, ...targets],
+    ...(createdAncestors.length > 0 ? { createdAncestors } : (priorLock?.createdAncestors ? { createdAncestors: priorLock.createdAncestors } : {})),
+    ...(nextGitHooks && nextGitHooks.length > 0 ? { gitHooks: nextGitHooks } : {}),
+    ...(toolLocks.length > 0 ? { tools: toolLocks } : (priorLock?.tools ? { tools: priorLock.tools } : {})),
+    ...(dataLocks.length > 0 ? { data: dataLocks } : (priorLock?.data ? { data: priorLock.data } : {})),
+    ...(externalReqs.length > 0 ? { externalTools: externalReqs } : (priorLock?.externalTools ? { externalTools: priorLock.externalTools } : {})),
+    ...(opts.provenance ? { source: opts.provenance.source, integrity: opts.provenance.integrity } : (priorLock?.source && priorLock.integrity ? { source: priorLock.source, integrity: priorLock.integrity } : {})),
     // spec 270 — record the human-facing config + docs descriptor (workspace-relative payload paths) so the
     // lockfile-driven card can render Config/Docs without re-reading the manifest.
     ...(plugin.manifest.config
@@ -1604,7 +1651,7 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
     skillsToWrite,
     mcpToWrite,
     priorSkillDests,
-    priorMcpTargets: priorTargets.filter((t) => t.kind === "mcp-server"),
+    priorMcpTargets: priorTargets.filter((t) => t.kind === "mcp-server" && targetMatchesScope(t, scope)),
     priorGitHooks,
     gitState,
     gitGeneration,
@@ -1864,16 +1911,10 @@ export interface RemovePreview {
   errors: string[];
 }
 
-const SKILL_NAME_SEG = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-
-/** A skill-dir target is only legitimate if its file is EXACTLY `<runtime skillsRel>/<one kebab name>` — so a
+/** A skill-dir target is only legitimate if it is a workspace skills dest or a harness dest — so a
  *  corrupted lockfile can't make `applyRemove` delete `package.json` or `.claude/` via a "contained" path. */
 function validSkillDest(runtime: Runtime, file: string): boolean {
-  const skillsRel = ADAPTERS[runtime].skillsRel;
-  if (!skillsRel) return false;
-  const prefix = `${skillsRel}/`;
-  if (!file.startsWith(prefix)) return false;
-  return SKILL_NAME_SEG.test(file.slice(prefix.length));
+  return validSkillDestPath(runtime, file);
 }
 
 /** The skill-dir destination paths a plugin recorded (sorted, deterministic). Caller must have validated them. */
@@ -2376,10 +2417,7 @@ function applySkillContribution(pluginName: string, ref: ContributionRef, worksp
   const created = computeCreatedAncestors(workspaceRoot, targets.map((t) => t.file));
   try {
     for (const t of targets) {
-      const dest = path.join(workspaceRoot, t.file);
-      fs.rmSync(dest, { recursive: true, force: true });
-      fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.cpSync(src, dest, { recursive: true, dereference: false });
+      materializeSkillDest(src, path.join(workspaceRoot, t.file), isHarnessSkillDest(t.file) ? "link" : "copy");
     }
     new AppliedStateStore(workspaceRoot).markApplied(pluginName, ref);
     recordCreatedAncestors(pluginName, workspaceRoot, created);
@@ -2408,7 +2446,7 @@ function validatedHookTargets(lock: PluginLock, name: string): { targets?: Array
   const targets = hookTargetsFor(lock, name);
   if (targets.length === 0) return { error: `plugin '${lock.name}' has no hook named '${name}'` };
   for (const t of targets) {
-    if (!t.runtime || t.file !== ADAPTERS[t.runtime].settingsRel) return { error: `lockfile: settings-hook target '${t.file}' (${t.runtime}) is not a valid settings path` };
+    if (!t.runtime || !validSettingsDestPath(t.runtime, t.file)) return { error: `lockfile: settings-hook target '${t.file}' (${t.runtime}) is not a valid settings path` };
     const parsed = parseOwnedHooks({ [name]: t.removal });
     if (!parsed.owned?.[name]) return { error: `lockfile: settings-hook '${name}' (${t.runtime}) has invalid removal identity` };
   }
