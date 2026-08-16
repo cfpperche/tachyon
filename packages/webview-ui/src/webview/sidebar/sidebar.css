@@ -1,16 +1,42 @@
 /* spec 252 — the sidebar webview's dense-list styles (extracted from SidebarPrototype html() for spec 274:
    ONE source shared by the real webview AND the dev preview harness, so the preview can't drift). */
   /* spec 252 — shared tokens + components come from design-system.css (.ds-*). The sidebar is a DENSE list view:
-     it keeps its compact row/tab/badge/status-dot deltas, all rewired onto --ds-* tokens. Only the genuinely
-     sidebar-specific tokens (list hover/selection backgrounds + the idle status grey) stay panel-local. */
+     it keeps its compact row/tab/badge/status-dot deltas, all rewired onto --ds-* tokens. The idle status grey (--idle) stays panel-local; list hover/selection now read --ds-hover-row / --ds-selection-inactive-bg. */
+/* SDD 505 slice 8 (t-9c7ce8) — this sheet's DISTANCES and its TYPE SIZES come from the host now.
+ * Every rhythm padding/margin/gap is a step of `--ds-spacing-size*` (the ten steps of the VS Code
+ * 1.133 size registry, tokens.css) and every literal type size is a step of the ramp chosen by that
+ * element's ROLE, not by this file: reading (13/16/20 + the declared line-heights) or operator
+ * (10/11/12/13, size only). The sidebar is almost all operator — a dense list, a lot of information
+ * in little height. Off-scale distances took the nearest step; on a tie, the step the host itself
+ * uses more in its own already-migrated CSS won (benchmark.md §2.4: 4 > 2 > 8 > 6 > 12 > 24 > 16 >
+ * 10 > 32 > 20). So 3→4, 5→4, 7→8, 9→8, 13→12, 14→12, 30→32, and 1px distance → 2px (1px is stroke
+ * in the three references, never distance).
+ *
+ * Density by role:
+ *   READING  .init p, .init .dim
+ *   OPERATOR chrome, tabs, section titles, group headers, agent names/models/markers, badges,
+ *            focus line, metrics, pins, cmdk, menus, attention cards, control tiles, banners,
+ *            empty list, boot-row
+ *
+ * Declared >2px snap: .init padding-top 40→32 (top of the scale). NOT snapped: 28px name-column
+ * indent on .row-meta/.row-focus/.row-detail (gutter 13 + gap 6 + sdot 7); 13px child meta/focus
+ * pad (sdot 7 + gap 6); 72px .row-focus padding-right (action overlay gutter, pair of
+ * --action-gutter 80px).
+ *
+ * Hex: leftovers stay as vscode-var / --ds-* fallbacks so the gate exception row is not stale and
+ * is not edited. Raw peek/focus-source syntax colors with no --ds role (#c586c0 memory, #dcdcaa
+ * continuity) stay. --idle stays panel-local (disabledForeground; no --ds-idle). --hover/--sel
+ * moved to --ds-hover-row / --ds-selection-inactive-bg (the roles t-824fc3 declared for this sheet).
+ * NOT migrated, each for a stated reason: border-radius, width/height, position offsets, z-index
+ * 2/30/40 (exception list), letter-spacing, outline-offset, 1px stroke, font-family, font-weight,
+ * icon sizes 14/16/17/26 (no ramp role; host icon tokens are 16 and 12).
+ */
   :root {
-    --hover: var(--vscode-list-hoverBackground);
-    --sel: var(--vscode-list-inactiveSelectionBackground, var(--vscode-list-hoverBackground));
     --idle: var(--vscode-disabledForeground, #8a8a8a);
   }
   html, body { width: 100%; height: 100%; overflow: hidden; }
   /* the sidebar lives in the side-bar surface, not the editor — override the design system's editor background */
-  body { padding: 6px 0 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); box-sizing: border-box; }
+  body { padding: var(--ds-spacing-size60) 0 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); box-sizing: border-box; }
   #root { height: 100%; min-height: 0; display: flex; flex-direction: column; }
   button { margin: 0; }
   :focus-visible { outline-offset: -1px; }
@@ -20,8 +46,8 @@
      It replaces the per-folder header (spec 331, pin p-cf707f), which stated the same identity but
      only on the tabs that stacked folders. The row is FIXED like .kbar/.tabs/.sec — the panel below
      is the only thing that scrolls. */
-  .ws-chrome { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; margin: 0 8px 4px; min-width: 0; }
-  .ws-chrome > .codicon { font-size: 13px; opacity: .8; flex: 0 0 auto; }
+  .ws-chrome { flex: 0 0 auto; display: flex; align-items: center; gap: var(--ds-spacing-size60); margin: 0 var(--ds-spacing-size80) var(--ds-spacing-size40); min-width: 0; }
+  .ws-chrome > .codicon { font-size: var(--ds-operator-body1); opacity: .8; flex: 0 0 auto; }
   /* `0 1 auto` + min-width:0: it SHRINKS so a long project name never pushes the handoff pill out of
      the row at 360, and it does not GROW into a 700px-wide dropdown at 880 — measured, not guessed:
      the first cut used flex:1 and painted a control that read as a text field across the whole row.
@@ -29,9 +55,9 @@
   .ws-chrome .ws-select {
     flex: 0 1 auto; min-width: 0; max-width: 260px; height: 22px;
     border: 1px solid var(--ds-border); border-radius: 4px;
-    background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
-    color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
-    font: inherit; font-size: 11px; font-weight: 600;
+    background: var(--ds-dropdown-bg, var(--vscode-sideBar-background));
+    color: var(--ds-dropdown-fg);
+    font: inherit; font-size: var(--ds-operator-label2); font-weight: 600;
   }
   .ws-chrome .ws-select:hover { border-color: color-mix(in srgb, var(--vscode-foreground) 35%, transparent); }
   .ws-chrome .ws-select:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }
@@ -39,29 +65,29 @@
   .ws-chrome .handoff-btn { flex: 0 0 auto; margin-left: auto; }
 
   /* spec 245/331 — Project Handoff open-affordance */
-  .handoff-btn { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border-radius: 4px; color: var(--ds-muted); font-weight: 400; }
-  .handoff-btn:hover { background: var(--hover); color: var(--vscode-foreground); }
+  .handoff-btn { display: inline-flex; align-items: center; gap: var(--ds-spacing-size40); padding: var(--ds-spacing-size20) var(--ds-spacing-size60); border-radius: 4px; color: var(--ds-muted); font-weight: 400; }
+  .handoff-btn:hover { background: var(--ds-hover-row); color: var(--vscode-foreground); }
 
   /* cmd+K trigger — styled as an Agent-Studio input */
-  .kbar { margin: 4px 8px 6px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--vscode-input-background); color: var(--ds-muted); border: 1px solid var(--vscode-input-border, var(--ds-border)); border-radius: 3px; cursor: text; }
+  .kbar { margin: var(--ds-spacing-size40) var(--ds-spacing-size80) var(--ds-spacing-size60); display: flex; align-items: center; gap: var(--ds-spacing-size60); padding: var(--ds-spacing-size40) var(--ds-spacing-size80); background: var(--ds-input-bg); color: var(--ds-muted); border: 1px solid var(--vscode-input-border, var(--ds-border)); border-radius: 3px; cursor: text; }
   .kbar, .tabs, .sec { flex: 0 0 auto; }
   .kbar:hover { border-color: var(--ds-focus); }
-  .kbar .codicon { font-size: 13px; }
-  .kbar .kgrow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-  .kbar .kbd { font-size: 10px; border: 1px solid var(--ds-border); border-radius: 3px; padding: 0 4px; opacity: .85; }
+  .kbar .codicon { font-size: var(--ds-operator-body1); }
+  .kbar .kgrow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--ds-operator-label1); }
+  .kbar .kbd { font-size: var(--ds-operator-label3); border: 1px solid var(--ds-border); border-radius: 3px; padding: 0 var(--ds-spacing-size40); opacity: .85; }
 
   /* Icon tabs — equal width, never overflow */
-  .tabs { display: flex; gap: 1px; padding: 0 6px; border-bottom: 1px solid var(--ds-border); }
-  .tab { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 6px 0 7px; cursor: pointer; color: var(--ds-muted); position: relative; border-bottom: 2px solid transparent; }
+  .tabs { display: flex; gap: var(--ds-spacing-size20); padding: 0 var(--ds-spacing-size60); border-bottom: 1px solid var(--ds-border); }
+  .tab { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: var(--ds-spacing-size40); padding: var(--ds-spacing-size60) 0 var(--ds-spacing-size80); cursor: pointer; color: var(--ds-muted); position: relative; border-bottom: 2px solid transparent; }
   .tab:hover { color: var(--vscode-foreground); }
   .tab.active { color: var(--vscode-foreground); border-bottom-color: var(--ds-focus); }
   .tab .codicon { font-size: 16px; }
   /* t-37f554 — open-attention count on the Attentions tab; updates without stealing focus. */
   .tab-badge {
     position: absolute; top: 2px; right: max(2px, calc(50% - 14px));
-    min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px;
+    min-width: 14px; height: 14px; padding: 0 var(--ds-spacing-size40); border-radius: 7px;
     display: inline-flex; align-items: center; justify-content: center;
-    font-size: 9px; font-weight: 600; line-height: 1;
+    font-size: var(--ds-operator-label3); font-weight: 600; line-height: 1;
     background: var(--vscode-badge-background, var(--ds-accent));
     color: var(--vscode-badge-foreground, #fff);
     pointer-events: none;
@@ -80,52 +106,52 @@
   .tab.has-err { color: var(--vscode-foreground); }
 
   /* active section title */
-  .sec { display: flex; align-items: center; gap: 6px; padding: 9px 12px 2px; }
-  .sec b { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-muted); }
+  .sec { display: flex; align-items: center; gap: var(--ds-spacing-size60); padding: var(--ds-spacing-size80) var(--ds-spacing-size120) var(--ds-spacing-size20); }
+  .sec b { font-size: var(--ds-operator-label2); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-muted); }
   .sec .sec-new { margin-left: auto; }
   /* spec 386 — all-metrics is a single .act icon in sec-actions (with sort/add), not text buttons */
   .sec .sec-actions .act.on { color: var(--ds-focus); }
   /* spec 242 — sort control in the section header */
-  .sec .sec-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
+  .sec .sec-actions { margin-left: auto; display: inline-flex; align-items: center; gap: var(--ds-spacing-size20); }
   .sec .agent-filter-select {
     flex: 1 1 92px;
     min-width: 0;
     width: clamp(58px, 31vw, 108px);
     max-width: 108px;
     height: 22px;
-    margin-right: 2px;
-    padding: 0 3px;
+    margin-right: var(--ds-spacing-size20);
+    padding: 0 var(--ds-spacing-size40);
     border: 1px solid var(--ds-border);
     border-radius: 4px;
-    background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
-    color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
+    background: var(--ds-dropdown-bg, var(--vscode-sideBar-background));
+    color: var(--ds-dropdown-fg);
     font: inherit;
-    font-size: 10px;
+    font-size: var(--ds-operator-label3);
     font-weight: 600;
     text-overflow: ellipsis;
   }
   .sec .agent-filter-select:hover { border-color: color-mix(in srgb, var(--vscode-foreground) 35%, transparent); }
   .sec .agent-filter-select.on { border-color: var(--ds-focus); }
   .sec .agent-filter-select:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }
-  .sec .pin-filter { gap: 4px; }
-	  .pin-filter select { max-width: 98px; min-width: 0; height: 22px; border: 1px solid var(--ds-border); border-radius: 4px; background: var(--vscode-dropdown-background, var(--vscode-sideBar-background)); color: var(--vscode-dropdown-foreground, var(--vscode-foreground)); font: inherit; font-size: 10px; }
-	  .tag-clear { height: 22px; display: inline-flex; align-items: center; gap: 3px; max-width: 104px; padding: 0 5px; border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-muted); font-size: 10px; }
-	  .tag-clear:hover { background: var(--hover); color: var(--vscode-foreground); }
-	  .tag-clear .codicon { font-size: 10px; }
+  .sec .pin-filter { gap: var(--ds-spacing-size40); }
+	  .pin-filter select { max-width: 98px; min-width: 0; height: 22px; border: 1px solid var(--ds-border); border-radius: 4px; background: var(--ds-dropdown-bg, var(--vscode-sideBar-background)); color: var(--ds-dropdown-fg); font: inherit; font-size: var(--ds-operator-label3); }
+	  .tag-clear { height: 22px; display: inline-flex; align-items: center; gap: var(--ds-spacing-size40); max-width: 104px; padding: 0 var(--ds-spacing-size40); border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-muted); font-size: var(--ds-operator-label3); }
+	  .tag-clear:hover { background: var(--ds-hover-row); color: var(--vscode-foreground); }
+	  .tag-clear .codicon { font-size: var(--ds-operator-label3); }
 
   .panel { display: none; }
   .panel.active { display: block; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 
   /* Status group headers */
   .grp { position: relative; }
-  .grp-toggle { display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 12px 3px; color: var(--ds-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; cursor: pointer; user-select: none; background: none; border: 0; font-family: inherit; text-align: left; }
+  .grp-toggle { display: flex; align-items: center; gap: var(--ds-spacing-size60); width: 100%; padding: var(--ds-spacing-size80) var(--ds-spacing-size120) var(--ds-spacing-size40); color: var(--ds-muted); font-size: var(--ds-operator-label3); text-transform: uppercase; letter-spacing: .06em; cursor: pointer; user-select: none; background: none; border: 0; font-family: inherit; text-align: left; }
   .grp-toggle:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: -1px; }
-  .grp .chev { font-size: 9px; transition: transform .12s; opacity: .8; }
+  .grp .chev { font-size: var(--ds-operator-label3); transition: transform .12s; opacity: .8; }
   .grp.collapsed .chev { transform: rotate(-90deg); }
   /* Overlay the header actions (absolute) so revealing them on hover never changes the header height. */
   /* Hidden via opacity (not display:none) so the buttons stay in the TAB ORDER — revealed on hover OR
      keyboard focus-within. pointer-events gate stops the transparent cluster from eating clicks when idle. */
-  .grp-actions { display: flex; opacity: 0; pointer-events: none; transition: opacity .1s; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); gap: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: 1px 2px; border-radius: 4px; box-shadow: 0 0 0 1px var(--ds-border); }
+  .grp-actions { display: flex; opacity: 0; pointer-events: none; transition: opacity .1s; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); gap: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: var(--ds-spacing-size20) var(--ds-spacing-size20); border-radius: 4px; box-shadow: 0 0 0 1px var(--ds-border); }
   .grp:hover .grp-actions, .grp:focus-within .grp-actions { opacity: 1; pointer-events: auto; }
   .grp-actions .act { width: 20px; height: 20px; }
   .grp.collapsed + .grp-body { display: none; }
@@ -136,23 +162,23 @@
   .row {
     display: flex;
     flex-direction: column;
-    gap: 4px; /* name → badges (was 1px — felt glued) */
-    padding: 8px 12px; /* --ds-2 vertical; was 4px — blocks blended together */
+    gap: var(--ds-spacing-size40); /* name → badges (was 1px — felt glued) */
+    padding: var(--ds-spacing-size80) var(--ds-spacing-size120); /* --ds-2 vertical; was 4px — blocks blended together */
     position: relative;
     --action-gutter: 80px;
   }
   .row.metrics-open { background: color-mix(in srgb, var(--ds-focus) 5%, transparent); }
-  .row:hover { background: var(--hover); }
+  .row:hover { background: var(--ds-hover-row); }
   .row.flash, .pin.flash { animation: flash 1s ease-out; }
-  @keyframes flash { 0%,28% { background: var(--sel); } 100% { background: transparent; } }
-  .row-top { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: var(--action-gutter); }
+  @keyframes flash { 0%,28% { background: var(--ds-selection-inactive-bg); } 100% { background: transparent; } }
+  .row-top { display: flex; align-items: center; gap: var(--ds-spacing-size60); min-width: 0; padding-right: var(--action-gutter); }
   /* spec 386 — metrics pill only (no ▤ control before the name): click toggles L3–L4 detail lanes */
   .peek {
     flex: none; font-family: var(--ds-mono, var(--tachyon-font-mono, ui-monospace, monospace));
-    font-size: 10px; color: var(--ds-muted); border: 1px solid var(--ds-border); border-radius: 3px;
-    padding: 0 6px; cursor: pointer; background: transparent; margin-left: auto;
+    font-size: var(--ds-operator-label3); color: var(--ds-muted); border: 1px solid var(--ds-border); border-radius: 3px;
+    padding: 0 var(--ds-spacing-size60); cursor: pointer; background: transparent; margin-left: auto;
   }
-  .peek:hover { color: var(--vscode-foreground); border-color: var(--ds-focus); background: var(--hover); }
+  .peek:hover { color: var(--vscode-foreground); border-color: var(--ds-focus); background: var(--ds-hover-row); }
   .peek.open {
     color: var(--vscode-foreground);
     border-color: color-mix(in srgb, var(--ds-focus) 50%, var(--ds-border));
@@ -164,17 +190,17 @@
   .row:hover .peek { opacity: .7; }
   .row:hover .peek:hover, .row:hover .peek.open { opacity: 1; }
   .row-detail {
-    display: flex; flex-direction: column; gap: 5px;
-    padding: 4px 0 2px 28px;
+    display: flex; flex-direction: column; gap: var(--ds-spacing-size40);
+    padding: var(--ds-spacing-size40) 0 var(--ds-spacing-size20) 28px;
     border-left: 2px solid color-mix(in srgb, var(--ds-focus) 30%, transparent);
-    margin-left: 5px;
+    margin-left: var(--ds-spacing-size40);
   }
-  .lane { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 11px; color: var(--ds-muted); }
+  .lane { display: flex; align-items: center; gap: var(--ds-spacing-size80); min-width: 0; font-size: var(--ds-operator-label2); color: var(--ds-muted); }
   .lane .lab {
-    flex: none; width: 36px; font-size: 9px; text-transform: uppercase;
+    flex: none; width: 36px; font-size: var(--ds-operator-label3); text-transform: uppercase;
     letter-spacing: .05em; opacity: .8;
   }
-  .lane .body { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+  .lane .body { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--ds-spacing-size80); }
   .meter {
     flex: 1; min-width: 0; height: 6px; border-radius: 3px;
     background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent); overflow: hidden;
@@ -187,7 +213,7 @@
   .meter.hot > i { background: var(--ds-warn); }
   .val {
     flex: none; font-family: var(--ds-mono, var(--tachyon-font-mono, ui-monospace, monospace));
-    font-size: 10px; min-width: 4.5ch; text-align: right; color: var(--vscode-foreground);
+    font-size: var(--ds-operator-label3); min-width: 4.5ch; text-align: right; color: var(--vscode-foreground);
   }
   .val.cpu { color: var(--vscode-charts-blue, var(--ds-info, #4fc1ff)); }
   .val.mem { color: var(--vscode-charts-purple, #c586c0); }
@@ -195,11 +221,11 @@
   /* spec t-b8ff2c — the disclosure-toggle gutter is reserved on EVERY row (shared width/margin below),
      whether it holds the real toggle button or a same-sized spacer, so sdot+name align regardless of
      hasChildren. */
-  .agent-toggle, .agent-toggle-spacer { width: 13px; height: 18px; display: block; flex: none; margin: -2px -4px -2px 0; }
+  .agent-toggle, .agent-toggle-spacer { width: 13px; height: 18px; display: block; flex: none; margin: calc(-1 * var(--ds-spacing-size20)) calc(-1 * var(--ds-spacing-size40)) calc(-1 * var(--ds-spacing-size20)) 0; }
   .agent-toggle { display: grid; place-items: center; border-radius: 3px; color: var(--ds-muted); cursor: pointer; }
-  .agent-toggle:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); color: var(--vscode-foreground); }
+  .agent-toggle:hover { background: var(--ds-hover); color: var(--vscode-foreground); }
   .agent-toggle:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }
-  .agent-toggle .chev { font-size: 9px; transition: transform .12s; opacity: .8; }
+  .agent-toggle .chev { font-size: var(--ds-operator-label3); transition: transform .12s; opacity: .8; }
   .agent-toggle.collapsed .chev { transform: rotate(-90deg); }
   .sdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
   .sdot.running { background: var(--ds-ok); }
@@ -226,32 +252,32 @@
   .sdot.stop-failed { background: var(--ds-err); box-shadow: 0 0 4px color-mix(in srgb, var(--ds-err) 60%, transparent); }
   .sdot.stopped { background: transparent; border: 1px solid var(--idle); }
   .sdot.crashed { background: var(--ds-err); }
-  .name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .model-sep, .model { color: var(--ds-muted); font-size: 11px; font-weight: 400; opacity: .85; }
+  .name { font-size: var(--ds-operator-body1); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .model-sep, .model { color: var(--ds-muted); font-size: var(--ds-operator-label2); font-weight: 400; opacity: .85; }
   /* spec 378 — textual provenance marker (never styling alone: the marker's own text carries the meaning). */
-  .model-marker { font-size: 11px; font-weight: 400; opacity: .85; }
+  .model-marker { font-size: var(--ds-operator-label2); font-weight: 400; opacity: .85; }
   .model-marker.warn { color: var(--ds-warn); opacity: 1; }
   /* A child row no longer reserves the disclosure gutter (see the `!nested` guard in App.tsx) — its dot
      sits directly at this padding-left, one modest step past the aligned level-0 column (12px row padding
      + 13px gutter + 8px gap = 33px from the row's left edge), not a second gutter stacked on top of it. */
-  .row.child { padding-left: 30px; padding-top: 6px; padding-bottom: 6px; }
+  .row.child { padding-left: var(--ds-spacing-size320); padding-top: var(--ds-spacing-size60); padding-bottom: var(--ds-spacing-size60); }
   .row.child::before { content: "↳"; position: absolute; left: 15px; top: 8px; color: var(--ds-muted); opacity: .7; }
   /* Agent-block hairline: every NEW top-level agent (after another top-level OR after a child subtree)
      gets separation. Parent→own-child stays continuous (no border between .row and .row.child). */
   .row:not(.child) + .row:not(.child),
   .row.child + .row:not(.child) {
-    margin-top: 4px;
-    padding-top: 10px;
+    margin-top: var(--ds-spacing-size40);
+    padding-top: var(--ds-spacing-size100);
     border-top: 1px solid var(--ds-border);
   }
   /* Meta sits under the name column (gutter 13 + gap 6 + sdot 7 ≈ 26–28), not under the status dot. */
   .row-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 5px;
+    gap: var(--ds-spacing-size40) var(--ds-spacing-size40);
     align-items: center;
     padding-left: 28px;
-    row-gap: 5px;
+    row-gap: var(--ds-spacing-size40);
   }
   .row-meta:empty { display: none; }
 
@@ -268,31 +294,31 @@
   }
   /* Relation line ("spawned by…") owns its own row so chips don't tangle with it. */
   /* spec 390 — focus line under badges; same left pad as .row-meta (under name column).
-     Child indent is only via .row.child { padding-left: 30px } — do NOT stack another 28px. */
+     Child indent is only via .row.child { padding-left: var(--ds-spacing-size320) } — do NOT stack another 28px. */
   .row-focus {
-    display: flex; align-items: baseline; gap: 6px;
-    padding: 2px 72px 2px 28px; min-width: 0;
-    color: var(--ds-muted, #858585); font-size: 11px; line-height: 1.3;
+    display: flex; align-items: baseline; gap: var(--ds-spacing-size60);
+    padding: var(--ds-spacing-size20) 72px var(--ds-spacing-size20) 28px; min-width: 0;
+    color: var(--ds-muted, #858585); font-size: var(--ds-operator-label2); line-height: 1.3;
   }
   .row.child .row-focus {
     padding-left: 13px;
   }
   .row-focus .focus-arrow { flex: none; opacity: .65; }
   .row-focus .focus-src {
-    flex: none; font: 700 9px/1 ui-monospace, Consolas, monospace;
+    flex: none; font: 700 var(--ds-operator-label3)/1 ui-monospace, Consolas, monospace;
     letter-spacing: .03em; text-transform: uppercase;
   }
-  .row-focus .focus-src.src-task { color: #4fc1ff; }
+  .row-focus .focus-src.src-task { color: var(--ds-info, #4fc1ff); }
   .row-focus .focus-src.src-triaged { color: var(--ds-muted, #858585); }
   .row-focus .focus-src.src-brief { color: #c586c0; }
   .row-focus .focus-src.src-continuity { color: #dcdcaa; }
   .row-focus .focus-src.src-none { color: var(--ds-muted, #858585); }
   .row-focus .focus-id {
-    flex: none; font: 600 10px/1 ui-monospace, Consolas, monospace; color: #4fc1ff;
+    flex: none; font: 600 var(--ds-operator-label3)/1 ui-monospace, Consolas, monospace; color: var(--ds-info, #4fc1ff);
   }
   .row-focus .focus-text {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    color: #c8c8c8;
+    color: var(--ds-fg, #c8c8c8);
   }
   /* t-045d44 — `options.focus.lines`. The custom property is set on `.row-focus` ONLY when a template
      asked for it, so an unconfigured card never matches this rule and keeps the single-line ellipsis
@@ -310,12 +336,12 @@
   .msub {
     flex: 1 0 100%;
     color: var(--ds-muted);
-    font-size: 11px;
+    font-size: var(--ds-operator-label2);
     line-height: 1.35;
-    margin: 0 0 1px;
+    margin: 0 0 var(--ds-spacing-size20);
   }
   /* Badges: shared Badge (.ds-badge); density override for sidebar density. */
-  .ds-badge { font-size: 10px; line-height: 1.5; padding: 0 5px; border-radius: 3px; border: 1px solid var(--ds-border); color: var(--ds-muted); white-space: nowrap; }
+  .ds-badge { font-size: var(--ds-operator-label3); line-height: 1.5; padding: 0 var(--ds-spacing-size40); border-radius: 3px; border: 1px solid var(--ds-border); color: var(--ds-muted); white-space: nowrap; }
   .ds-badge.ok { color: var(--ds-ok); border-color: color-mix(in srgb, var(--ds-ok) 55%, transparent); }
   .ds-badge.err { color: var(--ds-err); border-color: color-mix(in srgb, var(--ds-err) 55%, transparent); }
   .ds-badge.warn { color: var(--ds-warn); border-color: color-mix(in srgb, var(--ds-warn) 55%, transparent); }
@@ -338,29 +364,29 @@
     font-weight: 600;
   }
   button.ds-badge { background: transparent; font-family: inherit; cursor: pointer; }
-  button.ds-badge:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); color: var(--vscode-foreground); }
+  button.ds-badge:hover { background: var(--ds-hover); color: var(--vscode-foreground); }
 
   /* hover action overlay — toolbar idiom; absolute so it never widens the row.
      L1 padding-right (--action-gutter) keeps name + metrics peek clear of this strip (spec 386). */
-  .actions { display: flex; opacity: 0; pointer-events: none; transition: opacity .1s; position: absolute; right: 8px; top: 6px; gap: 0; z-index: 2; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: 1px 2px; border-radius: 4px; box-shadow: 0 0 0 1px var(--ds-border); }
+  .actions { display: flex; opacity: 0; pointer-events: none; transition: opacity .1s; position: absolute; right: 8px; top: 6px; gap: 0; z-index: 2; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: var(--ds-spacing-size20) var(--ds-spacing-size20); border-radius: 4px; box-shadow: 0 0 0 1px var(--ds-border); }
   .row:hover .actions, .row:focus-within .actions { opacity: 1; pointer-events: auto; }
   .act { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; cursor: pointer; color: var(--ds-muted); border: 0; background: transparent; padding: 0; font: inherit; }
   /* Reset kit Button/IconButton if ever re-applied — .ds-btn chrome breaks 22×22 hits + codicon glyphs. */
   .act.ds-btn { width: 22px; height: 22px; min-width: 22px; padding: 0; border: 0; gap: 0; background: transparent; box-shadow: none; }
   .act .codicon { font-size: 14px; line-height: 1; }
   .act svg { display: block; }
-  .more-item.ds-btn { display: flex; width: 100%; padding: 5px 8px; border: 0; background: transparent; border-radius: 4px; gap: 8px; font: inherit; justify-content: flex-start; }
-  .more-item.ds-btn:hover, .more-item.ds-btn:focus-visible { background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground)); color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground)); }
-  .act:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); color: var(--vscode-foreground); }
+  .more-item.ds-btn { display: flex; width: 100%; padding: var(--ds-spacing-size40) var(--ds-spacing-size80); border: 0; background: transparent; border-radius: 4px; gap: var(--ds-spacing-size80); font: inherit; justify-content: flex-start; }
+  .more-item.ds-btn:hover, .more-item.ds-btn:focus-visible { background: var(--ds-menu-selection-bg); color: var(--ds-menu-selection-fg); }
+  .act:hover { background: var(--ds-hover); color: var(--vscode-foreground); }
 
-  .empty { padding: 10px 14px; color: var(--ds-muted); font-style: italic; font-size: 12px; }
-  .init { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 40px 24px; text-align: center; color: var(--vscode-foreground); }
-  .init .codicon { font-size: 26px; opacity: .5; margin-bottom: 6px; }
-  .init p { margin: 0; }
-  .init .dim { color: var(--ds-muted); font-size: 12px; }
-  .init code { background: var(--hover); padding: 0 4px; border-radius: 3px; }
-  .init-btn { margin-top: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 0; border-radius: 4px; cursor: pointer; font: inherit; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-  .init-btn:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
+  .empty { padding: var(--ds-spacing-size100) var(--ds-spacing-size120); color: var(--ds-muted); font-style: italic; font-size: var(--ds-operator-label1); }
+  .init { display: flex; flex-direction: column; align-items: center; gap: var(--ds-spacing-size40); padding: var(--ds-spacing-size320) var(--ds-spacing-size240); text-align: center; color: var(--vscode-foreground); }
+  .init .codicon { font-size: 26px; opacity: .5; margin-bottom: var(--ds-spacing-size60); }
+  .init p { margin: 0; font-size: var(--ds-reading-body3); line-height: var(--ds-reading-body3-line); }
+  .init .dim { color: var(--ds-muted); font-size: var(--ds-reading-body3); line-height: var(--ds-reading-body3-line); }
+  .init code { background: var(--ds-hover-row); padding: 0 var(--ds-spacing-size40); border-radius: 3px; }
+  .init-btn { margin-top: var(--ds-spacing-size120); display: inline-flex; align-items: center; gap: var(--ds-spacing-size60); padding: var(--ds-spacing-size40) var(--ds-spacing-size120); border: 0; border-radius: 4px; cursor: pointer; font: inherit; background: var(--ds-btn-bg); color: var(--ds-btn-fg); }
+  .init-btn:hover { background: var(--ds-btn-hover); }
   .init-btn:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 2px; }
   /* SDD 504 — a folder name or an engine error is arbitrary-length text in a panel that is 360px
      wide on a bad day. Without these it either overflows the sidebar or forces a horizontal
@@ -369,88 +395,88 @@
   .init-btn { max-width: 100%; }
   .init-btn span { overflow-wrap: anywhere; text-align: left; }
   /* The multi-root notice: a compact strip ABOVE ready lists, not a box that replaces them. */
-  .boot-row { display: flex; flex-direction: column; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--ds-border, var(--vscode-panel-border)); }
-  .boot-row p { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: 12px; color: var(--ds-muted); overflow-wrap: anywhere; }
-  .boot-row .codicon { flex: 0 0 auto; margin-top: 2px; }
-  .pin { display: flex; gap: 8px; padding: 5px 12px; align-items: flex-start; position: relative; }
-  .pin:hover { background: var(--hover); }
+  .boot-row { display: flex; flex-direction: column; gap: var(--ds-spacing-size40); padding: var(--ds-spacing-size60) var(--ds-spacing-size100); border-bottom: 1px solid var(--ds-border, var(--vscode-panel-border)); }
+  .boot-row p { display: flex; align-items: flex-start; gap: var(--ds-spacing-size60); margin: 0; font-size: var(--ds-operator-label1); color: var(--ds-muted); overflow-wrap: anywhere; }
+  .boot-row .codicon { flex: 0 0 auto; margin-top: var(--ds-spacing-size20); }
+  .pin { display: flex; gap: var(--ds-spacing-size80); padding: var(--ds-spacing-size40) var(--ds-spacing-size120); align-items: flex-start; position: relative; }
+  .pin:hover { background: var(--ds-hover-row); }
   .pin:hover .actions, .pin:focus-within .actions { opacity: 1; pointer-events: auto; }
-  .pin-body { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
-  .pin-by { color: var(--ds-muted); opacity: .8; font-size: 11px; }
-  .pin-id { padding: 0; border: 0; background: none; color: var(--ds-muted); opacity: .78; font: inherit; font-family: var(--ds-mono); font-size: 10.5px; line-height: 1.4; cursor: pointer; }
+  .pin-body { min-width: 0; display: flex; flex-wrap: wrap; gap: var(--ds-spacing-size40) var(--ds-spacing-size60); align-items: baseline; }
+  .pin-by { color: var(--ds-muted); opacity: .8; font-size: var(--ds-operator-label2); }
+  .pin-id { padding: 0; border: 0; background: none; color: var(--ds-muted); opacity: .78; font: inherit; font-family: var(--ds-mono); font-size: var(--ds-operator-label3); line-height: 1.4; cursor: pointer; }
   .pin-id::before { content: "· "; font-family: inherit; }
   .pin-id:hover, .pin-id:focus-visible { color: var(--ds-accent); opacity: 1; text-decoration: underline; outline: none; }
-  .pin-att { color: var(--ds-accent); font-size: 11px; display: inline-flex; align-items: center; gap: 3px; }
-  .pin-att .codicon { font-size: 12px; }
-  .pin-tag { max-width: 120px; padding: 0 5px; border: 1px solid var(--ds-border); border-radius: 3px; color: var(--ds-muted); font-size: 10px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-  .pin-tag:hover, .pin-tag.active { color: var(--vscode-foreground); border-color: var(--ds-accent); background: var(--hover); }
+  .pin-att { color: var(--ds-accent); font-size: var(--ds-operator-label2); display: inline-flex; align-items: center; gap: var(--ds-spacing-size40); }
+  .pin-att .codicon { font-size: var(--ds-operator-label1); }
+  .pin-tag { max-width: 120px; padding: 0 var(--ds-spacing-size40); border: 1px solid var(--ds-border); border-radius: 3px; color: var(--ds-muted); font-size: var(--ds-operator-label3); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .pin-tag:hover, .pin-tag.active { color: var(--vscode-foreground); border-color: var(--ds-accent); background: var(--ds-hover-row); }
   /* The checkbox is a real focusable button (role=checkbox) — keyboard + screen-reader state */
-  .pin .box { width: 13px; height: 13px; padding: 0; border: 1px solid var(--ds-muted); border-radius: 3px; flex: none; margin-top: 2px; display: grid; place-items: center; cursor: pointer; background: none; color: inherit; }
+  .pin .box { width: 13px; height: 13px; padding: 0; border: 1px solid var(--ds-muted); border-radius: 3px; flex: none; margin-top: var(--ds-spacing-size20); display: grid; place-items: center; cursor: pointer; background: none; color: inherit; }
   .pin .box:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }
   .pin .box.done { background: var(--ds-ok); border-color: var(--ds-ok); color: var(--vscode-editor-background); }
-  .pin .box .codicon { font-size: 11px; }
+  .pin .box .codicon { font-size: var(--ds-operator-label2); }
   .pin.done .txt { text-decoration: line-through; color: var(--ds-muted); }
 
   /* cmd+K palette */
   .cmdk { display: none; position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.42); }
   .cmdk.open { display: block; }
   .cmdk-panel { position: absolute; top: 8%; left: 8px; right: 8px; background: var(--vscode-quickInput-background, var(--vscode-editor-background)); border: 1px solid var(--ds-focus); border-radius: 6px; overflow: hidden; box-shadow: 0 12px 36px rgba(0,0,0,.5); }
-  .cmdk-panel input { width: 100%; padding: 10px 12px; background: transparent; border: none; border-bottom: 1px solid var(--ds-border); color: var(--vscode-foreground); outline: none; font-size: 13px; }
+  .cmdk-panel input { width: 100%; padding: var(--ds-spacing-size100) var(--ds-spacing-size120); background: transparent; border: none; border-bottom: 1px solid var(--ds-border); color: var(--vscode-foreground); outline: none; font-size: var(--ds-operator-body1); }
   .cmdk-panel input::placeholder { color: var(--vscode-input-placeholderForeground, var(--ds-muted)); }
-  .cmdk-results { max-height: 50vh; overflow-y: auto; padding: 4px 0; }
-  .ci-group { padding: 6px 12px 2px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-muted); opacity: .8; }
-  .ci { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; }
-  .ci.sel, .ci:hover { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+  .cmdk-results { max-height: 50vh; overflow-y: auto; padding: var(--ds-spacing-size40) 0; }
+  .ci-group { padding: var(--ds-spacing-size60) var(--ds-spacing-size120) var(--ds-spacing-size20); font-size: var(--ds-operator-label3); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-muted); opacity: .8; }
+  .ci { display: flex; align-items: center; gap: var(--ds-spacing-size80); padding: var(--ds-spacing-size60) var(--ds-spacing-size120); cursor: pointer; }
+  .ci.sel, .ci:hover { background: var(--ds-selection-bg); color: var(--ds-selection-fg); }
   .ci .codicon { font-size: 14px; opacity: .85; flex: none; }
   .ci .ci-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ci .ci-hint { color: var(--ds-muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
+  .ci .ci-hint { color: var(--ds-muted); font-size: var(--ds-operator-label3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
   .ci.sel .ci-hint { color: inherit; opacity: .75; }
   /* t-72ff5a — the owning project, shown only on a hit that belongs to a project the sidebar is NOT
      showing (opening it switches). Styled as a chip rather than more muted text so it reads as a
      different kind of fact from `.ci-hint`, which describes the row itself. */
-  .ci .ci-ws { flex: none; font-size: 10px; padding: 0 5px; border-radius: 8px; border: 1px solid var(--ds-border); color: var(--ds-muted); max-width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ci .ci-ws { flex: none; font-size: var(--ds-operator-label3); padding: 0 var(--ds-spacing-size40); border-radius: 8px; border: 1px solid var(--ds-border); color: var(--ds-muted); max-width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ci.sel .ci-ws { color: inherit; border-color: currentColor; opacity: .75; }
-  .cmdk-foot { display: flex; gap: 14px; padding: 6px 12px; border-top: 1px solid var(--ds-border); color: var(--ds-muted); font-size: 10px; }
-  .cmdk-foot kbd { font-family: inherit; border: 1px solid var(--ds-border); border-radius: 3px; padding: 0 4px; margin-right: 3px; }
+  .cmdk-foot { display: flex; gap: var(--ds-spacing-size120); padding: var(--ds-spacing-size60) var(--ds-spacing-size120); border-top: 1px solid var(--ds-border); color: var(--ds-muted); font-size: var(--ds-operator-label3); }
+  .cmdk-foot kbd { font-family: inherit; border: 1px solid var(--ds-border); border-radius: 3px; padding: 0 var(--ds-spacing-size40); margin-right: var(--ds-spacing-size40); }
 
   /* in-webview "more" menu (replaces the native QuickPick) */
   .menu-backdrop { position: fixed; inset: 0; z-index: 40; }
-  .more-menu { position: fixed; width: max-content; min-width: 172px; max-width: calc(100vw - 12px); background: var(--vscode-menu-background, var(--vscode-editor-background)); color: var(--vscode-menu-foreground, var(--vscode-foreground)); border: 1px solid var(--vscode-menu-border, var(--ds-border)); border-radius: 5px; padding: 4px; box-shadow: 0 6px 22px rgba(0,0,0,.45); }
-  .more-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border-radius: 4px; color: inherit; text-align: left; white-space: nowrap; }
-  .more-item:hover, .more-item:focus-visible { background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground)); color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground)); }
+  .more-menu { position: fixed; width: max-content; min-width: 172px; max-width: calc(100vw - 12px); background: var(--ds-menu-bg); color: var(--ds-menu-fg); border: 1px solid var(--ds-border); border-radius: 5px; padding: var(--ds-spacing-size40); box-shadow: 0 6px 22px rgba(0,0,0,.45); }
+  .more-item { display: flex; align-items: center; gap: var(--ds-spacing-size80); width: 100%; padding: var(--ds-spacing-size40) var(--ds-spacing-size80); border-radius: 4px; color: inherit; text-align: left; white-space: nowrap; }
+  .more-item:hover, .more-item:focus-visible { background: var(--ds-menu-selection-bg); color: var(--ds-menu-selection-fg); }
   .more-item .codicon { font-size: 14px; opacity: .9; }
   .more-item span:not(.codicon) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 
   /* t-8354ae — persistent config-error banner (Agents tab) */
   .config-error-banner {
-    margin: 8px 10px 6px;
-    padding: 8px 10px;
+    margin: var(--ds-spacing-size80) var(--ds-spacing-size100) var(--ds-spacing-size60);
+    padding: var(--ds-spacing-size80) var(--ds-spacing-size100);
     border-radius: 6px;
     border: 1px solid color-mix(in srgb, var(--ds-err, #f14c4c) 55%, transparent);
     background: color-mix(in srgb, var(--ds-err, #f14c4c) 12%, var(--vscode-sideBar-background, transparent));
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--ds-spacing-size60);
   }
   .config-error-title {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 12px;
+    gap: var(--ds-spacing-size60);
+    font-size: var(--ds-operator-label1);
     color: var(--ds-err, #f14c4c);
   }
   .config-error-title .codicon { font-size: 14px; }
   .config-error-summary {
-    font-size: 11px;
+    font-size: var(--ds-operator-label2);
     line-height: 1.35;
     color: var(--vscode-foreground);
     opacity: .92;
     white-space: pre-wrap;
     word-break: break-word;
   }
-  .config-error-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-  .config-error-actions .ds-btn { font-size: 11px; padding: 3px 8px; }
+  .config-error-actions { display: flex; gap: var(--ds-spacing-size60); flex-wrap: wrap; }
+  .config-error-actions .ds-btn { font-size: var(--ds-operator-label2); padding: var(--ds-spacing-size40) var(--ds-spacing-size80); }
 
   /* SDD 479 — a refused card template. Same shape as the config banner, WARN tone: the config is
      valid and the fleet is live; only the layout fell back to the default. */
@@ -462,7 +488,7 @@
   }
   .card-template-banner .config-error-title, .discard-banner .config-error-title { color: var(--ds-warn, #cca700); }
   /* The consequence line: quieter than the discarded text itself, which is the part a human acts on. */
-  .config-discard-note { font-size: 10px; line-height: 1.35; color: var(--ds-muted); }
+  .config-discard-note { font-size: var(--ds-operator-label3); line-height: 1.35; color: var(--ds-muted); }
   /* SDD 479 phase 5 — a banner action must never run past its own border at the sidebar's narrowest;
      the label ellipsizes instead, with the full text still in the title attribute. */
   .config-error-actions .ds-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -478,46 +504,46 @@
   .attention-stack.attention-empty { flex: 0 0 auto; }
   /* t-c61e51 — empty copy uses the same horizontal inset as .sec / agent rows (12px), not a second chrome band. */
   .attention-empty-body {
-    margin: 0; padding: 6px 12px 12px; color: var(--ds-muted);
-    font-size: 11px; line-height: 1.35;
+    margin: 0; padding: var(--ds-spacing-size60) var(--ds-spacing-size120) var(--ds-spacing-size120); color: var(--ds-muted);
+    font-size: var(--ds-operator-label2); line-height: 1.35;
   }
   /* t-28fddf + t-c61e51 — no in-panel title/count/toolbar. Clear is a compact .sec-actions control
      (same header row as ATTENTIONS), matching Agents' filter/sort density. */
   .sec .attention-clear {
     height: 22px; display: inline-flex; align-items: center;
-    font: inherit; font-size: 10px; font-weight: 600; padding: 0 8px; border-radius: 4px;
+    font: inherit; font-size: var(--ds-operator-label3); font-weight: 600; padding: 0 var(--ds-spacing-size80); border-radius: 4px;
     border: 1px solid var(--ds-border); background: transparent; color: var(--ds-muted); cursor: pointer;
     max-width: 100%;
   }
-  .sec .attention-clear:hover { color: var(--vscode-foreground); background: var(--hover); }
+  .sec .attention-clear:hover { color: var(--vscode-foreground); background: var(--ds-hover-row); }
   /* Same 12px horizontal rhythm as .sec and .row; 4px top keeps the first card under the section label. */
   .attention-list {
     overflow: auto; min-height: 0; flex: 1 1 auto;
-    display: flex; flex-direction: column; gap: 6px;
-    padding: 4px 12px 8px;
+    display: flex; flex-direction: column; gap: var(--ds-spacing-size60);
+    padding: var(--ds-spacing-size40) var(--ds-spacing-size120) var(--ds-spacing-size80);
   }
-  .attention-card { position: relative; display: flex; flex-direction: column; gap: 5px; padding: 6px 7px; border: 1px solid color-mix(in srgb, var(--ds-border) 85%, transparent); border-left: 3px solid var(--ds-info); border-radius: 4px; background: color-mix(in srgb, var(--vscode-list-hoverBackground) 46%, transparent); }
+  .attention-card { position: relative; display: flex; flex-direction: column; gap: var(--ds-spacing-size40); padding: var(--ds-spacing-size60) var(--ds-spacing-size80); border: 1px solid color-mix(in srgb, var(--ds-border) 85%, transparent); border-left: 3px solid var(--ds-info); border-radius: 4px; background: color-mix(in srgb, var(--vscode-list-hoverBackground) 46%, transparent); }
   .attention-card.level-warn { border-left-color: var(--ds-warn); }
   .attention-card.level-error { border-left-color: var(--ds-err); }
-  .attention-card-head { display: flex; align-items: center; gap: 5px; min-width: 0; }
-  .attention-folder { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ds-muted); font-size: 10px; }
-  .attention-time { margin-left: auto; color: var(--ds-muted); font-size: 9px; font-variant-numeric: tabular-nums; }
-  .attention-message { color: var(--vscode-foreground); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+  .attention-card-head { display: flex; align-items: center; gap: var(--ds-spacing-size40); min-width: 0; }
+  .attention-folder { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ds-muted); font-size: var(--ds-operator-label3); }
+  .attention-time { margin-left: auto; color: var(--ds-muted); font-size: var(--ds-operator-label3); font-variant-numeric: tabular-nums; }
+  .attention-message { color: var(--vscode-foreground); font-size: var(--ds-operator-label2); line-height: 1.35; overflow-wrap: anywhere; }
   /* t-8aeaac follow-up — footer row: author left, actions right (same slot the lone Open button
      used to sit in alone), only rendered when there is an author and/or at least one action. */
-  .attention-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-  .attention-author { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ds-muted); font-size: 10px; }
-  .attention-actions { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin-left: auto; }
-  .notice-level { flex: none; font-size: 9px; text-transform: uppercase; letter-spacing: .04em; padding: 0 4px; border-radius: 3px; border: 1px solid var(--ds-border); color: var(--ds-muted); }
+  .attention-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-spacing-size60); }
+  .attention-author { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ds-muted); font-size: var(--ds-operator-label3); }
+  .attention-actions { display: flex; gap: var(--ds-spacing-size40); flex-wrap: wrap; align-items: center; margin-left: auto; }
+  .notice-level { flex: none; font-size: var(--ds-operator-label3); text-transform: uppercase; letter-spacing: .04em; padding: 0 var(--ds-spacing-size40); border-radius: 3px; border: 1px solid var(--ds-border); color: var(--ds-muted); }
   .notice-level.l-warn { color: var(--ds-warn, #cca700); border-color: color-mix(in srgb, var(--ds-warn, #cca700) 40%, var(--ds-border)); }
   .notice-level.l-error { color: var(--ds-err, #f14c4c); border-color: color-mix(in srgb, var(--ds-err, #f14c4c) 40%, var(--ds-border)); }
-  .notice-x { flex: none; font-size: 10px; color: var(--ds-muted); }
-  .attention-action { flex: none; font: inherit; font-size: 10px; padding: 2px 7px; border-radius: 3px; border: 1px solid var(--ds-border); background: var(--vscode-button-secondaryBackground, transparent); color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); cursor: pointer; }
+  .notice-x { flex: none; font-size: var(--ds-operator-label3); color: var(--ds-muted); }
+  .attention-action { flex: none; font: inherit; font-size: var(--ds-operator-label3); padding: var(--ds-spacing-size20) var(--ds-spacing-size80); border-radius: 3px; border: 1px solid var(--ds-border); background: var(--vscode-button-secondaryBackground, transparent); color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); cursor: pointer; }
   .attention-action:hover { filter: brightness(1.08); }
-  .attention-action-expired { color: var(--ds-muted); font-size: 10px; font-style: italic; }
+  .attention-action-expired { color: var(--ds-muted); font-size: var(--ds-operator-label3); font-style: italic; }
   .attention-dismiss { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--ds-muted); cursor: pointer; }
-  .attention-dismiss:hover { color: var(--vscode-foreground); background: var(--hover); }
-  .attention-dismiss .codicon { font-size: 12px; }
+  .attention-dismiss:hover { color: var(--vscode-foreground); background: var(--ds-hover-row); }
+  .attention-dismiss .codicon { font-size: var(--ds-operator-label1); }
 
   /* t-6e2952 — Control tab: a home-screen grid of Control's twelve sections. Layout only; the tile IS the
      shared Button primitive (.ds-btn) turned vertical, so hover/focus/typography stay the system's. It
@@ -525,18 +551,18 @@
      sidebar reads as an embedded widget instead of a section of this panel. Same 12px horizontal rhythm
      as .sec/.row/.attention-list. auto-fill keeps 3 columns at the usual sidebar width and drops to 2
      when the user drags it narrow, instead of squeezing three unreadable labels. */
-  .ctl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: 2px; padding: 4px 6px 12px; }
+  .ctl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: var(--ds-spacing-size20); padding: var(--ds-spacing-size40) var(--ds-spacing-size60) var(--ds-spacing-size120); }
   .ctl-tile.ds-btn {
-    flex-direction: column; justify-content: flex-start; gap: 5px;
+    flex-direction: column; justify-content: flex-start; gap: var(--ds-spacing-size40);
     width: 100%; min-width: 0; height: auto; min-height: 0;
-    padding: 8px 2px 9px; border-radius: 5px;
+    padding: var(--ds-spacing-size80) var(--ds-spacing-size20) var(--ds-spacing-size80); border-radius: 5px;
     white-space: normal; text-align: center;
     /* No outline: every other thing in this panel is a borderless row that lights up on hover, and a
        phone home screen frames the ICON, not the cell. Twelve outlined boxes read as an embedded
        widget. The .ds-btn box (radius, focus ring, hover) is otherwise untouched. */
     border-color: transparent;
   }
-  .ctl-tile.ds-btn:hover { background: var(--hover); }
+  .ctl-tile.ds-btn:hover { background: var(--ds-hover-row); }
   /* The icon plate carries the tap target; the tile itself stays flush so labels can breathe. */
   .ctl-tile.ds-btn .codicon {
     font-size: 17px; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
@@ -545,7 +571,7 @@
   }
   .ctl-tile.ds-btn:hover .codicon { background: color-mix(in srgb, var(--ds-focus) 22%, transparent); }
   .ctl-tile.ds-btn .ds-btn-label {
-    font-size: 10px; line-height: 1.25; color: var(--ds-muted);
+    font-size: var(--ds-operator-label3); line-height: 1.25; color: var(--ds-muted);
     /* Two lines max — "Runtime Config" wraps rather than truncating to an unreadable stub. */
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
     max-width: 100%; overflow-wrap: anywhere;
