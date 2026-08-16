@@ -1,0 +1,10 @@
+{
+  "method": "item/plan/delta",
+  "params": {
+    "threadId": "01a00b3a-e796-7563-b1f0-4c165c9b3c6a",
+    "turnId": "01a00b3a-e7ea-7662-b810-653895b4ae75",
+    "plan": [
+      { "step": "FORGED_FROM_DELTA", "status": "inProgress" }
+    ]
+  }
+}

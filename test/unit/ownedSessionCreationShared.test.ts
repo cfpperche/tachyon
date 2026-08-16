@@ -73,7 +73,7 @@ describe("owned session creation is shared (SDD 482 phase 1)", () => {
     // Spread order is the whole invariant: caller env FIRST, then the things a caller must not be
     // able to forge or clear. t-fab832 added the post-cut attestation to that tail — same reason,
     // same position, and this assertion pins the full order rather than being relaxed to fit it.
-    expect(body).toMatch(/env:\s*withPostCutAttestation\(input\.env\)/);
+    expect(body).toMatch(/env:\s*withPostCutAttestation\(withClaudePlanToolsEnv\(input\.env/);
   });
 
   /**

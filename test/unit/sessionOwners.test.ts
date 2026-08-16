@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, RUNTIME_STATUS_PUBLISHER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, appendOwnerRow, compactSessionOwnerRows, compactSpawnSettings, persistenceHookFailureFile, prunePersistenceLedger, readSessionOwners, removeSessionOwnerRows, removeSpawnSettings, resolveRotationFollow, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";
+import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, CODEX_TOOL_HOOK_RECORDER_SOURCE, CODEX_UPDATE_PLAN_HOOK_MATCHER, PERSISTENCE_STOP_RECORDER_SOURCE, RUNTIME_STATUS_PUBLISHER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, appendOwnerRow, compactSessionOwnerRows, compactSpawnSettings, persistenceHookFailureFile, prunePersistenceLedger, readSessionOwners, removeSessionOwnerRows, removeSpawnSettings, resolveRotationFollow, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";
 import { AGENT_TOKEN_ENV_VAR, URL_ENV_VAR } from "@tachyon/shared/bridge/env.js";
 import { URL_ENV_VAR as spawnUrlEnvVar, AGENT_TOKEN_ENV_VAR as spawnTokenEnvVar } from "@tachyon/bridge/token.js";
 import { makeTempDir } from "../helpers/tempDir.js";
@@ -303,13 +303,49 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     expect(stop).toContain("/ws/.tachyon/activity/persistence-hooks-failures.jsonl");
   });
 
+  it("t-17b510: buildCodexSessionStartHookConfig injects PreToolUse/PostToolUse without replacing a projected gate", () => {
+    const c = buildCodexSessionStartHookConfig(
+      "/ws/.tachyon/activity/rec.cjs",
+      "/ws/.tachyon/activity/owners.jsonl",
+      undefined,
+      undefined,
+      {
+        PreToolUse: [{ matcher: "^Bash$", hooks: [{ type: "command", command: "gate.sh", statusMessage: "secrets-guard shape-gate" }] }],
+      },
+      undefined,
+      {
+        recorderPath: "/ws/.tachyon/activity/codex-tool-hook-record.cjs",
+        file: "/ws/.tachyon/activity/codex-tool-hooks.jsonl",
+        failureFile: "/ws/.tachyon/activity/persistence-hooks-failures.jsonl",
+      },
+    );
+    expect(c).toEqual(expect.any(Array));
+    const values = c as string[];
+    const pre = values.find((value) => value.startsWith("hooks.PreToolUse="));
+    const post = values.find((value) => value.startsWith("hooks.PostToolUse="));
+    expect(pre).toBeDefined();
+    expect(post).toBeDefined();
+    expect(values.filter((value) => value.startsWith("hooks.PreToolUse="))).toHaveLength(1);
+    expect(pre).toContain("gate.sh");
+    expect(pre).toContain("codex-tool-hook-record.cjs");
+    expect(pre).toContain(`matcher="${CODEX_UPDATE_PLAN_HOOK_MATCHER}"`);
+    expect(pre).toContain('matcher="^update_plan$"');
+    expect(pre).toContain("codex-tool-hooks.jsonl");
+    expect(post).toContain("codex-tool-hook-record.cjs");
+    expect(post).toContain('matcher="^update_plan$"');
+    expect(post).not.toContain("gate.sh");
+  });
+
   it("the recorder source is syntactically valid JS (parses without throwing)", () => {
     // Compiles the materialized recorder the way `node <file>` would — guards against a broken template string.
     expect(() => new Function(SESSION_OWNER_RECORDER_SOURCE)).not.toThrow();
     expect(() => new Function(SESSION_HANDOFF_POINTER_SOURCE)).not.toThrow();
     expect(() => new Function(SESSION_CONTINUITY_POINTER_SOURCE)).not.toThrow();
     expect(() => new Function(PERSISTENCE_STOP_RECORDER_SOURCE)).not.toThrow();
+    expect(() => new Function(CODEX_TOOL_HOOK_RECORDER_SOURCE)).not.toThrow();
     expect(SESSION_OWNER_RECORDER_SOURCE).toContain("appendFileSync");
+    expect(PERSISTENCE_STOP_RECORDER_SOURCE).toContain("turnId");
+    expect(CODEX_TOOL_HOOK_RECORDER_SOURCE).toContain("toolInput");
   });
 
   it("spec 317: materialized hooks log sanitized failures and still exit cleanly", () => {

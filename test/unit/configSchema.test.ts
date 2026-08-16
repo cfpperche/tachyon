@@ -99,6 +99,18 @@ describe("tachyon.schema.json — settings.projectGuidance", () => {
   });
 });
 
+describe("tachyon.schema.json — settings.checklist.requireIn (t-73885b)", () => {
+  it("publishes a free-string list, not an enum", () => {
+    const checklist = schema.properties?.settings?.properties?.checklist;
+    const requireIn = checklist?.properties?.requireIn;
+    expect(checklist).toMatchObject({ type: "object", additionalProperties: false });
+    expect(requireIn).toMatchObject({ type: "array", items: { type: "string", minLength: 1 } });
+    expect(requireIn?.items).not.toHaveProperty("enum");
+    expect(checklist?.description).toMatch(/free string/i);
+    expect(checklist?.description).toMatch(/never blocks/i);
+  });
+});
+
 describe("tachyon.schema.json — the parser and the editor publish the same keys", () => {
   /**
    * t-fe772a — two closed lists in two files, and only one of them is exercised.

@@ -129,6 +129,10 @@ const agent = z.object({
     taskStatus: z.enum(["triaged", "active"]).optional(),
     full: displayText(SIDEBAR_FOCUS_FULL_MAX, 1, "… — open the agent for the full brief"),
   }).strict().optional(),
+  checklist: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("step"), text: displayText(500, 1) }).strict(),
+    z.object({ kind: z.literal("absent") }).strict(),
+  ]).optional(),
   persistenceHooks: persistenceHooks.optional(),
   evidence: evidence.optional(),
   externalTools: externalTools.optional(),

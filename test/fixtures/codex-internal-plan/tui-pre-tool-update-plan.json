@@ -1,0 +1,13 @@
+{
+  "hook_event_name": "PreToolUse",
+  "turn_id": "01a00baa-876c-7ba3-9d81-4ee053a4c062",
+  "tool_name": "update_plan",
+  "tool_input": {
+    "plan": [
+      { "step": "Boil water", "status": "pending" },
+      { "step": "Steep the tea", "status": "pending" },
+      { "step": "Pour and serve", "status": "pending" }
+    ]
+  },
+  "tool_use_id": "exec-3d620a4e-7b3d-4261-b4ad-b70727f5de47"
+}

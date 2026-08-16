@@ -553,6 +553,27 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
     return null;
   },
 
+  /* t-281339 — one operator line: the current checklist step, or a discrete
+     "No checklist" mark. The verdict enum stays on data-checklist; the painted
+     label is English, like Running / Needs input / Throttled.
+     no-channel is absence (the projector omitted the field). */
+  checklist: ({ a }) => {
+    const checklist = a.checklist;
+    if (!checklist) return null;
+    if (checklist.kind === "absent") {
+      return (
+        <div class="row-checklist absent" data-testid="agent-checklist-line" data-checklist="absent" title="No checklist">
+          <span class="checklist-mark">No checklist</span>
+        </div>
+      );
+    }
+    return (
+      <div class="row-checklist" data-testid="agent-checklist-line" data-checklist="step" title={checklist.text}>
+        <span class="checklist-text">{checklist.text}</span>
+      </div>
+    );
+  },
+
   "metrics-lanes": ({ a, metricsOpen, hasResources }) => (metricsOpen && hasResources ? <ResourceDetail a={a} /> : null),
 
   actions: ({ a, d }) => (

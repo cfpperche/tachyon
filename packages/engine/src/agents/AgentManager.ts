@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
 import { withPostCutAttestation } from "./legacyFleetGate.js";
+import { withClaudePlanToolsEnv } from "../runtime/claudePlanToolsEnv.js";
 import { hasLifecycleHooks, isTemporaryInstance } from "./agentInstancePolicy.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -2439,7 +2440,9 @@ export class AgentManager {
       // session", was false: `startSessionCommandUnlocked` was a second one. Both now go through
       // `withPostCutAttestation`, which merges the proof LAST so a caller-supplied env cannot forge or
       // clear it.
-      env: withPostCutAttestation(input.env),
+      // t-96c1b3 — Claude plan tools are opted in here too (spawn + fork). A spawnBuild.env-only
+      // write would miss restart/resume, which land in startSessionCommandUnlocked.
+      env: withPostCutAttestation(withClaudePlanToolsEnv(input.env, input.runtime ?? input.ownedCmd)),
     });
     if (input.runtime === "pi") await this.withPiAdmission(input.agent, create);
     else await create();
@@ -4184,6 +4187,7 @@ export class AgentManager {
     cmd: string;
     cwd?: string;
     env?: Record<string, string>;
+    runtime?: ResumeRuntime;
     onBeforeKillNew?: () => void;
     onReplacementAttempt?: () => void;
   }): Promise<"respawned" | "created"> {
@@ -4193,7 +4197,8 @@ export class AgentManager {
     // t-e73e54 — restart/resume lands here, and it creates real agent sessions: a respawned pane and
     // both `newSession` branches below. Attesting once at the top covers all three; doing it at each
     // call site is how the previous divergence happened.
-    const env = withPostCutAttestation(opts.env);
+    // t-96c1b3 — same two doors as the attestation: Claude plan-tool env cannot live only at spawn.
+    const env = withPostCutAttestation(withClaudePlanToolsEnv(opts.env, opts.runtime ?? opts.cmd));
     if (await this.opts.tmux.hasSession(session)) {
       try {
         opts.onReplacementAttempt?.();

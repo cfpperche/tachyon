@@ -1,0 +1,11 @@
+{
+  "session_id": "01a00bab-74ab-7183-bed0-534bba7c5a4d",
+  "turn_id": "01a00bab-7564-79b0-885b-db0441571cdb",
+  "transcript_path": "/tmp/poc-tui-canal-codex-1786902180279/codex-home/sessions/2026/08/16/rollout-2026-08-16T14-43-01-01a00bab-74ab-7183-bed0-534bba7c5a4d.jsonl",
+  "cwd": "/tmp/poc-tui-canal-codex-1786902180279/cwd",
+  "hook_event_name": "Stop",
+  "model": "gpt-5.6-sol",
+  "permission_mode": "bypassPermissions",
+  "stop_hook_active": false,
+  "last_assistant_message": "PONG"
+}

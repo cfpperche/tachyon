@@ -172,6 +172,20 @@ import {
   type GatedCandidateRecord,
   type GatedCompletionFacts,
 } from "./GatedCompletionMonitor.js";
+import {
+  InternalChecklistRepromptMonitor,
+  parsePersistenceStopRows,
+  type InternalChecklistRepromptState,
+} from "./InternalChecklistRepromptMonitor.js";
+import { judgeClaudeInternalChecklistTurn } from "../runtime/claudeInternalChecklistTurn.js";
+import { judgeCodexInternalChecklistTurn } from "../runtime/codexInternalChecklistTurn.js";
+import { judgeGrokInternalChecklistTurn } from "../runtime/grokInternalChecklistTurn.js";
+import { readClaudeTurnEvidence } from "../runtime/claudeTurnEvidence.js";
+import { readCodexTurnEvidence } from "../runtime/codexTurnEvidence.js";
+import { selectAssignedWork } from "../agents/assignmentSelection.js";
+import type { InternalChecklistRead } from "../runtime/internalChecklist.js";
+import type { InternalChecklistTurnJudgment } from "../runtime/internalChecklistTurn.js";
+import { readAgentInternalChecklist } from "../sidebar/readAgentInternalChecklist.js";
 import { isVerifiedSince } from "./verifyRecordReader.js";
 import { defaultGitExec } from "../worktree/WorktreeManager.js";
 import { appendDoorbellOverflowEvent, hasDoorbellRung } from "./doorbell.js";
@@ -245,7 +259,7 @@ import { ContinuityState } from "../continuity/ContinuityState.js";
 import { classifyInjection, CONTINUITY_STALE_LAG, injectionText, type Transition } from "../continuity/classifier.js";
 import { gcOrphanAgentFootprints } from "../continuity/orphanGc.js";
 import { ActivityLog, agentLogId } from "../activity/logStore.js";
-import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile, type OwnershipHookGroup } from "../activity/sessionOwners.js";
+import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, persistenceStopFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile, type OwnershipHookGroup } from "../activity/sessionOwners.js";
 import { planProjectedPluginHooks, readHookProjectionCandidates } from "../plugins/agentHookProjection.js";
 import { forgetAgent as forgetAgentFootprint } from "../agents/forgetAgent.js";
 import {
@@ -488,6 +502,8 @@ export class Workspace {
   private readonly temporaryBackstop: TemporaryBackstopMonitor;
   /** t-875700 — host-fallback for gated omit-doorbell. */
   private readonly gatedCompletion: GatedCompletionMonitor;
+  /** t-73885b — one reprompt when a required-kind turn ends absent. */
+  private readonly internalChecklistReprompt: InternalChecklistRepromptMonitor;
   /** t-458497 — pokes the coordinator when a runtime's quota window comes back with room. */
   private readonly runtimeSlack: RuntimeSlackMonitor;
   /** t-9552f3 — session-local completion doorbell latch (in-memory). */
@@ -1527,6 +1543,46 @@ export class Workspace {
       now: () => Date.now(),
       loadCandidates: () => this.loadGatedCompletionCandidates(),
       saveCandidates: (c) => this.saveGatedCompletionCandidates(c),
+    });
+
+    this.internalChecklistReprompt = new InternalChecklistRepromptMonitor({
+      listStopRows: () => {
+        try {
+          return parsePersistenceStopRows(fs.readFileSync(persistenceStopFile(this.workspaceRoot), "utf8"));
+        } catch {
+          return [];
+        }
+      },
+      assignedTask: (agent) => {
+        const rows = this.taskStore.listRaw().filter((task) => task.assignee === agent);
+        const current = selectAssignedWork(rows, agent).current;
+        if (!current) return undefined;
+        const full = this.taskStore.find(current.id);
+        return { id: current.id, ...(full?.kind ? { kind: full.kind } : {}) };
+      },
+      requireIn: () => this.config?.settings?.checklist?.requireIn,
+      judgeTurn: (agent) => this.judgeInternalChecklistTurn(agent),
+      loadState: () => this.loadInternalChecklistRepromptState(),
+      saveState: (state) => this.saveInternalChecklistRepromptState(state),
+      sendReprompt: async (agent, text) => {
+        await this.deliverNotice(agent, `[tachyon] ${text}`);
+      },
+      appendJournal: (taskId, text) => {
+        this.taskStore.journal.append(taskId, { author: "tachyon", text });
+      },
+      warnHuman: (agent, taskId) => {
+        const message = taskId
+          ? this.t(
+              "Agent '{0}' finished a turn without a checklist on {1} after one reminder. Delivery is not blocked.",
+              agent,
+              taskId,
+            )
+          : this.t(
+              "Agent '{0}' finished a turn without a checklist after one reminder. Delivery is not blocked.",
+              agent,
+            );
+        this.host.notify(message, "warn");
+      },
     });
 
     this.lifecycle = new LifecycleMonitor(
@@ -6178,6 +6234,7 @@ export class Workspace {
     await this.temporaryBackstop.tick();
     await this.runtimeSlack.tick().catch(() => undefined);
     await this.gatedCompletion.tick().catch(() => undefined);
+    await this.internalChecklistReprompt.tick().catch(() => undefined);
     // States with durations ("idle 2m") need periodic re-render even without transitions.
     this.refreshAgentsViews();
   }
@@ -6261,6 +6318,96 @@ export class Workspace {
 
   private gatedCompletionStatePath(): string {
     return path.join(this.workspaceRoot, ".tachyon", "completion-candidates.json");
+  }
+
+  /**
+   * t-281339 — snapshot + verdict for the sidebar checklist line. Missing
+   * evidence is mute/pending, never an invented absent or no-channel mark.
+   */
+  internalChecklist(agent: string): { snapshot: InternalChecklistRead; judgment: InternalChecklistTurnJudgment } {
+    return {
+      snapshot: this.readInternalChecklistSnapshot(agent),
+      judgment: this.judgeInternalChecklistTurn(agent),
+    };
+  }
+
+  private readInternalChecklistSnapshot(agent: string): InternalChecklistRead {
+    const mute: InternalChecklistRead = { state: "mute" };
+    const def = this.manager.defOf(agent);
+    const rec = this.ledger.get(agent);
+    if (!def || !rec) return mute;
+    const runtime = runtimeOf(def.cmd);
+    const owner = runtime === "claude"
+      ? latestOwnerFor(readSessionOwners(sessionOwnersFile(this.workspaceRoot)), agent, rec.cwd)
+      : undefined;
+    return readAgentInternalChecklist({
+      runtime: runtime ?? undefined,
+      workspaceRoot: this.workspaceRoot,
+      agent,
+      cwd: rec.cwd,
+      sessionId: rec.resume?.sessionId || owner?.sessionId,
+      configHome: rec.resume?.configHome,
+    });
+  }
+
+  /**
+   * t-73885b — consume the fatia-2 judges. Missing evidence is pending,
+   * never an invented absent. Codex uses the TUI hook ledgers and
+   * `judgeCodexInternalChecklistTurn`; it does not open the plan-snapshot reader.
+   */
+  private judgeInternalChecklistTurn(agent: string): InternalChecklistTurnJudgment {
+    const pending: InternalChecklistTurnJudgment = { state: "pending", reason: "turn-open" };
+    const def = this.manager.defOf(agent);
+    const rec = this.ledger.get(agent);
+    if (!def || !rec) return pending;
+    const runtime = runtimeOf(def.cmd);
+    if (runtime === "grok") {
+      const sessionId = rec.resume?.sessionId;
+      if (!sessionId) return pending;
+      return judgeGrokInternalChecklistTurn({
+        configHome: rec.resume?.configHome ?? "",
+        cwd: rec.cwd,
+        sessionId,
+      });
+    }
+    if (runtime === "claude") {
+      const owner = latestOwnerFor(readSessionOwners(sessionOwnersFile(this.workspaceRoot)), agent, rec.cwd);
+      if (!owner?.transcriptPath) return pending;
+      const evidence = readClaudeTurnEvidence(owner.transcriptPath);
+      if (!evidence) return pending;
+      return judgeClaudeInternalChecklistTurn(evidence);
+    }
+    if (runtime === "codex") {
+      const evidence = readCodexTurnEvidence(this.workspaceRoot, agent);
+      if (!evidence) return pending;
+      return judgeCodexInternalChecklistTurn(evidence);
+    }
+    return pending;
+  }
+
+  private internalChecklistRepromptStatePath(): string {
+    return path.join(this.workspaceRoot, ".tachyon", "internal-checklist-reprompt.json");
+  }
+
+  private loadInternalChecklistRepromptState(): InternalChecklistRepromptState {
+    const file = this.internalChecklistRepromptStatePath();
+    try {
+      if (!fs.existsSync(file)) return {};
+      const raw = JSON.parse(fs.readFileSync(file, "utf8")) as { entries?: InternalChecklistRepromptState };
+      return raw.entries && typeof raw.entries === "object" ? raw.entries : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private saveInternalChecklistRepromptState(entries: InternalChecklistRepromptState): void {
+    const file = this.internalChecklistRepromptStatePath();
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, `${JSON.stringify({ schemaVersion: 1, entries }, null, 2)}\n`, "utf8");
+    } catch {
+      /* best-effort durable state */
+    }
   }
 
   private loadGatedCompletionCandidates(): Record<string, GatedCandidateRecord> {

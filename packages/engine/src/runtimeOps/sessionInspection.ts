@@ -270,6 +270,7 @@ const HOOK_PURPOSE: ReadonlyArray<{ match: string; purpose: string; writes: stri
   { match: "handoff-pointer", purpose: "points the agent at the shared project handoff", writes: "(reads .tachyon/HANDOFF.md)" },
   { match: "continuity-pointer", purpose: "points the agent at its own continuity brief", writes: "(reads .tachyon/continuity/<agent>.md)" },
   { match: "persistence-stop-record", purpose: "marks the end of each turn", writes: ".tachyon/activity/persistence-stop.jsonl" },
+  { match: "codex-tool-hook-record", purpose: "records Codex update_plan tool hooks", writes: ".tachyon/activity/codex-tool-hooks.jsonl" },
 ];
 
 /**

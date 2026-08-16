@@ -345,6 +345,21 @@
           "type": "integer",
           "minimum": 1
         },
+        "checklist": {
+          "description": "When an agent's turn ends without a checklist, require one for the listed task kinds and reprompt once. Kind is a free string (not an enum). Comparison is case-insensitive with trim. '*' means every kind, including a task with no kind. '!kind' excludes that kind; exclusion wins. A list of only exclusions is treated as '* plus those exclusions'. Quote '*' and '!kind' in YAML. Absent or [] requires nobody. Invalid values warn and are ignored — the product never blocks on this block.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requireIn": {
+              "description": "Task kinds that require a checklist. Free strings, plus '*' (all) and '!kind' (exclude). Quote special tokens in YAML.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
         "bridgePort": {
           "description": "Fixed port for the Bridge MCP server. Default: a stable per-workspace port derived from the workspace path (41000-42999) — registrations survive editor restarts either way.",
           "type": "integer",

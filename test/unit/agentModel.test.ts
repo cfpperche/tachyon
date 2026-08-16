@@ -168,6 +168,15 @@ describe("agentModel.toAgentVM (spec 237)", () => {
     expect(vm).toMatchObject({ name: "reviewer", delegator: "codex", declaredOwner: "claude" });
     expect(vm.parent).toBeUndefined();
   });
+  it("t-281339: passes through the checklist line and omits it when absent", () => {
+    expect(toAgentVM(raw({ name: "claude", running: true }), {
+      checklist: { kind: "step", text: "write the line" },
+    }).checklist).toEqual({ kind: "step", text: "write the line" });
+    expect(toAgentVM(raw({ name: "pi", running: true })).checklist).toBeUndefined();
+    expect(toAgentVM(raw({ name: "grok", running: true }), { checklist: { kind: "absent" } }).checklist).toEqual({
+      kind: "absent",
+    });
+  });
   it("spec 316: passes through persistence hook health", () => {
     const vm = toAgentVM(raw({ name: "claude", running: true }), {
       persistenceHooks: { state: "failed", reason: "syntax-error", path: "/ws/.tachyon/activity/persistence-hooks-failures.jsonl", updatedAt: "2026-07-01T00:00:00Z" },

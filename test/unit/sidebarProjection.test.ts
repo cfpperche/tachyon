@@ -122,4 +122,31 @@ describe("parseSidebarViewV1 agent status enum", () => {
     expect(fleet.pins[0]!.text.length).toBeLessThanOrEqual(SIDEBAR_PIN_TEXT_MAX);
     expect(fleet.pins[0]!.text).toContain("open the pin for full detail");
   });
+
+  it("t-281339: accepts a checklist step and a absent mark; refuses no-channel on the wire", () => {
+    const withStep = minimalFleet("running");
+    (withStep.fleet.agents as Array<Record<string, unknown>>)[0] = {
+      ...withStep.fleet.agents[0],
+      checklist: { kind: "step", text: "write the sidebar line" },
+    };
+    expect(parseSidebarViewV1(withStep).fleet.agents[0]?.checklist).toEqual({
+      kind: "step",
+      text: "write the sidebar line",
+    });
+
+    const marked = minimalFleet("running");
+    (marked.fleet.agents as Array<Record<string, unknown>>)[0] = {
+      ...marked.fleet.agents[0],
+      checklist: { kind: "absent" },
+    };
+    expect(parseSidebarViewV1(marked).fleet.agents[0]?.checklist).toEqual({ kind: "absent" });
+
+    const canal = minimalFleet("running");
+    (canal.fleet.agents as Array<Record<string, unknown>>)[0] = {
+      ...canal.fleet.agents[0],
+      checklist: { kind: "no-channel" },
+    };
+    expect(isSidebarViewV1(canal)).toBe(false);
+    expect(() => parseSidebarViewV1(canal)).toThrow();
+  });
 });

@@ -15,6 +15,10 @@
 
 settings:
   auth: true # require a Bearer token on the MCP Bridge (recommended)
+  # t-73885b / t-c94207 — require a checklist for listed task kinds. Absent or []
+  # is the default (nobody). Quote '*' and '!kind'. Invalid values warn and are ignored.
+  # checklist:
+  #   requireIn: [feature, architecture]
   projectGuidance:
     files:
       - docs/project-guidance.md

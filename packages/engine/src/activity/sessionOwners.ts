@@ -116,6 +116,19 @@ export function persistenceStopFile(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".tachyon", "activity", "persistence-stop.jsonl");
 }
 
+/** Codex TUI `update_plan` matcher. Regex dialect matches the projected secrets-guard `^Bash$`. */
+export const CODEX_UPDATE_PLAN_HOOK_MATCHER = "^update_plan$";
+
+/** Materialized PreToolUse/PostToolUse recorder for Codex TUI plan events (t-17b510). */
+export function codexToolHookRecorderPath(workspaceRoot: string): string {
+  return path.join(workspaceRoot, ".tachyon", "activity", "codex-tool-hook-record.cjs");
+}
+
+/** Append-only ledger of Codex tool-hook stdin. `toolInput.plan` is kept whole when present. */
+export function codexToolHookFile(workspaceRoot: string): string {
+  return path.join(workspaceRoot, ".tachyon", "activity", "codex-tool-hooks.jsonl");
+}
+
 /** Append-only failure ledger for Tachyon-owned persistence hook scripts (spec 317). */
 export function persistenceHookFailureFile(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".tachyon", "activity", "persistence-hooks-failures.jsonl");
@@ -525,6 +538,13 @@ export function buildCodexSessionStartHookConfig(
    */
   projectedHooks?: Record<string, OwnershipHookGroup[]>,
   runtimeStatusPublisher?: string,
+  /**
+   * t-17b510 — Codex TUI plan channel. Stop closes the window; the plan is on
+   * PreToolUse/PostToolUse `tool_name: "update_plan"`. Merged into the same
+   * `-c hooks.<Event>=` override as projected gates so a second `-c` cannot
+   * replace secrets-guard (or vice versa).
+   */
+  toolHooks?: { recorderPath: string; file: string; failureFile: string },
 ): string | string[] {
   const ownershipHooks = [
     `{type="command",command=${tomlString(`node ${q(recorderPath)} "$TACHYON_AGENT_NAME" ${q(ownersFile)}${persistence ? ` ${q(persistence.failureFile)}` : ""}`)},statusMessage="Recording Tachyon session ownership"}`,
@@ -545,7 +565,7 @@ export function buildCodexSessionStartHookConfig(
     startEntries.push(`{matcher="startup|resume|clear",hooks=[${pointerHooks.join(",")}]}`);
   }
   const start = `hooks.SessionStart=[${startEntries.join(",")}]`;
-  const projected = renderCodexProjectedHookConfig(projectedHooks);
+  const projected = renderCodexProjectedHookConfig(mergeCodexPlanToolHooks(projectedHooks, toolHooks));
   const stopHooks: string[] = [];
   if (persistence) stopHooks.push(`{type="command",command=${tomlString(`node ${q(persistence.stopRecorderPath)} "$TACHYON_AGENT_NAME" ${q(persistence.stopFile)} ${q(persistence.failureFile)}`)},statusMessage="Recording Tachyon persistence stop"}`);
   if (runtimeStatusPublisher) stopHooks.push(`{type="command",command=${tomlString(`node ${q(runtimeStatusPublisher)} codex`)},statusMessage="Publishing Tachyon runtime status"}`);
@@ -561,6 +581,25 @@ export function buildCodexSessionStartHookConfig(
  * Tachyon's lifecycle channel, and a `-c` override of the same key would REPLACE the ownership hooks
  * rather than join them, silently turning Activity off to install a gate.
  */
+function mergeCodexPlanToolHooks(
+  projectedHooks: Record<string, OwnershipHookGroup[]> | undefined,
+  toolHooks?: { recorderPath: string; file: string; failureFile: string },
+): Record<string, OwnershipHookGroup[]> | undefined {
+  if (!toolHooks) return projectedHooks;
+  const command = `node ${q(toolHooks.recorderPath)} "$TACHYON_AGENT_NAME" ${q(toolHooks.file)} ${q(toolHooks.failureFile)}`;
+  const merged: Record<string, OwnershipHookGroup[]> = { ...(projectedHooks ?? {}) };
+  for (const event of ["PreToolUse", "PostToolUse"] as const) {
+    merged[event] = [
+      ...(merged[event] ?? []),
+      {
+        matcher: CODEX_UPDATE_PLAN_HOOK_MATCHER,
+        hooks: [{ type: "command", command, statusMessage: "Recording Tachyon Codex plan" }],
+      },
+    ];
+  }
+  return merged;
+}
+
 function renderCodexProjectedHookConfig(projectedHooks?: Record<string, OwnershipHookGroup[]>): string[] {
   const out: string[] = [];
   for (const [event, groups] of Object.entries(projectedHooks ?? {}).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))) {
@@ -743,6 +782,7 @@ process.stdin.on("end", () => {
       agent,
       event: "Stop",
       sessionId: payload.session_id || payload.sessionId || "",
+      turnId: payload.turn_id || payload.turnId || "",
       cwd: payload.cwd || "",
       ts: new Date().toISOString(),
     });
@@ -751,6 +791,59 @@ process.stdin.on("end", () => {
     prunePersistenceLedger(out);
   } catch (e) {
     logFailure(failureFile, { agent, event: "Stop", script: "persistence-stop-record", path: out, reason: sanitizeReason(e) });
+    /* best-effort: never block the runtime on hook bookkeeping */
+  }
+});
+`;
+
+/** Codex TUI PreToolUse/PostToolUse recorder (t-17b510). Keeps turn_id and the complete
+ *  `tool_input` for `update_plan`. Other tools are named only. Observational — no additionalContext. */
+export const CODEX_TOOL_HOOK_RECORDER_SOURCE = `// Tachyon Codex tool-hook recorder (t-17b510) — materialized; do not edit.
+const fs = require("fs");
+const path = require("path");
+let raw = "";
+${PERSISTENCE_LEDGER_RETENTION_SOURCE}
+function sanitizeReason(e) {
+  if (e && e.name === "SyntaxError") return "syntax-error";
+  const msg = e && typeof e.message === "string" ? e.message : String(e || "unknown error");
+  return msg.replace(/[\\r\\n\\t]+/g, " ").slice(0, 240);
+}
+function logFailure(file, row) {
+  if (!file) return;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, JSON.stringify({ ...row, ts: new Date().toISOString() }) + "\\n");
+    prunePersistenceLedger(file);
+  } catch (_e) {}
+}
+process.stdin.on("data", (c) => { raw += c; });
+process.stdin.on("end", () => {
+  const agent = process.argv[2] || "";
+  const out = process.argv[3] || "";
+  const failureFile = process.argv[4] || "";
+  try {
+    if (!agent || !out) return;
+    let payload = {};
+    try { payload = JSON.parse(raw || "{}"); } catch (_e) {}
+    const hookEvent = payload.hook_event_name || payload.hook_event || "";
+    const toolName = payload.tool_name || payload.toolName || "";
+    const toolInput = payload.tool_input && typeof payload.tool_input === "object" && !Array.isArray(payload.tool_input)
+      ? payload.tool_input
+      : undefined;
+    const row = {
+      agent,
+      event: hookEvent || "tool",
+      sessionId: payload.session_id || payload.sessionId || "",
+      turnId: payload.turn_id || payload.turnId || "",
+      toolName,
+      ts: new Date().toISOString(),
+    };
+    if (toolName === "update_plan" && toolInput) row.toolInput = toolInput;
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.appendFileSync(out, JSON.stringify(row) + "\\n");
+    prunePersistenceLedger(out);
+  } catch (e) {
+    logFailure(failureFile, { agent, event: "tool", script: "codex-tool-hook-record", path: out, reason: sanitizeReason(e) });
     /* best-effort: never block the runtime on hook bookkeeping */
   }
 });

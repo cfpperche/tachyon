@@ -17,6 +17,7 @@ import { parseLaunchCommand } from "@tachyon/shared/runtime/launchPreflight.js";
 export { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
 import { parseCardTemplate, type CardTemplateConfig } from "@tachyon/shared/sidebar/cardTemplate.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
+import { parseChecklistBlock, type ChecklistConfig } from "./checklistRequireIn.js";
 import { PROJECTED_HOOK_CLASSES as AGENT_HOOK_PROJECTION_CLASSES, type ProjectedHookClass } from "../plugins/agentHookProjection.js";
 import type { ResolvedAgentCapabilityProjection } from "./agentProfileResolver.js";
 import type { WithheldCapability } from "./withheldCapability.js";
@@ -484,6 +485,11 @@ export interface TachyonConfig {
   settings: {
     maxAgents?: number;
     /**
+     * t-73885b / t-c94207 — which task kinds require a checklist. Absent means
+     * nobody is required. Invalid values are discarded; the rest of the file still loads.
+     */
+    checklist?: ChecklistConfig;
+    /**
      * t-0d0152 — opt-in systemd --user scope MemoryMax for each agent spawn tree
      * (e.g. "2G", "512M"). Omitted/off = no wrap. Linux only; fail-open elsewhere.
      */
@@ -639,7 +645,7 @@ export const KNOWN_TOP_LEVEL_KEYS = ["agents", "terminals", "layouts", "schedule
 
 /** The `settings:` keys this parser knows, retired-but-still-named ones included. See KNOWN_TOP_LEVEL_KEYS. */
 export const KNOWN_SETTINGS_KEYS = [
-  "maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree",
+  "maxAgents", "checklist", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree",
   "projectGuidance", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection",
   "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind",
   "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications",
@@ -1398,6 +1404,10 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.maxAgents = n;
         }
       }
+      if (raw.settings.checklist !== undefined) {
+        const checklist = parseChecklistBlock(raw.settings.checklist, discarded);
+        if (checklist) settings.checklist = checklist;
+      }
       if (raw.settings.agentMemoryMax !== undefined) {
         const rawMax = raw.settings.agentMemoryMax;
         if (rawMax === false || rawMax === null || rawMax === "off" || rawMax === "none") {
@@ -1973,7 +1983,12 @@ export function parseConfig(yamlText: string): ParseResult {
 
   const declaredOwner = buildDeclaredOwner(agents, discarded, warnings);
   warnings.push(...discarded);
-  return { config: { agents, schedules, declaredOwner, settings }, errors: [], warnings, discarded };
+  return {
+    config: { agents, schedules, declaredOwner, settings },
+    errors: [],
+    warnings,
+    discarded,
+  };
 }
 
 export function loadConfigFile(path: string): ParseResult {

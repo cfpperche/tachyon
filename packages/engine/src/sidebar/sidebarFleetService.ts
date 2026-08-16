@@ -20,6 +20,9 @@ import type { ProposalStore } from "../schedule/ProposalStore.js";
 import type { Scheduler } from "../schedule/Scheduler.js";
 import { toAgentVM, type ObservedModelInput } from "./agentModel.js";
 import { resolveAgentFocus, type FocusTaskInput } from "./agentFocus.js";
+import { projectAgentChecklistLine } from "./agentChecklistLine.js";
+import type { InternalChecklistRead } from "../runtime/internalChecklist.js";
+import type { InternalChecklistTurnJudgment } from "../runtime/internalChecklistTurn.js";
 import type { AgentStatus, AgentVM, EvidenceBadge, FleetVM, RunState } from "@tachyon/shared/sidebar/types.js";
 import type { TmuxService } from "../tmux/TmuxService.js";
 import { evidenceBadge, type EvidenceSummary } from "../worktree/evidence.js";
@@ -73,6 +76,8 @@ export interface SidebarFleetSource {
   focusTasks?: () => FocusTaskInput[];
   /** spec 390 — continuity markdown body for Current Goal parse (optional). */
   continuityBody?: (agent: string) => string | null;
+  /** t-281339 — fatia-1 snapshot + fatia-2 verdict for the checklist line. */
+  internalChecklist?: (agent: string) => { snapshot: InternalChecklistRead; judgment: InternalChecklistTurnJudgment };
   persistenceHookHealth(agent: string): {
     state: "active" | "skipped" | "failed" | "unknown";
     reason?: string;
@@ -210,6 +215,13 @@ export async function buildSidebarFleet(
         },
         continuityBody,
       });
+      let checklist: ReturnType<typeof projectAgentChecklistLine>;
+      try {
+        const facts = source.internalChecklist?.(agent.name);
+        checklist = facts ? projectAgentChecklistLine(facts.snapshot, facts.judgment) : undefined;
+      } catch {
+        checklist = undefined;
+      }
       return toAgentVM({ ...agent, cmd: definition?.cmd }, {
         attention: live?.state,
         awaitingHuman: live?.awaitingHuman ? { reason: live.awaitingHumanReason ?? "" } : undefined,
@@ -238,6 +250,7 @@ export async function buildSidebarFleet(
         // capability question rather than re-deriving from identity.
         continuity: agent.running && hasLifecycleHooks(agent) ? source.continuityBadge(agent.name) : undefined,
         ...(focus ? { focus } : {}),
+        ...(checklist ? { checklist } : {}),
         persistenceHooks: hookHealth ? {
           state: hookHealth.state,
           ...(hookHealth.reason ? { reason: hookHealth.reason } : {}),
