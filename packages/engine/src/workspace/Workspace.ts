@@ -172,6 +172,16 @@ import {
   type GatedCandidateRecord,
   type GatedCompletionFacts,
 } from "./GatedCompletionMonitor.js";
+import {
+  InternalPlanRepromptMonitor,
+  parsePersistenceStopRows,
+  type InternalPlanRepromptState,
+} from "./InternalPlanRepromptMonitor.js";
+import { judgeClaudeInternalPlanTurn } from "../runtime/claudeInternalPlanTurn.js";
+import { judgeGrokInternalPlanTurn } from "../runtime/grokInternalPlanTurn.js";
+import { readClaudeTurnEvidence } from "../runtime/claudeTurnEvidence.js";
+import { selectAssignedWork } from "../agents/assignmentSelection.js";
+import type { InternalPlanTurnJudgment } from "../runtime/internalPlanTurn.js";
 import { isVerifiedSince } from "./verifyRecordReader.js";
 import { defaultGitExec } from "../worktree/WorktreeManager.js";
 import { appendDoorbellOverflowEvent, hasDoorbellRung } from "./doorbell.js";
@@ -245,7 +255,7 @@ import { ContinuityState } from "../continuity/ContinuityState.js";
 import { classifyInjection, CONTINUITY_STALE_LAG, injectionText, type Transition } from "../continuity/classifier.js";
 import { gcOrphanAgentFootprints } from "../continuity/orphanGc.js";
 import { ActivityLog, agentLogId } from "../activity/logStore.js";
-import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile, type OwnershipHookGroup } from "../activity/sessionOwners.js";
+import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, persistenceStopFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile, type OwnershipHookGroup } from "../activity/sessionOwners.js";
 import { planProjectedPluginHooks, readHookProjectionCandidates } from "../plugins/agentHookProjection.js";
 import { forgetAgent as forgetAgentFootprint } from "../agents/forgetAgent.js";
 import {
@@ -488,6 +498,8 @@ export class Workspace {
   private readonly temporaryBackstop: TemporaryBackstopMonitor;
   /** t-875700 — host-fallback for gated omit-doorbell. */
   private readonly gatedCompletion: GatedCompletionMonitor;
+  /** t-73885b — one remprompt when a required-kind turn ends sem-plano. */
+  private readonly internalPlanReprompt: InternalPlanRepromptMonitor;
   /** t-458497 — pokes the coordinator when a runtime's quota window comes back with room. */
   private readonly runtimeSlack: RuntimeSlackMonitor;
   /** t-9552f3 — session-local completion doorbell latch (in-memory). */
@@ -1527,6 +1539,46 @@ export class Workspace {
       now: () => Date.now(),
       loadCandidates: () => this.loadGatedCompletionCandidates(),
       saveCandidates: (c) => this.saveGatedCompletionCandidates(c),
+    });
+
+    this.internalPlanReprompt = new InternalPlanRepromptMonitor({
+      listStopRows: () => {
+        try {
+          return parsePersistenceStopRows(fs.readFileSync(persistenceStopFile(this.workspaceRoot), "utf8"));
+        } catch {
+          return [];
+        }
+      },
+      assignedTask: (agent) => {
+        const rows = this.taskStore.listRaw().filter((task) => task.assignee === agent);
+        const current = selectAssignedWork(rows, agent).current;
+        if (!current) return undefined;
+        const full = this.taskStore.find(current.id);
+        return { id: current.id, ...(full?.kind ? { kind: full.kind } : {}) };
+      },
+      exigirEm: () => this.config?.plano?.exigir_em,
+      judgeTurn: (agent) => this.judgeInternalPlanTurn(agent),
+      loadState: () => this.loadInternalPlanRepromptState(),
+      saveState: (state) => this.saveInternalPlanRepromptState(state),
+      sendReprompt: async (agent, text) => {
+        await this.deliverNotice(agent, `[tachyon] ${text}`);
+      },
+      appendJournal: (taskId, text) => {
+        this.taskStore.journal.append(taskId, { author: "tachyon", text });
+      },
+      warnHuman: (agent, taskId) => {
+        const message = taskId
+          ? this.t(
+              "Agent '{0}' finished a turn without an internal plan on {1} after one reminder. Delivery is not blocked.",
+              agent,
+              taskId,
+            )
+          : this.t(
+              "Agent '{0}' finished a turn without an internal plan after one reminder. Delivery is not blocked.",
+              agent,
+            );
+        this.host.notify(message, "warn");
+      },
     });
 
     this.lifecycle = new LifecycleMonitor(
@@ -6178,6 +6230,7 @@ export class Workspace {
     await this.temporaryBackstop.tick();
     await this.runtimeSlack.tick().catch(() => undefined);
     await this.gatedCompletion.tick().catch(() => undefined);
+    await this.internalPlanReprompt.tick().catch(() => undefined);
     // States with durations ("idle 2m") need periodic re-render even without transitions.
     this.refreshAgentsViews();
   }
@@ -6261,6 +6314,61 @@ export class Workspace {
 
   private gatedCompletionStatePath(): string {
     return path.join(this.workspaceRoot, ".tachyon", "completion-candidates.json");
+  }
+
+  /**
+   * t-73885b — consume the fatia-2 judges. Missing evidence is pending,
+   * never an invented sem-plano. Codex notifications are another task's
+   * reader; this door does not open that file.
+   */
+  private judgeInternalPlanTurn(agent: string): InternalPlanTurnJudgment {
+    const pending: InternalPlanTurnJudgment = { state: "pending", reason: "turn-open" };
+    const def = this.manager.defOf(agent);
+    const rec = this.ledger.get(agent);
+    if (!def || !rec) return pending;
+    const runtime = runtimeOf(def.cmd);
+    if (runtime === "grok") {
+      const sessionId = rec.resume?.sessionId;
+      if (!sessionId) return pending;
+      return judgeGrokInternalPlanTurn({
+        configHome: rec.resume?.configHome ?? "",
+        cwd: rec.cwd,
+        sessionId,
+      });
+    }
+    if (runtime === "claude") {
+      const owner = latestOwnerFor(readSessionOwners(sessionOwnersFile(this.workspaceRoot)), agent, rec.cwd);
+      if (!owner?.transcriptPath) return pending;
+      const evidence = readClaudeTurnEvidence(owner.transcriptPath);
+      if (!evidence) return pending;
+      return judgeClaudeInternalPlanTurn(evidence);
+    }
+    return pending;
+  }
+
+  private internalPlanRepromptStatePath(): string {
+    return path.join(this.workspaceRoot, ".tachyon", "internal-plan-reprompt.json");
+  }
+
+  private loadInternalPlanRepromptState(): InternalPlanRepromptState {
+    const file = this.internalPlanRepromptStatePath();
+    try {
+      if (!fs.existsSync(file)) return {};
+      const raw = JSON.parse(fs.readFileSync(file, "utf8")) as { entries?: InternalPlanRepromptState };
+      return raw.entries && typeof raw.entries === "object" ? raw.entries : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private saveInternalPlanRepromptState(entries: InternalPlanRepromptState): void {
+    const file = this.internalPlanRepromptStatePath();
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, `${JSON.stringify({ schemaVersion: 1, entries }, null, 2)}\n`, "utf8");
+    } catch {
+      /* best-effort durable state */
+    }
   }
 
   private loadGatedCompletionCandidates(): Record<string, GatedCandidateRecord> {

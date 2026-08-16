@@ -99,6 +99,18 @@ describe("tachyon.schema.json — settings.projectGuidance", () => {
   });
 });
 
+describe("tachyon.schema.json — plano.exigir_em (t-73885b)", () => {
+  it("publishes a free-string list, not an enum", () => {
+    const plano = schema.properties?.plano;
+    const exigir = plano?.properties?.exigir_em;
+    expect(plano).toMatchObject({ type: "object", additionalProperties: false });
+    expect(exigir).toMatchObject({ type: "array", items: { type: "string", minLength: 1 } });
+    expect(exigir?.items).not.toHaveProperty("enum");
+    expect(plano?.description).toMatch(/free string/i);
+    expect(plano?.description).toMatch(/never blocks/i);
+  });
+});
+
 describe("tachyon.schema.json — the parser and the editor publish the same keys", () => {
   /**
    * t-fe772a — two closed lists in two files, and only one of them is exercised.

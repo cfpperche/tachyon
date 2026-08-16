@@ -13,6 +13,11 @@
 # An older `tachyon.yml` still carries an `agents:` block. It loads, with a warning saying the block
 # is ignored and can be deleted. Nothing rewrites your file for you.
 
+# t-73885b — require an internal plan for listed task kinds. Absent or [] is the
+# default (nobody). Quote '*' and '!kind'. Invalid values warn and are ignored.
+# plano:
+#   exigir_em: [feature, architecture]
+
 settings:
   auth: true # require a Bearer token on the MCP Bridge (recommended)
   projectGuidance:

@@ -17,6 +17,7 @@ import { parseLaunchCommand } from "@tachyon/shared/runtime/launchPreflight.js";
 export { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
 import { parseCardTemplate, type CardTemplateConfig } from "@tachyon/shared/sidebar/cardTemplate.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
+import { parsePlanoBlock, type PlanoConfig } from "./planoExigirEm.js";
 import { PROJECTED_HOOK_CLASSES as AGENT_HOOK_PROJECTION_CLASSES, type ProjectedHookClass } from "../plugins/agentHookProjection.js";
 import type { ResolvedAgentCapabilityProjection } from "./agentProfileResolver.js";
 import type { WithheldCapability } from "./withheldCapability.js";
@@ -479,6 +480,11 @@ export interface TachyonConfig {
    *  property name is compatibility surface, not a statement that every entry is an AI agent. */
   agents: Record<string, AgentDef>;
   schedules: Record<string, ScheduleDef>;
+  /**
+   * t-73885b — which task kinds require an internal plan. Absent means nobody
+   * is required. Invalid values are discarded; the rest of the file still loads.
+   */
+  plano?: PlanoConfig;
   /** spec 352 — derived child-side ownership map from agents.<owner>.subagents. */
   declaredOwner: Record<string, string>;
   settings: {
@@ -635,7 +641,7 @@ export const MAX_IDLE_NOTIFY_MINUTES = 7 * 24 * 60;
  * Two literals in two files could not be kept in step by discipline, so the parser reads THIS list
  * and `configSchema.test.ts` compares it to the schema's published properties.
  */
-export const KNOWN_TOP_LEVEL_KEYS = ["agents", "terminals", "layouts", "schedules", "settings"] as const;
+export const KNOWN_TOP_LEVEL_KEYS = ["agents", "terminals", "layouts", "plano", "schedules", "settings"] as const;
 
 /** The `settings:` keys this parser knows, retired-but-still-named ones included. See KNOWN_TOP_LEVEL_KEYS. */
 export const KNOWN_SETTINGS_KEYS = [
@@ -1971,9 +1977,19 @@ export function parseConfig(yamlText: string): ParseResult {
     }
   }
 
+  let plano: PlanoConfig | undefined;
+  if (raw.plano !== undefined) {
+    plano = parsePlanoBlock(raw.plano, discarded);
+  }
+
   const declaredOwner = buildDeclaredOwner(agents, discarded, warnings);
   warnings.push(...discarded);
-  return { config: { agents, schedules, declaredOwner, settings }, errors: [], warnings, discarded };
+  return {
+    config: { agents, schedules, declaredOwner, settings, ...(plano ? { plano } : {}) },
+    errors: [],
+    warnings,
+    discarded,
+  };
 }
 
 export function loadConfigFile(path: string): ParseResult {
