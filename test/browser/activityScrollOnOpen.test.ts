@@ -1,6 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdirSync } from "node:fs";
-import path from "node:path";
 import puppeteer, { type Browser, type Frame, type Page } from "puppeteer-core";
 import type { ActivityItem, ActivityViewModel } from "@tachyon/webview-ui/activity/activityView";
 import { activityMessage } from "@tachyon/webview-ui/webview/activity/messages";
@@ -146,11 +144,6 @@ describe("t-544911 — Activity opens on the latest message (production activity
     expect(shot.latestVisible, "the newest bubble is offscreen").toBe(true);
     expect(shot.loadEarlierVisible, "Load earlier activity is still in view — that is the top of the window").toBe(false);
     expect(shot.oldestVisible, "the oldest loaded item is still in view").toBe(false);
-
-    const outDir = path.resolve(__dirname, "../../.vqa/visual-qa");
-    mkdirSync(outDir, { recursive: true });
-    const frame = await page.$("iframe#frame");
-    await frame?.screenshot({ path: path.join(outDir, "activity-open-latest-880.png") });
     await page.close();
 
     const narrow = await browser.newPage();
@@ -166,8 +159,6 @@ describe("t-544911 — Activity opens on the latest message (production activity
     const narrowShot = await metrics(narrowSurface, ON_OPEN);
     expect(narrowShot.nearBottom, "360px open also stayed at the top").toBe(true);
     expect(narrowShot.latestVisible).toBe(true);
-    const narrowFrame = await narrow.$("iframe#frame");
-    await narrowFrame?.screenshot({ path: path.join(outDir, "activity-open-latest-360.png") });
     await narrow.close();
   });
 
