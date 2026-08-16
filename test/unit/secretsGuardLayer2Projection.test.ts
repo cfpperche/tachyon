@@ -189,7 +189,9 @@ function codexSessionGate(door: { ownershipOnly: boolean }): OwnershipHookGroup[
   // Parsed as TOML rather than pattern-matched: Codex will parse it, so an override that only LOOKS
   // right is a defect this must catch.
   const parsed = TOML.parse(gate) as { hooks?: { PreToolUse?: OwnershipHookGroup[] } };
-  return parsed.hooks?.PreToolUse ?? [];
+  // t-17b510 appends an update_plan recorder on the same `-c hooks.PreToolUse=` so it cannot
+  // replace this gate. The gate helper must keep returning only the projected group.
+  return (parsed.hooks?.PreToolUse ?? []).filter((group) => group.matcher !== "^update_plan$");
 }
 
 function onlyCommand(groups: OwnershipHookGroup[]): string {
