@@ -280,3 +280,21 @@ Afirmações sobre claude/codex/grok sem célula e sem motivo da fatia 2 — cla
 | Post-launch readiness (§3.2) | **measured** nos três | `GenericLaunchReadiness` / `CodexLaunchReadiness` classificam texto do pane contra `MODEL_REJECTED_RE`, que só cresce com frase capturada (`t-d501fc`). Fixture que casa o regex prova o leitor, não que o CLI de hoje ainda emite essas palavras (o mesmo motivo da row 16). |
 
 Não há um booleano por runtime para promover. "Adapter registado" marcaria Claude como wired para um catálogo que ele não tem — o falso positivo que a fatia 1 recusou em permission inject. Duas dimensões novas cresceriam uma tabela já maioritariamente `measured` (D5). Motivo e data estão em `docs/runtimes/parity.md` leftovers.
+
+## 2026-08-16 — row 18 reaffirmed narrative (`t-c2209d`)
+
+Hunt for a callable product door that fatia 2 said did not exist. Still does not.
+
+Candidates that look like a door and are not: `activityNormalizerForRuntime` (no checklist
+event type; unmapped records dropped); `CodexAppServerObservationSource` (app-server, but
+only `account/rateLimits/read`); Board `TaskStore` / `PinStore` / Tiptap `TaskList`
+(Tachyon-owned lists). Inventing a boolean to derive `projection: cannot` would implement
+the missing door and treat unwired as cannot.
+
+Native surfaces remesured on PATH 2026-08-16 because versions drifted: Claude 2.1.233,
+Codex 0.147.0, Grok 1.0.4. Existence persists (positive + invented-name negative control).
+That is CLI research, not a cell. OpenCode/Pi/Hermes not remesured.
+
+`unproven` (2026-07-28) = `runtime: unmeasured` + `needed`. Five old columns do not fit one
+cell — written as a finding, not forced. Detail:
+`docs/research/runtime-internal-checklist-capabilities.md` § 2026-08-16.

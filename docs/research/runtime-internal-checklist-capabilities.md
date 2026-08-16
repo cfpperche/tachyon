@@ -1,7 +1,11 @@
 # Runtime-internal checklist capabilities
 
-**Task:** `t-c2209d` · **Measured:** 2026-07-28 · **Scope:** Claude Code, Codex, Grok,
+**Task:** `t-c2209d` · **Measured:** 2026-07-28 · **Remeasured (claude/codex/grok only):** 2026-08-16 · **Scope:** Claude Code, Codex, Grok,
 OpenCode, Pi and Hermes
+
+The 2026-08-16 addendum at the bottom answers the rewritten card: dimension 18 stays
+narrative. Native surfaces were remesured on today's versions; no Tachyon product
+function decides checklist support. OpenCode, Pi and Hermes were not remesured.
 
 ## Executive finding
 
@@ -260,3 +264,158 @@ hermes --version; hermes --help
 
 Static inspection was restricted to installed runtime packages and shipped documentation. No
 ambient session file or user checklist was opened. Cost: **USD 0.00**.
+
+## 2026-08-16 addendum — dimension 18 stays narrative
+
+**Task:** `t-c2209d` · **Agent:** checkgrok · **Scope:** Claude, Codex, Grok only.
+No integration was implemented. OpenCode, Pi and Hermes were not remesured.
+
+### What the 2026-07-28 research already covers
+
+The original pass established, without a model call, that the three in-scope runtimes
+have a native structured checklist and documented how it differs:
+
+| Runtime (then) | Native mechanism | Structured observation surface | What stayed `unproven` |
+|---|---|---|---|
+| Claude Code 2.1.220 | `TaskCreate` / `TaskGet` / `TaskList` / `TaskUpdate` (+ `TodoWrite`); item IDs, owner, `blocks`/`blockedBy` | session store under `~/.claude/tasks/<session-uuid>/`; `TaskCreated` hook; stream JSON | fork inheritance; compaction survival; complete update-event coverage |
+| Codex CLI 0.145.0 | `update_plan`; ordered steps `pending \| in_progress \| completed`; no stable per-step id | app-server `turn/plan/updated` (authoritative); experimental `item/plan/delta` (non-authoritative) | whether Tachyon could subscribe; write/control (none in protocol) |
+| Grok 0.2.112 | `todo_write` with stable IDs, merge/replace; distinct from Plan Mode | per-session `plan.json`; ACP `updates.jsonl` including `TodosUpdated`; Ctrl+T pane | `plan.json` copy on fork; todo snapshot through compact |
+
+It also proposed a Tachyon-side observation type and the old vocabulary
+`verified | limited | unsupported | unproven`. That vocabulary is **not** a second
+matrix. Map it; do not reintroduce it in `parity.ts`.
+
+### What needed remesurement, and why
+
+Version drift against the 2026-07-28 install, on 2026-08-16, same machine:
+
+| Runtime | 2026-07-28 | 2026-08-16 PATH | Why remesure |
+|---|---|---|---|
+| Claude Code | 2.1.220 | 2.1.233 | patch; same baseline `RUNTIME_PARITY` already cites |
+| Codex CLI | 0.145.0 | 0.147.0 | two minors; same baseline the table already cites |
+| Grok | 0.2.112 | 1.0.4 (`d846eb93d9`) | **major**. Remesure was mandatory |
+
+No other remesure was justified. Lifecycle cells that the original left `unproven`
+(fork copy, compact survival, full Claude update stream) were **never** measured, so
+they are not “already measured.” They also cannot become a table cell without a
+product reader. The 508 canary method (`docs/research/t-a68138-system-prompt-compact.md`)
+applies to a **product channel** (an instruction flag, a hook overlay). There is no
+such channel for checklist observation, so a live authenticated todo-turn would
+remeasure the CLI writing its own store — the existence half already covered
+statically — and would still not prove Tachyon correlates it.
+
+Method this pass (same class as 2026-07-28, plus an explicit negative control):
+
+- `claude --version` / `--help`; strings on the installed 2.1.233 ELF
+- `codex --version`; `codex app-server generate-json-schema --experimental --out <isolated-temp>`
+- `grok --version` / `--help`; shipped `~/.grok/docs/user-guide/{01,03,16,17,22}-*.md`; strings on `grok-1.0.4-linux-x86_64`
+- No ambient session, `plan.json`, or `~/.claude/tasks/` item was opened
+- No model call. Cost: **USD 0.00**
+
+**Positive control (must be present):**
+
+- Claude 2.1.233 binary still contains `TaskCreate` (47), `TaskGet`, `TaskList`,
+  `TaskUpdate`, `TodoWrite`, `TaskCreated`, `blockedBy`, `activeForm`, and
+  `executeTaskCreatedHooks`
+- Codex 0.147.0 still emits `v2/TurnPlanUpdatedNotification.json` (`plan[]` of
+  `{status, step}`, `threadId`, `turnId`, optional `explanation`; statuses
+  `pending | inProgress | completed`) and still names the notification
+  `turn/plan/updated`. `v2/PlanDeltaNotification.json` is still marked
+  **EXPERIMENTAL** — clients must not treat concatenated deltas as the completed
+  plan. `item/plan/delta` is still in the server notification enum
+- Grok 1.0.4 shipped docs still list `todo_write`, `plan.json` as TODO/task-list
+  state, `updates.jsonl` as the ACP stream, and **Ctrl+T on the agent screen** as
+  “Toggle the todos pane” (dashboard `Ctrl+T` is a different binding: pin/unpin).
+  Binary strings still contain `todo_write` (10), `TodosUpdated` (5), `plan.json`
+  (4), `CursorTodoWriteInput`, `CursorTodoItem`
+
+**Negative control (invented names must be absent):**
+
+- Claude: `TaskInvented`, `ChecklistTelemetry` — absent
+- Codex generated schema: `turn/checklist/updated`, `turn/todo/updated`,
+  `ChecklistTelemetry` — absent
+- Grok: `TodosInvented`, `ChecklistTelemetry` — absent
+
+Native surfaces persist across the version jump. Schema status spelling on Codex
+moved to camelCase `inProgress` in the generated JSON Schema; that is a schema
+token, not a new product door.
+
+### Callable-port hunt — why it stays narrative
+
+Row 18 asserts two things: the runtime has a native structured checklist, **and**
+Tachyon observes it through a measured structured path with correlation and
+provenance. Fatia 2 classified the row `measured` / narrative because
+“nenhuma função de produto decide suporte; nomes como `plan`/`todo` não provam
+que o CLI emite nem correlaciona a estrutura.”
+
+The 2026-08-16 hunt looked for a function the parity test could call the way
+`runtimeUsesSilentPersistenceHooks` or `activityNormalizerForRuntime` is called.
+None exists.
+
+| Candidate | What it actually decides | Why it is not row 18 |
+|---|---|---|
+| `activityNormalizerForRuntime` | which transcript reader Activity uses | `ActivityEventType` has no checklist/plan/todo event. Unmapped records are dropped. Grok's reader tails `chat_history.jsonl`, not `updates.jsonl` / `plan.json` |
+| `CodexAppServerObservationSource` | quota via `account/rateLimits/read` | same transport as `turn/plan/updated`, different method. Treating “app-server is wired” as checklist support is the name-similarity false positive fatia 2 named |
+| `TaskStore` / Board `TaskCreate` | Tachyon Board Tasks | the research's first sentence: a runtime checklist is never a Board Task |
+| `PinStore` | human↔agent project checklist | different store, different actor |
+| Tiptap `TaskList` | rich-doc editor widget | UI chrome, not runtime telemetry |
+| `nativeMemoryCapability` | per-axis memory evidence | different dimension; deriving it against itself is the row-15 tautology |
+
+Inventing `runtimeSupportsChecklistTelemetry()` that returns false, then deriving
+`projection: cannot` from it, would **implement** a door the product does not
+have and would treat “unwired” as “cannot.” `cannot` is for a missing native
+lever (Codex fork, discovery root), not for work nobody built. The card forbids
+integration.
+
+Therefore dimension 18 does **not** enter `PARITY_DIMENSIONS`. The fatia-2 motive
+still holds, now with this hunt dated.
+
+### Vocabulary — map, do not fork
+
+The 2026-07-28 card proposed `verified | limited | unsupported | unproven`.
+The typed table uses two independent halves:
+
+```text
+projection   wired | cannot (with reason)
+runtime      measured (version + YYYY-MM-DD) | cannot (with reason) | unmeasured (with needed)
+```
+
+| Old word | Table word | Where it applies here |
+|---|---|---|
+| `verified` (this install, this surface, directly established) | `runtime: measured` + `runtimeVersion` + `measuredAt` | Native **existence** on 2026-08-16 is this kind of evidence — but it is research about the CLI, not a cell, because there is no projection door |
+| `limited` (native exists; observation or control is partial) | not a table verdict | “partial native” is prose about the CLI. A cell cannot say this without a second dialect |
+| `unsupported` (no built-in) | `runtime: cannot` + reason | none of the three in-scope runtimes; Pi was this in 2026-07-28 and is out of scope |
+| `unproven` (do not infer) | `runtime: unmeasured` + `needed` | the same rule, eighteen days later. Fork copy, compact survival of todos, and “Tachyon correlates the structure” remain here |
+
+`runtime: wired` stays illegal. `unmeasured` without `needed` stays illegal.
+
+### Axis that does not fit
+
+The 2026-07-28 matrix had five columns (existence, structured read, external
+write/control, change events, lifecycle). One typed cell carries one projection
+fact and one runtime fact. Forcing those five columns into `RUNTIME_PARITY` would
+invent dialect. Write that down rather than squeeze.
+
+If a later task **wires** observation, the honest first cell is:
+
+- `projection: wired` derived from the new callable door, with a red-proof that
+  removing the door turns the test red
+- `runtime: unmeasured` + `needed` until an authenticated session shows the CLI
+  still emits the event/file **and** that the product reader correlates it; an
+  invented event name must not be treated as a checklist. Or `runtime: measured`
+  with version and date once that probe exists
+
+External **write** is a second product door. Read support never implies it.
+That remains out of scope.
+
+### Reproduction (2026-08-16)
+
+```text
+claude --version          # 2.1.233 (Claude Code)
+codex --version           # codex-cli 0.147.0
+grok --version            # grok 1.0.4 (d846eb93d9)
+codex app-server generate-json-schema --experimental --out <isolated-temp>
+# then: v2/TurnPlanUpdatedNotification.json and v2/PlanDeltaNotification.json
+```
+
+Temporary schema directory was not retained. No session home was read.
