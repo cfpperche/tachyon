@@ -76,6 +76,14 @@ describe("dev-host unarmed preLaunchTask (t-6d8f65)", () => {
 
     const wf = fs.mkdtempSync(path.join(os.tmpdir(), "dev-host-unarmed-f5-"));
     try {
+      // The F5 command sources guard-branch.sh from the checkout (6179d557). An unarmed
+      // workspace still has the repo files; only the pointer is missing. A bare temp dir
+      // is not that, and `sh` then exits 2 before the unarmed message can print.
+      const guardSrc = path.join(repoRoot, "scripts/dev-host/guard-branch.sh");
+      const guardDst = path.join(wf, "scripts/dev-host/guard-branch.sh");
+      fs.mkdirSync(path.dirname(guardDst), { recursive: true });
+      fs.copyFileSync(guardSrc, guardDst);
+      fs.chmodSync(guardDst, 0o755);
       // No .git file → the task must not fall through to the primary checkout's pointer.
       const script = String(command).replaceAll("${workspaceFolder}", wf);
       const result = spawnSync("bash", ["-c", script], {
