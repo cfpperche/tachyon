@@ -1,0 +1,9 @@
+{
+  "id": "1",
+  "subject": "PLAN_B_4VJ8P2 root",
+  "description": "root item",
+  "activeForm": "doing root",
+  "status": "pending",
+  "blocks": ["2"],
+  "blockedBy": []
+}
