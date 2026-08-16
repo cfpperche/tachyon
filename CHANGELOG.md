@@ -4,6 +4,48 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.6 — um engine travado deixa de ser um beco sem saída
+
+### O Tachyon agora derruba o próprio morto
+
+Na versão passada, um engine que travou no boot deixava a extensão sem saída. A mensagem dizia que
+havia um endpoint de controle não verificável e que o Tachyon se recusava a subir um duplicado — o
+que estava certo, e mesmo assim não levava a lugar nenhum.
+
+O motivo é que o engine **não é filho da extensão**: é um serviço do sistema. Matar o processo não
+adiantava, o serviço subia outro em segundos. Recarregar a janela também não, porque trocar de engine
+exige verificar o atual — e o atual era justamente o que nunca respondia. **Travado é insubstituível
+porque travou.** A saída era um comando no terminal.
+
+Agora, quando o endpoint fica mudo até o fim do prazo **e** o serviço é comprovadamente o deste
+projeto, o Tachyon derruba e sobe outro sozinho. Quando não dá para comprovar, ele continua recusando
+— mas a mensagem **passa a oferecer o comando** em vez de terminar ali.
+
+O prazo de espera não mudou. Um engine que estava só lento e responde antes do fim continua sendo
+aceito, nunca derrubado. Um engine que não é deste projeto continua intocado.
+
+Toda substituição fica registrada. Se o Tachyon derrubou um engine, isso não acontece em silêncio.
+
+### O Dev Host não sobe mais do branch principal
+
+O Dev Host cria agentes de verdade, e o espaço de teste dele não era um repositório próprio — então
+esses agentes criavam ramos e cópias de trabalho **dentro do repositório do produto**.
+
+O espaço de teste agora é isolado de verdade, e o Dev Host recusa subir a partir do branch principal:
+ele roda de uma cópia de trabalho, para o branch de release ficar sendo só isso.
+
+### Rodar os testes não suja mais o projeto
+
+Um teste escrevia capturas de tela na raiz do projeto a cada execução. Nenhuma verificação lia essas
+imagens, e as mesmas já ficavam no registro de evidências. O teste continua provando o que provava; o
+arquivo solto saiu.
+
+### E uma falha que só aparecia na máquina dos outros
+
+Um teste criava um diretório sem definir a permissão, então funcionava para quem tinha uma
+configuração restritiva e falhava para todo mundo com a configuração padrão — impedindo o envio de
+código. O tipo de falha pior de achar: quem pode consertar nunca a vê.
+
 ## 0.93.5 — o engine volta a subir: cobrar checklist não pode custar o transcript inteiro
 
 ### O que acontecia
