@@ -42,6 +42,9 @@ import {
   sessionOwnerRecorderPath,
   sessionOwnersFile,
   spawnSettingsPath,
+  codexToolHookFile,
+  codexToolHookRecorderPath,
+  CODEX_TOOL_HOOK_RECORDER_SOURCE,
   PERSISTENCE_STOP_RECORDER_SOURCE,
   RUNTIME_STATUS_PUBLISHER_SOURCE,
   SESSION_CONTINUITY_POINTER_SOURCE,
@@ -3704,7 +3707,14 @@ export class HarnessManager {
         failureFile: persistenceHookFailureFile(this.workspaceRoot),
       };
     }
-    return buildCodexSessionStartHookConfig(recorder, sessionOwnersFile(this.workspaceRoot), pointer, persistence, opts.projectedHooks, runtimeStatusPublisher);
+    const toolRecorder = codexToolHookRecorderPath(this.workspaceRoot);
+    atomicWrite(toolRecorder, CODEX_TOOL_HOOK_RECORDER_SOURCE);
+    const toolHooks = {
+      recorderPath: toolRecorder,
+      file: codexToolHookFile(this.workspaceRoot),
+      failureFile: persistenceHookFailureFile(this.workspaceRoot),
+    };
+    return buildCodexSessionStartHookConfig(recorder, sessionOwnersFile(this.workspaceRoot), pointer, persistence, opts.projectedHooks, runtimeStatusPublisher, toolHooks);
   }
 
   /** Agent names with a materialized Bridge `--mcp-config` file (`<name>.json`), for the GC sweep. */
