@@ -64,10 +64,18 @@ not the normal case.
 A previous turn's plan is not restated. Turn 2 mute is `sem-plano` for turn 2
 even if turn 1 planned.
 
-**Fatia 4:** correlation is reliable **on the app-server notification
-stream**. Tachyon's live Codex agents are a TUI with `hooks.Stop`. That hook
-was not measured as carrying `turnId` + plan events. Closing this window from
-the TUI Stop overlay alone is not supported.
+**TUI (what Tachyon actually runs), measured 2026-08-16 on `codex-cli
+0.147.0` (`docs/research/poc-plano-interno-codex-tui.md`):** `hooks.Stop`
+stdin **does** carry `turn_id`. It does **not** carry the plan. Window
+close is Stop `turn_id` (or rollout `event_msg.task_complete` /
+`turn_aborted`, or `thread_history_1.sqlite` `thread_turns.status`). Plan
+event on the same `turn_id` is `PreToolUse` / `PostToolUse`
+`tool_name: "update_plan"`, or a wrapped `custom_tool_call` `name: "exec"`
+whose input is `tools.update_plan({plan:[…]})` in the rollout Activity
+already tails. The product Stop recorder currently keeps only
+`session_id` / `cwd` and drops `turn_id`. Fatia 4 does not have to move
+Codex agents onto app-server to compute the verdict; picking the door is
+the owner's.
 
 ## Grok — `promptId` / `turnStartMs` on live `updates.jsonl`
 
