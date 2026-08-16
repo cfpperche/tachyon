@@ -30,7 +30,7 @@ export interface InternalChecklistRepromptDecision {
 }
 
 export const INTERNAL_CHECKLIST_REPROMPT_TEXT =
-  "This task requires a checklist. The last turn ended without one. Write the checklist, then continue. This is the only reminder.";
+  "This task requires a checklist. The last turn ended without one. Write the checklist, then continue.";
 
 export const INTERNAL_CHECKLIST_GIVE_UP_JOURNAL =
   "Gave up requiring a checklist after one reminder. Turn ended without a checklist again. Delivery is not blocked.";
