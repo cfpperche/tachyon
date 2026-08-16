@@ -1,39 +1,72 @@
 /* spec 279 — Pin Preview styles, moved from SidebarPrototype's inline pinPreviewHtml <style> into a
    shared source linked by both the host shell and the dev preview harness. */
+/* SDD 505 slice 8 (t-0f7068) — this sheet's DISTANCES and its TYPE SIZES come from the host now.
+ * Every padding/margin/gap is a step of `--ds-spacing-size*` (the ten steps of the VS Code 1.133
+ * size registry, tokens.css) and every literal type size is a step of the ramp chosen by that
+ * element's ROLE, not by this file. pin-preview is a READING surface — it is where a person reads
+ * a pin — and the owner named two densities so squeezing reading would not happen.
+ *
+ * Density by role (anchor journalled on t-0f7068 as j-b57f4b0cda99 BEFORE this sheet was touched):
+ *   READING  .body (plain <p> and StaticDoc), h1 (pin title)
+ *   OPERATOR .kicker, .meta/.pill/.tag, .visuals h2, .visual span
+ *
+ * COPY vs REFERENCE: `.body` used to copy `.rich-doc-editor`'s 14px/1.55 (comment t-321e9d) so the
+ * read-only pin would match the editor. rich-doc moved to `--ds-reading-body1` (16/24); a copied
+ * number is what diverged. Sharing the `.rich-doc-editor` selector is wrong — that class carries
+ * editor chrome (min-height 58vh, padding 24px) — and adding generic `.body` to rich-doc.css would
+ * leak into Control (t-61189b). So `.body` keeps its local element rules but REFERENCES the same
+ * reading role and the same `--ds-spacing-size*` tokens the editor now uses for the overlapping
+ * nodes (p / headings / img / pre / taskItem / sketch). Pin-preview-only rules snap independently.
+ *
+ * Body 14px has no 14 on the reading ramp and must not tighten to 13 → `--ds-reading-body1`
+ * (16/24). Title 22 → `--ds-reading-headline2` (20/24). Headings inside `.body` keep inheriting
+ * body size with line-height 1.25 (swapping in headline2 would recut the hierarchy).
+ *
+ * Off-scale distances took the nearest step; on a tie, the step the host itself uses more in its
+ * own already-migrated CSS won (benchmark.md §2.4: 4 > 2 > 8 > 6 > 12 > 24 > 16 > 10 > 32 > 20).
+ * So 5→4, 14→12, 18→16, 22→24. 1px pill pad is distance, not stroke → 2.
+ * `.body p` margin 12 → `--ds-spacing-size80` (the editor's value, not independent snap) so the
+ * document look stays matched.
+ *
+ * NOT migrated, each for a stated reason: border-radius, width/height (thumbs 112×78 / 72×54,
+ * max-width 880), 1px stroke, letter-spacing, font-weight, the body `font` shorthand (already
+ * `--vscode-font-size`, the 13px hinge). Raw buttons: none (kit Button when onEdit is set). */
   body { margin: 0; padding: 0; background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); font: var(--vscode-font-size) var(--tachyon-font-mono); }
-  main { max-width: 880px; margin: 0 auto; padding: 24px; box-sizing: border-box; }
-  header { padding-bottom: 14px; border-bottom: 1px solid var(--ds-border); }
-  .kicker { color: var(--ds-muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
-  h1 { margin: 5px 0 0; font-size: 22px; line-height: 1.3; font-weight: 650; overflow-wrap: anywhere; }
-  .meta { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 10px; color: var(--ds-muted); font-size: 12px; }
-  .pill, .tag { padding: 1px 6px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); line-height: 1.5; }
+  main { max-width: 880px; margin: 0 auto; padding: var(--ds-spacing-size240); box-sizing: border-box; }
+  header { padding-bottom: var(--ds-spacing-size120); border-bottom: 1px solid var(--ds-border); }
+  .kicker { color: var(--ds-muted); font-size: var(--ds-operator-label2); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+  h1 { margin: var(--ds-spacing-size40) 0 0; font-size: var(--ds-reading-headline2); line-height: var(--ds-reading-headline2-line); font-weight: 650; overflow-wrap: anywhere; }
+  .meta { display: flex; flex-wrap: wrap; gap: var(--ds-spacing-size60) var(--ds-spacing-size80); margin-top: var(--ds-spacing-size100); color: var(--ds-muted); font-size: var(--ds-operator-label1); }
+  .pill, .tag { padding: var(--ds-spacing-size20) var(--ds-spacing-size60); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); line-height: 1.5; }
   .tag { color: var(--ds-muted); }
-  .body { padding: 18px 0 8px; font-family: var(--tachyon-font-reading); font-size: 14px; line-height: 1.55; }
-  .body p { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .body { padding: var(--ds-spacing-size160) 0 var(--ds-spacing-size80); font-family: var(--tachyon-font-reading); font-size: var(--ds-reading-body1); line-height: var(--ds-reading-body1-line); }
+  .body p { margin: 0 0 var(--ds-spacing-size80); white-space: pre-wrap; overflow-wrap: anywhere; }
   .empty { color: var(--ds-muted); font-style: italic; }
-  /* t-321e9d — the doc renders through StaticDoc now (not a flattened text-only fallback); same element
-     rules rich-doc.css's `.rich-doc-editor` uses, so a pin's read-only body matches the editor's look. */
-  .body h1, .body h2, .body h3 { line-height: 1.25; margin: 14px 0 8px; }
-  .body img { max-width: 100%; border-radius: var(--ds-radius); border: 1px solid var(--ds-border); display: block; margin: 10px 0; }
-  .body .tachyon-sketch-node { margin: 12px 0; padding: 0; }
+  /* t-321e9d / t-0f7068 — StaticDoc still renders the same nodes as the editor. Local copy of the
+     element rules stays (cannot share `.rich-doc-editor` chrome; cannot leak `.body` into rich-doc.css).
+     Values now REFERENCE `--ds-reading-body1` and the editor's spacing tokens so the two cannot
+     diverge the way a copied 14/1.55 did. */
+  .body h1, .body h2, .body h3 { line-height: 1.25; margin: var(--ds-spacing-size120) 0 var(--ds-spacing-size80); }
+  .body img { max-width: 100%; border-radius: var(--ds-radius); border: 1px solid var(--ds-border); display: block; margin: var(--ds-spacing-size100) 0; }
+  .body .tachyon-sketch-node { margin: var(--ds-spacing-size120) 0; padding: 0; }
   .body .tachyon-sketch-node img { width: 100%; max-height: 520px; object-fit: contain; background: var(--ds-plate); }
   .body .tachyon-sketch-missing { min-height: 120px; display: grid; place-items: center; border: 1px dashed var(--ds-border); border-radius: var(--ds-radius); color: var(--ds-muted); }
-  .body blockquote { margin: 0 0 12px; padding-left: 12px; border-left: 2px solid var(--ds-border); color: var(--ds-muted); }
-  .body pre { margin: 0 0 12px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); padding: 8px 10px; border-radius: var(--ds-radius); overflow-x: auto; }
+  .body blockquote { margin: 0 0 var(--ds-spacing-size120); padding-left: var(--ds-spacing-size120); border-left: 2px solid var(--ds-border); color: var(--ds-muted); }
+  .body pre { margin: 0 0 var(--ds-spacing-size80); background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.14)); padding: var(--ds-spacing-size80) var(--ds-spacing-size100); border-radius: var(--ds-radius); overflow-x: auto; }
   .body code { font-family: var(--ds-mono); }
-  .body ul, .body ol { margin: 0 0 12px; padding-left: 22px; }
+  .body ul, .body ol { margin: 0 0 var(--ds-spacing-size120); padding-left: var(--ds-spacing-size240); }
   .body ul[data-type="taskList"] { list-style: none; padding-left: 0; }
-  .body li[data-type="taskItem"] { display: flex; gap: 8px; }
-  .visuals { margin-top: 18px; border-top: 1px solid var(--ds-border); padding-top: 16px; }
-  .visuals h2 { margin: 0 0 10px; color: var(--ds-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
-  .visual { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid color-mix(in srgb, var(--ds-border) 65%, transparent); }
+  .body li[data-type="taskItem"] { display: flex; gap: var(--ds-spacing-size80); }
+  .visuals { margin-top: var(--ds-spacing-size160); border-top: 1px solid var(--ds-border); padding-top: var(--ds-spacing-size160); }
+  .visuals h2 { margin: 0 0 var(--ds-spacing-size100); color: var(--ds-muted); font-size: var(--ds-operator-label1); text-transform: uppercase; letter-spacing: .05em; }
+  .visual { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: var(--ds-spacing-size120); align-items: center; padding: var(--ds-spacing-size100) 0; border-top: 1px solid color-mix(in srgb, var(--ds-border) 65%, transparent); }
   .visual:first-of-type { border-top: 0; }
   .visual img, .missing { width: 112px; height: 78px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); object-fit: cover; background: color-mix(in srgb, var(--vscode-editor-background) 88%, var(--vscode-editorWidget-background)); }
   .missing { display: grid; place-items: center; color: var(--ds-muted); }
-  .visual strong { display: block; margin-bottom: 4px; overflow-wrap: anywhere; }
-  .visual span { color: var(--ds-muted); font-size: 12px; }
+  .visual strong { display: block; margin-bottom: var(--ds-spacing-size40); overflow-wrap: anywhere; }
+  .visual span { color: var(--ds-muted); font-size: var(--ds-operator-label1); }
   @media (max-width: 540px) {
-    main { padding: 16px; }
+    main { padding: var(--ds-spacing-size160); }
     .visual { grid-template-columns: 72px minmax(0, 1fr); }
     .visual img, .missing { width: 72px; height: 54px; }
     /* D14: the unified edit mode has four actions; give its title/backlink a real row at narrow widths. */
