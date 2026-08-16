@@ -18,6 +18,22 @@
  *            focus line, metrics, pins, cmdk, menus, attention cards, control tiles, banners,
  *            empty list, boot-row
  *
+ * Type leftovers — ICON sizes, not type roles. The ramp is 10/11/12/13 (operator) and 13/16/20
+ * (reading). tokens.css § slice 4 says the host's only 16px is codiconFontSize and pointing a
+ * reading role at an icon size is a lie about where the number came from. Same reason activity
+ * left `.degrade .codicon` at 28px. Seven `font-size: Npx` remain, all on a .codicon:
+ *   16  .tab .codicon              host icon size (codiconFontSize)
+ *   14  .act / .ci / .more-item / .config-error-title .codicon
+ *                                  between operator-body1 (13) and the host icon (16); neither
+ *                                  ramp step is this glyph
+ *   17  .ctl-tile.ds-btn .codicon  the Control tile icon plate (34×34), not a label
+ *   26  .init .codicon             boot/welcome hero glyph, same class as activity's 28
+ * A line count of `font-size` + `px` is 20 because 13 of those lines already read a ramp token
+ * and share the line with a 1px border / 3px radius / 22px height. Those are not type leftovers.
+ * +1 declaration: `.init p` had no font-size (inherited --ds-body / 13px). Putting the boot
+ * plate on the reading ramp meant declaring --ds-reading-body3 on the <p> itself — same 13px,
+ * plus the reading line-height 20. Computed size did not grow; the role became explicit.
+ *
  * Declared >2px snap: .init padding-top 40→32 (top of the scale). NOT snapped: 28px name-column
  * indent on .row-meta/.row-focus/.row-detail (gutter 13 + gap 6 + sdot 7); 13px child meta/focus
  * pad (sdot 7 + gap 6); 72px .row-focus padding-right (action overlay gutter, pair of
@@ -81,7 +97,7 @@
   .tab { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: var(--ds-spacing-size40); padding: var(--ds-spacing-size60) 0 var(--ds-spacing-size80); cursor: pointer; color: var(--ds-muted); position: relative; border-bottom: 2px solid transparent; }
   .tab:hover { color: var(--vscode-foreground); }
   .tab.active { color: var(--vscode-foreground); border-bottom-color: var(--ds-focus); }
-  .tab .codicon { font-size: 16px; }
+  .tab .codicon { font-size: 16px; } /* host icon size — not a type role */
   /* t-37f554 — open-attention count on the Attentions tab; updates without stealing focus. */
   .tab-badge {
     position: absolute; top: 2px; right: max(2px, calc(50% - 14px));
@@ -373,7 +389,7 @@
   .act { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; cursor: pointer; color: var(--ds-muted); border: 0; background: transparent; padding: 0; font: inherit; }
   /* Reset kit Button/IconButton if ever re-applied — .ds-btn chrome breaks 22×22 hits + codicon glyphs. */
   .act.ds-btn { width: 22px; height: 22px; min-width: 22px; padding: 0; border: 0; gap: 0; background: transparent; box-shadow: none; }
-  .act .codicon { font-size: 14px; line-height: 1; }
+  .act .codicon { font-size: 14px; line-height: 1; } /* icon; 14 is between the two ramps */
   .act svg { display: block; }
   .more-item.ds-btn { display: flex; width: 100%; padding: var(--ds-spacing-size40) var(--ds-spacing-size80); border: 0; background: transparent; border-radius: 4px; gap: var(--ds-spacing-size80); font: inherit; justify-content: flex-start; }
   .more-item.ds-btn:hover, .more-item.ds-btn:focus-visible { background: var(--ds-menu-selection-bg); color: var(--ds-menu-selection-fg); }
@@ -381,7 +397,7 @@
 
   .empty { padding: var(--ds-spacing-size100) var(--ds-spacing-size120); color: var(--ds-muted); font-style: italic; font-size: var(--ds-operator-label1); }
   .init { display: flex; flex-direction: column; align-items: center; gap: var(--ds-spacing-size40); padding: var(--ds-spacing-size320) var(--ds-spacing-size240); text-align: center; color: var(--vscode-foreground); }
-  .init .codicon { font-size: 26px; opacity: .5; margin-bottom: var(--ds-spacing-size60); }
+  .init .codicon { font-size: 26px; opacity: .5; margin-bottom: var(--ds-spacing-size60); } /* hero icon */
   .init p { margin: 0; font-size: var(--ds-reading-body3); line-height: var(--ds-reading-body3-line); }
   .init .dim { color: var(--ds-muted); font-size: var(--ds-reading-body3); line-height: var(--ds-reading-body3-line); }
   .init code { background: var(--ds-hover-row); padding: 0 var(--ds-spacing-size40); border-radius: 3px; }
@@ -427,7 +443,7 @@
   .ci-group { padding: var(--ds-spacing-size60) var(--ds-spacing-size120) var(--ds-spacing-size20); font-size: var(--ds-operator-label3); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-muted); opacity: .8; }
   .ci { display: flex; align-items: center; gap: var(--ds-spacing-size80); padding: var(--ds-spacing-size60) var(--ds-spacing-size120); cursor: pointer; }
   .ci.sel, .ci:hover { background: var(--ds-selection-bg); color: var(--ds-selection-fg); }
-  .ci .codicon { font-size: 14px; opacity: .85; flex: none; }
+  .ci .codicon { font-size: 14px; opacity: .85; flex: none; } /* icon; 14 is between the two ramps */
   .ci .ci-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ci .ci-hint { color: var(--ds-muted); font-size: var(--ds-operator-label3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
   .ci.sel .ci-hint { color: inherit; opacity: .75; }
@@ -444,7 +460,7 @@
   .more-menu { position: fixed; width: max-content; min-width: 172px; max-width: calc(100vw - 12px); background: var(--ds-menu-bg); color: var(--ds-menu-fg); border: 1px solid var(--ds-border); border-radius: 5px; padding: var(--ds-spacing-size40); box-shadow: 0 6px 22px rgba(0,0,0,.45); }
   .more-item { display: flex; align-items: center; gap: var(--ds-spacing-size80); width: 100%; padding: var(--ds-spacing-size40) var(--ds-spacing-size80); border-radius: 4px; color: inherit; text-align: left; white-space: nowrap; }
   .more-item:hover, .more-item:focus-visible { background: var(--ds-menu-selection-bg); color: var(--ds-menu-selection-fg); }
-  .more-item .codicon { font-size: 14px; opacity: .9; }
+  .more-item .codicon { font-size: 14px; opacity: .9; } /* icon; 14 is between the two ramps */
   .more-item span:not(.codicon) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 
@@ -466,7 +482,7 @@
     font-size: var(--ds-operator-label1);
     color: var(--ds-err, #f14c4c);
   }
-  .config-error-title .codicon { font-size: 14px; }
+  .config-error-title .codicon { font-size: 14px; } /* icon; 14 is between the two ramps */
   .config-error-summary {
     font-size: var(--ds-operator-label2);
     line-height: 1.35;
@@ -565,7 +581,7 @@
   .ctl-tile.ds-btn:hover { background: var(--ds-hover-row); }
   /* The icon plate carries the tap target; the tile itself stays flush so labels can breathe. */
   .ctl-tile.ds-btn .codicon {
-    font-size: 17px; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 17px; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; /* tile icon plate */
     border-radius: 8px; background: color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
     color: var(--vscode-foreground); flex: none;
   }
