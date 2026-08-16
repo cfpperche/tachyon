@@ -34,6 +34,7 @@ import type { EngineStateMigrationV1 } from "@tachyon/engine/engine-service/stat
 import { workspaceVersionStateKey } from "@tachyon/engine/workspace/operationalStateKeys.js";
 import { ENGINE_SHELL_PROTOCOL, type EngineBundleManifestV1, type EngineServiceIdentityV1, type EngineShellHelloV1 } from "@tachyon/engine/engine-service/protocol.js";
 import { TmuxService, workspaceHash } from "@tachyon/engine/tmux/TmuxService.js";
+import { readLinuxProcessIdentity } from "@tachyon/engine/runtime/processIdentity.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { assertNoFleetLeak, isolatedDaemonChildEnv } from "../helpers/isolatedDaemonEnv.js";
 import { bundledDaemonFixture } from "../helpers/daemonFixtureBundle.js";
@@ -725,18 +726,8 @@ describe("persistent engine supervisor", () => {
   // until the deadline, and only then re-raise it (never launching a duplicate meanwhile).
   it("keeps polling while a bound endpoint is not yet verifiable, then converges once it clears", async () => {
     const fixture = workspaceFixture();
-    const held = new Set<net.Socket>();
-    const hang = net.createServer((connection) => {
-      held.add(connection);
-      connection.on("error", () => {});
-      connection.on("close", () => held.delete(connection));
-    });
-    await new Promise<void>((resolve, reject) => hang.listen(fixture.socket, resolve).once("error", reject));
-    setTimeout(() => {
-      for (const connection of held) connection.destroy();
-      hang.close();
-      fs.rmSync(fixture.socket, { force: true });
-    }, 1_200).unref();
+    const mute = await listenMute(fixture.socket);
+    setTimeout(() => { void mute.close(); }, 1_200).unref();
     let launches = 0;
     const result = await ensureDaemonEngine({
       workspaceRoot: fixture.workspace,
@@ -756,16 +747,16 @@ describe("persistent engine supervisor", () => {
     expect(launches).toBe(1);
   });
 
-  it("still refuses a duplicate when the endpoint never becomes verifiable within the deadline", async () => {
+  // t-d244e1 — a bound-but-mute endpoint whose unit is NOT this workspace's stays refused.
+  // The ownership line is the derived unit name; outside it the previous dead-end is still
+  // correct, except the error now offers the stop command instead of leaving the operator
+  // to discover systemctl by hand.
+  it("still refuses a mute endpoint whose unit is not this workspace's", async () => {
     const fixture = workspaceFixture();
-    const held = new Set<net.Socket>();
-    const hang = net.createServer((connection) => {
-      held.add(connection);
-      connection.on("error", () => {});
-      connection.on("close", () => held.delete(connection));
-    });
-    await new Promise<void>((resolve, reject) => hang.listen(fixture.socket, resolve).once("error", reject));
+    const mute = await listenMute(fixture.socket);
     let launches = 0;
+    let stops = 0;
+    const asked: string[] = [];
     try {
       await expect(ensureDaemonEngine({
         workspaceRoot: fixture.workspace,
@@ -774,14 +765,130 @@ describe("persistent engine supervisor", () => {
         storageRoot: fixture.storage,
         controlSocketPath: fixture.socket,
         launcher: async () => { launches += 1; return "started"; },
+        stopper: async () => { stops += 1; },
+        unitLoaded: async (unitName) => {
+          asked.push(unitName);
+          return false;
+        },
         startTimeoutMs: 1_600,
         pollMs: 20,
-      })).rejects.toMatchObject({ code: "CONTROL_UNAVAILABLE" });
+      })).rejects.toMatchObject({
+        code: "CONTROL_UNAVAILABLE",
+        message: expect.stringMatching(new RegExp(
+          `systemctl --user stop ${engineSystemdUnitName(fixture.workspace).replace(/\./g, "\\.")}`,
+        )),
+      });
       expect(launches).toBe(0);
+      expect(stops).toBe(0);
+      expect(asked).toEqual([engineSystemdUnitName(fixture.workspace)]);
     } finally {
-      for (const connection of held) connection.destroy();
-      await new Promise<void>((resolve) => hang.close(() => resolve()));
+      await mute.close();
     }
+  });
+
+  // t-d244e1 — the measured dead end: socket in LISTEN, health never answers, unit is ours.
+  // After the full entry deadline the supervisor stops that unit and launches again.
+  it("replaces a mute workspace unit after the entry deadline instead of staying refused", async () => {
+    const fixture = workspaceFixture();
+    const mute = await listenMute(fixture.socket);
+    let launches = 0;
+    let stops = 0;
+    const asked: string[] = [];
+    const result = await ensureDaemonEngine({
+      workspaceRoot: fixture.workspace,
+      bundle: fixture.bundle,
+      runtime: fixture.runtime,
+      storageRoot: fixture.storage,
+      controlSocketPath: fixture.socket,
+      launcher: async (input) => {
+        launches += 1;
+        spawnWorker(input.encodedOptions);
+        return "started";
+      },
+      stopper: async (input) => {
+        stops += 1;
+        expect(input.unitName).toBe(engineSystemdUnitName(fixture.workspace));
+        expect(input.expectedIdentity).toBeUndefined();
+        await mute.close();
+      },
+      unitLoaded: async (unitName) => {
+        asked.push(unitName);
+        return true;
+      },
+      startTimeoutMs: 1_600,
+      pollMs: 20,
+    });
+    expect(result.disposition).toBe("started");
+    expect(launches).toBe(1);
+    expect(stops).toBe(1);
+    expect(asked).toEqual([engineSystemdUnitName(fixture.workspace)]);
+    const audit = fs.readFileSync(path.join(fixture.storage, "supervisor", "transitions.jsonl"), "utf8")
+      .trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(audit.map((row) => row.phase)).toEqual(["zombie-replace-prepared", "zombie-replaced"]);
+    expect(audit[0]).toMatchObject({
+      unitName: engineSystemdUnitName(fixture.workspace),
+      reason: "entry-probe-mute-deadline",
+    });
+    expect(audit[1]).toMatchObject({
+      unitName: engineSystemdUnitName(fixture.workspace),
+      to: { instanceId: result.identity.instanceId, bundleId: fixture.bundle.bundleId },
+    });
+    const shell = new EngineControlClient({
+      socketPath: fixture.socket,
+      hello: hello(result.identity, "shell-after-zombie-replace"),
+    });
+    expect((await shell.attach()).engine).toEqual(result.identity);
+    await shell.detach();
+  });
+
+  // t-d244e1 — the deadline still exists so a just-started peer can finish becoming healthy.
+  it("accepts a mute endpoint that becomes healthy before the deadline and does not stop it", async () => {
+    const fixture = workspaceFixture();
+    const identity = healthIdentity(fixture);
+    const mute = await listenMute(fixture.socket, { answerWith: identity, afterMs: 1_200 });
+    let launches = 0;
+    let stops = 0;
+    try {
+      const result = await ensureDaemonEngine({
+        workspaceRoot: fixture.workspace,
+        bundle: fixture.bundle,
+        runtime: fixture.runtime,
+        storageRoot: fixture.storage,
+        controlSocketPath: fixture.socket,
+        launcher: async () => { launches += 1; return "started"; },
+        stopper: async () => { stops += 1; },
+        unitLoaded: async () => true,
+        startTimeoutMs: 4_000,
+        pollMs: 20,
+      });
+      expect(result.disposition).toBe("reused-exact");
+      expect(result.identity).toEqual(identity);
+      expect(launches).toBe(0);
+      expect(stops).toBe(0);
+    } finally {
+      await mute.close();
+    }
+  });
+
+  it("does not take over a mute endpoint on the post-launch wait", async () => {
+    const fixture = workspaceFixture();
+    let stops = 0;
+    await expect(ensureDaemonEngine({
+      workspaceRoot: fixture.workspace,
+      bundle: fixture.bundle,
+      runtime: fixture.runtime,
+      storageRoot: fixture.storage,
+      controlSocketPath: fixture.socket,
+      launcher: async () => {
+        await listenMute(fixture.socket);
+        return "started";
+      },
+      stopper: async () => { stops += 1; },
+      unitLoaded: async () => true,
+      startTimeoutMs: 1_600,
+      pollMs: 20,
+    })).rejects.toMatchObject({ code: "CONTROL_UNAVAILABLE" });
+    expect(stops).toBe(0);
   });
 });
 
@@ -977,6 +1084,61 @@ function temp(prefix: string): string {
   const root = makeSocketTemp(prefix);
   roots.push(root);
   return root;
+}
+
+function healthIdentity(fixture: { workspace: string; bundle: StagedEngineBundle }): EngineServiceIdentityV1 {
+  const observed = readLinuxProcessIdentity(process.pid);
+  if (observed.state !== "exact") throw new Error(`test process identity is ${observed.state}`);
+  const root = fs.realpathSync(fixture.workspace);
+  return {
+    schemaVersion: 1,
+    workspaceRoot: root,
+    workspaceHash: workspaceHash(root),
+    instanceId: "late-healthy-engine",
+    pid: process.pid,
+    processStartIdentity: `linux:${observed.bootId}:${observed.processStart}`,
+    startedAt: new Date().toISOString(),
+    bundleId: fixture.bundle.bundleId,
+    engineVersion: "0.57.0-engine-v1",
+    protocol: { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL },
+    bridge: { instanceId: "late-healthy-bridge", port: 1 },
+  };
+}
+
+async function listenMute(
+  socketPath: string,
+  later?: { answerWith: EngineServiceIdentityV1; afterMs: number },
+): Promise<{ close: () => Promise<void> }> {
+  const held = new Set<net.Socket>();
+  let answer = false;
+  if (later) setTimeout(() => { answer = true; }, later.afterMs).unref();
+  const hang = net.createServer((connection) => {
+    held.add(connection);
+    connection.on("error", () => {});
+    connection.on("close", () => held.delete(connection));
+    if (!later || !answer) return;
+    connection.setEncoding("utf8");
+    let input = "";
+    connection.on("data", (chunk: string) => {
+      input += chunk;
+      if (!input.includes("\n")) return;
+      connection.end(`${JSON.stringify({
+        ok: true,
+        schemaVersion: 1,
+        op: "health",
+        engine: later.answerWith,
+        shellCount: 0,
+      })}\n`);
+    });
+  });
+  await new Promise<void>((resolve, reject) => hang.listen(socketPath, resolve).once("error", reject));
+  return {
+    close: async () => {
+      for (const connection of held) connection.destroy();
+      await new Promise<void>((resolve) => hang.close(() => resolve()));
+      fs.rmSync(socketPath, { force: true });
+    },
+  };
 }
 
 function sha256(value: string): string {
