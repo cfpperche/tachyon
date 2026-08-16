@@ -42,7 +42,7 @@ describe("Agents header dropdown (t-a9d1f2)", () => {
     expect(block).toContain("flex: 1 1 92px");
     expect(block).toContain("min-width: 0");
     expect(block).toContain("width: clamp(58px, 31vw, 108px)");
-    expect(block).toContain("--vscode-dropdown-background");
-    expect(block).toContain("--vscode-dropdown-foreground");
+    expect(block).toContain("--ds-dropdown-bg");
+    expect(block).toContain("--ds-dropdown-fg");
   });
 });
