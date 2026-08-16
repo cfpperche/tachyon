@@ -4,6 +4,57 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.4 — o Tachyon sabe quando um agente terminou sem checklist, e pode cobrar
+
+### O agente escreve uma lista de passos. Agora o Tachyon lê
+
+Claude, Codex e Grok mantêm um checklist interno enquanto trabalham. Até aqui isso ficava dentro do
+terminal de cada um: para ver, você abria o painel daquele agente.
+
+Agora **o passo atual de cada agente aparece na carta da barra lateral**. Quatro agentes rodando, quatro
+passos visíveis de relance, sem trocar de painel.
+
+### E pode exigir que ele exista
+
+Você declara em quais tipos de task um checklist é obrigatório:
+
+```yaml
+settings:
+  checklist:
+    requireIn: [feature, architecture]
+```
+
+Quando um turno termina sem checklist numa task desse tipo, o Tachyon **lembra o agente uma vez**. Se
+ele ignorar, o Tachyon desiste, registra e avisa você.
+
+**A entrega nunca é bloqueada.** É lembrete, não recusa.
+
+O tipo da task é texto livre — o Tachyon não impõe uma lista fechada. `'*'` vale para todos, `'!tipo'`
+exclui, e a exclusão sempre ganha. Configuração inválida avisa e é ignorada; o produto segue.
+
+### Por que isso não existe em nenhum concorrente
+
+Doze produtos de código aberto foram lidos no código antes desta versão. **Todos os doze mostram o
+checklist. Nenhum exige.**
+
+A razão fica clara ao construir: para cobrar é preciso saber que o checklist **não** vai chegar — e
+silêncio não é ausência. Um agente rodou sete minutos sem escrever nada e depois escreveu.
+
+Por isso o Tachyon só decide **depois que o turno termina**, e nunca durante. E quando o runtime não
+tinha como escrever checklist naquela sessão, ele não cobra nem sinaliza: acusar alguém que não podia
+cumprir seria pior que não cobrar.
+
+### Três coisas que apareceram no caminho
+
+O modelo padrão do Claude **não tem as ferramentas de checklist** a menos que sejam ligadas. Não era
+o agente escolhendo não planejar — a ferramenta não existia. Agora o Tachyon liga.
+
+O Codex **já enviava** o identificador do turno, e o Tachyon jogava fora. A conclusão de que "não dava
+para saber" era falsa, e falsa por nossa causa.
+
+E o texto do lembrete prometia ser "o único aviso" quando o código não garantia isso. Corrigido antes
+de sair.
+
 ## 0.93.3 — um plugin pode ser de um agente só, e sem custar espaço em disco
 
 ### Um plugin instalado para um agente não vaza para os outros
