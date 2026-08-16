@@ -6,7 +6,7 @@ import { __resetVscodeMock } from "../mocks/vscode.js";
 import { SidebarPrototypeProvider } from "../../apps/vscode-extension/src/webview/SidebarPrototype.js";
 import { ControlWorkspaceScope, controlWorkspaceScope } from "../../apps/vscode-extension/src/webview/shared/ControlWorkspaceScope.js";
 import { initializeVsCodeNotifications } from "../../apps/vscode-extension/src/workspace/notify.js";
-import { SAMPLE, TABS, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.js";
+import { SAMPLE, TABS, type FleetVM, type SidebarBootVM, type TabId } from "@tachyon/shared/sidebar/types.js";
 import { buildSectionsModel } from "@tachyon/webview-ui/sections/model";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import type { WorkspaceSidebarTarget } from "../../apps/vscode-extension/src/shell/SidebarTarget.js";
@@ -61,7 +61,7 @@ const beta: FleetVM = {
   notices: [{ id: "n-beta", level: "warn", message: "beta needs you", at: "2026-08-05T11:00:00.000Z", collapsedCount: 1, read: false, actions: [], actionsLive: false }],
 };
 
-type AppProps = { fleets?: FleetVM[]; initialTab?: TabId; selectedWsHash?: string };
+type AppProps = { fleets?: FleetVM[]; initialTab?: TabId; selectedWsHash?: string; boot?: SidebarBootVM };
 let App: (props: AppProps) => unknown;
 
 beforeEach(() => {
@@ -179,10 +179,53 @@ describe("t-72ff5a — one project is in focus for the whole sidebar", () => {
     expect(solo).toContain(">Alpha<");
   });
 
-  it("renders an honest empty state, not a selector, when no workspace is attached", () => {
-    const html = render({ fleets: [], initialTab: "Agents" });
+  /**
+   * SDD 504 — this test used to read `fleets: []` as proof of absence, which is the defect itself
+   * written down as an assertion: it fixed "empty array ⇒ welcome" in place, so the boot lie would
+   * have survived any change that respected the suite.
+   *
+   * It keeps its subject — the empty screen is a state, not a selector — and gains the precondition
+   * the old shape left out. An empty array now means only "no fleet"; whether that is ABSENCE is
+   * `boot.discovered`'s answer, and it must be asked first.
+   */
+  it("never claims absence before discovery has answered, whatever the fleet array says", () => {
+    // The red guard. No `boot` at all is the webview's first frame on every reload — before the
+    // host has said anything. If the claim of absence ever comes back to this moment, this fails.
+    const undiscovered = render({ fleets: [], initialTab: "Agents" });
+    expect(undiscovered).not.toContain("No Tachyon workspace.");
+    expect(undiscovered).not.toContain("Initialize Tachyon");
+    expect(undiscovered).not.toContain('data-testid="sidebar-workspace-select"');
+
+    // …and the same for a discovery still in flight, which is the retained-webview case: a host
+    // incarnation that has not answered yet is not a host that answered "none".
+    const pending = render({ fleets: [], initialTab: "Agents", boot: { discovered: false, folders: [] } });
+    expect(pending).not.toContain("No Tachyon workspace.");
+    expect(pending).not.toContain("Initialize Tachyon");
+  });
+
+  it("still reaches the honest empty state — once discovery confirms it, not before", () => {
+    // The mirrored defect this must not become: an eternal "starting…" in a window that genuinely
+    // has no Tachyon. The welcome is not deleted, it is gated.
+    const html = render({
+      fleets: [],
+      initialTab: "Agents",
+      boot: { discovered: true, folders: [{ hash: "hash-alpha", name: "Alpha", phase: "unconfigured" }] },
+    });
     expect(html).toContain("No Tachyon workspace.");
+    expect(html).toContain("Initialize Tachyon");
     expect(html).not.toContain('data-testid="sidebar-workspace-select"');
+  });
+
+  it("says a configured folder is starting, and never offers to initialize it", () => {
+    const html = render({
+      fleets: [],
+      initialTab: "Agents",
+      boot: { discovered: true, folders: [{ hash: "hash-alpha", name: "Alpha", phase: "starting", startedAt: Date.now() }] },
+    });
+    expect(html).toContain("Alpha");
+    expect(html).not.toContain("No Tachyon workspace.");
+    // The click that would create a second tachyon.yml over a project that already has one.
+    expect(html).not.toContain("Initialize Tachyon");
   });
 
   it("resolves a selection that names no attached project, rather than showing nothing", () => {

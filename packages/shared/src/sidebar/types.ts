@@ -203,6 +203,52 @@ export interface WorkspaceRef { hash: string; name: string }
 export type HandoffStaleness = "fresh" | "needs_distill" | "possibly_stale" | "old";
 export interface HandoffVM { exists: boolean; staleness: HandoffStaleness; pendingCount: number }
 
+/**
+ * SDD 504 — what the shell has DISCOVERED about this window, projected so the sidebar never has to
+ * infer it from an empty fleet array.
+ *
+ * `!fleets.length` used to answer two questions with one — "no Tachyon workspace here" and "I have
+ * not heard from the engine yet". During boot the second was rendered as the first, so a configured
+ * workspace was told it had none and offered a button to initialize what already existed.
+ *
+ * The plan's finding is what shapes this type: absence is knowable SYNCHRONOUSLY in the activation
+ * turn, from `workspaceFolders` + `hasConfig(folder)`, with no engine and no first sync. So this is
+ * not a spinner waiting on information that is genuinely slow — `discovered` marks the one moment
+ * before the host has answered a question it can answer immediately.
+ */
+export type SidebarFolderPhase = "unconfigured" | "starting" | "ready" | "failed";
+
+export interface SidebarBootFolderVM {
+  /**
+   * The folder's `wsHash` — the SAME identity `FleetVM.folder.hash` carries once it is attached.
+   *
+   * Deliberately not the filesystem path: it is what Retry sends back, and every other webview→host
+   * route already speaks hashes. Sharing the identity across boot and ready is also what lets a
+   * reader follow one folder from "starting" into its own fleet without the host inventing a
+   * correlation.
+   */
+  hash: string;
+  /** Display name of the open folder — what "Starting Tachyon for {name}…" names. */
+  name: string;
+  phase: SidebarFolderPhase;
+  /** `Date.now()` when this folder entered `starting`. "Delayed" is derived from it, not stored. */
+  startedAt?: number;
+  /** `failed` only — the one-line summary already written to Output → Tachyon. */
+  detail?: string;
+}
+
+export interface SidebarBootVM {
+  /**
+   * Has the host enumerated every open folder and answered `hasConfig` for each?
+   *
+   * `false` is the WEBVIEW'S OWN default and means "not asked yet" — never "no". Only the host sets
+   * it true, and only after the check. That asymmetry is the whole fix: it is what keeps the empty
+   * welcome from being frame #1 in a workspace that exists.
+   */
+  discovered: boolean;
+  folders: SidebarBootFolderVM[];
+}
+
 /** t-8354ae — persistent config-error banner payload (webview). */
 export interface ConfigErrorVM {
   file: string;

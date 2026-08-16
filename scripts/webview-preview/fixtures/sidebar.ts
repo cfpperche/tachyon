@@ -7,7 +7,7 @@
  * `default` is `sample-derived` (the real `SAMPLE`), the rest are `synthetic-edge`.
  */
 
-import { SAMPLE, type FleetVM } from "@tachyon/shared/sidebar/types";
+import { SAMPLE, type FleetVM, type SidebarBootVM } from "@tachyon/shared/sidebar/types";
 import type { Fixture } from "../routes";
 
 // a complete FleetVM minus `agents` — every required array present.
@@ -42,7 +42,83 @@ const OPTION_ROWS: FleetVM["agents"] = [
   },
 ];
 
-export const sidebarFixtures: Record<string, Fixture<FleetVM | FleetVM[]>> = {
+/**
+ * SDD 504 — a boot fixture is a fleet list plus the discovery result that explains it.
+ *
+ * It has to be its own shape because the states worth looking at are exactly the ones where the
+ * fleet list is EMPTY, and an empty array is what the sidebar used to (wrongly) read as absence.
+ * Passing `[]` alone would render the same screen for all five of them.
+ */
+export interface SidebarBootFixtureVM { fleets: FleetVM[]; boot: SidebarBootVM }
+
+export type SidebarFixtureVM = FleetVM | FleetVM[] | SidebarBootFixtureVM;
+
+export function isBootFixture(vm: SidebarFixtureVM): vm is SidebarBootFixtureVM {
+  return !Array.isArray(vm) && "boot" in vm;
+}
+
+/** Long enough to wrap at 360px — the width where a folder name stops fitting on one line. */
+const LONG_FOLDER = "tachyon-monorepo-feature-truthful-sidebar-boot";
+
+export const sidebarFixtures: Record<string, Fixture<SidebarFixtureVM>> = {
+  // SDD 504 — the five screens the boot contract owes a reader. `boot-*` fixtures carry no fleet on
+  // purpose; the sixth state (ready) is every other fixture in this file.
+  "boot-unknown": {
+    provenance: "synthetic-edge",
+    vm: { fleets: [], boot: { discovered: false, folders: [] } },
+  },
+  "boot-starting": {
+    provenance: "synthetic-edge",
+    vm: {
+      fleets: [],
+      boot: { discovered: true, folders: [{ hash: "h-1", name: LONG_FOLDER, phase: "starting", startedAt: Date.now() }] },
+    },
+  },
+  "boot-delayed": {
+    provenance: "synthetic-edge",
+    vm: {
+      fleets: [],
+      // Stamped well past the threshold so the fixture renders the delayed copy deterministically.
+      boot: { discovered: true, folders: [{ hash: "h-1", name: LONG_FOLDER, phase: "starting", startedAt: Date.now() - 60_000 }] },
+    },
+  },
+  "boot-failed": {
+    provenance: "synthetic-edge",
+    vm: {
+      fleets: [],
+      boot: {
+        discovered: true,
+        folders: [{
+          hash: "h-1",
+          name: LONG_FOLDER,
+          phase: "failed",
+          // A real engine refusal is this long and has no spaces to break on — the case that decides
+          // whether the notice wraps or pushes the sidebar sideways.
+          detail: "persistent engine control socket already has a live owner (/run/user/1000/tachyon/engines/b349073a/control.sock)",
+        }],
+      },
+    },
+  },
+  "boot-unconfigured": {
+    provenance: "synthetic-edge",
+    vm: { fleets: [], boot: { discovered: true, folders: [{ hash: "h-1", name: "some-folder", phase: "unconfigured" }] } },
+  },
+  /** Multi-root: one project ready, one still starting, one failed — the strip above live lists. */
+  "boot-multi-root": {
+    provenance: "synthetic-edge",
+    vm: {
+      fleets: [SAMPLE],
+      boot: {
+        discovered: true,
+        folders: [
+          { hash: SAMPLE.folder?.hash ?? "h-ready", name: SAMPLE.folder?.name ?? "Ready", phase: "ready" },
+          { hash: "h-slow", name: LONG_FOLDER, phase: "starting", startedAt: Date.now() },
+          { hash: "h-bad", name: "other-project", phase: "failed", detail: "engine refused the attach" },
+        ],
+      },
+    },
+  },
+
   // the richest canonical state — the real SAMPLE the production bundle ships.
   default: { provenance: "sample-derived", vm: SAMPLE },
 

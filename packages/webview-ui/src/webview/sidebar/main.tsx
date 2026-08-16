@@ -1,7 +1,7 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { App, type GlobalOp } from "./App";
-import { SAMPLE, type FleetVM } from "@tachyon/shared/sidebar/types";
+import { SAMPLE, type FleetVM, type SidebarBootVM } from "@tachyon/shared/sidebar/types";
 import { FLEET, readyMessage, type SidebarHostMessage } from "./messages";
 
 // The webview iframe entry. The host (SidebarPrototypeProvider) pushes the live fleet via postMessage
@@ -21,6 +21,19 @@ function Root() {
   // In the real webview start empty (the host pushes live fleets after "ready"); SAMPLE only when opened
   // standalone (no vscode api) so the dev/design preview still has data. Never show SAMPLE in production.
   const [fleets, setFleets] = useState<FleetVM[]>(vscode ? [] : [SAMPLE]);
+  /**
+   * SDD 504 — `undefined` until the host says otherwise, and that default is the fix.
+   *
+   * This empty array above is the webview's first frame on every reload, and the sidebar used to
+   * read it as proof that no Tachyon workspace existed — so the welcome was frame #1, shown before
+   * anyone had asked the question it answers. Keeping discovery in its OWN state, with no value at
+   * all until a message arrives, means "not asked" can no longer be spelled the same way as "no".
+   *
+   * A retained webview can also outlive the host that filled it: on a new host incarnation this
+   * resets with the rest of the client state, so nothing carries a previous window's answer into a
+   * window that has not been checked (plan, "Risks and unknowns").
+   */
+  const [boot, setBoot] = useState<SidebarBootVM | undefined>(undefined);
   // spec 242 — persisted sort prefs (per section); the host includes them in the fleet message so the FIRST
   // render is already in the saved order (no name-asc→saved flicker).
   const [prefs, setPrefs] = useState<{ agents?: string; terminals?: string }>({});
@@ -43,7 +56,11 @@ function Root() {
       if (d && d.type === FLEET && Array.isArray(d.fleets)) {
         gotFleet = true;
         stopRetrying();
-        setFleets(d.fleets); // [] = no workspace → App shows an empty state
+        setFleets(d.fleets);
+        // SDD 504 — an empty `fleets` says only "no fleet"; `boot` is what says whether that means
+        // absence. Set unconditionally, including back to undefined, so a host that stops sending
+        // discovery returns the sidebar to "unknown" rather than leaving a stale claim on screen.
+        setBoot(d.boot);
         if (d.prefs) setPrefs(d.prefs);
         setCollapsedKeys(Array.isArray(d.collapsedKeys) ? d.collapsedKeys : []);
         if (typeof d.appVersion === "string" && d.appVersion.trim()) setAppVersion(d.appVersion.trim());
@@ -84,7 +101,7 @@ function Root() {
     setCollapsedKeys: (keys: string[]) => vscode?.postMessage({ type: "setCollapsed", keys }),
     switchWorkspace: (wsHash: string) => vscode?.postMessage({ type: "switchControlWorkspace", hash: wsHash }),
   };
-  return <App fleets={fleets} dispatch={dispatch} prefs={prefs} collapsedKeys={collapsedKeys} appVersion={appVersion} selectedWsHash={selectedWsHash} />;
+  return <App fleets={fleets} dispatch={dispatch} prefs={prefs} collapsedKeys={collapsedKeys} appVersion={appVersion} selectedWsHash={selectedWsHash} boot={boot} />;
 }
 
 const root = document.getElementById("root");

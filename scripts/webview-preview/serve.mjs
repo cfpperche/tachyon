@@ -37,7 +37,13 @@ const server = http.createServer((req, res) => {
     res.writeHead(400).end("bad request");
     return;
   }
-  const filePath = path.resolve(ROOT, "." + urlPath);
+  // The harness links the SHIPPED bundles at `/dist/webview/*`, which was a repo-root path until the
+  // monorepoization moved the build output under `apps/vscode-extension/`. Serving the root alone has
+  // 404'd every bundle since — the page loads, the shell never mounts, and the harness renders
+  // "PREVIEW SHELL DID NOT MOUNT" instead of a surface. Mapping the prefix here keeps the URLs the
+  // page (and the generated `routes.json`) already spell, rather than rewriting both.
+  const urlPathOnDisk = urlPath.startsWith("/dist/") ? `/apps/vscode-extension${urlPath}` : urlPath;
+  const filePath = path.resolve(ROOT, "." + urlPathOnDisk);
   const rel = path.relative(ROOT, filePath);
   if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
     res.writeHead(403).end("forbidden");
