@@ -349,6 +349,25 @@
     line-clamp: var(--card-focus-lines);
     text-overflow: clip;
   }
+  /* t-281339 — one operator line under the board glance. Step text clips;
+     the card must not grow. sem-plano uses the same --ds-warn role as
+     .sdot.throttled. */
+  .row-plan {
+    display: flex; align-items: baseline; gap: var(--ds-spacing-size60);
+    padding: var(--ds-spacing-size20) 72px var(--ds-spacing-size20) 28px; min-width: 0;
+    color: var(--ds-muted); font-size: var(--ds-operator-label2); line-height: 1.3;
+  }
+  .row.child .row-plan {
+    padding-left: 13px;
+  }
+  .row-plan .plan-text {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--ds-fg);
+  }
+  .row-plan.sem-plano .plan-mark {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--ds-warn); font-size: var(--ds-operator-label1);
+  }
   .msub {
     flex: 1 0 100%;
     color: var(--ds-muted);

@@ -122,4 +122,31 @@ describe("parseSidebarViewV1 agent status enum", () => {
     expect(fleet.pins[0]!.text.length).toBeLessThanOrEqual(SIDEBAR_PIN_TEXT_MAX);
     expect(fleet.pins[0]!.text).toContain("open the pin for full detail");
   });
+
+  it("t-281339: accepts a plan step and a sem-plano mark; refuses sem-canal on the wire", () => {
+    const withStep = minimalFleet("running");
+    (withStep.fleet.agents as Array<Record<string, unknown>>)[0] = {
+      ...withStep.fleet.agents[0],
+      plan: { kind: "step", text: "write the sidebar line" },
+    };
+    expect(parseSidebarViewV1(withStep).fleet.agents[0]?.plan).toEqual({
+      kind: "step",
+      text: "write the sidebar line",
+    });
+
+    const marked = minimalFleet("running");
+    (marked.fleet.agents as Array<Record<string, unknown>>)[0] = {
+      ...marked.fleet.agents[0],
+      plan: { kind: "sem-plano" },
+    };
+    expect(parseSidebarViewV1(marked).fleet.agents[0]?.plan).toEqual({ kind: "sem-plano" });
+
+    const canal = minimalFleet("running");
+    (canal.fleet.agents as Array<Record<string, unknown>>)[0] = {
+      ...canal.fleet.agents[0],
+      plan: { kind: "sem-canal" },
+    };
+    expect(isSidebarViewV1(canal)).toBe(false);
+    expect(() => parseSidebarViewV1(canal)).toThrow();
+  });
 });

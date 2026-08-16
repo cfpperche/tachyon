@@ -28,6 +28,13 @@ export interface AgentFocus {
   taskStatus?: "triaged" | "active";
   full: string;
 }
+/**
+ * t-281339 — one operator line on the sidebar card: the current internal-plan
+ * step, or a discrete `sem-plano` mark. `sem-canal` is absence (omit the field).
+ */
+export type AgentPlanLine =
+  | { kind: "step"; text: string }
+  | { kind: "sem-plano" };
 export type PersistenceHookBadge = "active" | "skipped" | "failed" | "unknown";
 /** spec 273 — a compact, mechanical evidence indicator for a worktree agent (advisory; never a gate). */
 export interface EvidenceBadge {
@@ -96,6 +103,8 @@ export interface AgentVM {
   continuity?: ContinuityBadge;
   /** spec 390 — glance focus line (task / brief / continuity goal); omit when no source. */
   focus?: AgentFocus;
+  /** t-281339 — current internal-plan step, or `sem-plano`. Omit for mute / all-completed / `sem-canal`. */
+  plan?: AgentPlanLine;
   /** spec 316 — runtime-native persistence hook health for declared Claude/Codex agents. */
   persistenceHooks?: { state: PersistenceHookBadge; reason?: string; path?: string; updatedAt?: string };
   /** spec 273 — non-binary evidence indicator (undefined = none); advisory, never gates. */
