@@ -59,4 +59,22 @@
   --vscode-terminal-ansiRed: #cd3131;
   --vscode-terminal-ansiYellow: #e5e510;
   --vscode-testing-iconPassed: #73c991;
+
+  /* VS Code 1.133 terminalColorRegistry dark defaults — the 13 roles the harness never published.
+     Green/red/yellow above already matched; do not restyle those (other surfaces screenshot them). */
+  --vscode-terminal-ansiBlack: #000000;
+  --vscode-terminal-ansiBlue: #2472c8;
+  --vscode-terminal-ansiMagenta: #bc3fbc;
+  --vscode-terminal-ansiCyan: #11a8cd;
+  --vscode-terminal-ansiWhite: #e5e5e5;
+  --vscode-terminal-ansiBrightBlack: #666666;
+  --vscode-terminal-ansiBrightRed: #f14c4c;
+  --vscode-terminal-ansiBrightGreen: #23d18b;
+  --vscode-terminal-ansiBrightYellow: #f5f543;
+  --vscode-terminal-ansiBrightBlue: #3b8eea;
+  --vscode-terminal-ansiBrightMagenta: #d670d6;
+  --vscode-terminal-ansiBrightCyan: #29b8db;
+  --vscode-terminal-ansiBrightWhite: #e5e5e5;
+  --vscode-terminalCursor-foreground: #aeafad;
+  --vscode-terminal-selectionBackground: #264f78;
 }
