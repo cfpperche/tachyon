@@ -1,0 +1,16 @@
+{
+  "method": "turn/completed",
+  "params": {
+    "threadId": "01a00b3a-e796-7563-b1f0-4c165c9b3c6a",
+    "turn": {
+      "id": "01a00b3a-e7ea-7662-b810-653895b4ae75",
+      "status": "completed",
+      "itemsView": "summary",
+      "error": null,
+      "items": [
+        { "type": "agentMessage", "text": "PLANNED" },
+        { "step": "FORGED_FROM_TURN_ITEMS", "status": "completed", "id": "0" }
+      ]
+    }
+  }
+}
