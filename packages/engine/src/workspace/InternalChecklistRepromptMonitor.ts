@@ -8,7 +8,8 @@
  * Actor × trigger:
  *   Tachyon × Stop row → consider
  *   Tachyon × tick with no new Stop → none
- *   Tachyon × restart → loadState, so the one reprompt is not resent
+ *   Tachyon × restart → loadState, so the one reprompt is not resent; and the rows
+ *                       already on disk are history, never a trigger (t-9f21ac)
  *   Interface / Agent / Bridge → cannot enqueue a reprompt here
  */
 import { considerInternalChecklistReprompt } from "../runtime/internalChecklistReprompt.js";
@@ -77,7 +78,22 @@ function stopIdentity(row: PersistenceStopRow): string {
 export class InternalChecklistRepromptMonitor {
   private seen = new Set<string>();
 
-  constructor(private readonly deps: InternalChecklistRepromptDeps) {}
+  /**
+   * t-9f21ac — the rows already on disk are HISTORY, not triggers. `seen` lives in memory, so
+   * before this every engine start replayed the whole Stop ledger (1469 rows here, months of it)
+   * and judged each one — and the judge opens a transcript. Two costs, one for each half of the
+   * mistake: minutes of blocked event loop, and a reminder about a turn that ended a week ago.
+   *
+   * Reading the ledger at construction rather than skipping the first tick keeps the trigger
+   * ("a NEW Stop row") true for every tick, including the first one after start.
+   */
+  constructor(private readonly deps: InternalChecklistRepromptDeps) {
+    try {
+      for (const row of deps.listStopRows()) this.seen.add(stopIdentity(row));
+    } catch {
+      /* an unreadable ledger is not a reason to refuse to start; the next tick reads it again */
+    }
+  }
 
   async tick(): Promise<void> {
     const rows = this.deps.listStopRows();

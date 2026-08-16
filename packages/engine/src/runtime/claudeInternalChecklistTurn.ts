@@ -59,6 +59,15 @@ export function judgeClaudeInternalChecklistTurn(input: {
   });
 }
 
+/**
+ * t-9f21ac — the start of the window this judge scores. Exported for the reader, which must
+ * decide how far back into a transcript it has to read: everything before the LAST turn-start
+ * is erased by the reset above, so a window that reaches one is the whole turn.
+ */
+export function isClaudeTurnStartEvent(raw: unknown): boolean {
+  return classifyClaudeEvent(raw)?.kind === "turn-start";
+}
+
 type ClaudeMark =
   | { kind: "turn-start" }
   | { kind: "turn-end"; outcome: "completed" | "failed" }

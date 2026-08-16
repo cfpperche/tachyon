@@ -27,22 +27,29 @@ const STOP: PersistenceStopRow = {
 
 function harness(opts: {
   stops?: PersistenceStopRow[];
+  /** t-9f21ac — rows on disk BEFORE the monitor exists are history. A test that wants a row to
+   *  trigger publishes it after construction, which is what a running engine sees. */
+  history?: PersistenceStopRow[];
   judgment?: InternalChecklistTurnJudgment;
   task?: { id: string; kind?: string };
   requireIn?: readonly string[];
   state?: InternalChecklistRepromptState;
 }) {
-  let stops = opts.stops ?? [STOP];
+  let stops = opts.history ?? [];
   let judgment = opts.judgment ?? ABSENT;
   let store: InternalChecklistRepromptState = { ...(opts.state ?? {}) };
   const sent: string[] = [];
+  const judged: string[] = [];
   const journals: Array<{ taskId: string; text: string }> = [];
   const warnings: Array<{ agent: string; taskId?: string }> = [];
   const monitor = new InternalChecklistRepromptMonitor({
     listStopRows: () => stops,
     assignedTask: (agent) => (agent === "worker" ? opts.task ?? { id: "t-73885b", kind: "feature" } : undefined),
     requireIn: () => opts.requireIn ?? ["feature"],
-    judgeTurn: () => judgment,
+    judgeTurn: (agent) => {
+      judged.push(agent);
+      return judgment;
+    },
     loadState: () => ({ ...store }),
     saveState: (next) => {
       store = { ...next };
@@ -57,9 +64,11 @@ function harness(opts: {
       warnings.push({ agent, ...(taskId ? { taskId } : {}) });
     },
   });
+  stops = opts.stops ?? [STOP];
   return {
     monitor,
     sent,
+    judged,
     journals,
     warnings,
     get state() {
@@ -153,5 +162,36 @@ describe("t-73885b — InternalChecklistRepromptMonitor", () => {
     ]);
     await h.monitor.tick();
     expect(h.sent).toHaveLength(2);
+  });
+
+  describe("t-9f21ac — the ledger on disk at start is history", () => {
+    it("does not reprompt for a stop row that predates the monitor", async () => {
+      const h = harness({ history: [STOP], stops: [STOP] });
+      await h.monitor.tick();
+      expect(h.sent).toEqual([]);
+      expect(h.journals).toEqual([]);
+      expect(h.warnings).toEqual([]);
+    });
+
+    it("does not even judge an inherited row — the judge opens a transcript", async () => {
+      const history = Array.from({ length: 50 }, (_, i) => ({
+        ...STOP,
+        ts: `2026-08-1${i % 7}T18:00:00.000Z`,
+      }));
+      const h = harness({ history, stops: history });
+      await h.monitor.tick();
+      expect(h.judged).toEqual([]);
+    });
+
+    it("still reprompts for a row appended after it started", async () => {
+      const h = harness({ history: [STOP], stops: [STOP] });
+      await h.monitor.tick();
+      expect(h.sent).toEqual([]);
+
+      h.setStops([STOP, { ...STOP, ts: "2026-08-16T19:00:00.000Z" }]);
+      await h.monitor.tick();
+      expect(h.judged).toEqual(["worker"]);
+      expect(h.sent).toHaveLength(1);
+    });
   });
 });
