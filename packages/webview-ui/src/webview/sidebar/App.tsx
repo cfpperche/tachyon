@@ -554,14 +554,16 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
   },
 
   /* t-281339 — one operator line: the current plan step, or a discrete
-     sem-plano mark. sem-canal is absence (the projector omitted the field). */
+     "No plan" mark. The verdict enum stays on data-plan; the painted
+     label is English, like Running / Needs input / Throttled.
+     sem-canal is absence (the projector omitted the field). */
   plan: ({ a }) => {
     const plan = a.plan;
     if (!plan) return null;
     if (plan.kind === "sem-plano") {
       return (
-        <div class="row-plan sem-plano" data-testid="agent-plan-line" data-plan="sem-plano" title="sem-plano">
-          <span class="plan-mark">sem-plano</span>
+        <div class="row-plan sem-plano" data-testid="agent-plan-line" data-plan="sem-plano" title="No plan">
+          <span class="plan-mark">No plan</span>
         </div>
       );
     }

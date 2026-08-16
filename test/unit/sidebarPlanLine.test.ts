@@ -39,14 +39,15 @@ describe("t-281339 — sidebar card plan line", () => {
     expect(html).not.toContain("sem-canal");
   });
 
-  it("marks sem-plano and never writes sem-canal", () => {
+  it("paints English 'No plan' — the human never reads the verdict enum", () => {
     const marked = renderStatic(AgentRow({
       a: agent({ name: "grok", plan: { kind: "sem-plano" } }),
       flash: false,
     }));
     expect(marked).toContain('data-testid="agent-plan-line"');
     expect(marked).toContain('data-plan="sem-plano"');
-    expect(marked).toContain("sem-plano");
+    expect(marked).toContain(">No plan<");
+    expect(marked).not.toMatch(/<span class="plan-mark">sem-plano<\/span>/);
     expect(marked).not.toContain("sem-canal");
 
     const invisible = renderStatic(AgentRow({
@@ -54,7 +55,7 @@ describe("t-281339 — sidebar card plan line", () => {
       flash: false,
     }));
     expect(invisible).not.toContain('data-testid="agent-plan-line"');
-    expect(invisible).not.toContain("sem-plano");
+    expect(invisible).not.toContain("No plan");
     expect(invisible).not.toContain("sem-canal");
   });
 

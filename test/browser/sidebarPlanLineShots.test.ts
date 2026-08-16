@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EXTENSION_WEBVIEW_DIST } from "./support/extensionLayout.js";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
-import { mkdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
@@ -25,9 +25,42 @@ const WIDTHS = [
   { id: "360", px: 360 },
 ] as const;
 
+/**
+ * Production sidebar order (SidebarPrototype): tokens and faces must
+ * precede design-system, or gap/font/--ds-warn never resolve and the
+ * shot cannot prove the operator ramp.
+ */
+const SIDEBAR_STYLESHEETS = [
+  "codicon.css",
+  "tokens.css",
+  "faces.css",
+  "design-system.css",
+  "quick-picker.css",
+  "sidebar.css",
+] as const;
+
+function rewriteLocalUrls(css: string, fromFile: string): string {
+  const dir = path.dirname(fromFile);
+  return css.replace(/url\((['"]?)([^'")]+)\1\)/g, (match, _q, spec: string) => {
+    if (/^(data:|https?:|file:)/i.test(spec)) return match;
+    const abs = path.resolve(dir, spec);
+    if (!existsSync(abs)) return match;
+    const ext = path.extname(abs).toLowerCase();
+    const mime = ext === ".woff2" ? "font/woff2"
+      : ext === ".woff" ? "font/woff"
+        : ext === ".ttf" ? "font/ttf"
+          : ext === ".otf" ? "font/otf"
+            : "application/octet-stream";
+    return `url("data:${mime};base64,${readFileSync(abs).toString("base64")}")`;
+  });
+}
+
 function pageHtml(bodyHtml: string, width: number): string {
-  const css = ["codicon.css", "design-system.css", "sidebar.css"]
-    .map((f) => `<style>${readFileSync(path.join(DIST, f), "utf8")}</style>`)
+  const css = SIDEBAR_STYLESHEETS
+    .map((f) => {
+      const file = path.join(DIST, f);
+      return `<style>${rewriteLocalUrls(readFileSync(file, "utf8"), file)}</style>`;
+    })
     .join("\n");
   return `<!doctype html><html><head><meta charset="utf-8">${css}
 <style>
@@ -37,9 +70,13 @@ function pageHtml(bodyHtml: string, width: number): string {
     --vscode-descriptionForeground:#9d9d9d; --vscode-disabledForeground:#8a8a8a;
     --vscode-list-hoverBackground:#2a2d2e; --vscode-list-inactiveSelectionBackground:#37373d;
     --vscode-panel-border:#2b2b2b; --vscode-badge-background:#4d4d4d; --vscode-badge-foreground:#fff;
+    --vscode-textCodeBlock-background:#0000004d; --vscode-button-background:#0078d4; --vscode-button-foreground:#fff;
     --vscode-charts-green:#89d185; --vscode-charts-yellow:#cca700; --vscode-charts-red:#f14c4c;
-    --vscode-charts-blue:#3794ff; --vscode-errorForeground:#f14c4c; --vscode-list-warningForeground:#cca700;
-    --vscode-widget-border:#3c3c3c; --vscode-focusBorder:#0078d4;
+    --vscode-charts-blue:#3794ff; --vscode-charts-purple:#b180d7;
+    --vscode-errorForeground:#f14c4c; --vscode-list-warningForeground:#cca700;
+    --vscode-testing-iconPassed:#89d185; --vscode-terminal-ansiGreen:#89d185;
+    --vscode-terminal-ansiYellow:#cca700; --vscode-terminal-ansiRed:#f14c4c;
+    --vscode-widget-border:#3c3c3c; --vscode-editorWidget-border:#3c3c3c; --vscode-focusBorder:#0078d4;
   }
   body { margin:0; width:${width}px; }
   #shot { width:${width}px; }
@@ -91,6 +128,7 @@ describe("t-281339 — plan line at two widths", () => {
       expect(statSync(file).size, `${file} is empty`).toBeGreaterThan(1000);
       written.push(path.basename(file));
 
+      await page.evaluate(() => document.fonts.ready);
       const measure = await page.evaluate(() => {
         const shot = document.getElementById("shot")!;
         const rows = [...shot.querySelectorAll(".row")].map((row) => ({
@@ -99,25 +137,47 @@ describe("t-281339 — plan line at two widths", () => {
           overflow: (row as HTMLElement).scrollWidth - (row as HTMLElement).clientWidth,
         }));
         const step = shot.querySelector('[data-plan="step"] .plan-text') as HTMLElement | null;
-        const mark = shot.querySelector('[data-plan="sem-plano"]') as HTMLElement | null;
-        const canal = [...shot.querySelectorAll("*")].some((el) => (el.textContent ?? "").includes("sem-canal"));
+        const mark = shot.querySelector('[data-plan="sem-plano"] .plan-mark') as HTMLElement | null;
+        const focus = shot.querySelector(".row-focus") as HTMLElement | null;
+        const paintedEnum = [...shot.querySelectorAll(".plan-mark, .plan-text")]
+          .some((el) => (el.textContent ?? "").includes("sem-plano") || (el.textContent ?? "").includes("sem-canal"));
+        const warnToken = getComputedStyle(document.documentElement).getPropertyValue("--ds-warn").trim();
+        const label2 = getComputedStyle(document.documentElement).getPropertyValue("--ds-operator-label2").trim();
         return {
           shotWidth: shot.getBoundingClientRect().width,
           rows,
+          bodyFont: getComputedStyle(document.body).fontFamily,
+          focusGap: focus ? getComputedStyle(focus).gap : null,
           step: step ? {
             text: step.textContent,
             overflow: step.scrollWidth - step.clientWidth,
             nowrap: getComputedStyle(step).whiteSpace,
+            fontSize: getComputedStyle(step).fontSize,
           } : null,
-          semPlanoColor: mark ? getComputedStyle(mark.querySelector(".plan-mark")!).color : null,
-          warn: getComputedStyle(document.documentElement).getPropertyValue("--ds-warn").trim(),
-          paintedCanal: canal,
+          mark: mark ? {
+            text: mark.textContent,
+            color: getComputedStyle(mark).color,
+            fontSize: getComputedStyle(mark).fontSize,
+          } : null,
+          warnToken,
+          label2,
+          paintedEnum,
         };
       });
 
-      expect(measure.paintedCanal).toBe(false);
+      expect(measure.paintedEnum).toBe(false);
+      expect(measure.mark?.text).toBe("No plan");
       expect(measure.step).not.toBeNull();
-      expect(measure.semPlanoColor).toBeTruthy();
+      // Tokens resolved: a missing tokens.css leaves these empty and the
+      // first shots looked serif with TASKt-id glued together.
+      expect(measure.warnToken.length).toBeGreaterThan(0);
+      expect(measure.label2.length).toBeGreaterThan(0);
+      expect(measure.bodyFont).toMatch(/Tachyon|JetBrains|monospace/i);
+      expect(measure.bodyFont.toLowerCase()).not.toContain("times");
+      expect(measure.focusGap).not.toBe("0px");
+      expect(measure.focusGap).not.toBe("normal");
+      expect(measure.mark?.color).toBe("rgb(204, 167, 0)");
+      expect(measure.step!.fontSize).toBe("11px");
       if (w.px === 360) {
         expect(measure.shotWidth).toBeLessThanOrEqual(360);
         expect(measure.rows.every((row) => row.width <= 360)).toBe(true);
