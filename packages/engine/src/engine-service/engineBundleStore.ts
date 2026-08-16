@@ -74,6 +74,21 @@ export class EngineBundleError extends Error {
   }
 }
 
+/**
+ * t-30af3e — the one EngineBundleError that must still abort `activate()`.
+ *
+ * SDD 504 swallows per-folder attach failures so a multi-root window can render "startup fails".
+ * `NODE_RUNTIME_NOT_FOUND` is not a folder failure: every folder fails the same way and Retry
+ * cannot install Node. Duck-typed on `name`+`code` so a second bundle copy cannot silently
+ * turn the check off (`instanceof` would).
+ */
+export function isHostEngineRefusal(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = "name" in error ? error.name : undefined;
+  const code = "code" in error ? error.code : undefined;
+  return name === "EngineBundleError" && code === "NODE_RUNTIME_NOT_FOUND";
+}
+
 const execFileAsync = promisify(execFile);
 
 export function isElectronRuntime(

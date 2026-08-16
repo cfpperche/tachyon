@@ -126,6 +126,7 @@ import { readEmbeddedProvenanceRecord } from "./provenance/record.js";
 import { Terminals } from "./presentation/Terminals.js";
 import { SessionViewportRegistry } from "./presentation/sessionViewport.js";
 import { connectPackagedWorkspaceClient } from "./shell/WorkspaceClient.js";
+import { isHostEngineRefusal } from "@tachyon/engine/engine-service/engineBundleStore.js";
 import { collectLegacyEngineStateMigration } from "@tachyon/engine/engine-service/stateMigration.js";
 import { bridgeStateMigrationStorage } from "@tachyon/bridge/stateMigrationStorage.js";
 import { ENGINE_UI_CAPABILITY } from "@tachyon/engine/engine-service/uiRequestBroker.js";
@@ -2982,9 +2983,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // provider unregistered and the remaining folders unattached. That is also why the spec's
     // "startup fails" scenario had no way to render — the failure took the whole activation with it.
     // `addWorkspace` has already recorded the failure and notified; this only keeps going.
+    // t-30af3e — NODE_RUNTIME_NOT_FOUND is a host refusal, not a folder one. Swallowing it made
+    // `activate()` succeed on a PATH with no Node and turned the VSIX smoke `node-missing` door
+    // red. Retry cannot install Node; the probe matches the thrown EngineBundleError.
     try {
       await addWorkspace(folder.uri.fsPath, true);
-    } catch {
+    } catch (error) {
+      if (isHostEngineRefusal(error)) throw error;
       continue;
     }
   }
