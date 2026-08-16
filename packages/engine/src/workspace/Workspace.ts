@@ -178,8 +178,10 @@ import {
   type InternalPlanRepromptState,
 } from "./InternalPlanRepromptMonitor.js";
 import { judgeClaudeInternalPlanTurn } from "../runtime/claudeInternalPlanTurn.js";
+import { judgeCodexInternalPlanTurn } from "../runtime/codexInternalPlanTurn.js";
 import { judgeGrokInternalPlanTurn } from "../runtime/grokInternalPlanTurn.js";
 import { readClaudeTurnEvidence } from "../runtime/claudeTurnEvidence.js";
+import { readCodexTurnEvidence } from "../runtime/codexTurnEvidence.js";
 import { selectAssignedWork } from "../agents/assignmentSelection.js";
 import type { InternalPlanTurnJudgment } from "../runtime/internalPlanTurn.js";
 import { isVerifiedSince } from "./verifyRecordReader.js";
@@ -6318,8 +6320,8 @@ export class Workspace {
 
   /**
    * t-73885b — consume the fatia-2 judges. Missing evidence is pending,
-   * never an invented sem-plano. Codex notifications are another task's
-   * reader; this door does not open that file.
+   * never an invented sem-plano. Codex uses the TUI hook ledgers and
+   * `judgeCodexInternalPlanTurn`; it does not open the plan-snapshot reader.
    */
   private judgeInternalPlanTurn(agent: string): InternalPlanTurnJudgment {
     const pending: InternalPlanTurnJudgment = { state: "pending", reason: "turn-open" };
@@ -6342,6 +6344,11 @@ export class Workspace {
       const evidence = readClaudeTurnEvidence(owner.transcriptPath);
       if (!evidence) return pending;
       return judgeClaudeInternalPlanTurn(evidence);
+    }
+    if (runtime === "codex") {
+      const evidence = readCodexTurnEvidence(this.workspaceRoot, agent);
+      if (!evidence) return pending;
+      return judgeCodexInternalPlanTurn(evidence);
     }
     return pending;
   }
