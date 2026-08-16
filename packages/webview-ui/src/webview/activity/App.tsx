@@ -1,6 +1,6 @@
 import { createContext } from "preact";
 import { useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { ComponentChildren, RefObject } from "preact";
+import type { ComponentChildren } from "preact";
 import type { ActivityItem, ActivityViewModel } from "../../activity/activityView";
 import { MarkdownView, linkify } from "./markdown";
 import { highlight } from "./markdownEngine";
@@ -361,19 +361,16 @@ function ActivityLine({ it, dispatch, cv }: { it: ActivityItem; dispatch: Activi
 }
 
 /**
- * t-610705 (SDD 410 Phase C.2) — this used to be the STANDALONE panel's presentational half, with
- * scroll/prepend/query state lifted into activity/main.tsx's Root (the window WAS the scroll
- * container there). The standalone panel is retired; Control's shell (cockpit/main.tsx) now owns
- * the message listener + vm/images state (same split every other migrated surface uses), and this
- * component owns everything ELSE — including the scroll/prepend machinery that used to live in
- * main.tsx, now retargeted at `scrollContainer` (Control's embed host div) instead of window.
+ * t-544911 — Activity is a document-scrolling standalone app again (SDD 485 D17). Stick / prepend /
+ * jump target `document.scrollingElement`, the same scroller the pre-C.2 standalone panel used.
+ * C.2 retargeted these at Control's overflow:auto embed host; D17 removed that host and left the
+ * retarget, so `main.scrollTop = main.scrollHeight` became a no-op and every open landed at the top.
  */
 export function App({
   vm,
   prepended,
   dispatch,
   images,
-  scrollContainer,
   backLink,
   pendingShareAgentTargets,
   onConsumeShareAgentTargets,
@@ -384,7 +381,6 @@ export function App({
   prepended: boolean;
   dispatch: ActivityDispatch;
   images: Record<string, string>;
-  scrollContainer: RefObject<HTMLDivElement>;
   /** t-bf3498 — the route's "← Fleet" back-link, rendered under the "Activity" title. */
   backLink?: ComponentChildren;
   /**
@@ -439,20 +435,18 @@ export function App({
   const prependAnchor = useRef<number | null>(null);
 
   useEffect(() => {
-    const el = scrollContainer.current;
-    if (!el) return;
     const onScroll = () => {
+      const el = document.scrollingElement ?? document.documentElement;
       const near = el.scrollTop + el.clientHeight >= el.scrollHeight - 140;
       stick.current = near;
       setAtBottom(near);
     };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [scrollContainer.current]);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
-    const el = scrollContainer.current;
-    if (!el) return;
+    const el = document.scrollingElement ?? document.documentElement;
     if (prepended && prependAnchor.current != null) {
       el.scrollTop += el.scrollHeight - prependAnchor.current;
       prependAnchor.current = null;
@@ -520,12 +514,14 @@ export function App({
   const canLoadOlder = !q && !!vm.hasOlder; // older activity exists before the window → offer "load earlier"
 
   const loadOlder = () => {
-    if (scrollContainer.current) prependAnchor.current = scrollContainer.current.scrollHeight;
+    const el = document.scrollingElement ?? document.documentElement;
+    prependAnchor.current = el.scrollHeight;
     dispatch.loadOlder();
   };
   const jumpToLatest = () => {
     stick.current = true;
-    scrollContainer.current?.scrollTo({ top: scrollContainer.current.scrollHeight, behavior: "smooth" });
+    const el = document.scrollingElement ?? document.documentElement;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   };
 
   return (

@@ -1,5 +1,5 @@
 import { render } from "preact";
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import type { ActivityViewModel } from "../../activity/activityView";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
@@ -25,7 +25,6 @@ function ActivityRoot() {
   const [prepended, setPrepended] = useState(false);
   const [images, setImages] = useState<Record<string, string>>({});
   const [targets, setTargets] = useState<PendingShareAgentTargets | null>(null);
-  const scrollContainer = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -59,13 +58,12 @@ function ActivityRoot() {
   }), []);
 
   return (
-    <main class="ds-page activity-page" ref={scrollContainer}>
+    <main class="ds-page activity-page">
       <App
         vm={vm}
         prepended={prepended}
         images={images}
         dispatch={dispatch}
-        scrollContainer={scrollContainer}
         pendingShareAgentTargets={targets}
         onConsumeShareAgentTargets={() => setTargets(null)}
       />
