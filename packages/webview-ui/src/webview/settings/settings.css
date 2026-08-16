@@ -1,48 +1,71 @@
 /* Settings — Companion tab tools (SDD 414) */
 /* t-7b4bb5 — dual-authority intro: two cards, paths wrap, stacks on narrow viewports. */
+/* SDD 505 slice 8 (t-74639f) — this sheet's DISTANCES and its TYPE SIZES come from the host now.
+ * Every padding/margin/gap is a step of `--ds-spacing-size*` (the ten steps of the VS Code 1.133
+ * size registry, tokens.css) and every literal type size is a step of the ramp chosen by that
+ * element's ROLE, not by this file: reading (13/16/20 + the declared line-heights) or operator
+ * (10/11/12/13, size only). Settings is more reading than operation; the owner named two densities
+ * so reading surfaces stay readable. Off-scale distances took the nearest step; on a tie, the step
+ * the host itself uses more in its own already-migrated CSS won (benchmark.md §2.4:
+ * 4 > 2 > 8 > 6 > 12 > 24 > 16 > 10 > 32 > 20). So 14→12, 18→16, and 1px badge pad → 2px (1px is
+ * stroke in the three references, never distance).
+ *
+ * Density by role:
+ *   READING  .ck-settings-intro, .ck-settings-scope-hint, .ck-settings-block-hint,
+ *            .ck-settings-block-body, .ck-pair-offer-code
+ *   OPERATOR titles, paths, writes-to, disclosure, toggles, toggle-help, inputs, status,
+ *            badges, device name/meta, pair labels/urls/candidates, card-region titles,
+ *            errors, yaml, effect labels/values/projects
+ *
+ * Hex: the leftovers (8 unique) are vscode-var / --ds-* fallbacks so a missing theme still
+ * paints. The pairing QR plate moved to --ds-plate in t-824fc3. Primaries now read the
+ * token; the same fallback literals stay, so the gate exception row is not stale and is not
+ * edited. NOT migrated, each for a stated reason: border-radius, width/height, letter-spacing,
+ * outline-offset, 1px stroke, font-family, font-weight (slice 4 declared no new token for them).
+ */
 .ck-settings-intro {
-  margin: 0 0 12px;
-  font-size: 12px;
-  line-height: 1.5;
+  margin: 0 0 var(--ds-spacing-size120);
+  font-size: var(--ds-reading-body3);
+  line-height: var(--ds-reading-body3-line);
   overflow-wrap: anywhere;
-  color: var(--vscode-foreground);
+  color: var(--ds-fg);
 }
 
 .ck-settings-scopes {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin: 0 0 12px;
+  gap: var(--ds-spacing-size120);
+  margin: 0 0 var(--ds-spacing-size120);
   min-width: 0;
 }
 
 .ck-settings-scope {
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+  padding: var(--ds-spacing-size100) var(--ds-spacing-size120);
+  border: 1px solid var(--ds-border);
   border-radius: 6px;
   background: color-mix(in srgb, var(--vscode-editor-foreground) 3%, transparent);
   box-sizing: border-box;
 }
 
 .ck-settings-scope-title {
-  margin: 0 0 4px;
-  font-size: 12px;
+  margin: 0 0 var(--ds-spacing-size40);
+  font-size: var(--ds-operator-label1);
   font-weight: 600;
-  color: var(--vscode-foreground);
+  color: var(--ds-fg);
 }
 
 .ck-settings-scope-hint {
-  margin: 0 0 8px;
-  font-size: 11px;
-  line-height: 1.45;
+  margin: 0 0 var(--ds-spacing-size80);
+  font-size: var(--ds-reading-body3);
+  line-height: var(--ds-reading-body3-line);
   color: var(--ds-muted);
   overflow-wrap: anywhere;
 }
 
 .ck-settings-scope-path {
-  margin: 0 0 10px;
-  font-size: 10px;
+  margin: 0 0 var(--ds-spacing-size100);
+  font-size: var(--ds-operator-label3);
   line-height: 1.4;
   color: var(--ds-muted);
   min-width: 0;
@@ -55,7 +78,7 @@
 .ck-settings-path {
   display: inline;
   font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 10px;
+  font-size: var(--ds-operator-label3);
   word-break: break-all;
   overflow-wrap: anywhere;
   white-space: normal;
@@ -64,45 +87,45 @@
 .ck-settings-scope-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--ds-spacing-size60);
 }
 
 /* t-aaad95 (visual QA) — which authority a block writes to, stated per block.
  * Deliberately quiet: it is orientation a reader consults, not something to read on every pass, so it
  * sits under the title in the same descriptive tone as the hints rather than competing with them. */
 .ck-settings-block-scope {
-  margin: 2px 0 6px;
-  font-size: 10px;
+  margin: var(--ds-spacing-size20) 0 var(--ds-spacing-size60);
+  font-size: var(--ds-operator-label3);
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: var(--vscode-descriptionForeground);
+  color: var(--ds-muted);
 }
 
 /* The card-layout composer, collapsed. Its 22 rows were 37% of the page for one setting. */
 .ck-card-regions-disclosure {
-  margin: 6px 0 10px;
-  border: 1px solid var(--vscode-widget-border);
+  margin: var(--ds-spacing-size60) 0 var(--ds-spacing-size100);
+  border: 1px solid var(--ds-border);
   border-radius: 4px;
 }
 
 .ck-card-regions-summary {
-  padding: 6px 10px;
+  padding: var(--ds-spacing-size60) var(--ds-spacing-size100);
   cursor: pointer;
-  font-size: 12px;
-  color: var(--vscode-foreground);
+  font-size: var(--ds-operator-label1);
+  color: var(--ds-fg);
 }
 
 .ck-card-regions-summary:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--ds-focus);
   outline-offset: -1px;
 }
 
 .ck-card-regions-disclosure[open] .ck-card-regions-summary {
-  border-bottom: 1px solid var(--vscode-widget-border);
+  border-bottom: 1px solid var(--ds-border);
 }
 
 .ck-card-regions-disclosure .ck-card-regions {
-  padding: 8px 10px;
+  padding: var(--ds-spacing-size80) var(--ds-spacing-size100);
 }
 
 @media (max-width: 720px) {
@@ -112,101 +135,101 @@
 }
 
 .ck-settings-block {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+  margin-top: var(--ds-spacing-size160);
+  padding-top: var(--ds-spacing-size120);
+  border-top: 1px solid var(--ds-border);
   min-width: 0;
 }
 
 .ck-settings-block-title {
-  margin: 0 0 4px;
-  font-size: 12px;
+  margin: 0 0 var(--ds-spacing-size40);
+  font-size: var(--ds-operator-label1);
   font-weight: 600;
-  color: var(--vscode-foreground);
+  color: var(--ds-fg);
 }
 
 .ck-settings-block-hint {
-  margin: 0 0 8px;
-  font-size: 11px;
-  line-height: 1.45;
+  margin: 0 0 var(--ds-spacing-size80);
+  font-size: var(--ds-reading-body3);
+  line-height: var(--ds-reading-body3-line);
   color: var(--ds-muted);
   overflow-wrap: anywhere;
 }
 
 .ck-settings-block-body {
-  margin: 0 0 10px;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--vscode-foreground);
+  margin: 0 0 var(--ds-spacing-size100);
+  font-size: var(--ds-reading-body3);
+  line-height: var(--ds-reading-body3-line);
+  color: var(--ds-fg);
   overflow-wrap: anywhere;
   min-width: 0;
 }
 
 .ck-settings-toggle {
   display: flex;
-  gap: 8px;
+  gap: var(--ds-spacing-size80);
   align-items: flex-start;
-  margin: 0 0 10px;
-  font-size: 11px;
+  margin: 0 0 var(--ds-spacing-size100);
+  font-size: var(--ds-operator-label2);
   cursor: pointer;
 }
 
 .ck-settings-toggle input {
-  margin-top: 2px;
+  margin-top: var(--ds-spacing-size20);
   flex: 0 0 auto;
 }
 
 .ck-settings-toggle-help {
   display: block;
-  margin-top: 2px;
-  font-size: 10px;
+  margin-top: var(--ds-spacing-size20);
+  font-size: var(--ds-operator-label3);
   color: var(--ds-muted);
   font-weight: normal;
 }
 
 .ck-settings-hosts {
-  margin: 0 0 12px;
-  font-size: 11px;
+  margin: 0 0 var(--ds-spacing-size120);
+  font-size: var(--ds-operator-label2);
 }
 
 .ck-settings-hosts-label {
-  margin-bottom: 6px;
+  margin-bottom: var(--ds-spacing-size60);
 }
 
 .ck-settings-hosts-input {
   width: 100%;
   box-sizing: border-box;
   min-height: 3.5em;
-  padding: 6px 8px;
+  padding: var(--ds-spacing-size60) var(--ds-spacing-size80);
   font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 11px;
+  font-size: var(--ds-operator-label2);
   line-height: 1.35;
-  color: var(--vscode-input-foreground);
-  background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35)));
+  color: var(--ds-input-fg);
+  background: var(--ds-input-bg);
+  border: 1px solid var(--ds-border);
   border-radius: 4px;
   resize: vertical;
 }
 
 .ck-settings-hosts-input:focus {
-  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline: 1px solid var(--ds-focus, #007fd4);
   outline-offset: -1px;
 }
 
 .ck-settings-hosts-actions {
-  margin-top: 6px;
+  margin-top: var(--ds-spacing-size60);
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ds-spacing-size80);
   min-width: 0;
 }
 
 .ck-settings-status {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 12px;
+  gap: var(--ds-spacing-size80) var(--ds-spacing-size120);
   align-items: center;
-  font-size: 11px;
+  font-size: var(--ds-operator-label2);
 }
 
 /* t-f78665 — base badge, not a `.ck-settings-status` descendant. Companion pair status and the
@@ -215,15 +238,15 @@
  * subject; do not invent a second chip language (`.ds-badge` is outline-style and has no `muted`). */
 .ck-badge {
   display: inline-block;
-  padding: 1px 6px;
+  padding: var(--ds-spacing-size20) var(--ds-spacing-size60);
   border-radius: 4px;
-  font-size: 10px;
+  font-size: var(--ds-operator-label3);
   font-weight: 600;
 }
 
 .ck-badge.ok {
-  background: color-mix(in srgb, var(--vscode-testing-iconPassed, #3ba55d) 22%, transparent);
-  color: var(--vscode-testing-iconPassed, #3ba55d);
+  background: color-mix(in srgb, var(--ds-ok, #3ba55d) 22%, transparent);
+  color: var(--ds-ok, #3ba55d);
 }
 
 .ck-badge.muted {
@@ -232,9 +255,9 @@
 }
 
 .ck-settings-block-nested {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.25));
+  margin-top: var(--ds-spacing-size120);
+  padding-top: var(--ds-spacing-size120);
+  border-top: 1px solid var(--ds-border);
 }
 
 .ck-device-list {
@@ -243,19 +266,19 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--ds-spacing-size80);
 }
 
 .ck-device-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 12px;
+  gap: var(--ds-spacing-size80) var(--ds-spacing-size120);
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px;
-  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+  padding: var(--ds-spacing-size80) var(--ds-spacing-size100);
+  border: 1px solid var(--ds-border);
   border-radius: 6px;
-  background: var(--vscode-editor-background, transparent);
+  background: var(--ds-editor-bg, transparent);
 }
 
 .ck-device-main {
@@ -264,66 +287,67 @@
 }
 
 .ck-device-name {
-  font-size: 12px;
-  color: var(--vscode-foreground);
+  font-size: var(--ds-operator-label1);
+  color: var(--ds-fg);
 }
 
 .ck-device-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 10px;
+  gap: var(--ds-spacing-size60) var(--ds-spacing-size100);
   align-items: center;
-  margin-top: 4px;
-  font-size: 10px;
+  margin-top: var(--ds-spacing-size40);
+  font-size: var(--ds-operator-label3);
 }
 
 /* Settings — Companion pair code offer (ephemeral, not polled model) */
 .ck-pair-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 10px 0 0;
+  gap: var(--ds-spacing-size80);
+  margin: var(--ds-spacing-size100) 0 0;
 }
 
 .ck-pair-offer {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+  margin-top: var(--ds-spacing-size100);
+  padding: var(--ds-spacing-size100) var(--ds-spacing-size120);
+  border: 1px solid var(--ds-border);
   border-radius: 6px;
-  background: var(--vscode-editor-background, transparent);
+  background: var(--ds-editor-bg, transparent);
 }
 
 .ck-pair-offer-err {
-  border-color: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 45%, transparent);
+  border-color: color-mix(in srgb, var(--ds-err, #f14c4c) 45%, transparent);
 }
 
 .ck-pair-offer-row {
   display: grid;
   grid-template-columns: 4.5rem minmax(0, 1fr);
-  gap: 6px 10px;
+  gap: var(--ds-spacing-size60) var(--ds-spacing-size100);
   align-items: baseline;
-  margin-bottom: 6px;
-  font-size: 11px;
+  margin-bottom: var(--ds-spacing-size60);
+  font-size: var(--ds-operator-label2);
 }
 
 .ck-pair-offer-label {
   color: var(--ds-muted, #888);
-  font-size: 10px;
+  font-size: var(--ds-operator-label3);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .ck-pair-offer-code {
-  font-size: 18px;
+  font-size: var(--ds-reading-headline2);
+  line-height: var(--ds-reading-headline2-line);
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: var(--vscode-foreground);
+  color: var(--ds-fg);
   word-break: break-all;
 }
 
 .ck-pair-offer-url {
-  font-size: 11px;
-  color: var(--vscode-foreground);
+  font-size: var(--ds-operator-label2);
+  color: var(--ds-fg);
   word-break: break-all;
 }
 
@@ -331,8 +355,8 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
-  margin-bottom: 10px;
+  gap: var(--ds-spacing-size60);
+  margin-bottom: var(--ds-spacing-size100);
 }
 .ck-pair-offer-qr-img {
   display: block;
@@ -343,8 +367,8 @@
 .ck-pair-offer-candidates {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: 6px 0;
+  gap: var(--ds-spacing-size40);
+  margin: var(--ds-spacing-size60) 0;
 }
 .ck-pair-offer-candidate-list {
   list-style: none;
@@ -352,13 +376,13 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--ds-spacing-size40);
 }
 .ck-pair-offer-candidate {
   text-align: left;
-  font-size: 11px;
-  padding: 4px 6px;
-  border: 1px solid var(--vscode-widget-border, #444);
+  font-size: var(--ds-operator-label2);
+  padding: var(--ds-spacing-size40) var(--ds-spacing-size60);
+  border: 1px solid var(--ds-border, #444);
   border-radius: 3px;
   background: transparent;
   color: inherit;
@@ -369,44 +393,43 @@
   white-space: nowrap;
 }
 .ck-pair-offer-candidate[data-primary="1"] {
-  border-color: var(--vscode-focusBorder, #007fd4);
+  border-color: var(--ds-focus, #007fd4);
 }
 .ck-pair-offer-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
+  gap: var(--ds-spacing-size60);
+  margin-top: var(--ds-spacing-size80);
 }
 
 /* SDD 479 phase 4 — the card-template block. The PREVIEW itself is styled by sidebar.css inside a
    shadow root (see CardTemplateBlock.tsx); nothing here may style a card, or the block would start
    disagreeing with the sidebar it is previewing. These rules cover the composer around it. */
-.ck-card-regions { display: flex; flex-direction: column; gap: 10px; margin: 8px 0; }
-.ck-card-region { border: 1px solid var(--vscode-panel-border, #4443); border-radius: 6px; padding: 6px 8px; }
-.ck-card-region-title { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; opacity: .8; }
-.ck-card-entry { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 2px 0; }
-.ck-card-entry-move { display: inline-flex; gap: 2px; flex: 0 0 auto; }
-.ck-card-entry-move .ds-btn { padding: 0 6px; min-width: 0; }
-.ck-card-errors { margin: 6px 0; padding-left: 18px; color: var(--ds-err, #f14c4c); font-size: 11px; }
+.ck-card-regions { display: flex; flex-direction: column; gap: var(--ds-spacing-size100); margin: var(--ds-spacing-size80) 0; }
+.ck-card-region { border: 1px solid var(--ds-border, #4443); border-radius: 6px; padding: var(--ds-spacing-size60) var(--ds-spacing-size80); }
+.ck-card-region-title { margin: 0 0 var(--ds-spacing-size40); font-size: var(--ds-operator-label2); text-transform: uppercase; letter-spacing: .04em; opacity: .8; }
+.ck-card-entry { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-spacing-size80); padding: var(--ds-spacing-size20) 0; }
+.ck-card-entry-move { display: inline-flex; gap: var(--ds-spacing-size20); flex: 0 0 auto; }
+.ck-card-entry-move .ds-btn { padding: 0 var(--ds-spacing-size60); min-width: 0; }
+.ck-card-errors { margin: var(--ds-spacing-size60) 0; padding-left: var(--ds-spacing-size160); color: var(--ds-err, #f14c4c); font-size: var(--ds-operator-label2); }
 .ck-card-yaml {
-  margin: 4px 0 8px; padding: 8px; border-radius: 6px; font-size: 11px; line-height: 1.4;
-  background: var(--vscode-textCodeBlock-background, #0002); overflow-x: auto; white-space: pre;
+  margin: var(--ds-spacing-size40) 0 var(--ds-spacing-size80); padding: var(--ds-spacing-size80); border-radius: 6px; font-size: var(--ds-operator-label2); line-height: 1.4;
+  background: var(--ds-code-bg, #0002); overflow-x: auto; white-space: pre;
 }
 
 /* SDD 479 phase 5 — "which home is in effect", and the home the block emits for. */
 .ck-card-effect {
-  margin: 4px 0 10px; padding: 6px 8px; border-radius: 6px;
-  border: 1px solid var(--vscode-panel-border, #4443);
+  margin: var(--ds-spacing-size40) 0 var(--ds-spacing-size100); padding: var(--ds-spacing-size60) var(--ds-spacing-size80); border-radius: 6px;
+  border: 1px solid var(--ds-border, #4443);
   background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
 }
 .ck-card-effect-label {
-  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  font-size: var(--ds-operator-label3); font-weight: 600; text-transform: uppercase;
   letter-spacing: .05em; opacity: .75;
 }
-.ck-card-effect-personal { margin: 2px 0 0; font-size: 12px; }
+.ck-card-effect-personal { margin: var(--ds-spacing-size20) 0 0; font-size: var(--ds-operator-label1); }
 .ck-card-effect-personal.warn { color: var(--ds-warn, #cca700); }
 .ck-card-effect-projects {
-  margin: 4px 0 0; padding-left: 18px; font-size: 11px; opacity: .9;
+  margin: var(--ds-spacing-size40) 0 0; padding-left: var(--ds-spacing-size160); font-size: var(--ds-operator-label2); opacity: .9;
 }
-.ck-card-home { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 8px 0 4px; }
-
+.ck-card-home { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-spacing-size60) var(--ds-spacing-size120); margin: var(--ds-spacing-size80) 0 var(--ds-spacing-size40); }
