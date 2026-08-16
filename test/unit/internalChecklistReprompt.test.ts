@@ -121,8 +121,9 @@ describe("t-73885b — considerInternalChecklistReprompt (production door)", () 
   it("absent + required kind reprompts once and only once", () => {
     const first = consider({ taskKind: "feature", requireIn: ["feature"] });
     expect(first.action).toBe("reprompt");
-    expect(first.prompt).toMatch(/checklist/i);
-    expect(first.prompt).toMatch(/only reminder|only once/i);
+    expect(first.prompt).toBe(
+      "This task requires a checklist. The last turn ended without one. Write the checklist, then continue.",
+    );
 
     const second = consider({
       taskKind: "feature",
