@@ -1,7 +1,7 @@
 import path from "node:path";
 import * as vscode from "vscode";
 import { sharedGlobalSettings } from "@tachyon/engine/config/globalSettings.js";
-import { isAgentRow, type FleetVM, type AgentVM } from "@tachyon/shared/sidebar/types.js";
+import { isAgentRow, type FleetVM, type AgentVM, type SidebarBootVM } from "@tachyon/shared/sidebar/types.js";
 import { fleetMessage } from "@tachyon/webview-ui/webview/sidebar/messages";
 import { isSectionId } from "../sections/resolveSection.js";
 import { renderWebviewShell } from "./shared/shell.js";
@@ -9,7 +9,7 @@ import type { ActionId } from "@tachyon/webview-ui/sidebar/actions";
 import { agentContextValue } from "../presentation/contextValue.js";
 import { notify } from "../workspace/notify.js";
 import { showNotification } from "../workspace/NotificationService.js";
-import { recordShellFailure, SHELL_DIAGNOSTIC_CHANNEL } from "../workspace/shellDiagnosticLog.js";
+import { recordShellFailure, revealShellDiagnostics, SHELL_DIAGNOSTIC_CHANNEL } from "../workspace/shellDiagnosticLog.js";
 import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 import type { WorkspaceSidebarTarget, SidebarShellCommandContext } from "../shell/SidebarTarget.js";
 import { controlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
@@ -115,6 +115,17 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     private readonly openPinDocument?: (wsHash: string, pinId: string) => void,
     /** t-41117e — same host continue path the Fleet tab uses (picker is webview-local). */
     private readonly continueTask?: (fromName: string, toName: string, wsHash: string) => Promise<void>,
+    /**
+     * SDD 504 — this window's discovery result, read fresh on every push.
+     *
+     * A getter rather than a stored value on purpose: the projection changes across the attach loop,
+     * folder membership changes and retries, and every one of those already calls `refresh()`. A
+     * pushed-in snapshot would add a second thing to remember to update, which is the shape of the
+     * `t-0b7aa7` hand-kept copy this repository has paid for before.
+     */
+    private readonly getBoot?: () => SidebarBootVM,
+    /** SDD 504 — re-attach ONE folder after a failed start; resolves the same wsHash the fleet uses. */
+    private readonly retryStart?: (wsHash: string) => void,
   ) {
     this.scopeSubscription = controlWorkspaceScope.onDidChange(() => void this.push());
   }
@@ -296,7 +307,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     // the engine's own projection, so a settings change re-derives from it without a re-fetch, and
     // nothing persists a template that belongs to one person on one machine.
     void view.webview.postMessage(
-      fleetMessage(this.withPersonalCardTemplate(this.lastFleets), this.sortPrefs(), this.collapsedKeys(), this.appVersion, selected),
+      // SDD 504 — discovery travels WITH the fleet, so the two can never disagree on the wire.
+      fleetMessage(this.withPersonalCardTemplate(this.lastFleets), this.sortPrefs(), this.collapsedKeys(), this.appVersion, selected, this.getBoot?.()),
     );
   }
 
@@ -388,6 +400,13 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         return void vscode.commands.executeCommand("tachyon.openGlobalSettings");
       }
       if (m.op === "doctor") return void vscode.commands.executeCommand("tachyon.doctor", m.hash); // t-8354ae
+      // SDD 504 — the failed state's two actions. `openOutput` reveals the SAME channel the failure
+      // summary already names in its own text ("full detail in Output → Tachyon"), so the button and
+      // the sentence lead to one place instead of two.
+      if (m.op === "openOutput") return void revealShellDiagnostics();
+      // Per folder, never window-wide: a hash that matches no known folder does nothing rather than
+      // re-attaching an arbitrary one — the same rule `wsFor` states for every other routed op.
+      if (m.op === "retryStart") return void (m.hash ? this.retryStart?.(m.hash) : undefined);
       const ws = this.wsFor(m.hash);
       if (ws && m.op === "addPin") void vscode.commands.executeCommand(
         "tachyon.addPin",

@@ -23,6 +23,7 @@ import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "./webview/SystemPanel.js";
 import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
 import { COLLECT_EVERYTHING, type SectionCollectNeeds, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
+import type { SidebarBootFolderVM, SidebarBootVM } from "@tachyon/shared/sidebar/types.js";
 import { resolveSection } from "./sections/resolveSection.js";
 import { resolveSectionDestination } from "./sections/route";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
@@ -105,7 +106,7 @@ import type { ViewKind } from "@tachyon/engine/workspace/EngineHost.js";
 const WT_DIFF_SCHEME = "tachyon-worktree";
 import { initializeVsCodeNotifications, notify } from "./workspace/notify.js";
 import { showNotification } from "./workspace/NotificationService.js";
-import { recordShellNote } from "./workspace/shellDiagnosticLog.js";
+import { recordShellFailure, recordShellNote } from "./workspace/shellDiagnosticLog.js";
 import {
   HOST_LAG_INTERVAL_MS,
   classifyHostLag,
@@ -1244,6 +1245,94 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   controlWorkspaceScope.attach(context.workspaceState);
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
+  /**
+   * SDD 504 — the window's boot projection: one entry per open folder, plus whether the host has
+   * looked yet.
+   *
+   * It exists because `!fleets.length` was answering two questions with one — "no Tachyon workspace
+   * here" and "I have not heard from the engine yet" — and rendering the second as the first for the
+   * whole of boot. Everything below is already known to this file; none of it is new information,
+   * only newly projected.
+   *
+   * WHO ELSE CAN REACH THIS? Every door that can boot a folder goes through `addWorkspace`, so the
+   * phase transitions live THERE rather than at each caller: the activation loop, `ensureWorkspaceFor`
+   * (Init / New Agent / Studio), the folder-membership watcher, and Retry are one code path here.
+   * That is deliberate — the alternative is four call sites that must each remember to mark a phase,
+   * and the fourth one always arrives after the plan stops being read.
+   */
+  const bootFolders = new Map<string, SidebarBootFolderVM>();
+  let bootDiscovered = false;
+  const bootVM = (): SidebarBootVM => ({ discovered: bootDiscovered, folders: [...bootFolders.values()] });
+  /** The SAME identity the attached fleet carries (`client.workspaceHash`), so Retry resolves it. */
+  const bootHash = (folderPath: string): string => {
+    try { return workspaceHash(fs.realpathSync(folderPath)); } catch { return workspaceHash(folderPath); }
+  };
+  const bootName = (folderPath: string): string =>
+    (vscode.workspace.workspaceFolders ?? []).find((f) => f.uri.fsPath === folderPath)?.name ?? path.basename(folderPath);
+  const setBootFolder = (folderPath: string, entry: SidebarBootFolderVM): void => {
+    bootFolders.set(folderPath, entry);
+    sidebarProto.refresh();
+  };
+  const markBootStarting = (folderPath: string): void => {
+    const existing = bootFolders.get(folderPath);
+    // An attach already in flight keeps its ORIGINAL `startedAt`. Restamping it here would reset the
+    // "taking longer than usual" clock every time anything asked for a refresh, so a genuinely stuck
+    // folder could never reach the delayed copy — the plan's "refresh while attach is pending: state
+    // remains starting" row, which is about the timer as much as about not attaching twice.
+    if (existing?.phase === "starting") return;
+    setBootFolder(folderPath, { hash: bootHash(folderPath), name: bootName(folderPath), phase: "starting", startedAt: Date.now() });
+  };
+  const markBootReady = (folderPath: string): void => {
+    setBootFolder(folderPath, { hash: bootHash(folderPath), name: bootName(folderPath), phase: "ready" });
+  };
+  const markBootFailed = (folderPath: string, error: unknown): void => {
+    // Reuses the existing diagnostic recorder, so the full detail lands in Output → Tachyon and the
+    // sidebar carries only the one line that fits. No second failure store.
+    const { summary } = recordShellFailure("sidebar.startWorkspace", error);
+    setBootFolder(folderPath, { hash: bootHash(folderPath), name: bootName(folderPath), phase: "failed", detail: summary });
+  };
+  /**
+   * Enumerate open folders and answer `hasConfig` for each — the whole of discovery, synchronous.
+   *
+   * This is the plan's finding made real: absence needs no engine and no first sync, so `discovered`
+   * is not a spinner. Called once in the activation turn and again on folder membership changes.
+   *
+   * Folders already in flight keep their phase; only membership is reconciled. Re-running it must
+   * never knock a ready folder back to starting, which is what a naive rebuild would do on every
+   * add/remove.
+   *
+   * `shouldActivateFolder` — not bare `hasConfig` — decides "configured", and that difference is on
+   * purpose: a Tachyon-managed worktree folder carries a `tachyon.yml` but is deliberately never
+   * booted (t-2a73d6). Calling it `starting` would produce exactly the mirrored lie this change
+   * exists to avoid — an "iniciando…" that never ends. It reports as unconfigured, which is what the
+   * window actually does with it.
+   */
+  const discoverBootFolders = (): void => {
+    const open = new Map((vscode.workspace.workspaceFolders ?? []).map((f) => [f.uri.fsPath, f.name]));
+    for (const known of [...bootFolders.keys()]) if (!open.has(known)) bootFolders.delete(known);
+    for (const [folderPath, name] of open) {
+      const configured = shouldActivateFolder(hasConfig(folderPath), folderPath, currentWorktreesBase());
+      const existing = bootFolders.get(folderPath);
+      if (existing) {
+        // Configuration appearing under a folder that had none is the Agent-writes-tachyon.yml door.
+        // It is the one promotion allowed here; a ready folder is left alone because its fleet is
+        // real regardless of what a later re-read of the config directory says.
+        if (existing.phase === "unconfigured" && configured) {
+          bootFolders.set(folderPath, { hash: existing.hash, name, phase: "starting", startedAt: Date.now() });
+        } else if (existing.name !== name) {
+          bootFolders.set(folderPath, { ...existing, name });
+        }
+        continue;
+      }
+      bootFolders.set(folderPath, configured
+        ? { hash: bootHash(folderPath), name, phase: "starting", startedAt: Date.now() }
+        : { hash: bootHash(folderPath), name, phase: "unconfigured" });
+    }
+    bootDiscovered = true;
+    sidebarProto.refresh();
+  };
+  /** SDD 504 — `addWorkspace` is defined much later; the sidebar's Retry reaches it through this. */
+  let retryStartFromSidebar: ((wsHash: string) => void) | undefined;
   let openPinDocumentFromSidebar: ((wsHash: string, pinId: string) => void) | undefined;
   // t-41117e — continueFleetTask is defined later; wire through a late-bound ref like pin open.
   let continueTaskFromSidebar: ((fromName: string, toName: string, wsHash: string) => Promise<void>) | undefined;
@@ -1257,6 +1346,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!continueTaskFromSidebar) return Promise.reject(new Error("continue task is not ready"));
       return continueTaskFromSidebar(fromName, toName, wsHash);
     },
+    bootVM,
+    (wsHash) => retryStartFromSidebar?.(wsHash),
   );
   context.subscriptions.push(sidebarProto);
   // Runtime Ops lives in Control → Runtime only (bottom-panel webview contribution removed).
@@ -2520,8 +2611,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
 
   const addWorkspace = async (folderPath: string, _autostart: boolean, refreshOnSuccess = true): Promise<WorkspaceShellHandle> => {
+    // SDD 504 — THE choke point for the sidebar's boot phases. Every door that boots a folder passes
+    // here, so `starting`/`ready`/`failed` are stated once instead of at four call sites that would
+    // each have to remember. The notify() below stays: a toast is transient and this is durable, and
+    // the sidebar state is the half that survives long enough to be read.
+    markBootStarting(folderPath);
     const client = await clientRegistry.attach(folderPath).catch((error: unknown) => {
       notify(vscode.l10n.t("Tachyon persistent engine could not start: {0}", error instanceof Error ? error.message : String(error)), "error");
+      markBootFailed(folderPath, error);
       throw error;
     });
     const gitExec = createGitExec(() => resolveGitBinary({
@@ -2533,8 +2630,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     startClientSync(ws);
     if (hasConfig(folderPath)) syncWorkspaceToolLauncher(folderPath);
     reconcileWorkspaceGitHookHarness(folderPath);
+    // SDD 504 — the readiness edge, set BEFORE refreshAll so the push that follows already carries
+    // it. Marking after would post one frame that still said "starting" over a fleet that is here.
+    markBootReady(folderPath);
     if (refreshOnSuccess) refreshAll();
     return ws;
+  };
+
+  /**
+   * SDD 504 — Retry ONE folder after a failed start.
+   *
+   * Not window-wide: a multi-root window where one engine was rejected must not re-attach the folder
+   * that merely takes longer. An unknown hash does nothing rather than falling back to the first
+   * folder — the same rule every other hash-routed sidebar op follows, and the reason `wsFor` refuses
+   * a supplied-but-unmatched hash instead of acting on workspace 0.
+   *
+   * A folder already `starting` is ignored, so a second click (or a refresh arriving mid-attach)
+   * cannot start a duplicate attach.
+   */
+  retryStartFromSidebar = (wsHash: string): void => {
+    const found = [...bootFolders.entries()].find(([, folder]) => folder.hash === wsHash);
+    if (!found) return;
+    const [folderPath, folder] = found;
+    if (folder.phase === "starting") return;
+    // The throw is already reported by `addWorkspace` (toast + `markBootFailed`), so this catch only
+    // keeps the rejection from escaping an event handler that has nowhere to return it.
+    void addWorkspace(folderPath, true).catch(() => undefined);
   };
 
   // Boot a folder on demand — used by creation commands so a fresh folder gets a
@@ -2829,8 +2950,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // A Tachyon-managed worktree folder (t-caddfc reveal) is ALSO a checkout of the repo and
   // so carries its own tachyon.yml — excluded here (t-2a73d6) so it stays view-only instead
   // of booting a second phantom Bridge/tmux/agent-tree of its own.
+  // SDD 504 — answer "is there a Tachyon workspace here?" BEFORE the attach loop, because the answer
+  // needs neither the engine nor a first sync; it is `workspaceFolders` + `hasConfig`, right here, in
+  // this turn. That ordering is the whole fix: it is what lets the sidebar say "starting" instead of
+  // guessing "absent" from a fleet array that is empty only because nothing has been attached yet.
+  discoverBootFolders();
+  // …and register the view now, still before the attach loop, so the honest transient state is
+  // actually ON SCREEN during the 1.7–3.9 s the loop takes. Registering after (as this did) meant
+  // `configured-and-starting` existed in the model and could never be observed in production: by the
+  // time the view resolved, every folder was already ready.
+  //
+  // WHO ELSE CAN REACH THIS, now that the view can resolve earlier? `push()` reads `getWorkspaces()`,
+  // which is simply empty until the loop runs, and every message handler resolves its target through
+  // `wsFor` — an unmatched hash is already a no-op there. Everything the provider closes over is
+  // constructed above; only the attach loop below has not run.
+  // t-6e2952 — the Control launcher is a TAB inside this one view, not a view of its own: registering a
+  // second WebviewViewProvider here is what put a stacked "CONTROL" section above the Tachyon panel.
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(SidebarPrototypeProvider.viewType, sidebarProto, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+  );
   for (const folder of folders.filter((f) => shouldActivateFolder(hasConfig(f.uri.fsPath), f.uri.fsPath, currentWorktreesBase()))) {
-    await addWorkspace(folder.uri.fsPath, true);
+    // SDD 504 — one folder's failure must not abort the loop. It used to: an attach rejection
+    // propagated out of `activate()`, so a single bad folder in a multi-root window left the sidebar
+    // provider unregistered and the remaining folders unattached. That is also why the spec's
+    // "startup fails" scenario had no way to render — the failure took the whole activation with it.
+    // `addWorkspace` has already recorded the failure and notified; this only keeps going.
+    try {
+      await addWorkspace(folder.uri.fsPath, true);
+    } catch {
+      continue;
+    }
   }
   void checkTachyonBuildProvenance(context);
   flushDeferredWorkspacePanelRevives();
@@ -2845,20 +2996,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     hasConfig,
     currentWorktreesBase,
     addWorkspace,
-    refreshAll,
+    // SDD 504 — a folder added or removed changes the discovery answer, and this watcher is the one
+    // place that learns about it. Re-discovering through the refresh it already calls keeps the two
+    // in step; a separate `onDidChangeWorkspaceFolders` listener would race this one for ordering.
+    // `discoverBootFolders` reconciles membership only, so folders mid-attach keep their phase.
+    refreshAll: () => {
+      discoverBootFolders();
+      refreshAll();
+    },
     reportError: (error) => {
       notify(vscode.l10n.t("Tachyon workspace membership update failed: {0}", error instanceof Error ? error.message : String(error)), "error");
     },
   });
 
-  // spec 237 — the Tachyon sidebar is the Preact webview (the native tree was retired).
-  // t-6e2952 — the Control launcher is a TAB inside this one view, not a view of its own: registering a
-  // second WebviewViewProvider here is what put a stacked "CONTROL" section above the Tachyon panel.
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(SidebarPrototypeProvider.viewType, sidebarProto, {
-      webviewOptions: { retainContextWhenHidden: true },
-    }),
-  );
+  // spec 237 — the Tachyon sidebar is the Preact webview (the native tree was retired). Its provider
+  // is registered ABOVE, before the attach loop (SDD 504); only the plugin surface host remains here.
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(PluginSurfaceHost.viewType, pluginSurfaces, {
       webviewOptions: { retainContextWhenHidden: true },

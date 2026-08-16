@@ -157,6 +157,22 @@ export function recordShellNote(context: string, detail: string): void {
   shellChannel().appendLine(`[${new Date().toISOString()}] ${context}: ${detail}`);
 }
 
+/**
+ * SDD 504 — reveal the channel, on a human's gesture only.
+ *
+ * It lives HERE because the channel is a module singleton: `vscode.window.createOutputChannel`
+ * hands back a NEW object each call, so a second one opened elsewhere under the same name would be
+ * a second sink, and the "Show Output" button would reveal an empty panel next to the one holding
+ * the failure. The file that owns the channel is the only place that can reveal the right one.
+ *
+ * The no-reveal rule above (`recordShellNote`) is unchanged and is about WRITING: a refresh that
+ * fails during a transient restart must not steal the panel. This is the opposite direction — the
+ * reader asked.
+ */
+export function revealShellDiagnostics(): void {
+  shellChannel().show(true);
+}
+
 /** Tests only — the channel is a module singleton that must not leak between cases. */
 export function __resetShellDiagnosticLog(): void {
   channel = undefined;

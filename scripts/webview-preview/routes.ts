@@ -23,7 +23,7 @@ import { worktreePrDraftMessage, worktreesModelMessage } from "@tachyon/webview-
 import { runtimeConfigSnapshotMessage } from "@tachyon/webview-ui/webview/runtime-config/messages";
 import { settingsModelMessage } from "@tachyon/webview-ui/webview/settings/messages";
 import { systemModelMessage } from "@tachyon/webview-ui/webview/system/messages";
-import { sidebarFixtures } from "./fixtures/sidebar";
+import { sidebarFixtures, isBootFixture, type SidebarFixtureVM } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
 import { pinStudioFixtures, pinStudioMakeMessage } from "./fixtures/pin-studio";
 import { pluginsFixtures } from "./fixtures/plugins";
@@ -106,7 +106,14 @@ export const ROUTES: Record<string, Route> = {
     frame: { w: 340, h: 760 },
     fixtures: sidebarFixtures as Record<string, Fixture>,
     // the sidebar host message wraps a single FleetVM in a one-fleet push (matches the real provider).
-    makeMessage: (vm) => fleetMessage(Array.isArray(vm) ? vm as never : [vm as never], {}),
+    // SDD 504 — a boot fixture supplies the discovery result too, through the SAME envelope
+    // constructor the provider uses, so a change to the wire shape breaks this harness at build
+    // rather than producing a preview screenshot of a message production no longer sends.
+    makeMessage: (vm) => {
+      const fixture = vm as SidebarFixtureVM;
+      if (isBootFixture(fixture)) return fleetMessage(fixture.fleets, {}, [], undefined, undefined, fixture.boot);
+      return fleetMessage(Array.isArray(fixture) ? fixture : [fixture], {});
+    },
   },
   // t-6e2952 — the Control launcher has no route of its own: it is the "Control" TAB of the `sidebar`
   // route above (same bundle, same fixtures) — open ?view=sidebar and select the second tab.

@@ -4,7 +4,9 @@ import { Button, Badge, EmptyState, DenseRow } from "../shared/ui";
 import {
   SAMPLE, TABS, searchIndex, isAgentRow,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
+  type SidebarBootVM, type SidebarFolderPhase,
 } from "@tachyon/shared/sidebar/types";
+import { bootNeedsTick, pendingBootFolders, resolveBootState, type SidebarBootState } from "./bootState";
 import {
   inlineMembers, readmittedCriticalComponents, resolveCardTemplate, topLevelComponents,
   type CardComponentId, type CardRegion, type CardTemplate, type CardTemplateConfig,
@@ -68,7 +70,10 @@ export interface Dispatch {
   switchWorkspace?: (wsHash: string) => void;
 }
 /** Global (section-level, not per-row) ops: pins + the per-section "new …" studios. */
-export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "openConfig" | "openPersonalCardTemplate" | "openControl" | "doctor" | "studio:agents" | "studio:terminals" | "studio:schedules";
+// SDD 504 — `retryStart` and `openOutput` are the failed state's two actions. Both are new here
+// because the failed state itself is new: before this change an attach failure fell through to the
+// welcome, so the sidebar offered to CREATE a workspace whose startup had just been rejected.
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "openConfig" | "openPersonalCardTemplate" | "openControl" | "doctor" | "retryStart" | "openOutput" | "studio:agents" | "studio:terminals" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/remove etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -1223,6 +1228,112 @@ function clearAllAttentions(fleets: FleetVM[], dispatch?: Dispatch): void {
   }
 }
 
+/**
+ * SDD 504 — the screen shown INSTEAD of a fleet list, for each state that is not `ready`.
+ *
+ * Every branch reuses the `.init` box the welcome already had, so this is a change of WHAT the
+ * sidebar claims, not of how the empty screen looks. The welcome itself is untouched and still
+ * here — it simply stopped being the default and became one of five answers.
+ *
+ * No percentage anywhere, deliberately. The host can name a phase and a folder; it cannot estimate
+ * completion, and a bar that moves without measuring anything is worse than no bar (plan, "facts
+ * plus coarse phases, not percentages").
+ */
+function BootNotice({ state, boot, dispatch }: { state: SidebarBootState; boot?: SidebarBootVM; dispatch?: Dispatch }) {
+  const named = (phase: SidebarFolderPhase) => (boot?.folders ?? []).filter((f) => f.phase === phase);
+
+  if (state === "unknown") {
+    // No action offered on purpose: there is nothing to act on yet, and every button here would be
+    // a guess about an answer the host is about to give.
+    return (
+      <div class="init" data-testid="sidebar-boot-unknown">
+        <Icon name="loading" />
+        <p>Checking this window for Tachyon workspaces…</p>
+      </div>
+    );
+  }
+
+  if (state === "failed") {
+    // Retry is PER FOLDER, not per window: a multi-root window where one folder's engine was
+    // rejected must not re-attach the folder that is merely slow. The hash is the same identity the
+    // fleet carries once the folder attaches, so the host resolves it the way it resolves every
+    // other webview route.
+    return (
+      <div class="init" data-testid="sidebar-boot-failed">
+        <Icon name="warning" />
+        {named("failed").map((f) => (
+          <Fragment key={f.hash}>
+            <p>Tachyon could not start for {f.name}{f.detail ? `: ${f.detail}` : "."}</p>
+            <Button class="init-btn" onClick={() => dispatch?.global("retryStart", f.hash)}>
+              <Icon name="refresh" /><span>Retry {f.name}</span>
+            </Button>
+          </Fragment>
+        ))}
+        <Button class="init-btn" onClick={() => dispatch?.global("openOutput")}>
+          <Icon name="output" /><span>Show Output</span>
+        </Button>
+      </div>
+    );
+  }
+
+  if (state === "configured-and-starting" || state === "delayed") {
+    const starting = named("starting");
+    const names = starting.map((f) => f.name).join(", ");
+    return (
+      <div class="init" data-testid={`sidebar-boot-${state}`}>
+        <Icon name="loading" />
+        {state === "delayed"
+          ? <p>Tachyon is taking longer than usual to start{names ? ` for ${names}` : ""}.</p>
+          : <p>Starting Tachyon{names ? ` for ${names}` : ""}…</p>}
+        {/* Only past the ordinary envelope. Offering Output at 200 ms would teach the reader that a
+            normal boot is something to go and inspect. */}
+        {state === "delayed" && (
+          <Button class="init-btn" onClick={() => dispatch?.global("openOutput")}>
+            <Icon name="output" /><span>Show Output</span>
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  // confirmed-unconfigured — the original welcome, reached only after every folder was checked.
+  // No workspace booted → an honest empty state, never SAMPLE (which would show fake, unactionable rows).
+  return (
+    <div class="init" data-testid="sidebar-boot-unconfigured">
+      <Icon name="rocket" />
+      <p>No Tachyon workspace.</p>
+      <p class="dim">Open a folder, then generate a <code>tachyon.yml</code> to manage its fleet here.</p>
+      <Button class="init-btn" onClick={() => dispatch?.global("init")}>
+        <Icon name="add" /><span>Initialize Tachyon</span>
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * SDD 504 — multi-root: a folder still starting or failed, reported ALONGSIDE fleets that are ready.
+ *
+ * The plan's rule is that one slow folder must not blank healthy projects, so this is additive and
+ * renders nothing in the single-root case that dominates. It carries no Initialize action for the
+ * same reason the notices above do not: these folders are configured.
+ */
+function BootRowNotice({ boot }: { boot?: SidebarBootVM }) {
+  const pending = pendingBootFolders(boot);
+  if (!pending.length) return null;
+  return (
+    <div class="boot-row" data-testid="sidebar-boot-row">
+      {pending.map((f) => (
+        <p key={f.name}>
+          <Icon name={f.phase === "failed" ? "warning" : "loading"} />
+          {f.phase === "failed"
+            ? <span>Tachyon could not start for {f.name}{f.detail ? `: ${f.detail}` : "."}</span>
+            : <span>Starting Tachyon for {f.name}…</span>}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export function App({
   fleets = [SAMPLE],
   dispatch,
@@ -1231,6 +1342,7 @@ export function App({
   /** Test seam — production always starts on Agents; never auto-switches when attentions arrive. */
   initialTab = "Agents",
   selectedWsHash,
+  boot,
 }: {
   fleets?: FleetVM[];
   dispatch?: Dispatch;
@@ -1239,6 +1351,11 @@ export function App({
   appVersion?: string;
   initialTab?: TabId;
   selectedWsHash?: string;
+  /**
+   * SDD 504 — the host's discovery result. `undefined` means the host has not spoken yet, which is
+   * exactly the first frame of every reload, and is why absence can no longer be read off `fleets`.
+   */
+  boot?: SidebarBootVM;
 }) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [tab, setTab] = useState<TabId>(initialTab);
@@ -1252,6 +1369,25 @@ export function App({
   const [agentFilter, setAgentFilter] = useState<AgentStatusFilter>("all");
   /** t-41117e — Continue task picker (webview-local; host only receives the chosen destination). */
   const [continuePick, setContinuePick] = useState<string | null>(null);
+  /**
+   * SDD 504 — "delayed" is derived from elapsed time, so SOMETHING has to re-render when time
+   * passes and nothing else has changed. This is that something, and it is deliberately the whole
+   * mechanism: no host timer, no lifecycle transition, no message on the wire whose only content is
+   * that five seconds went by.
+   *
+   * It runs only while a folder is actually starting (`bootNeedsTick`) and stops when the fleet
+   * arrives, so the steady state — which is every state except a few seconds of boot — has no timer
+   * at all. A 1 s period is well under the 5 s threshold it exists to cross and costs a re-render of
+   * a screen that holds one line of text.
+   */
+  const [bootNow, setBootNow] = useState(() => Date.now());
+  const ticking = bootNeedsTick(boot);
+  useEffect(() => {
+    if (!ticking) return;
+    const timer = window.setInterval(() => setBootNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [ticking]);
+  const bootState = resolveBootState(boot, fleets, bootNow);
   // t-be359b — pending "new …" studio waiting on a folder choice. Set only when more than one root is
   // configured; with a single root there is nothing to ask and the op is posted straight through.
   const [studioPick, setStudioPick] = useState<GlobalOp | null>(null);
@@ -1469,17 +1605,10 @@ export function App({
     pipeline: (op, name, nodeId) => dispatch?.pipeline(op, name, nodeId, hash),
     openMore: (items, x, y) => setMenu({ items, x, y }),
   });
-  // No workspace booted → an honest empty state, never SAMPLE (which would show fake, unactionable rows).
-  if (!fleets.length) return (
-    <div class="init">
-      <Icon name="rocket" />
-      <p>No Tachyon workspace.</p>
-      <p class="dim">Open a folder, then generate a <code>tachyon.yml</code> to manage its fleet here.</p>
-      <Button class="init-btn" onClick={() => dispatch?.global("init")}>
-        <Icon name="add" /><span>Initialize Tachyon</span>
-      </Button>
-    </div>
-  );
+  // SDD 504 — no fleet is no longer an answer, only the absence of one. What the sidebar SAYS here
+  // comes from the host's discovery result; `!fleets.length` used to mean both "nothing here" and
+  // "nothing heard yet", and rendered the second as the first for the whole of boot.
+  if (!fleets.length) return <BootNotice state={bootState} boot={boot} dispatch={dispatch} />;
   // t-72ff5a — ONE project's lists, with no folder header above them. The `.ws-scope` wrapper stays:
   // Ctrl+K resolves its scroll target inside it, and a stale `data-ws` is how a flash could land on
   // the previous project's row during a switch.
@@ -1649,6 +1778,10 @@ export function App({
         )}
       </div>
       <div class="panel active" role="tabpanel" id="sidebar-panel" aria-labelledby={`tab-${tab}`} tabindex={0}>
+        {/* SDD 504 — a folder still starting or failed, reported WITHOUT blanking the folders that
+            are ready. Above the lists rather than inside a tab, because it is a fact about the
+            window like the project chrome is, not about whichever tab happens to be open. */}
+        <BootRowNotice boot={boot} />
         {tab === "Attentions" ? (
           // t-37f554 — one global stack (multi-root already merged by attentionRows); not per-folder panels.
           <AttentionStack fleets={fleets} dispatch={dispatch} />

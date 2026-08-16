@@ -11,7 +11,7 @@
  * breaks the BUILD (typecheck) instead of silently producing a wrong preview screenshot.
  */
 
-import type { FleetVM } from "@tachyon/shared/sidebar/types";
+import type { FleetVM, SidebarBootVM } from "@tachyon/shared/sidebar/types";
 
 // the webview→host ready handshake is shared across all views; re-exported here for sidebar consumers.
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
@@ -30,6 +30,19 @@ export interface FleetMessage {
   appVersion?: string;
   /** SDD 485 C6 — window scope used by the next Control app/document open. */
   selectedWsHash?: string;
+  /**
+   * SDD 504 — what the host has discovered about this window's folders.
+   *
+   * It rides the EXISTING fleet message rather than arriving as a second one, and that is a
+   * decision: two messages would let a fleet and its discovery disagree on the wire, and the
+   * webview would have to hold a rule for which one is newer. Here `fleets` and `boot` are always
+   * the same push, so an empty array is never self-interpreting again.
+   *
+   * Optional on the type only for the harnesses that build fixtures by hand; production always
+   * sends it, and a webview that receives no `boot` stays in `unknown` — which is the safe end of
+   * the failure, not the dangerous one.
+   */
+  boot?: SidebarBootVM;
 }
 export function fleetMessage(
   fleets: FleetVM[],
@@ -37,8 +50,17 @@ export function fleetMessage(
   collapsedKeys: string[] = [],
   appVersion?: string,
   selectedWsHash?: string,
+  boot?: SidebarBootVM,
 ): FleetMessage {
-  return { type: FLEET, fleets, prefs, collapsedKeys, ...(appVersion ? { appVersion } : {}), ...(selectedWsHash ? { selectedWsHash } : {}) };
+  return {
+    type: FLEET,
+    fleets,
+    prefs,
+    collapsedKeys,
+    ...(appVersion ? { appVersion } : {}),
+    ...(selectedWsHash ? { selectedWsHash } : {}),
+    ...(boot ? { boot } : {}),
+  };
 }
 
 /** the union the sidebar webview listens for (host → webview). */

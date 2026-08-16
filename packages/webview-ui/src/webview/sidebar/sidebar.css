@@ -362,6 +362,16 @@
   .init-btn { margin-top: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 0; border-radius: 4px; cursor: pointer; font: inherit; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
   .init-btn:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
   .init-btn:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 2px; }
+  /* SDD 504 — a folder name or an engine error is arbitrary-length text in a panel that is 360px
+     wide on a bad day. Without these it either overflows the sidebar or forces a horizontal
+     scrollbar on the whole panel; `overflow-wrap` is what breaks a long path with no spaces in it. */
+  .init p { overflow-wrap: anywhere; max-width: 100%; }
+  .init-btn { max-width: 100%; }
+  .init-btn span { overflow-wrap: anywhere; text-align: left; }
+  /* The multi-root notice: a compact strip ABOVE ready lists, not a box that replaces them. */
+  .boot-row { display: flex; flex-direction: column; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--ds-border, var(--vscode-panel-border)); }
+  .boot-row p { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: 12px; color: var(--ds-muted); overflow-wrap: anywhere; }
+  .boot-row .codicon { flex: 0 0 auto; margin-top: 2px; }
   .pin { display: flex; gap: 8px; padding: 5px 12px; align-items: flex-start; position: relative; }
   .pin:hover { background: var(--hover); }
   .pin:hover .actions, .pin:focus-within .actions { opacity: 1; pointer-events: auto; }
