@@ -1,9 +1,9 @@
 /**
- * t-73885b — apply considerInternalPlanReprompt at turn-end.
+ * t-73885b — apply considerInternalChecklistReprompt at turn-end.
  *
  * Trigger: a new persistence-stop row (the existing Stop hook). The
  * verdict still comes from the fatia-2 judges — this host does not
- * invent sem-plano from Stop alone.
+ * invent absent from Stop alone.
  *
  * Actor × trigger:
  *   Tachyon × Stop row → consider
@@ -11,8 +11,8 @@
  *   Tachyon × restart → loadState, so the one reprompt is not resent
  *   Interface / Agent / Bridge → cannot enqueue a reprompt here
  */
-import { considerInternalPlanReprompt } from "../runtime/internalPlanReprompt.js";
-import type { InternalPlanTurnJudgment } from "../runtime/internalPlanTurn.js";
+import { considerInternalChecklistReprompt } from "../runtime/internalChecklistReprompt.js";
+import type { InternalChecklistTurnJudgment } from "../runtime/internalChecklistTurn.js";
 
 export interface PersistenceStopRow {
   agent: string;
@@ -22,22 +22,22 @@ export interface PersistenceStopRow {
   ts: string;
 }
 
-export type InternalPlanRepromptStatus = "asked" | "given-up";
+export type InternalChecklistRepromptStatus = "asked" | "given-up";
 
-export type InternalPlanRepromptState = Record<string, InternalPlanRepromptStatus>;
+export type InternalChecklistRepromptState = Record<string, InternalChecklistRepromptStatus>;
 
 export interface AssignedPlanTask {
   id: string;
   kind?: string;
 }
 
-export interface InternalPlanRepromptDeps {
+export interface InternalChecklistRepromptDeps {
   listStopRows(): PersistenceStopRow[];
   assignedTask(agent: string): AssignedPlanTask | undefined;
-  exigirEm(): readonly string[] | undefined;
-  judgeTurn(agent: string): InternalPlanTurnJudgment;
-  loadState(): InternalPlanRepromptState;
-  saveState(state: InternalPlanRepromptState): void;
+  requireIn(): readonly string[] | undefined;
+  judgeTurn(agent: string): InternalChecklistTurnJudgment;
+  loadState(): InternalChecklistRepromptState;
+  saveState(state: InternalChecklistRepromptState): void;
   sendReprompt(agent: string, text: string): Promise<void>;
   appendJournal(taskId: string, text: string): void;
   warnHuman(agent: string, taskId?: string): void;
@@ -74,10 +74,10 @@ function stopIdentity(row: PersistenceStopRow): string {
   return `${row.agent}\t${row.ts}\t${row.sessionId}`;
 }
 
-export class InternalPlanRepromptMonitor {
+export class InternalChecklistRepromptMonitor {
   private seen = new Set<string>();
 
-  constructor(private readonly deps: InternalPlanRepromptDeps) {}
+  constructor(private readonly deps: InternalChecklistRepromptDeps) {}
 
   async tick(): Promise<void> {
     const rows = this.deps.listStopRows();
@@ -93,7 +93,7 @@ export class InternalPlanRepromptMonitor {
       const key = repromptStateKey(row.agent, task?.id);
       const judgment = this.deps.judgeTurn(row.agent);
 
-      if (judgment.state === "verdict" && judgment.verdict === "com-plano") {
+      if (judgment.state === "verdict" && judgment.verdict === "present") {
         if (state[key]) {
           delete state[key];
           dirty = true;
@@ -103,10 +103,10 @@ export class InternalPlanRepromptMonitor {
 
       if (state[key] === "given-up") continue;
 
-      const decision = considerInternalPlanReprompt({
+      const decision = considerInternalChecklistReprompt({
         judgment,
         taskKind: task?.kind,
-        exigirEm: this.deps.exigirEm(),
+        requireIn: this.deps.requireIn(),
         alreadyReprompted: state[key] === "asked",
       });
 

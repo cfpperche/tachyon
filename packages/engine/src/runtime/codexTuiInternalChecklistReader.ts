@@ -3,20 +3,20 @@
  * app-server reader. Does not reimplement the snapshot projection.
  *
  * The TUI ledger keeps `toolInput.plan` (sessionOwners recorder). The
- * production door is still `readCodexInternalPlan`.
+ * production door is still `readCodexInternalChecklist`.
  */
 import fs from "node:fs";
 import { codexToolHookFile } from "../activity/sessionOwners.js";
-import { CODEX_INTERNAL_PLAN_NOTIFICATION, readCodexInternalPlan } from "./codexInternalPlanReader.js";
-import type { InternalPlanRead } from "./internalPlan.js";
+import { CODEX_INTERNAL_CHECKLIST_NOTIFICATION, readCodexInternalChecklist } from "./codexInternalChecklistReader.js";
+import type { InternalChecklistRead } from "./internalChecklist.js";
 
-export function readCodexTuiInternalPlan(workspaceRoot: string, agent: string): InternalPlanRead {
-  return readCodexInternalPlan({
-    notifications: codexTuiPlanNotifications(workspaceRoot, agent),
+export function readCodexTuiInternalChecklist(workspaceRoot: string, agent: string): InternalChecklistRead {
+  return readCodexInternalChecklist({
+    notifications: codexTuiChecklistNotifications(workspaceRoot, agent),
   });
 }
 
-export function codexTuiPlanNotifications(workspaceRoot: string, agent: string): unknown[] {
+export function codexTuiChecklistNotifications(workspaceRoot: string, agent: string): unknown[] {
   const notifications: unknown[] = [];
   for (const row of readToolHookRows(codexToolHookFile(workspaceRoot))) {
     if (row.agent !== agent) continue;
@@ -24,7 +24,7 @@ export function codexTuiPlanNotifications(workspaceRoot: string, agent: string):
     const plan = planFromToolInput(row.toolInput);
     if (!plan) continue;
     notifications.push({
-      method: CODEX_INTERNAL_PLAN_NOTIFICATION,
+      method: CODEX_INTERNAL_CHECKLIST_NOTIFICATION,
       params: { plan },
     });
   }

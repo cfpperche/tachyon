@@ -7,12 +7,12 @@
  *   Tachyon × spawn / restart / resume → same door, new session identity
  *   Interface / Agent / Bridge → cannot write a snapshot here
  */
-import { readClaudeInternalPlan } from "../runtime/claudeInternalPlanReader.js";
-import { readCodexTuiInternalPlan } from "../runtime/codexTuiInternalPlanReader.js";
-import { readGrokInternalPlan } from "../runtime/grokInternalPlanReader.js";
-import type { InternalPlanRead } from "../runtime/internalPlan.js";
+import { readClaudeInternalChecklist } from "../runtime/claudeInternalChecklistReader.js";
+import { readCodexTuiInternalChecklist } from "../runtime/codexTuiInternalChecklistReader.js";
+import { readGrokInternalChecklist } from "../runtime/grokInternalChecklistReader.js";
+import type { InternalChecklistRead } from "../runtime/internalChecklist.js";
 
-export interface ReadAgentInternalPlanInput {
+export interface ReadAgentInternalChecklistInput {
   runtime: string | undefined;
   workspaceRoot: string;
   agent: string;
@@ -21,10 +21,10 @@ export interface ReadAgentInternalPlanInput {
   configHome?: string;
 }
 
-export function readAgentInternalPlan(input: ReadAgentInternalPlanInput): InternalPlanRead {
+export function readAgentInternalChecklist(input: ReadAgentInternalChecklistInput): InternalChecklistRead {
   if (input.runtime === "grok") {
     if (!input.sessionId) return { state: "mute" };
-    return readGrokInternalPlan({
+    return readGrokInternalChecklist({
       configHome: input.configHome ?? "",
       cwd: input.cwd ?? "",
       sessionId: input.sessionId,
@@ -32,13 +32,13 @@ export function readAgentInternalPlan(input: ReadAgentInternalPlanInput): Intern
   }
   if (input.runtime === "claude") {
     if (!input.sessionId || !input.configHome) return { state: "mute" };
-    return readClaudeInternalPlan({
+    return readClaudeInternalChecklist({
       configHome: input.configHome,
       sessionId: input.sessionId,
     });
   }
   if (input.runtime === "codex") {
-    return readCodexTuiInternalPlan(input.workspaceRoot, input.agent);
+    return readCodexTuiInternalChecklist(input.workspaceRoot, input.agent);
   }
   return { state: "mute" };
 }

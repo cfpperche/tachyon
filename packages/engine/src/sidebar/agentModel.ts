@@ -1,6 +1,6 @@
 import type {
   AgentFocus,
-  AgentPlanLine,
+  AgentChecklistLine,
   AgentVM,
   AgentStatus,
   ContinuityBadge,
@@ -254,8 +254,8 @@ export interface AgentExtras {
   continuity?: ContinuityBadge;
   /** spec 390 — glance focus line (task / brief / continuity). */
   focus?: AgentFocus;
-  /** t-281339 — current internal-plan step or `sem-plano`. */
-  plan?: AgentPlanLine;
+  /** t-281339 — current checklist step or `absent`. */
+  checklist?: AgentChecklistLine;
   persistenceHooks?: { state: PersistenceHookBadge; reason?: string; path?: string; updatedAt?: string };
   evidence?: EvidenceBadge;
   externalTools?: ExternalToolsSummaryVM;
@@ -367,7 +367,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(x.canDismiss ? { canDismiss: true } : {}),
     ...(x.continuity ? { continuity: x.continuity } : {}),
     ...(x.focus ? { focus: x.focus } : {}),
-    ...(x.plan ? { plan: x.plan } : {}),
+    ...(x.checklist ? { checklist: x.checklist } : {}),
     ...(x.persistenceHooks ? { persistenceHooks: x.persistenceHooks } : {}),
     ...(x.evidence ? { evidence: x.evidence } : {}),
     ...(x.externalTools ? { externalTools: x.externalTools } : {}),

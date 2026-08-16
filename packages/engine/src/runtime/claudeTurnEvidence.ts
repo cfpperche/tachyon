@@ -1,7 +1,7 @@
 /**
- * t-73885b — gather Claude transcript bytes for `judgeClaudeInternalPlanTurn`.
+ * t-73885b — gather Claude transcript bytes for `judgeClaudeInternalChecklistTurn`.
  * Does not decide the verdict. A missing or unreadable transcript is
- * absence of evidence, not `sem-plano`.
+ * absence of evidence, not `absent`.
  */
 import fs from "node:fs";
 

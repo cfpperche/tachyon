@@ -14,25 +14,25 @@
  * Channel: any of those plan tools in `init.tools`. Opus 5 has none unless
  * CLAUDE_CODE_ENABLE_TODO_TOOLS=1 (fatia 1 sets that at launch).
  *
- * Do not treat StopFailure as Stop — a dead turn is not `sem-plano`.
+ * Do not treat StopFailure as Stop — a dead turn is not `absent`.
  */
-import { CLAUDE_INTERNAL_PLAN_TOOLS } from "./claudeInternalPlanReader.js";
-import { decideInternalPlanTurnVerdict, type InternalPlanTurnJudgment } from "./internalPlanTurn.js";
+import { CLAUDE_INTERNAL_CHECKLIST_TOOLS } from "./claudeInternalChecklistReader.js";
+import { decideInternalChecklistTurnVerdict, type InternalChecklistTurnJudgment } from "./internalChecklistTurn.js";
 
-const CLAUDE_PLAN_WRITE_TOOLS = new Set<string>([...CLAUDE_INTERNAL_PLAN_TOOLS, "TodoWrite"]);
+const CLAUDE_PLAN_WRITE_TOOLS = new Set<string>([...CLAUDE_INTERNAL_CHECKLIST_TOOLS, "TodoWrite"]);
 
 export function claudePlanChannelPresent(initTools: readonly string[]): boolean {
   return initTools.some((name) => CLAUDE_PLAN_WRITE_TOOLS.has(name));
 }
 
-export function judgeClaudeInternalPlanTurn(input: {
+export function judgeClaudeInternalChecklistTurn(input: {
   initTools: readonly string[];
   events: readonly unknown[];
-}): InternalPlanTurnJudgment {
+}): InternalChecklistTurnJudgment {
   const channelPresent = claudePlanChannelPresent(input.initTools ?? []);
   let turnEnded = false;
   let turnCompletedSuccessfully = false;
-  let planEventInWindow = false;
+  let checklistEventInWindow = false;
 
   for (const raw of input.events) {
     const mark = classifyClaudeEvent(raw);
@@ -40,21 +40,21 @@ export function judgeClaudeInternalPlanTurn(input: {
     if (mark.kind === "turn-start") {
       turnEnded = false;
       turnCompletedSuccessfully = false;
-      planEventInWindow = false;
+      checklistEventInWindow = false;
       continue;
     }
     if (mark.kind === "plan") {
-      planEventInWindow = true;
+      checklistEventInWindow = true;
       continue;
     }
     turnEnded = true;
     turnCompletedSuccessfully = mark.outcome === "completed";
   }
 
-  return decideInternalPlanTurnVerdict({
+  return decideInternalChecklistTurnVerdict({
     turnEnded,
     turnCompletedSuccessfully,
-    planEventInWindow,
+    checklistEventInWindow,
     channelPresent,
   });
 }

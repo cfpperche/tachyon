@@ -3,14 +3,14 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { CODEX_TOOL_HOOK_RECORDER_SOURCE, PERSISTENCE_STOP_RECORDER_SOURCE } from "@tachyon/engine/activity/sessionOwners.js";
-import { CODEX_INTERNAL_PLAN_NOTIFICATION } from "@tachyon/engine/runtime/codexInternalPlanReader.js";
-import { judgeCodexInternalPlanTurn } from "@tachyon/engine/runtime/codexInternalPlanTurn.js";
+import { CODEX_INTERNAL_CHECKLIST_NOTIFICATION } from "@tachyon/engine/runtime/codexInternalChecklistReader.js";
+import { judgeCodexInternalChecklistTurn } from "@tachyon/engine/runtime/codexInternalChecklistTurn.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 /**
  * t-011136 — Codex end-of-turn verdict. These tests import
- * `judgeCodexInternalPlanTurn` — the host door. A helper that emits
- * `sem-plano` from `turn/started` alone, or that treats `item/plan/delta`
+ * `judgeCodexInternalChecklistTurn` — the host door. A helper that emits
+ * `absent` from `turn/started` alone, or that treats `item/plan/delta`
  * as a plan, turns the suite red.
  */
 
@@ -40,59 +40,59 @@ function completed(turnId: string, status = "completed"): unknown {
   };
 }
 
-describe("t-011136 — judgeCodexInternalPlanTurn (production door)", () => {
-  it("emits com-plano for the measured turn/plan/updated + turn/completed pair", () => {
+describe("t-011136 — judgeCodexInternalChecklistTurn (production door)", () => {
+  it("emits present for the measured turn/plan/updated + turn/completed pair", () => {
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [started(TURN_A), MEASURED_PLAN, TURN_COMPLETED],
         turnId: TURN_A,
       }),
-    ).toEqual({ state: "verdict", verdict: "com-plano" });
+    ).toEqual({ state: "verdict", verdict: "present" });
   });
 
-  it("emits sem-plano when turn/completed arrives with no turn/plan/updated for that turnId", () => {
+  it("emits absent when turn/completed arrives with no turn/plan/updated for that turnId", () => {
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [started(TURN_B), completed(TURN_B)],
         turnId: TURN_B,
       }),
-    ).toEqual({ state: "verdict", verdict: "sem-plano" });
+    ).toEqual({ state: "verdict", verdict: "absent" });
   });
 
-  it("emits sem-canal when the protocol omits turn/plan/updated — distinct from sem-plano", () => {
-    const withoutChannel = judgeCodexInternalPlanTurn({
+  it("emits no-channel when the protocol omits turn/plan/updated — distinct from absent", () => {
+    const withoutChannel = judgeCodexInternalChecklistTurn({
       notifications: [started(TURN_B), completed(TURN_B)],
       turnId: TURN_B,
       knownNotifications: ["turn/started", "turn/completed", "item/plan/delta"],
     });
-    const withChannel = judgeCodexInternalPlanTurn({
+    const withChannel = judgeCodexInternalChecklistTurn({
       notifications: [started(TURN_B), completed(TURN_B)],
       turnId: TURN_B,
-      knownNotifications: ["turn/started", "turn/completed", CODEX_INTERNAL_PLAN_NOTIFICATION],
+      knownNotifications: ["turn/started", "turn/completed", CODEX_INTERNAL_CHECKLIST_NOTIFICATION],
     });
-    expect(withoutChannel).toEqual({ state: "verdict", verdict: "sem-canal" });
-    expect(withChannel).toEqual({ state: "verdict", verdict: "sem-plano" });
+    expect(withoutChannel).toEqual({ state: "verdict", verdict: "no-channel" });
+    expect(withChannel).toEqual({ state: "verdict", verdict: "absent" });
     expect(withoutChannel).not.toEqual(withChannel);
   });
 
-  it("does not emit sem-plano while turn/completed is missing (silence is not absence)", () => {
-    const mid = judgeCodexInternalPlanTurn({
+  it("does not emit absent while turn/completed is missing (silence is not absence)", () => {
+    const mid = judgeCodexInternalChecklistTurn({
       notifications: [started(TURN_B)],
       turnId: TURN_B,
     });
     expect(mid).toEqual({ state: "pending", reason: "turn-open" });
-    expect(mid).not.toEqual({ state: "verdict", verdict: "sem-plano" });
+    expect(mid).not.toEqual({ state: "verdict", verdict: "absent" });
   });
 
-  it("does not treat a failed-before-model turn as sem-plano", () => {
+  it("does not treat a failed-before-model turn as absent", () => {
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [started(TURN_B), completed(TURN_B, "failed")],
         turnId: TURN_B,
       }),
     ).toEqual({ state: "pending", reason: "turn-not-completed" });
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [started(TURN_B), completed(TURN_B, "interrupted")],
         turnId: TURN_B,
       }),
@@ -101,32 +101,32 @@ describe("t-011136 — judgeCodexInternalPlanTurn (production door)", () => {
 
   it("does not treat item/plan/delta or turn.completed.items as a plan event", () => {
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [started(TURN_A), PLAN_DELTA, TURN_COMPLETED],
         turnId: TURN_A,
       }),
-    ).toEqual({ state: "verdict", verdict: "sem-plano" });
+    ).toEqual({ state: "verdict", verdict: "absent" });
   });
 
   it("does not leak turn A's plan into turn B", () => {
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [started(TURN_A), MEASURED_PLAN, TURN_COMPLETED, started(TURN_B), completed(TURN_B)],
         turnId: TURN_B,
       }),
-    ).toEqual({ state: "verdict", verdict: "sem-plano" });
+    ).toEqual({ state: "verdict", verdict: "absent" });
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [started(TURN_A), MEASURED_PLAN, TURN_COMPLETED, started(TURN_B), completed(TURN_B)],
         turnId: TURN_A,
       }),
-    ).toEqual({ state: "verdict", verdict: "com-plano" });
+    ).toEqual({ state: "verdict", verdict: "present" });
   });
 
   it("fails if the judge ignores turnId (red proof)", () => {
     const canaryTurn = "red-proof-turn";
     const canary = {
-      method: CODEX_INTERNAL_PLAN_NOTIFICATION,
+      method: CODEX_INTERNAL_CHECKLIST_NOTIFICATION,
       params: {
         threadId: "red-proof-thread",
         turnId: canaryTurn,
@@ -134,25 +134,25 @@ describe("t-011136 — judgeCodexInternalPlanTurn (production door)", () => {
       },
     };
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [started(canaryTurn), canary, completed(canaryTurn)],
         turnId: canaryTurn,
       }),
-    ).toEqual({ state: "verdict", verdict: "com-plano" });
+    ).toEqual({ state: "verdict", verdict: "present" });
   });
 
   it("this suite calls the production judge, not a test-local stand-in", () => {
-    const source = fs.readFileSync(path.resolve("test/unit/codexInternalPlanTurn.test.ts"), "utf8");
-    expect(source).toMatch(/from "@tachyon\/engine\/runtime\/codexInternalPlanTurn\.js"/);
-    expect(source).toMatch(/judgeCodexInternalPlanTurn\(/);
-    expect(source).not.toMatch(/function judgeCodexInternalPlanTurn\(/);
+    const source = fs.readFileSync(path.resolve("test/unit/codexInternalChecklistTurn.test.ts"), "utf8");
+    expect(source).toMatch(/from "@tachyon\/engine\/runtime\/codexInternalChecklistTurn\.js"/);
+    expect(source).toMatch(/judgeCodexInternalChecklistTurn\(/);
+    expect(source).not.toMatch(/function judgeCodexInternalChecklistTurn\(/);
   });
 });
 
 /**
  * t-17b510 — TUI door. Measured payloads from
  * docs/research/poc-plano-interno-codex-tui.md (codex-cli 0.147.0).
- * These call `judgeCodexInternalPlanTurn` — the same production door as
+ * These call `judgeCodexInternalChecklistTurn` — the same production door as
  * the app-server suite above. A helper that classifies TUI hooks only
  * inside this file turns the suite red.
  */
@@ -169,44 +169,44 @@ const TUI_PRE_PLAN = JSON.parse(
   fs.readFileSync(path.join(FIXTURE_DIR, "tui-pre-tool-update-plan.json"), "utf8"),
 ) as { turn_id: string; hook_event_name: string; tool_name: string; tool_input: { plan: unknown } };
 
-describe("t-17b510 — judgeCodexInternalPlanTurn from Codex TUI hooks", () => {
-  it("emits com-plano for measured Stop + PostToolUse update_plan on the same turn_id", () => {
+describe("t-17b510 — judgeCodexInternalChecklistTurn from Codex TUI hooks", () => {
+  it("emits present for measured Stop + PostToolUse update_plan on the same turn_id", () => {
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [TUI_PRE_PLAN, TUI_POST_PLAN, TUI_STOP_INDUCE],
         turnId: TUI_STOP_INDUCE.turn_id,
       }),
-    ).toEqual({ state: "verdict", verdict: "com-plano" });
+    ).toEqual({ state: "verdict", verdict: "present" });
   });
 
-  it("emits sem-plano for the measured trivial turn (Stop, zero plan hooks)", () => {
+  it("emits absent for the measured trivial turn (Stop, zero plan hooks)", () => {
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [TUI_STOP_TRIVIAL],
         turnId: TUI_STOP_TRIVIAL.turn_id,
       }),
-    ).toEqual({ state: "verdict", verdict: "sem-plano" });
+    ).toEqual({ state: "verdict", verdict: "absent" });
   });
 
-  it("emits sem-canal when the TUI hook inventory omits PreToolUse/PostToolUse", () => {
-    const withoutChannel = judgeCodexInternalPlanTurn({
+  it("emits no-channel when the TUI hook inventory omits PreToolUse/PostToolUse", () => {
+    const withoutChannel = judgeCodexInternalChecklistTurn({
       notifications: [TUI_STOP_TRIVIAL],
       turnId: TUI_STOP_TRIVIAL.turn_id,
       knownHookEvents: ["SessionStart", "Stop"],
     });
-    const withChannel = judgeCodexInternalPlanTurn({
+    const withChannel = judgeCodexInternalChecklistTurn({
       notifications: [TUI_STOP_TRIVIAL],
       turnId: TUI_STOP_TRIVIAL.turn_id,
       knownHookEvents: ["SessionStart", "Stop", "PreToolUse", "PostToolUse"],
     });
-    expect(withoutChannel).toEqual({ state: "verdict", verdict: "sem-canal" });
-    expect(withChannel).toEqual({ state: "verdict", verdict: "sem-plano" });
+    expect(withoutChannel).toEqual({ state: "verdict", verdict: "no-channel" });
+    expect(withChannel).toEqual({ state: "verdict", verdict: "absent" });
     expect(withoutChannel).not.toEqual(withChannel);
   });
 
   it("does not treat rollout exec, logs_2 names, or prompt-text update_plan as a plan", () => {
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [
           { type: "response_item", payload: { name: "exec", input: "tools.update_plan({plan:[{step:'x',status:'pending'}]})" } },
           { event: "app-server event: turn/plan/updated targeted_connections=1" },
@@ -215,27 +215,27 @@ describe("t-17b510 — judgeCodexInternalPlanTurn from Codex TUI hooks", () => {
         ],
         turnId: TUI_STOP_INDUCE.turn_id,
       }),
-    ).toEqual({ state: "verdict", verdict: "sem-plano" });
+    ).toEqual({ state: "verdict", verdict: "absent" });
   });
 
   it("does not leak turn A's TUI plan into turn B (red proof on the production judge)", () => {
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [TUI_POST_PLAN, TUI_STOP_INDUCE, TUI_STOP_TRIVIAL],
         turnId: TUI_STOP_TRIVIAL.turn_id,
       }),
-    ).toEqual({ state: "verdict", verdict: "sem-plano" });
+    ).toEqual({ state: "verdict", verdict: "absent" });
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [TUI_POST_PLAN, TUI_STOP_INDUCE, TUI_STOP_TRIVIAL],
         turnId: TUI_STOP_INDUCE.turn_id,
       }),
-    ).toEqual({ state: "verdict", verdict: "com-plano" });
+    ).toEqual({ state: "verdict", verdict: "present" });
   });
 
   it("stays pending while TUI Stop has not arrived for that turn_id", () => {
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [TUI_POST_PLAN],
         turnId: TUI_POST_PLAN.turn_id,
       }),
@@ -273,11 +273,11 @@ describe("t-17b510 — judgeCodexInternalPlanTurn from Codex TUI hooks", () => {
     expect((toolRow.toolInput as { plan: unknown }).plan).toEqual(TUI_POST_PLAN.tool_input.plan);
 
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [toolRow, stopRow],
         turnId: TUI_STOP_INDUCE.turn_id,
       }),
-    ).toEqual({ state: "verdict", verdict: "com-plano" });
+    ).toEqual({ state: "verdict", verdict: "present" });
 
     const trivialStop = spawnSync(process.execPath, [stopScript, "codex-x", stopFile, failureFile], {
       input: JSON.stringify(TUI_STOP_TRIVIAL),
@@ -287,10 +287,10 @@ describe("t-17b510 — judgeCodexInternalPlanTurn from Codex TUI hooks", () => {
     const trivialRow = fs.readFileSync(stopFile, "utf8").trim().split("\n").map((line) => JSON.parse(line)).at(-1) as Record<string, unknown>;
     expect(trivialRow.turnId).toBe(TUI_STOP_TRIVIAL.turn_id);
     expect(
-      judgeCodexInternalPlanTurn({
+      judgeCodexInternalChecklistTurn({
         notifications: [trivialRow],
         turnId: TUI_STOP_TRIVIAL.turn_id,
       }),
-    ).toEqual({ state: "verdict", verdict: "sem-plano" });
+    ).toEqual({ state: "verdict", verdict: "absent" });
   });
 });

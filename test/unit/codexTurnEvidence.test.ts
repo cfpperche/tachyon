@@ -2,13 +2,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { judgeCodexInternalPlanTurn } from "@tachyon/engine/runtime/codexInternalPlanTurn.js";
+import { judgeCodexInternalChecklistTurn } from "@tachyon/engine/runtime/codexInternalChecklistTurn.js";
 import { readCodexTurnEvidence } from "@tachyon/engine/runtime/codexTurnEvidence.js";
 
 /**
  * t-73885b — evidence for the existing Codex judge. These tests call
- * `judgeCodexInternalPlanTurn` with rows gathered from the TUI hook
- * ledgers. A helper that returns `sem-plano` from Stop-without-turn_id
+ * `judgeCodexInternalChecklistTurn` with rows gathered from the TUI hook
+ * ledgers. A helper that returns `absent` from Stop-without-turn_id
  * turns the suite red.
  */
 
@@ -34,17 +34,17 @@ function writeJsonl(root: string, file: string, rows: unknown[]): void {
 }
 
 describe("t-73885b — readCodexTurnEvidence feeds the production judge", () => {
-  it("emits sem-plano for a Stop with turn_id and no update_plan", () => {
+  it("emits absent for a Stop with turn_id and no update_plan", () => {
     const root = workspace();
     writeJsonl(root, "persistence-stop.jsonl", [
       { agent: "worker", event: "Stop", turnId: "turn-1", sessionId: "s1", ts: "2026-08-16T18:00:00.000Z" },
     ]);
     const evidence = readCodexTurnEvidence(root, "worker");
     expect(evidence).toBeDefined();
-    expect(judgeCodexInternalPlanTurn(evidence!)).toEqual({ state: "verdict", verdict: "sem-plano" });
+    expect(judgeCodexInternalChecklistTurn(evidence!)).toEqual({ state: "verdict", verdict: "absent" });
   });
 
-  it("emits com-plano when update_plan was recorded for the same turn", () => {
+  it("emits present when update_plan was recorded for the same turn", () => {
     const root = workspace();
     writeJsonl(root, "persistence-stop.jsonl", [
       { agent: "worker", event: "Stop", turnId: "turn-2", sessionId: "s1", ts: "2026-08-16T18:00:00.000Z" },
@@ -53,10 +53,10 @@ describe("t-73885b — readCodexTurnEvidence feeds the production judge", () => 
       { agent: "worker", event: "PostToolUse", toolName: "update_plan", turnId: "turn-2" },
     ]);
     const evidence = readCodexTurnEvidence(root, "worker");
-    expect(judgeCodexInternalPlanTurn(evidence!)).toEqual({ state: "verdict", verdict: "com-plano" });
+    expect(judgeCodexInternalChecklistTurn(evidence!)).toEqual({ state: "verdict", verdict: "present" });
   });
 
-  it("does not invent sem-plano from a Stop that dropped turn_id", () => {
+  it("does not invent absent from a Stop that dropped turn_id", () => {
     const root = workspace();
     writeJsonl(root, "persistence-stop.jsonl", [
       { agent: "worker", event: "Stop", sessionId: "s1", ts: "2026-08-16T18:00:00.000Z" },
@@ -66,8 +66,8 @@ describe("t-73885b — readCodexTurnEvidence feeds the production judge", () => 
 
   it("this suite calls the production judge, not a test-local stand-in", () => {
     const source = fs.readFileSync(path.resolve("test/unit/codexTurnEvidence.test.ts"), "utf8");
-    expect(source).toMatch(/from "@tachyon\/engine\/runtime\/codexInternalPlanTurn\.js"/);
-    expect(source).toMatch(/judgeCodexInternalPlanTurn\(/);
-    expect(source).not.toMatch(/function judgeCodexInternalPlanTurn\(/);
+    expect(source).toMatch(/from "@tachyon\/engine\/runtime\/codexInternalChecklistTurn\.js"/);
+    expect(source).toMatch(/judgeCodexInternalChecklistTurn\(/);
+    expect(source).not.toMatch(/function judgeCodexInternalChecklistTurn\(/);
   });
 });

@@ -438,8 +438,8 @@
   },
   {
     "view": "sidebar",
-    "fixture": "internal-plan-line",
-    "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=internal-plan-line",
+    "fixture": "internal-checklist-line",
+    "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=internal-checklist-line",
     "frame": {
       "w": 340,
       "h": 760

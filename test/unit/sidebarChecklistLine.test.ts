@@ -1,6 +1,6 @@
 /**
- * t-281339 — the sidebar card shows one plan line. `sem-canal` must not
- * appear. `sem-plano` is a discrete --ds-warn mark. A long step is one
+ * t-281339 — the sidebar card shows one plan line. `no-channel` must not
+ * appear. `absent` is a discrete --ds-warn mark. A long step is one
  * clipped line — the card does not grow.
  */
 import { describe, expect, it, beforeAll } from "vitest";
@@ -29,48 +29,48 @@ describe("t-281339 — sidebar card plan line", () => {
 
   it("shows the current step text", () => {
     const html = renderStatic(AgentRow({
-      a: agent({ name: "claude", plan: { kind: "step", text: "write the sidebar line" } }),
+      a: agent({ name: "claude", checklist: { kind: "step", text: "write the sidebar line" } }),
       flash: false,
     }));
-    expect(html).toContain('data-testid="agent-plan-line"');
-    expect(html).toContain('data-plan="step"');
+    expect(html).toContain('data-testid="agent-checklist-line"');
+    expect(html).toContain('data-checklist="step"');
     expect(html).toContain("write the sidebar line");
-    expect(html).not.toContain("sem-plano");
-    expect(html).not.toContain("sem-canal");
+    expect(html).not.toContain("absent");
+    expect(html).not.toContain("no-channel");
   });
 
-  it("paints English 'No plan' — the human never reads the verdict enum", () => {
+  it("paints English 'No checklist' — the human never reads the verdict enum", () => {
     const marked = renderStatic(AgentRow({
-      a: agent({ name: "grok", plan: { kind: "sem-plano" } }),
+      a: agent({ name: "grok", checklist: { kind: "absent" } }),
       flash: false,
     }));
-    expect(marked).toContain('data-testid="agent-plan-line"');
-    expect(marked).toContain('data-plan="sem-plano"');
-    expect(marked).toContain(">No plan<");
-    expect(marked).not.toMatch(/<span class="plan-mark">sem-plano<\/span>/);
-    expect(marked).not.toContain("sem-canal");
+    expect(marked).toContain('data-testid="agent-checklist-line"');
+    expect(marked).toContain('data-checklist="absent"');
+    expect(marked).toContain(">No checklist<");
+    expect(marked).not.toMatch(/<span class="checklist-mark">absent<\/span>/);
+    expect(marked).not.toContain("no-channel");
 
     const invisible = renderStatic(AgentRow({
       a: agent({ name: "pi", runtime: "pi" }),
       flash: false,
     }));
-    expect(invisible).not.toContain('data-testid="agent-plan-line"');
-    expect(invisible).not.toContain("No plan");
-    expect(invisible).not.toContain("sem-canal");
+    expect(invisible).not.toContain('data-testid="agent-checklist-line"');
+    expect(invisible).not.toContain("No checklist");
+    expect(invisible).not.toContain("no-channel");
   });
 
-  it("sem-canal is invisible — the field is omitted, the word is never painted", () => {
+  it("no-channel is invisible — the field is omitted, the word is never painted", () => {
     const html = renderStatic(AgentRow({
-      a: agent({ name: "no-channel" }),
+      a: agent({ name: "pi", runtime: "pi" }),
       flash: false,
     }));
-    expect(html).not.toMatch(/sem-canal/);
-    expect(html).not.toContain("agent-plan-line");
+    expect(html).not.toMatch(/no-channel/);
+    expect(html).not.toContain("agent-checklist-line");
   });
 
   it("the surface uses operator tokens, --ds-warn, and one-line clip — no hex", () => {
     const css = fs.readFileSync(SIDEBAR_CSS, "utf8");
-    const start = css.indexOf(".row-plan {");
+    const start = css.indexOf(".row-checklist {");
     const end = css.indexOf(".msub {", start);
     const block = css.slice(start, end);
     expect(block).toContain("--ds-operator-label2");
