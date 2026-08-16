@@ -56,10 +56,11 @@ function host(storageRoot: string, requested: DaemonUiRequest[]) {
 
 /** Writes the inbox the way a previous engine instance left it behind. */
 function seedState(storageRoot: string, rows: unknown[]): void {
-  fs.mkdirSync(storageRoot, { recursive: true });
+  fs.mkdirSync(storageRoot, { recursive: true, mode: 0o700 });
   fs.writeFileSync(
     path.join(storageRoot, "state.json"),
     JSON.stringify({ "attention.noticeInbox.v1": rows }),
+    { mode: 0o600 },
   );
 }
 
