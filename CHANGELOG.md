@@ -4,6 +4,41 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.5 — o engine volta a subir: cobrar checklist não pode custar o transcript inteiro
+
+### O que acontecia
+
+Depois da 0.93.4, a barra lateral podia parar aqui:
+
+> Tachyon could not start for tachyon: Tachyon found an engine control endpoint but could not verify
+> it; refusing to start a duplicate.
+
+A recusa estava certa — havia um endpoint de controle e ninguém respondia atrás dele. O engine não
+tinha caído: subia, e travava com o event loop 100% preso, antes de conseguir responder ao primeiro
+health.
+
+### Por quê
+
+O mecanismo de checklist da 0.93.4 decide o veredito quando um turno termina, e para isso abre o
+transcript do agente. Duas escolhas se multiplicaram:
+
+- a memória de "quais fins de turno eu já vi" só existia em RAM, então **todo boot reprocessava o
+  ledger inteiro** — no workspace deste repositório, 1469 fins de turno, meses de histórico;
+- e cada um deles **lia e parseava o transcript inteiro** — 335 MB aqui.
+
+1469 × 335 MB, em leitura síncrona, antes de atender qualquer um. Quanto mais tempo o Tachyon tinha
+sido usado, mais longa a trava.
+
+### O que mudou
+
+O que já está em disco quando o engine sobe é **histórico, não gatilho**: só um fim de turno novo
+pede um veredito. E o leitor passou a ler **a janela do último turno** — teto de 4096 registros ou
+2 MB — em vez do arquivo inteiro: é a única parte que o juiz já usava, o resto era desperdício.
+
+Junto veio um detalhe da mesma ética da 0.93.4: quando a janela não alcança o começo do turno, o
+veredito é **pendente**, nunca "ausente". Acusar um agente porque não lemos longe o bastante seria
+pior do que não cobrar.
+
 ## 0.93.4 — o Tachyon sabe quando um agente terminou sem checklist, e pode cobrar
 
 ### O agente escreve uma lista de passos. Agora o Tachyon lê
