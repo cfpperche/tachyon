@@ -1,13 +1,13 @@
 /**
  * t-73885b — fatia 4: when a turn ends `sem-plano` and the project requires
- * a plan for that task kind, remprompt once.
+ * a plan for that task kind, reprompt once.
  *
  * Consumes `InternalPlanTurnJudgment`. Does not re-decide the verdict.
  *
  * Who else can reach this:
  *   Tachyon × turn-end (Stop / judge) → considerInternalPlanReprompt
  *   Tachyon × restart / resume / crash-recovery → persisted "already
- *     remprompted", so the second door cannot send a second remprompt
+ *     reprompted", so the second door cannot send a second reprompt
  *   Tachyon × fork → new agent name, one new chance
  *   Interface × edit tachyon.yml → next consider sees the new list
  *   Agent / Bridge → cannot trigger this

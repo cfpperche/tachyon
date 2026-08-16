@@ -449,6 +449,41 @@ export const sidebarFixtures: Record<string, Fixture<SidebarFixtureVM>> = {
   },
 
   /**
+   * t-281339 — ANCHOR (written before the line existed): four agents, one
+   * glance, no panel. An in-progress step is the line; with no in-progress
+   * the next pending is shown; all-completed and sem-canal occupy no line;
+   * sem-plano is a discrete --ds-warn mark. Long step text is one line with
+   * ellipsis. Measured at 880 and 360.
+   */
+  "internal-plan-line": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...base,
+      agents: [
+        {
+          name: "claude", model: "Opus 4.8", modelSource: "declared", status: "running", kind: "agent", runtime: "claude",
+          focus: { source: "task", taskId: "t-281339", taskStatus: "active", text: "sidebar plan line", full: "sidebar plan line" },
+          plan: { kind: "step", text: "write the current plan step on the sidebar card without growing the row" },
+        },
+        {
+          name: "grok", model: "grok-4", modelSource: "declared", status: "running", kind: "agent", runtime: "grok",
+          focus: { source: "task", taskId: "t-904de5", taskStatus: "active", text: "grok reader", full: "grok reader" },
+          plan: { kind: "step", text: "Steep the tea" },
+        },
+        {
+          name: "cartagrok", model: "grok-4", modelSource: "declared", status: "idle", kind: "agent", runtime: "grok",
+          focus: { source: "task", taskId: "t-011136", taskStatus: "active", text: "turn verdict", full: "turn verdict" },
+          plan: { kind: "sem-plano" },
+        },
+        {
+          name: "syspromptcodex", model: "GPT-5.1 Codex", modelSource: "declared", status: "running", kind: "agent", runtime: "codex",
+          focus: { source: "task", taskId: "t-1ee107", taskStatus: "active", text: "codex reader", full: "codex reader" },
+        },
+      ],
+    } as FleetVM,
+  },
+
+  /**
    * t-7d6013 — the durable record of what `tachyon.yml` DISCARDED, on an otherwise healthy fleet.
    *
    * The control is `default` (the same SAMPLE with no banner), so the only difference between the two

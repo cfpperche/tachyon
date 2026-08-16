@@ -183,7 +183,9 @@ import { judgeGrokInternalPlanTurn } from "../runtime/grokInternalPlanTurn.js";
 import { readClaudeTurnEvidence } from "../runtime/claudeTurnEvidence.js";
 import { readCodexTurnEvidence } from "../runtime/codexTurnEvidence.js";
 import { selectAssignedWork } from "../agents/assignmentSelection.js";
+import type { InternalPlanRead } from "../runtime/internalPlan.js";
 import type { InternalPlanTurnJudgment } from "../runtime/internalPlanTurn.js";
+import { readAgentInternalPlan } from "../sidebar/readAgentInternalPlan.js";
 import { isVerifiedSince } from "./verifyRecordReader.js";
 import { defaultGitExec } from "../worktree/WorktreeManager.js";
 import { appendDoorbellOverflowEvent, hasDoorbellRung } from "./doorbell.js";
@@ -500,7 +502,7 @@ export class Workspace {
   private readonly temporaryBackstop: TemporaryBackstopMonitor;
   /** t-875700 — host-fallback for gated omit-doorbell. */
   private readonly gatedCompletion: GatedCompletionMonitor;
-  /** t-73885b — one remprompt when a required-kind turn ends sem-plano. */
+  /** t-73885b — one reprompt when a required-kind turn ends sem-plano. */
   private readonly internalPlanReprompt: InternalPlanRepromptMonitor;
   /** t-458497 — pokes the coordinator when a runtime's quota window comes back with room. */
   private readonly runtimeSlack: RuntimeSlackMonitor;
@@ -6316,6 +6318,36 @@ export class Workspace {
 
   private gatedCompletionStatePath(): string {
     return path.join(this.workspaceRoot, ".tachyon", "completion-candidates.json");
+  }
+
+  /**
+   * t-281339 — snapshot + verdict for the sidebar plan line. Missing
+   * evidence is mute/pending, never an invented sem-plano or sem-canal mark.
+   */
+  internalPlan(agent: string): { snapshot: InternalPlanRead; judgment: InternalPlanTurnJudgment } {
+    return {
+      snapshot: this.readInternalPlanSnapshot(agent),
+      judgment: this.judgeInternalPlanTurn(agent),
+    };
+  }
+
+  private readInternalPlanSnapshot(agent: string): InternalPlanRead {
+    const mute: InternalPlanRead = { state: "mute" };
+    const def = this.manager.defOf(agent);
+    const rec = this.ledger.get(agent);
+    if (!def || !rec) return mute;
+    const runtime = runtimeOf(def.cmd);
+    const owner = runtime === "claude"
+      ? latestOwnerFor(readSessionOwners(sessionOwnersFile(this.workspaceRoot)), agent, rec.cwd)
+      : undefined;
+    return readAgentInternalPlan({
+      runtime: runtime ?? undefined,
+      workspaceRoot: this.workspaceRoot,
+      agent,
+      cwd: rec.cwd,
+      sessionId: rec.resume?.sessionId || owner?.sessionId,
+      configHome: rec.resume?.configHome,
+    });
   }
 
   /**
