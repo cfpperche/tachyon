@@ -64,20 +64,30 @@ export function readForward(path: string, fromOffset: number, priorPartial: Buff
 
 /** Read the last `maxLines` complete lines of `path` up to a stable EOF snapshot. Never reads the whole file
  *  when the tail fits in a few blocks. Splits on '\n' BYTES and decodes each complete line separately, so a
- *  block boundary OR the EOF snapshot splitting a multi-byte char never corrupts a kept line or the partial. */
-export function readTailWindow(path: string, maxLines: number, opts: { blockSize?: number } = {}): TailWindow {
+ *  block boundary OR the EOF snapshot splitting a multi-byte char never corrupts a kept line or the partial.
+ *
+ *  `maxBytes` is the second bound, for callers whose records are big enough that a line count is not a bound at
+ *  all (t-9f21ac: 4 KB Claude transcript records make a 4096-line window a 16 MB read). The backward walk stops
+ *  once it has read that many bytes; `startOffset > 0` then tells the caller it got a window, not the file. */
+export function readTailWindow(
+  path: string,
+  maxLines: number,
+  opts: { blockSize?: number; maxBytes?: number } = {},
+): TailWindow {
   const blockSize = Math.max(1, opts.blockSize ?? DEFAULT_BLOCK);
+  const maxBytes = opts.maxBytes === undefined ? Number.POSITIVE_INFINITY : Math.max(1, opts.maxBytes);
   const fd = fs.openSync(path, "r");
   try {
     const endOffset = fs.fstatSync(fd).size;
     if (endOffset === 0) return { lines: [], partial: Buffer.alloc(0), startOffset: 0, endOffset: 0 };
 
     // Read blocks backward until we have MORE than maxLines newlines (so, after discarding the incomplete
-    // leading fragment, at least maxLines complete lines remain) or we reach the start of the file.
+    // leading fragment, at least maxLines complete lines remain), we reach the start of the file, or we have
+    // read maxBytes.
     let pos = endOffset;
     const blocks: Buffer[] = [];
     let newlines = 0;
-    while (pos > 0 && newlines <= maxLines) {
+    while (pos > 0 && newlines <= maxLines && endOffset - pos < maxBytes) {
       const readSize = Math.min(blockSize, pos);
       pos -= readSize;
       const buf = Buffer.alloc(readSize);

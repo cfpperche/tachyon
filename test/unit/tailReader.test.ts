@@ -104,4 +104,23 @@ describe("readTailWindow (spec 239 inc 2)", () => {
     const reconstructed = Buffer.concat([w.partial, buf]).toString("utf8").split("\n");
     expect(reconstructed[0]).toBe("😀"); // no � — the multi-byte char survived the seam
   });
+
+  describe("t-9f21ac — maxBytes, the bound for callers with large records", () => {
+    it("stops the backward walk at maxBytes and says so through startOffset", () => {
+      const p = write("aaaa\nbbbb\ncccc\ndddd\n"); // 20 bytes, 4 records
+      const w = readTailWindow(p, 100, { blockSize: 5, maxBytes: 10 });
+      // The walk stopped at byte 10, and the segment it stopped inside is discarded like any other
+      // mid-line start — a bounded window returns COMPLETE records or nothing, never a guess.
+      expect(w.lines).toEqual(["dddd"]);
+      expect(w.startOffset).toBe(15); // a window, not the file
+      expect(w.endOffset).toBe(20);
+    });
+
+    it("still reaches the start of a file smaller than maxBytes", () => {
+      const p = write("aaaa\nbbbb\n");
+      const w = readTailWindow(p, 100, { maxBytes: 1024 });
+      expect(w.lines).toEqual(["aaaa", "bbbb"]);
+      expect(w.startOffset).toBe(0); // the whole file
+    });
+  });
 });
