@@ -15,6 +15,29 @@ const css = readFileSync(cssPath, "utf8");
 /** Cascade-order (last-wins) declarations for every rule whose selector LIST contains `selector`
  *  (exact, comma-split match) — e.g. `declarationsFor(css, ".agent-toggle-spacer")` also picks up a
  *  combined `.agent-toggle, .agent-toggle-spacer { ... }` rule. */
+/** Fallback px of `--ds-spacing-size*` (tokens.css). t-9c7ce8 moved rhythm onto those names. */
+const SPACING_PX: Record<string, number> = {
+  "--ds-spacing-size20": 2,
+  "--ds-spacing-size40": 4,
+  "--ds-spacing-size60": 6,
+  "--ds-spacing-size80": 8,
+  "--ds-spacing-size100": 10,
+  "--ds-spacing-size120": 12,
+  "--ds-spacing-size160": 16,
+  "--ds-spacing-size200": 20,
+  "--ds-spacing-size240": 24,
+  "--ds-spacing-size320": 32,
+};
+
+/** First length in a CSS value: `12px`, `var(--ds-spacing-size120)`, or a shorthand component. */
+function px(value: string | undefined, index = 0): number {
+  const part = (value ?? "").trim().split(/\s+/)[index] ?? "";
+  const token = /var\(\s*(--ds-spacing-size\d+)/.exec(part)?.[1];
+  if (token && token in SPACING_PX) return SPACING_PX[token];
+  const n = parseInt(part, 10);
+  return n;
+}
+
 function declarationsFor(source: string, selector: string): Record<string, string> {
   const out: Record<string, string> = {};
   const noComments = source.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -55,12 +78,12 @@ describe("sidebar row alignment (t-b8ff2c)", () => {
     const gutter = declarationsFor(css, ".agent-toggle");
     const rowTop = declarationsFor(css, ".row-top");
 
-    const rowPadding = parseInt(row.padding.split(/\s+/)[1] ?? row.padding, 10);
-    const gutterWidth = parseInt(gutter.width, 10);
-    const rowTopGap = parseInt(rowTop.gap, 10);
+    const rowPadding = px(row.padding, 1);
+    const gutterWidth = px(gutter.width);
+    const rowTopGap = px(rowTop.gap);
     const level0SdotX = rowPadding + gutterWidth + rowTopGap;
 
-    const childPaddingLeft = parseInt(child["padding-left"], 10);
+    const childPaddingLeft = px(child["padding-left"]);
     const childSdotX = childPaddingLeft + gutterWidth + rowTopGap;
 
     expect(childSdotX).toBeGreaterThan(level0SdotX);
@@ -74,11 +97,11 @@ describe("sidebar row alignment (t-b8ff2c)", () => {
     const childMeta = declarationsFor(css, ".row.child .row-meta");
     const childFocus = declarationsFor(css, ".row.child .row-focus");
 
-    expect(parseInt(meta["padding-left"], 10)).toBeGreaterThan(20);
-    expect(parseInt(focus["padding-left"] ?? focus.padding.split(/\s+/).pop()!, 10)).toBeGreaterThan(20);
+    expect(px(meta["padding-left"])).toBeGreaterThan(20);
+    expect(px(focus["padding-left"] ?? focus.padding, 3)).toBeGreaterThan(20);
 
-    const childMetaPad = parseInt(childMeta["padding-left"], 10);
-    const childFocusPad = parseInt(childFocus["padding-left"], 10);
+    const childMetaPad = px(childMeta["padding-left"]);
+    const childFocusPad = px(childFocus["padding-left"]);
     expect(childMetaPad).toBeLessThan(20);
     expect(childFocusPad).toBe(childMetaPad);
   });
