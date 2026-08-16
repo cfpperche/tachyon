@@ -63,7 +63,7 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 15 | **Runtime-managed native memory** | Adapter inventories the exact runtime/version's persistent learned-context mechanism and behaviorally verifies disable/enable, injection, mutation, isolation and lifecycle semantics. A written setting without behavioral proof is at most `~`; plugin memory is separate from the built-in runtime mark. |
 | 16 | **Auth-required detection** | Runtime exposes a MEASURED signal that it cannot execute for authentication reasons, distinct from rate limit, quota, permission, network and invalid session. `✓` needs a **turn-attached** signal measured on a stated version AND consumed by Tachyon — turn-attached is what makes it work mid-run as well as at launch. `~` means measured but not yet consumed, OR consumed only at the launch boundary because the runtime emits nothing during a turn (`t-0338fc`). `✗` means the runtime gives no reliable signal anywhere. Inferring auth state from silence or exit code alone never qualifies. |
 | 17 | **Temporary Agent (`spawn_agent`)** | The runtime may be handed a DELEGATION through the lighter Temporary path — no durable Agent Profile required — and can honor it: it resumes as the same entity, it can receive the spec 246 brief, and it can answer through the Bridge. `✓` needs all three; `~` means the runtime is admitted with a declared, task-owned shortfall; `✗` means a command of that shape is refused as an Agent and belongs to `spawn_terminal`. This is a SEPARATE axis from Agent Profile attestation — see §3.6.1. |
-| 18 | **Internal checklist telemetry** | Runtime has a native structured execution checklist and Tachyon can observe it through a measured structured protocol/event/transcript path. This is ephemeral telemetry only: it never becomes a Board Task or proves Delivery completion. `✓` requires structured read plus correlation and provenance; `~` means native mechanism with weaker observation/control; `✗` means no built-in mechanism. See the [2026-07-28 research](../research/runtime-internal-checklist-capabilities.md). |
+| 18 | **Internal checklist telemetry** | Runtime has a native structured execution checklist and Tachyon can observe it through a measured structured protocol/event/transcript path. This is ephemeral telemetry only: it never becomes a Board Task or proves Delivery completion. `✓` requires structured read plus correlation and provenance; `~` means native mechanism with weaker observation/control; `✗` means no built-in mechanism. See the [2026-07-28 research and 2026-08-16 addendum](../research/runtime-internal-checklist-capabilities.md). |
 | 19 | **Design Mode chat reply (`design_mode_chat_reply`)** | Under the tool-only Design Mode prompt (`formatDmChatPrompt`, post-`t-181925` turn id), the runtime **lists** the Bridge tool and the model **calls** it. `✓` needs a dated live dogfood resolving a host-issued turn into the production panel; `~` means listed/called without that complete bind-and-land proof. F1 (`t-45b266`) executed after the live matrix closed for the supported scope: Claude, Codex, and Grok. Research: [`design-mode-chat-reply-runtime-matrix-t-dd46a4.md`](../research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md). |
 | 20 | **Auth status probe (pre-launch)** | Runtime answers "is this config home authenticated?" through a **local, non-interactive** command, measured on a stated version, whose output separates authenticated from unauthenticated **before** any work is attempted. Distinct from row 16, which is about recognizing a FAILURE after one. `✓` needs the probe measured in BOTH states AND consumed by Tachyon; `~` means measured but not consumed; `?` means unmeasured; `✗` means the runtime offers no such command. A file existence check never qualifies — it proves bytes exist, not that a session is live. Neither does an exit code alone: Grok exits 0 signed out (§3.8). |
 | 21 | **Native login surface** | What the runtime's own login actually requires of a human, measured by running it — an interactive TUI/paste-back, a device code, or a browser loopback — and whether Tachyon can offer it **from inside the product** without an external terminal. `✓` needs the surface measured on a stated version AND a governed in-product path; `~` means the surface is measured but the human still leaves Tachyon; `?` means unmeasured. Driving a non-interactive key path (stdin API key, token env var) never qualifies and is explicitly out of bounds — see §3.8. |
@@ -99,7 +99,7 @@ a second, silent source.
 | 15 | Runtime-managed native memory | narrative | `measured` — the registry itself splits declared/verified/refuted; comparing it to itself is tautology |
 | 16 | Auth-required detection | narrative | `measured` — matcher fixtures ≠ the current CLI still emitting the turn-attached signal |
 | 17 | Temporary Agent (`spawn_agent`) | narrative | `derivable` — `isSupportedAgentRuntime` / admission; no typed cell yet |
-| 18 | Internal checklist telemetry | narrative | `measured` — no product function decides support; file names do not prove emission |
+| 18 | Internal checklist telemetry | narrative | `measured` — no product function decides support; file names do not prove emission. Reaffirmed 2026-08-16 (`t-c2209d`): hunt found no callable door; native surfaces remesured on 2.1.233 / 0.147.0 / 1.0.4 still do not make a cell |
 | 19 | Design Mode chat reply | narrative | `measured` — list+call+land crosses model/Bridge/UI; the definition itself requires dated dogfood |
 | 20 | Auth status probe (pre-launch) | narrative | `measured` — the matrix itself says Tachyon does not consume `RUNTIME_AUTH_PREFLIGHT` for these three |
 | 21 | Native login surface | narrative | `measured` — `RUNTIME_LOGIN` is the command; PTY/paste-back/device-code are CLI facts |
@@ -368,16 +368,18 @@ the package format and explicitly leaves "discovery directories, installation me
 each client. Consequence for the product's own words: an agent is *given* a worktree and *instructed*
 to stay in it; that is a convention, not a boundary (see `docs/project-guidance.md` § integrate).
 
-¶ **Internal checklist telemetry (2026-07-28, `t-c2209d`):** this row distinguishes
-runtime-native capability from current Tachyon integration. Claude has the richest native model
-(IDs, owner and dependency DAG) but only partial externally supported observation; Codex exposes
-the clearest structured `turn/plan/updated` app-server event, but Tachyon has not wired it;
+¶ **Internal checklist telemetry (2026-07-28, remesured 2026-08-16, `t-c2209d`):** this row distinguishes
+runtime-native capability from current Tachyon integration. Claude 2.1.233 still has the richest native model
+(IDs, owner and dependency DAG) but only partial externally supported observation; Codex 0.147.0 still exposes
+the clearest structured `turn/plan/updated` app-server event, but Tachyon has not wired it
+(`CodexAppServerObservationSource` speaks app-server only for `account/rateLimits/read`);
 OpenCode exposes
-session GET + `todo.updated`, but Tachyon has not wired it; Grok exposes per-session `plan.json`
-+ `TodosUpdated`, also unwired. Pi deliberately has no built-in checklist. Under secondary
+session GET + `todo.updated`, but Tachyon has not wired it; Grok 1.0.4 still exposes per-session `plan.json`
++ `TodosUpdated`, also unwired. Activity normalizers have no checklist event type. Pi deliberately has no built-in checklist. Under secondary
 runtimes, Hermes is `~` through native todo + ACP plan observation; a generic “Outros” command
 is `✗`. No mark implies that Tachyon may mutate the list or that checklist completion proves a
-Board Task/Delivery complete. Evidence and lifecycle limits:
+Board Task/Delivery complete. The dimension stays **narrative**: there is still no product function
+that decides support, so it does not enter `RUNTIME_PARITY`. Evidence, remesure, vocabulary map:
 [`runtime-internal-checklist-capabilities.md`](../research/runtime-internal-checklist-capabilities.md).
 
 ⁿ **Grok fork** is native for legacy/Temporary instances and, since `t-ee5c05`, covered for a durable Agent Profile
