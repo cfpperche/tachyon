@@ -245,10 +245,6 @@
   .jump:hover { background: var(--ds-btn-hover); }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .degrade { padding: var(--ds-spacing-size320) var(--ds-spacing-size240); text-align: center; color: var(--ds-muted); }
-  .degrade .codicon { font-size: 28px; opacity: .5; display: block; margin: 0 auto var(--ds-spacing-size100); }
-  .degrade .term { display: inline-flex; align-items: center; gap: var(--ds-spacing-size60); margin-top: var(--ds-spacing-size120); padding: var(--ds-spacing-size40) var(--ds-spacing-size120); border-radius: 4px; background: var(--ds-btn-bg); color: var(--ds-btn-fg); }
-
   /* Image lightbox — full-size overlay (click-out or Escape closes) */
   .lightbox { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: var(--ds-spacing-size320); background: rgba(0,0,0,.72); cursor: zoom-out; }
   .lightbox img { max-width: 100%; max-height: 100%; border-radius: 6px; box-shadow: 0 6px 30px rgba(0,0,0,.5); cursor: default; }
