@@ -4,6 +4,56 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.10 — comentar uma linha do diff e mandar o lote para o agente
+
+### O review deixa de morrer no chat
+
+Até aqui, apontar um problema no trabalho de um agente era conversa: você via a linha, dizia no chat,
+e alguém transformava aquilo em instrução. Funcionava e não deixava rastro — depois que a conversa
+passava, o apontamento não existia em lugar nenhum.
+
+Agora o diff que o Tachyon já abria aceita **comentário na linha**. Você passa o mouse na régua, um
+`+` aparece, você escreve. As anotações se juntam, e um comando manda **todas de uma vez** para o
+agente que você escolher naquela worktree — um prompt só, cada nota citando arquivo e linha.
+
+O lote em bloco é de propósito. Mandar uma nota por vez faz o agente oscilar entre correções; junto,
+ele pensa uma vez e revisa uma vez.
+
+Nenhuma tela nova foi criada. O `+`, as bolhas e o painel Comments são do próprio editor.
+
+### A anotação sobrevive ao agente mexer no arquivo
+
+É a parte difícil, e é a que decide se a funcionalidade serve para alguma coisa.
+
+Quando o agente altera o arquivo, a anotação **acompanha a linha** se o deslocamento for mecânico. Se
+a linha foi apagada, ou se o trecho passou a existir em mais de um lugar, ela aparece marcada como
+**desatualizada**, guardando o texto e a última posição conhecida.
+
+O que ela nunca faz é flutuar em silêncio para uma linha qualquer. Medimos os diffs reais deste
+projeto e nenhuma quantidade de contexto elimina a ambiguidade — repetição estrutural em JSON e
+boilerplate garantem isso. Então o mecanismo prefere dizer "não sei" a fingir que sabe.
+
+### Review Changes sai do esconderijo
+
+O comando que abre o diff de uma worktree existia e não tinha porta: não aparecia na paleta de
+comandos. Agora aparece.
+
+### O grok entra no painel de capacidade
+
+O bloco **Provider capacity** mostrava Codex e Claude e ignorava o grok. Agora mostra os três, com
+percentual usado, data de reset e o plano.
+
+O número vem do próprio canal de cobrança do CLI do grok, sem gastar uma chamada de modelo — não é
+estimativa nem cálculo em cima do nome do plano.
+
+### E um agente que perdia o Bridge em silêncio
+
+Um agente Codex podia voltar de um reload sem o canal do Tachyon, porque a configuração privada dele
+era sobrescrita. Ele morria com uma mensagem de erro de arquivo que não dizia nada sobre a causa.
+
+Agora a configuração é preservada, e quando o canal se perde mesmo assim, o Tachyon **diz que foi
+isso** em vez de vazar o erro cru.
+
 ## 0.93.9 — dois avisos que ninguém usava saem do cartão do agente
 
 ### O cartão perde `done` e `continuity stale`
