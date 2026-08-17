@@ -69,7 +69,7 @@ export const HEX_EXCEPTIONS = Object.freeze([
     values: [
       "#1e1e1e", "#3794ff", "#3a3d41", "#4ec9b0", "#cca700", "#cccccc",
     ],
-    reason: "Agent pane skips only bundled faces.css for xterm metrics; remaining literals are scoped vscode-var fallbacks and stage/notice colors.",
+    reason: "Agent pane skips only bundled faces.css for xterm metrics; remaining literals are scoped vscode-var fallbacks plus raw peek/focus-source syntax #4ec9b0 (armed Pin / MARK_COLOR.stage) with no --ds role.",
   },
   {
     file: "packages/webview-ui/src/webview/shared/design-system.css",
