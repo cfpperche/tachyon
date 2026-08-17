@@ -171,6 +171,21 @@
         "icon": "$(git-compare)"
       },
       {
+        "command": "tachyon.reviewSendNotes",
+        "title": "%command.reviewSendNotes%",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "tachyon.review.createNote",
+        "title": "%command.reviewCreateNote%",
+        "enablement": "!commentIsEmpty"
+      },
+      {
+        "command": "tachyon.review.replyNote",
+        "title": "%command.reviewReplyNote%",
+        "enablement": "!commentIsEmpty"
+      },
+      {
         "command": "tachyon.createWorktreePrItem",
         "title": "%command.createWorktreePrItem%",
         "icon": "$(git-pull-request)"
@@ -621,7 +636,11 @@
           "command": "tachyon.resumeAll"
         },
         {
-          "command": "tachyon.reviewWorktreeItem",
+          "command": "tachyon.review.createNote",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.review.replyNote",
           "when": "false"
         },
         {
@@ -651,6 +670,18 @@
         {
           "command": "tachyon.ideBrowserBridge.designModeOff",
           "when": "false"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "tachyon.review.createNote",
+          "group": "inline",
+          "when": "commentController == tachyon.review && commentThreadIsEmpty"
+        },
+        {
+          "command": "tachyon.review.replyNote",
+          "group": "inline",
+          "when": "commentController == tachyon.review && !commentThreadIsEmpty"
         }
       ]
     },
