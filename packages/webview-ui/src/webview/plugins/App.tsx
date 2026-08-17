@@ -40,6 +40,8 @@ export interface PluginsDispatch {
   openConfig(name: string): void;
   /** spec 270 — open the plugin's docs URL externally (Docs button). */
   openDocs(name: string): void;
+  /** t-4aac93 — launch a consented UI surface. viewId is required when the plugin has more than one. */
+  openSurface(name: string, viewId?: string): void;
   /** SDD 486 Phase C — apply or un-apply one MCP server the plugin ships. */
   applyMcp(pluginName: string, server: string): void;
   unapplyMcp(pluginName: string, server: string): void;
@@ -111,6 +113,26 @@ function CoverageNotice({ p }: { p: InstalledPluginVM }) {
   );
 }
 
+function OpenSurfaceButton({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch }) {
+  const surfaces = p.surfaces ?? [];
+  if (surfaces.length === 0) return null;
+  if (surfaces.length === 1) {
+    return <Button title={`Open ${surfaces[0].title}`} onClick={() => dispatch.openSurface(p.name, surfaces[0].id)}>Open</Button>;
+  }
+  return (
+    <KitDropdown>
+      <KitDropdownTrigger asChild>
+        <Button title={`Open a surface of ${p.name}`}>Open</Button>
+      </KitDropdownTrigger>
+      <KitDropdownContent align="end">
+        {surfaces.map((s) => (
+          <KitDropdownItem key={s.id} onSelect={() => dispatch.openSurface(p.name, s.id)}>{s.title}</KitDropdownItem>
+        ))}
+      </KitDropdownContent>
+    </KitDropdown>
+  );
+}
+
 function Card({ p, dispatch, mcpLocked }: { p: InstalledPluginVM; dispatch: PluginsDispatch; mcpLocked?: boolean }) {
   const badge = statusBadge(p.status);
   const run = (a: PluginAction) => {
@@ -131,6 +153,7 @@ function Card({ p, dispatch, mcpLocked }: { p: InstalledPluginVM; dispatch: Plug
         <span class="pver">v{p.version}</span>
         {badge && <Badge tone={badge.tone === "ok" || badge.tone === "warn" || badge.tone === "err" || badge.tone === "info" ? badge.tone : "default"}>{badge.label}</Badge>}
         <div class="card-actions">
+          <OpenSurfaceButton p={p} dispatch={dispatch} />
           {p.actions.map((a) => (
             <Button key={a} variant={a === "remove" ? "default" : "primary"} onClick={() => run(a)}>{actionLabel[a]}</Button>
           ))}

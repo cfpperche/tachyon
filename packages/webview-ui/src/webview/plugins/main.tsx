@@ -113,6 +113,7 @@ function PluginsRoot() {
       dismissToast: () => toastApi.clear(),
       openConfig: (name: string) => post({ type: "openConfig", name }),
       openDocs: (name: string) => post({ type: "openDocs", name }),
+      openSurface: (name: string, viewId?: string) => post({ type: "openSurface", name, ...(viewId ? { viewId } : {}) }),
       installExternal: (externalTool: string, pluginName?: string) =>
         post({ type: "installExternal", externalTool, ...(pluginName ? { pluginName } : {}) }),
       applyMcp: (pluginName: string, server: string) => post({ type: "applyMcp", pluginName, server }),

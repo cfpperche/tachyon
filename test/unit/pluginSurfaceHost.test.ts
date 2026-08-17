@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
-import { __createdPanels, __getExecutedCommands, __resetVscodeMock } from "../mocks/vscode.js";
+import { __createdPanels, __getExecutedCommands, __getQuickPickCalls, __resetVscodeMock, __setQuickPickResult } from "../mocks/vscode.js";
 import { applyInstall, detectRuntimes, loadPlugin, previewInstall } from "../../apps/vscode-extension/src/plugins/engine.js";
 import { LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
 import { legacyPluginSurfaceTarget, PluginSurfaceHost } from "../../apps/vscode-extension/src/plugins/ui/host.js";
@@ -108,6 +108,96 @@ describe("PluginSurfaceHost lifecycle (spec 349 hardening)", () => {
   });
 });
 
+describe("t-4aac93 — multi-surface launch (production host doors)", () => {
+  it("openSurface() with N editor surfaces asks the picker and opens the pick, not surfaces[0]", async () => {
+    const wsRoot = await installMultiViewFixture({
+      name: "worlds",
+      views: [
+        { id: "alpha", title: "Alpha World", surface: "editor", entry: "ui/alpha.html" },
+        { id: "zeta", title: "Zeta Map", surface: "editor", entry: "ui/zeta.html" },
+      ],
+    });
+    const host = new PluginSurfaceHost(vscode.Uri.file(ROOT), () => [fakeWorkspace(wsRoot, "ws-n", [])]);
+    __setQuickPickResult("Zeta Map");
+
+    await host.openSurface();
+    await tick();
+
+    expect(__getQuickPickCalls()).toHaveLength(1);
+    const labels = (__getQuickPickCalls()[0].items as Array<{ label: string }>).map((item) => item.label);
+    expect(labels).toEqual(["Alpha World", "Zeta Map"]);
+    expect(__createdPanels).toHaveLength(1);
+    expect(__createdPanels[0].title).toBe("Zeta Map");
+  });
+
+  it("openSurface() with one editor surface still opens it directly — no picker", async () => {
+    const wsRoot = await installFixture("spec349-mundinho");
+    const host = new PluginSurfaceHost(vscode.Uri.file(ROOT), () => [fakeWorkspace(wsRoot, "ws-editor", [])]);
+
+    await host.openSurface();
+    await tick();
+
+    expect(__getQuickPickCalls()).toEqual([]);
+    expect(__createdPanels).toHaveLength(1);
+    expect(__createdPanels[0].title).toBe("Mundinho Fixture");
+  });
+
+  it("sidebar host with N surfaces renders first-party tabs for every one, not only find()[0]", async () => {
+    const wsRoot = await installMultiViewFixture({
+      name: "widgets",
+      views: [
+        { id: "one", title: "Sidebar One", surface: "sidebar", entry: "ui/one.html" },
+        { id: "two", title: "Sidebar Two", surface: "sidebar", entry: "ui/two.html" },
+      ],
+    });
+    const host = new PluginSurfaceHost(vscode.Uri.file(ROOT), () => [fakeWorkspace(wsRoot, "ws-side", [])]);
+    const view = fakeWebviewView();
+
+    host.resolveWebviewView(view as unknown as vscode.WebviewView);
+    await tick();
+
+    expect(view.webview.html).toContain("Sidebar One");
+    expect(view.webview.html).toContain("Sidebar Two");
+    expect(view.webview.html).toContain('"siblings"');
+  });
+
+  it("sidebar host with one surface still has no tablist (the common case is unchanged)", async () => {
+    const wsRoot = await installFixture("spec349-sidebar", "sidebar-a");
+    const host = new PluginSurfaceHost(vscode.Uri.file(ROOT), () => [fakeWorkspace(wsRoot, "ws-one", [])]);
+    const view = fakeWebviewView();
+
+    host.resolveWebviewView(view as unknown as vscode.WebviewView);
+    await tick();
+
+    expect(view.webview.html).toContain('data-shell-surface="tachyonPluginSurfaces"');
+    expect(view.webview.html).not.toContain('role="tablist"');
+    expect(view.webview.html).toContain("sidebar-a");
+  });
+
+  it("a sidebar tab message remounts the selected sibling, not the first", async () => {
+    const wsRoot = await installMultiViewFixture({
+      name: "widgets",
+      views: [
+        { id: "one", title: "Sidebar One", surface: "sidebar", entry: "ui/one.html" },
+        { id: "two", title: "Sidebar Two", surface: "sidebar", entry: "ui/two.html" },
+      ],
+    });
+    const host = new PluginSurfaceHost(vscode.Uri.file(ROOT), () => [fakeWorkspace(wsRoot, "ws-side", [])]);
+    const view = fakeWebviewView();
+    host.resolveWebviewView(view as unknown as vscode.WebviewView);
+    await tick();
+    const firstKey = /"key":"([^"]+:one)"/.exec(view.webview.html)?.[1];
+    const secondKey = /"key":"([^"]+:two)"/.exec(view.webview.html)?.[1];
+    expect(firstKey && secondKey).toBeTruthy();
+
+    view.webview.__receive({ type: "selectPluginSidebarSurface", key: secondKey });
+    await tick();
+    expect(view.webview.html).toContain(`"key":"${secondKey}"`);
+    expect(view.webview.html).toContain("Sidebar Two");
+    expect(view.webview.html).toContain('"siblings"');
+  });
+});
+
 async function installFixture(name: string, overrideSurface?: "sidebar-a" | "sidebar-b"): Promise<string> {
   const ws = tmp("tachyon-plugin-surface-host-");
   const fixture = overrideSurface ? makeSidebarFixture(overrideSurface) : path.join(ROOT, "test", "fixtures", "plugins", name);
@@ -125,18 +215,49 @@ async function installFixture(name: string, overrideSurface?: "sidebar-a" | "sid
 }
 
 function makeSidebarFixture(name: "sidebar-a" | "sidebar-b"): string {
-  const dir = tmp(`tachyon-plugin-surface-fixture-${name}-`);
+  return makeViewFixture({
+    name,
+    views: [{ id: "side", title: name, surface: "sidebar", entry: "ui/index.html" }],
+  });
+}
+
+async function installMultiViewFixture(opts: {
+  name: string;
+  views: Array<{ id: string; title: string; surface: "editor" | "sidebar"; entry: string }>;
+}): Promise<string> {
+  const ws = tmp("tachyon-plugin-surface-host-");
+  const fixture = makeViewFixture(opts);
+  const loaded = loadPlugin(fixture);
+  expect(loaded.errors).toEqual([]);
+  const plugin = loaded.plugin!;
+  const preview = previewInstall(plugin, ws, detectRuntimes(ws));
+  expect(preview.errors).toEqual([]);
+  const actionConfirmed: Record<string, true> = {};
+  for (const view of preview.viewTargets) for (const action of view.actions) actionConfirmed[`${view.id}:${action}`] = true;
+  const applied = await applyInstall(plugin, preview, ws, detectRuntimes(ws), { viewConfirmed: true, fleetReadConfirmed: true, actionConfirmed });
+  expect(applied.errors).toEqual([]);
+  expect(applied.installed).toBe(true);
+  return ws;
+}
+
+function makeViewFixture(opts: {
+  name: string;
+  views: Array<{ id: string; title: string; surface: "editor" | "sidebar"; entry: string }>;
+}): string {
+  const dir = tmp(`tachyon-plugin-surface-fixture-${opts.name}-`);
   fs.mkdirSync(path.join(dir, "ui"), { recursive: true });
   fs.writeFileSync(
     path.join(dir, "tachyon-plugin.json"),
     JSON.stringify({
-      name,
+      name: opts.name,
       version: "1.0.0",
-      description: `${name} fixture`,
-      views: [{ id: "side", title: name, surface: "sidebar", entry: "ui/index.html", fleet: "summary", actions: ["focusAgent"] }],
+      description: `${opts.name} fixture`,
+      views: opts.views.map((view) => ({ ...view, fleet: "summary", actions: ["focusAgent"] })),
     }),
   );
-  fs.writeFileSync(path.join(dir, "ui", "index.html"), "<!doctype html><script>window.__ok = true;</script>");
+  for (const view of opts.views) {
+    fs.writeFileSync(path.join(dir, view.entry), `<!doctype html><script>window.__ok = ${JSON.stringify(view.id)};</script>`);
+  }
   return dir;
 }
 
@@ -163,10 +284,11 @@ function fakeWorkspace(
   });
 }
 
-function fakeWebviewView(): { webview: ReturnType<typeof fakeWebview>; onDidDispose(cb: () => void): { dispose(): void } } {
+function fakeWebviewView(): { webview: ReturnType<typeof fakeWebview>; onDidDispose(cb: () => void): { dispose(): void }; show(preserveFocus?: boolean): void } {
   return {
     webview: fakeWebview(),
     onDidDispose: () => ({ dispose() {} }),
+    show: () => {},
   };
 }
 

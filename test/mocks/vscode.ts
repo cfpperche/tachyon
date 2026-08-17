@@ -54,7 +54,7 @@ const __executedCommands: Array<{ command: string; args: unknown[] }> = [];
 const __shownDocuments: Array<{ uri: Uri; options: unknown }> = [];
 const __warningMessageCalls: Array<{ message: string; options: unknown; actions: string[] }> = [];
 const __statusBarMessages: Array<{ text: string; timeout: number | undefined }> = [];
-const __quickPickCalls: Array<{ items: readonly string[]; options: unknown }> = [];
+const __quickPickCalls: Array<{ items: readonly unknown[]; options: unknown }> = [];
 const __terminalCloseListeners = new Set<(terminal: typeof __createdTerminals[number]) => void>();
 /** t-74274c — Output channels are the shell's only on-disk diagnostic surface; tests read what landed there. */
 const __outputChannels: Array<{ name: string; lines: string[]; shown: boolean }> = [];
@@ -93,14 +93,14 @@ export function __setCommandResult(command: string, result: unknown): void {
 let __openDialogResult: Uri[] | undefined;
 let __clipboardText = "";
 let __warningMessageResult: string | undefined;
-let __quickPickResult: string | undefined;
+let __quickPickResult: unknown;
 export function __setOpenDialogResult(result: Uri[] | undefined): void {
   __openDialogResult = result;
 }
 export function __setWarningMessageResult(result: string | undefined): void {
   __warningMessageResult = result;
 }
-export function __setQuickPickResult(result: string | undefined): void {
+export function __setQuickPickResult(result: unknown): void {
   __quickPickResult = result;
 }
 export function __getClipboardText(): string {
@@ -118,7 +118,7 @@ export function __getWarningMessageCalls(): Array<{ message: string; options: un
 export function __getStatusBarMessages(): Array<{ text: string; timeout: number | undefined }> {
   return [...__statusBarMessages];
 }
-export function __getQuickPickCalls(): Array<{ items: readonly string[]; options: unknown }> {
+export function __getQuickPickCalls(): Array<{ items: readonly unknown[]; options: unknown }> {
   return [...__quickPickCalls];
 }
 export function __getOutputChannels(): Array<{ name: string; lines: string[]; shown: boolean }> {
@@ -207,8 +207,16 @@ export const window = {
     __statusBarMessages.push({ text, timeout });
     return { dispose() {} };
   },
-  showQuickPick: (items: readonly string[], options?: unknown) => {
+  showQuickPick: (items: readonly unknown[], options?: unknown) => {
     __quickPickCalls.push({ items, options });
+    if (__quickPickResult === undefined) return Promise.resolve(undefined);
+    if (typeof __quickPickResult === "string") {
+      const match = items.find((item) =>
+        item === __quickPickResult
+        || (!!item && typeof item === "object" && (item as { label?: unknown }).label === __quickPickResult),
+      );
+      return Promise.resolve(match ?? __quickPickResult);
+    }
     return Promise.resolve(__quickPickResult);
   },
   registerWebviewPanelSerializer: (viewType: string, serializer: { deserializeWebviewPanel(panel: typeof __createdPanels[number], state: unknown): Promise<void> }) => {

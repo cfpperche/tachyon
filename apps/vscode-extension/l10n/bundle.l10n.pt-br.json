@@ -291,6 +291,8 @@
   "Open a GitHub PR for branch '{0}'?": "Abrir um PR no GitHub para a branch '{0}'?",
   "Open it": "Abrir",
   "Open which agent's terminal?": "Abrir o terminal de qual agente?",
+  "Open Plugin Surface": "Abrir superfície de plugin",
+  "Open which plugin surface?": "Abrir qual superfície de plugin?",
   "Operational actions use the loaded profile revision and stay separate from form save.": "As ações operacionais usam a revisão carregada do perfil e ficam separadas do salvamento do formulário.",
   "Other": "Outros",
   "Overwrite": "Sobrescrever",

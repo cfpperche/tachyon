@@ -1,4 +1,4 @@
-import { assemblePluginSrcdoc, hostReadyMessage, isProjectionMessage, isRelayActionMessage, messageTooLarge, PLUGIN_UI_ACTION_RESULT, type PluginHostBootstrap } from "./relay.js";
+import { assemblePluginSrcdoc, hostReadyMessage, isProjectionMessage, isRelayActionMessage, messageTooLarge, PLUGIN_UI_ACTION_RESULT, SELECT_PLUGIN_SIDEBAR_SURFACE, sidebarTabModel, type PluginHostBootstrap } from "./relay.js";
 
 declare const acquireVsCodeApi: undefined | (() => { postMessage(message: unknown): void });
 
@@ -39,6 +39,13 @@ window.addEventListener("message", (event) => {
 
 function mountPluginFrame(state: PluginHostBootstrap): void {
   root.replaceChildren();
+  const tabs = sidebarTabModel(state);
+  if (tabs) {
+    root.className = "plugin-host-root has-tabs";
+    root.append(renderTabs(tabs));
+  } else {
+    root.className = "plugin-host-root";
+  }
   const iframe = document.createElement("iframe");
   iframe.title = state.title;
   iframe.className = "plugin-host-frame";
@@ -46,6 +53,26 @@ function mountPluginFrame(state: PluginHostBootstrap): void {
   iframe.srcdoc = assemblePluginSrcdoc(state.pluginHtml, relayNonce);
   root.append(iframe);
   frame = iframe;
+}
+
+function renderTabs(tabs: Array<{ key: string; title: string; selected: boolean }>): HTMLElement {
+  const bar = document.createElement("div");
+  bar.className = "ds-tabs";
+  bar.setAttribute("role", "tablist");
+  for (const tab of tabs) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-selected", tab.selected ? "true" : "false");
+    button.className = tab.selected ? "ds-tab active" : "ds-tab";
+    button.textContent = tab.title;
+    button.addEventListener("click", () => {
+      if (tab.selected) return;
+      vscode.postMessage({ type: SELECT_PLUGIN_SIDEBAR_SURFACE, key: tab.key });
+    });
+    bar.append(button);
+  }
+  return bar;
 }
 
 function handlePluginMessage(message: unknown): void {
