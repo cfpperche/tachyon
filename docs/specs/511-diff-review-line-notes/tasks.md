@@ -6,10 +6,12 @@ _Generated from `plan.md` on 2026-08-17. Work top-to-bottom. Check boxes as task
 
 **Fatia 0 — a pergunta que pode matar metade do desenho. Nada começa antes dela.**
 
-- [ ] Provar se `comments.createCommentController` aceita `createCommentThread` num URI de scheme
+- [x] Provar se `comments.createCommentController` aceita `createCommentThread` num URI de scheme
       próprio e read-only (`tachyon-worktree:`). Prova exigida: a thread aparece no diff aberto pelo
       comando de review, com o `+` na régua. Se **não** aceitar, registrar em `notes.md` e seguir pelo
       fallback do plano — âncora no arquivo real —, sem mexer em identidade nem reconciliação.
+      **t-1c7627: SIM, VS Code 1.133.0, no Extension Host real. Os quatro pontos observáveis passaram,
+      com controle negativo em `file:`. Fallback não acionado.**
 - [x] Medir o k do contexto do snapshot: quantos casamentos ficam ambíguos com k = 0, 1 e 3 linhas nos
       diffs reais deste repositório. Adotar o menor k que zera a ambiguidade e **declarar a amostra**
       em `notes.md`. Sem esse número, nada de escrever a reconciliação.
@@ -19,16 +21,16 @@ _Generated from `plan.md` on 2026-08-17. Work top-to-bottom. Check boxes as task
 
 **Fatia 1 — engine: o dado e a corretude, sem `vscode`.**
 
-- [ ] `packages/engine/src/worktree/reviewNotes.ts` — identidade (`worktree + baseRef + path + lado +
+- [x] `packages/engine/src/worktree/reviewNotes.ts` — identidade (`worktree + baseRef + path + lado +
       commentId`, **sem URI**), captura de snapshot com o k medido, e o tipo do estado incluindo
       `outdated`.
-- [ ] Reconciliação pura no mesmo arquivo: match único migra; zero ou mais de um vira `outdated`
+- [x] Reconciliação pura no mesmo arquivo: match único migra; zero ou mais de um vira `outdated`
       preservando texto e última posição. Nunca escolher o match mais próximo.
-- [ ] `packages/engine/src/worktree/reviewNotesStore.ts` — persistência em `.tachyon/review/`, no molde
+- [x] `packages/engine/src/worktree/reviewNotesStore.ts` — persistência em `.tachyon/review/`, no molde
       de `evidenceStore.ts`.
-- [ ] Guarda de tamanho no caminho caro, no molde de `markdownEngine.ts:13`: acima do limite, degradar
+- [x] Guarda de tamanho no caminho caro, no molde de `markdownEngine.ts:13`: acima do limite, degradar
       **explicitamente** e dizer que degradou.
-- [ ] Testes de unidade da reconciliação antes da fiação: migração por deslocamento, linha apagada,
+- [x] Testes de unidade da reconciliação antes da fiação: migração por deslocamento, linha apagada,
       ambíguo, snapshot que não bate, rename, e range empurrado discordando do snapshot.
 
 **Fatia 2 — protocolo e fiação.**
@@ -37,7 +39,7 @@ _Generated from `plan.md` on 2026-08-17. Work top-to-bottom. Check boxes as task
       `WorkspaceCommandMethodV1` ganha a mutação, no molde de `sidebar.mutate`.
       **t-115091: `review.view` + `review.mutate` (`note.upsert` / `note.hint`).**
 - [x] Handler de consulta e de comando no engine.
-- [ ] Provar que `packages/engine/src` e `packages/webview-ui/src` seguem com zero `vscode`:
+- [x] Provar que `packages/engine/src` e `packages/webview-ui/src` seguem com zero `vscode`:
       `bash scripts/check-engine-boundary.sh`.
 
 **Fatia 3 — extensão: todo o acoplamento com o VS Code, e só aqui.**
