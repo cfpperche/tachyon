@@ -264,5 +264,22 @@
   "{0} — full detail in Output → {1}": "{0} — full detail in Output → {1}",
   "Stop was sent to '{0}', but the process is still running. Use Kill to force it.": "Stop was sent to '{0}', but the process is still running. Use Kill to force it.",
   "Stop was sent to '{0}', but Tachyon could not confirm whether the process exited.": "Stop was sent to '{0}', but Tachyon could not confirm whether the process exited.",
-  "Body": "Body"
+  "Body": "Body",
+  "Review note": "Review note",
+  "Write a note on this line": "Write a note on this line",
+  "You": "You",
+  "outdated": "outdated",
+  "outdated — {0}": "outdated — {0}",
+  "Could not save the review note: {0}": "Could not save the review note: {0}",
+  "No worktree is available to review.": "No worktree is available to review.",
+  "Review Changes": "Review Changes",
+  "Which worktree?": "Which worktree?",
+  "Send review notes to…": "Send review notes to…",
+  "{0} agent(s) on this worktree": "{0} agent(s) on this worktree",
+  "Nothing to send — open a worktree review or pick an agent.": "Nothing to send — open a worktree review or pick an agent.",
+  "No review notes to send.": "No review notes to send.",
+  "No agents belong to this worktree.": "No agents belong to this worktree.",
+  "Could not record the sent notes as evidence: {0}": "Could not record the sent notes as evidence: {0}",
+  "Review notes were sent, but evidence was not recorded — worktree HEAD is unresolvable.": "Review notes were sent, but evidence was not recorded — worktree HEAD is unresolvable.",
+  "Review notes sent to '{0}'.": "Review notes sent to '{0}'."
 }

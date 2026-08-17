@@ -737,5 +737,22 @@
   "'{0}' is no longer among the changed files of '{1}'.": "'{0}' não está mais entre os arquivos alterados de '{1}'.",
   "Stop was sent to '{0}', but the process is still running. Use Kill to force it.": "O Stop foi enviado para '{0}', mas o processo continua rodando. Use Kill para forçar o encerramento.",
   "Stop was sent to '{0}', but Tachyon could not confirm whether the process exited.": "O Stop foi enviado para '{0}', mas o Tachyon não conseguiu confirmar se o processo encerrou.",
-  "Body": "Corpo"
+  "Body": "Corpo",
+  "Review note": "Nota de revisão",
+  "Write a note on this line": "Escreva uma nota nesta linha",
+  "You": "Você",
+  "outdated": "desatualizada",
+  "outdated — {0}": "desatualizada — {0}",
+  "Could not save the review note: {0}": "Não foi possível salvar a nota de revisão: {0}",
+  "No worktree is available to review.": "Nenhum worktree disponível para revisar.",
+  "Review Changes": "Revisar alterações",
+  "Which worktree?": "Qual worktree?",
+  "Send review notes to…": "Enviar notas de revisão para…",
+  "{0} agent(s) on this worktree": "{0} agente(s) neste worktree",
+  "Nothing to send — open a worktree review or pick an agent.": "Nada para enviar — abra a revisão de um worktree ou escolha um agente.",
+  "No review notes to send.": "Não há notas de revisão para enviar.",
+  "No agents belong to this worktree.": "Nenhum agente pertence a este worktree.",
+  "Could not record the sent notes as evidence: {0}": "Não foi possível registrar as notas enviadas como evidência: {0}",
+  "Review notes were sent, but evidence was not recorded — worktree HEAD is unresolvable.": "As notas de revisão foram enviadas, mas a evidência não foi registrada — o HEAD do worktree não pôde ser resolvido.",
+  "Review notes sent to '{0}'.": "Notas de revisão enviadas para '{0}'."
 }

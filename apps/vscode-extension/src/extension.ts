@@ -98,6 +98,16 @@ import {
 } from "./config/settingsImport.js";
 import { readLegacyVsCodeSettings } from "./workspace/legacyVsCodeSettings.js";
 import { emptySides, baseSidePath, diffTitle, type ChangedFile } from "@tachyon/engine/worktree/review.js";
+import { persistEvidenceRecord } from "@tachyon/engine/worktree/evidenceStore.js";
+import {
+  collectDiffTabsFromGroups,
+  registerReviewComments,
+  sendReviewNotesBatch,
+  uniqueLocationsFromTabs,
+  type ReviewCommentsHost,
+  type ReviewDocumentLocation,
+  type ReviewWorktreeRow,
+} from "./review/comments.js";
 import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "@tachyon/engine/worktree/pr.js";
 import { computeWorkspaceFolderOps, revealableWorktrees, shouldActivateFolder, type WorkspaceWorktrees } from "./workspace/workspaceFolderOps.js";
 import type { ViewKind } from "@tachyon/engine/workspace/EngineHost.js";
@@ -923,6 +933,269 @@ async function worktreeReview(
     changedFiles: changedFilesFrom(payload.changedFiles),
     ...(comparison ? { comparison: { base: comparison.base as string, head: comparison.head as string } } : {}),
   };
+}
+
+function isReviewCommandItem(item: unknown): item is AgentItem | WorktreeRowItem {
+  return !!item && typeof item === "object" && ("worktreeId" in item || "agentName" in item);
+}
+
+function reviewCommentsHost(): ReviewCommentsHost {
+  return {
+    async listWorktrees() {
+      const rows: ReviewWorktreeRow[] = [];
+      for (const ws of workspaces()) {
+        try {
+          const payload = jsonObject(await extensionQuery(ws, { action: "worktrees.list" }), "worktrees.list");
+          for (const entry of jsonArray(payload.worktrees, "worktrees.list")) {
+            const row = jsonObject(entry, "worktrees.list row");
+            const record = jsonObject(row.record, "worktrees.list record");
+            if (typeof row.agent === "string" && typeof record.path === "string" && typeof record.baseRef === "string") {
+              rows.push({ agent: row.agent, path: record.path, baseRef: record.baseRef, workspaceHash: ws.wsHash });
+            }
+          }
+        } catch {
+          /* a workspace that cannot list is skipped */
+        }
+      }
+      return rows;
+    },
+    async viewNotes(worktree, k, workspaceHash) {
+      const ws = byHash(workspaceHash);
+      if (!ws) throw new Error("no Tachyon workspace is active");
+      const result = await ws.client.query({ schemaVersion: 1, method: "review.view", input: { worktree, k } });
+      if (result.status === "error") throw new Error(result.message);
+      if (result.method !== "review.view") throw new Error("review.view returned the wrong view");
+      return result.view.notes;
+    },
+    async upsert(input, workspaceHash) {
+      const ws = byHash(workspaceHash);
+      if (!ws) throw new Error("no Tachyon workspace is active");
+      const result = await ws.client.invoke(`review:${crypto.randomUUID()}`, {
+        schemaVersion: 1,
+        method: "review.mutate",
+        input,
+      });
+      if (result.status === "error") throw new Error(result.message);
+      if (result.method !== "review.mutate" || result.action !== input.action || result.id !== input.id) {
+        throw new Error("review.mutate returned a mismatched result");
+      }
+    },
+    async hint(input, workspaceHash) {
+      const ws = byHash(workspaceHash);
+      if (!ws) return;
+      try {
+        await ws.client.invoke(`review-hint:${crypto.randomUUID()}`, {
+          schemaVersion: 1,
+          method: "review.mutate",
+          input,
+        });
+      } catch {
+        /* hint is a hint; the next review.view re-derives */
+      }
+    },
+    async listAgentsForWorktree(cwd, workspaceHash) {
+      const ws = byHash(workspaceHash);
+      if (!ws) return [];
+      const names = new Set<string>();
+      try {
+        const payload = jsonObject(await extensionQuery(ws, { action: "worktrees.list" }), "worktrees.list");
+        for (const entry of jsonArray(payload.worktrees, "worktrees.list")) {
+          const row = jsonObject(entry, "worktrees.list row");
+          const record = jsonObject(row.record, "worktrees.list record");
+          if (typeof row.agent === "string" && typeof record.path === "string"
+            && record.path.replace(/\\/g, "/").replace(/\/+$/, "") === cwd.replace(/\\/g, "/").replace(/\/+$/, "")) {
+            names.add(row.agent);
+          }
+        }
+      } catch {
+        return [];
+      }
+      for (const name of [...names]) {
+        try {
+          const inspected = await agentInspection(ws, name);
+          for (const descendant of inspected.descendants) names.add(descendant);
+        } catch {
+          /* skip an inspect that cannot run */
+        }
+      }
+      return [...names].map((name) => {
+        const row = ws.client.presentation.agents.items.find((agent) => agent.name === name);
+        return {
+          name,
+          ...(row?.attention ? { detail: row.attention } : row?.running === true ? { detail: "running" } : {}),
+        };
+      });
+    },
+    async sendPrompt(agent, text, workspaceHash) {
+      const ws = byHash(workspaceHash);
+      if (!ws) throw new Error("no Tachyon workspace is active");
+      await ws.activity.sendAgentInput(agent, text, true);
+    },
+    async attachEvidence(workspaceHash, record) {
+      const ws = byHash(workspaceHash);
+      if (!ws) throw new Error("no Tachyon workspace is active");
+      persistEvidenceRecord(ws.workspaceRoot, record);
+    },
+    async resolveHead(cwd) {
+      const git = createGitExec(() => resolveGitBinary({
+        configuredPath: sharedGlobalSettings().current().gitPath,
+        gitExtensionPath: vscode.workspace.getConfiguration("git").get<string | string[]>("path"),
+      }));
+      const result = await git(["rev-parse", "HEAD"], cwd);
+      if (result.code !== 0) return undefined;
+      const head = result.stdout.trim();
+      return /^[0-9a-f]{40}$/i.test(head) ? head : undefined;
+    },
+    notify,
+  };
+}
+
+async function reviewWorktreeFromPalette(): Promise<undefined> {
+  const ws = await pickWorkspace();
+  if (!ws) return undefined;
+  const payload = jsonObject(await extensionQuery(ws, { action: "worktrees.list" }), "worktrees.list");
+  const rows = jsonArray(payload.worktrees, "worktrees.list").flatMap((entry) => {
+    try {
+      const row = jsonObject(entry, "worktrees.list row");
+      const record = jsonObject(row.record, "worktrees.list record");
+      if (typeof row.agent !== "string" || typeof record.path !== "string" || typeof record.baseRef !== "string") return [];
+      return [{ agent: row.agent, path: record.path, baseRef: record.baseRef, branch: typeof record.branch === "string" ? record.branch : "" }];
+    } catch {
+      return [];
+    }
+  });
+  if (rows.length === 0) {
+    notify(vscode.l10n.t("No worktree is available to review."), "warn");
+    return undefined;
+  }
+  const picked = rows.length === 1 ? rows[0] : (await vscode.window.showQuickPick(
+    rows.map((row) => ({ label: row.agent, description: row.branch || row.path, row })),
+    { title: vscode.l10n.t("Review Changes"), placeHolder: vscode.l10n.t("Which worktree?") },
+  ))?.row;
+  if (!picked) return undefined;
+  let review = await worktreeReview(ws, { agent: picked.agent });
+  if (!review.record) review = await worktreeReview(ws, { worktreeId: picked.agent });
+  if (!review.record) {
+    notify(vscode.l10n.t("'{0}' has no worktree", picked.agent), "warn");
+    return undefined;
+  }
+  if (review.comparison) {
+    await reviewWorktreeDiff(
+      { cwd: review.record.path, baseRef: review.comparison.base, headRef: review.comparison.head },
+      review.changedFiles,
+      review.record.branch,
+    );
+    return undefined;
+  }
+  await reviewWorktreeDiff({ cwd: review.record.path, baseRef: review.record.baseRef }, review.changedFiles, picked.agent);
+  return undefined;
+}
+
+async function locationFromReviewItem(item: AgentItem | WorktreeRowItem): Promise<ReviewDocumentLocation | undefined> {
+  const ws = wsOf(item);
+  if (!ws) return undefined;
+  if ("worktreeId" in item) {
+    const review = await worktreeReview(ws, { worktreeId: item.worktreeId });
+    if (!review.record) return undefined;
+    const row = (await reviewCommentsHost().listWorktrees())
+      .find((candidate) => candidate.workspaceHash === ws.wsHash && candidate.path === review.record!.path);
+    return {
+      worktree: row?.agent ?? item.worktreeId,
+      cwd: review.record.path,
+      path: "",
+      baseRef: review.comparison?.base ?? review.record.baseRef,
+      workspaceHash: ws.wsHash,
+      ...(review.comparison?.head ? { headRef: review.comparison.head } : {}),
+    };
+  }
+  const review = await worktreeReview(ws, { agent: item.agentName });
+  if (!review.record) {
+    notify(vscode.l10n.t("'{0}' has no worktree", item.agentName), "warn");
+    return undefined;
+  }
+  return {
+    worktree: item.agentName,
+    cwd: review.record.path,
+    path: "",
+    baseRef: review.record.baseRef,
+    workspaceHash: ws.wsHash,
+  };
+}
+
+async function sendReviewNotesCommand(item?: AgentItem | WorktreeRowItem): Promise<void> {
+  const host = reviewCommentsHost();
+  let location: ReviewDocumentLocation | undefined;
+  if (isReviewCommandItem(item)) {
+    location = await locationFromReviewItem(item);
+  } else {
+    const rows = await host.listWorktrees();
+    const fromTabs = uniqueLocationsFromTabs(
+      collectDiffTabsFromGroups(
+        vscode.window.tabGroups.all,
+        (input): input is vscode.TabInputTextDiff => input instanceof vscode.TabInputTextDiff,
+      ),
+      rows,
+    );
+    if (fromTabs.length === 1) {
+      location = fromTabs[0];
+    } else if (fromTabs.length > 1) {
+      location = (await vscode.window.showQuickPick(
+        fromTabs.map((candidate) => ({ label: candidate.worktree, description: candidate.baseRef, candidate })),
+        { title: vscode.l10n.t("Send review notes to…"), placeHolder: vscode.l10n.t("Which worktree?") },
+      ))?.candidate;
+    } else if (rows.length === 1) {
+      location = {
+        worktree: rows[0].agent,
+        cwd: rows[0].path,
+        path: "",
+        baseRef: rows[0].baseRef,
+        workspaceHash: rows[0].workspaceHash,
+      };
+    } else if (rows.length > 1) {
+      const picked = await vscode.window.showQuickPick(
+        rows.map((row) => ({ label: row.agent, description: row.path, row })),
+        { title: vscode.l10n.t("Send review notes to…"), placeHolder: vscode.l10n.t("Which worktree?") },
+      );
+      if (picked) {
+        location = {
+          worktree: picked.row.agent,
+          cwd: picked.row.path,
+          path: "",
+          baseRef: picked.row.baseRef,
+          workspaceHash: picked.row.workspaceHash,
+        };
+      }
+    }
+  }
+  if (!location) {
+    notify(vscode.l10n.t("Nothing to send — open a worktree review or pick an agent."), "warn");
+    return;
+  }
+  const result = await sendReviewNotesBatch({
+    host,
+    location,
+    pickAgent: async (agents) => {
+      const picked = await vscode.window.showQuickPick(
+        agents.map((agent) => ({ label: agent.name, description: agent.detail, name: agent.name })),
+        {
+          title: vscode.l10n.t("Send review notes to…"),
+          placeHolder: vscode.l10n.t("{0} agent(s) on this worktree", agents.length),
+        },
+      );
+      return picked?.name;
+    },
+  });
+  if (!result.sent) {
+    if (result.reason === "empty") notify(vscode.l10n.t("No review notes to send."), "info");
+    else if (result.reason === "no-agents") notify(vscode.l10n.t("No agents belong to this worktree."), "warn");
+    return;
+  }
+  if (result.evidence === "failed") {
+    notify(vscode.l10n.t("Could not record the sent notes as evidence: {0}", "persist failed"), "warn");
+  } else if (result.evidence === "no-head") {
+    notify(vscode.l10n.t("Review notes were sent, but evidence was not recorded — worktree HEAD is unresolvable."), "warn");
+  }
+  notify(vscode.l10n.t("Review notes sent to '{0}'.", result.agent), "info");
 }
 
 async function agentInspection(ws: WorkspaceShellHandle, agent: string): Promise<{
@@ -3921,13 +4194,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await extensionInvoke(ws, { action: "config.agent.delete", agent: item.agentName, removeWorktree: false });
       refreshAll();
     }),
-    vscode.commands.registerCommand("tachyon.reviewWorktreeItem", async (item: AgentItem | WorktreeRowItem) => {
+    registerReviewComments(vscode, reviewCommentsHost()),
+    vscode.commands.registerCommand("tachyon.reviewWorktreeItem", async (item?: AgentItem | WorktreeRowItem) => {
       // spec 213 / C2 — review the agent's work: a quick-pick of changed files (base ↔ current).
       // SDD 501 — the SAME command, reached from the land block by the managed-registry row id. Which
       // identity arrived decides only what is resolved; the flow both reach is the one below.
       // t-ea5425 — and `select` decides only which chrome picks the file. It is read on the worktree-row
       // arm alone: that door's caller is the Worktrees WEBVIEW, which has a picker of its own to draw in.
       // A tree item has no such surface, so the agent arm keeps the native list and passes nothing.
+      // t-a0d820 — the palette door (command no longer when:false) has no item; it only resolves
+      // an identity and still opens the one reviewWorktreeDiff.
+      if (!isReviewCommandItem(item)) return await reviewWorktreeFromPalette();
       const ws = wsOf(item);
       if (!ws) return undefined;
       if ("worktreeId" in item) {
@@ -3954,6 +4231,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       await reviewWorktreeDiff({ cwd: review.record.path, baseRef: review.record.baseRef }, review.changedFiles, item.agentName);
       return undefined;
+    }),
+    vscode.commands.registerCommand("tachyon.reviewSendNotes", async (item?: AgentItem | WorktreeRowItem) => {
+      await sendReviewNotesCommand(item);
     }),
     vscode.commands.registerCommand("tachyon.reviewPipelineItem", async (item: PipelineNodeItem | PipelineDefItem) => {
       // spec 230 — "View changes": review the RUN's worktree diff (what a pipeline produced), so the
