@@ -4,6 +4,33 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.8 — o cartão do agente deixa de ser configurável
+
+### O layout do cartão sai da configuração e volta a ser produto
+
+O cartão do agente na barra lateral tinha layout configurável: um template com regiões, versão e
+componentes, que o projeto podia declarar em `settings.sidebar.cardTemplate` e cada pessoa podia
+sobrescrever no arquivo pessoal. Isso saiu inteiro.
+
+**O cartão não muda de aparência.** Ele continua exatamente o que era — o que desapareceu é a
+possibilidade de reconfigurá-lo. Nenhum controle novo aparece na tela; o bloco de edição de template
+some das Configurações.
+
+Se um projeto tiver `settings.sidebar` no `tachyon.yml`, a chave passa a ser desconhecida: o Tachyon
+**avisa e segue**, como faz com qualquer chave que não reconhece. Nada é bloqueado e nada precisa ser
+migrado antes de atualizar.
+
+Junto com a configuração saíram quatro mil linhas de código que existiam só para sustentá-la — parser,
+editor, sincronização entre projeto e pessoa, e as telas de prévia.
+
+### E o que só os agentes veem
+
+As descrições das ferramentas da Bridge citavam números de especificação e identificadores de tarefa —
+"(spec 351)", "spec 493", "t-bec361" — em texto que o agente lê a cada listagem. O agente não tem como
+abrir nem a especificação nem a tarefa, então a referência ocupava lugar sem informar nada. Quarenta
+dessas menções saíram. Os comentários no código ficam: lá a referência é útil, porque quem lê pode
+abrir o arquivo.
+
 ## 0.93.7 — as telas param de discordar entre si
 
 ### O espaçamento e o tamanho de texto agora são os mesmos em toda parte
