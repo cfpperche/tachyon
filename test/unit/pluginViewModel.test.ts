@@ -195,6 +195,25 @@ describe("buildPluginsViewModel", () => {
     expect(plain.docsUrl).toBeUndefined();
   });
 
+  it("t-4aac93 — attaches injected surfaces to the matching card; omits the field when absent/empty", () => {
+    const vm = buildPluginsViewModel({
+      lockfileText: lockText([{ name: "worlds", version: "1.0.0", runtimes: ["claude"] }, { name: "plain", version: "1.0.0", runtimes: ["claude"] }]),
+      present: ws("claude"),
+      surfaces: {
+        worlds: [
+          { id: "alpha", title: "Alpha World", kind: "editor" },
+          { id: "zeta", title: "Zeta Map", kind: "editor" },
+        ],
+        plain: [],
+      },
+    });
+    expect(vm.installed.find((p) => p.name === "worlds")?.surfaces).toEqual([
+      { id: "alpha", title: "Alpha World", kind: "editor" },
+      { id: "zeta", title: "Zeta Map", kind: "editor" },
+    ]);
+    expect(vm.installed.find((p) => p.name === "plain")?.surfaces).toBeUndefined();
+  });
+
   it("spec 287 — attaches injected externalStatuses to the matching card; omits the row when absent/empty", () => {
     const vm = buildPluginsViewModel({
       lockfileText: lockText([{ name: "transcribe", version: "1.0.0", runtimes: ["claude"] }, { name: "plain", version: "1.0.0", runtimes: ["claude"] }]),

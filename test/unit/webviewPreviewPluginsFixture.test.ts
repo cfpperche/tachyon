@@ -135,3 +135,49 @@ describe("plugins preview fixture fidelity — runtime-coverage gap (t-fb216a)",
     expect(real.installed.filter((p) => p.uncoveredRuntimes?.length).map((p) => p.name)).toEqual(["dep-audit", "sdd", "secrets-guard"]);
   });
 });
+
+describe("plugins preview fixture fidelity — multi-surface Open (t-4aac93)", () => {
+  it("multiSurface matches the real builder: worlds has two editor surfaces, dep-audit has none", () => {
+    const rt: Runtime[] = ["claude", "codex"];
+    const lockfileText = serializeLockfile({
+      schemaVersion: 1,
+      plugins: {
+        worlds: {
+          name: "worlds",
+          version: "1.0.0",
+          runtimes: rt,
+          targets: [
+            ...rt.map((r) => ({ runtime: r, kind: "settings-hook" as const, file: r === "claude" ? ".claude/settings.json" : ".codex/hooks.json", ref: "PreToolUse" })),
+            { kind: "view" as const, file: ".tachyon/plugins/worlds/ui/alpha.html", ref: "alpha" },
+            { kind: "view" as const, file: ".tachyon/plugins/worlds/ui/zeta.html", ref: "zeta" },
+          ],
+          source: { type: "git", spec: "github:acme/worlds@v1.0.0", remote: "https://github.com/acme/worlds.git", ref: "v1.0.0", resolvedCommit: "a1b2c3d".padEnd(40, "0") },
+          integrity: { algorithm: "sha256", payload: "deadbeefcafef00d" },
+        },
+        "dep-audit": {
+          name: "dep-audit",
+          version: "0.1.0",
+          runtimes: rt,
+          targets: rt.map((r) => ({ runtime: r, kind: "settings-hook" as const, file: r === "claude" ? ".claude/settings.json" : ".codex/hooks.json", ref: "PreToolUse" })),
+          source: { type: "git", spec: "github:cfpperche/tachyon-plugins@v0.11.0#path=dep-audit", remote: "https://github.com/cfpperche/tachyon-plugins.git", ref: "v0.11.0", resolvedCommit: "a1b2c3d".padEnd(40, "0") },
+          integrity: { algorithm: "sha256", payload: "deadbeefcafef00d" },
+        },
+      },
+    } as never);
+    const real = buildPluginsViewModel({
+      lockfileText,
+      present: new Set<Runtime>(rt),
+      intact: { worlds: rt, "dep-audit": rt },
+      updateChecks: { worlds: { kind: "up-to-date" }, "dep-audit": { kind: "up-to-date" } },
+      surfaces: {
+        worlds: [
+          { id: "alpha", title: "Alpha World", kind: "editor" },
+          { id: "zeta", title: "Zeta Map", kind: "editor" },
+        ],
+      },
+    });
+    expect((vms as unknown as { multiSurface: unknown }).multiSurface).toEqual(real);
+    expect(real.installed.find((p) => p.name === "worlds")?.surfaces).toHaveLength(2);
+    expect(real.installed.find((p) => p.name === "dep-audit")?.surfaces).toBeUndefined();
+  });
+});

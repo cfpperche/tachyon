@@ -101,7 +101,7 @@ export function confirmMessage(payload: ConfirmPayload): ConfirmActionMessage {
  *  InboundMsg.type against this makes a typo'd `case "…"` a compile error (the typed-union convention). */
 export type PluginsActionType =
   | "ready" | "refresh" | "poll" | "checkUpdates" | "checkPluginUpdate" | "install" | "update" | "reinstall" | "remove"
-  | "reselect" | "repair" | "rehydrate" | "confirm" | "cancel" | "openConfig" | "openDocs" | "installExternal"
+  | "reselect" | "repair" | "rehydrate" | "confirm" | "cancel" | "openConfig" | "openDocs" | "openSurface" | "installExternal"
   | "applyMcp" | "unapplyMcp" | "applyContribution" | "unapplyContribution";
 
 /** t-d23f93 — the result-toast shape (moved from the retired standalone bootstrap main.tsx). */

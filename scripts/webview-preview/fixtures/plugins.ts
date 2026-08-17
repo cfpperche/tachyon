@@ -20,6 +20,7 @@ const captured = vms as unknown as {
   runtimeGap: PluginsViewModel;
   sourceChanged: PluginsViewModel;
   mcpApply: PluginsViewModel;
+  multiSurface: PluginsViewModel;
 };
 
 export const pluginsFixtures: Record<string, Fixture<PluginsViewModel>> = {
@@ -43,4 +44,8 @@ export const pluginsFixtures: Record<string, Fixture<PluginsViewModel>> = {
   // SDD 486 Phase C — agent-browser ships two MCP servers: one applied, one installed-not-applied.
   // The visual failure to design against is the unapplied row looking like the server is absent.
   "mcp-apply": { provenance: "captured-host-vm", vm: captured.mcpApply },
+
+  // t-4aac93 — a plugin with two editor surfaces next to one without. The Open button (and its
+  // surface list) is the visual claim; dep-audit stays quiet so the shot proves the button is per-card.
+  "multi-surface": { provenance: "captured-host-vm", vm: captured.multiSurface },
 };

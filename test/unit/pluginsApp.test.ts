@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Uri } from "vscode";
-import { __createdPanels, __registeredWebviewPanelSerializers, __resetVscodeMock, __setPanelVisible } from "../mocks/vscode.js";
+import { __createdPanels, __getExecutedCommands, __registeredWebviewPanelSerializers, __resetVscodeMock, __setPanelVisible } from "../mocks/vscode.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, pluginsRefreshKind, sourceSpecAtCommit, type PluginsPanelState } from "../../apps/vscode-extension/src/webview/PluginsPanel.js";
 import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
 import type { SectionPanelState } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
@@ -429,6 +429,42 @@ describe("runtime-coverage gap reaches the posted view-model (t-fb216a)", () => 
     const panel = await open(managerFor([target(root, "w1")]), "w1");
     expect(statusOf(panel, "secrets-guard")).toBe("unknown"); // no check ran…
     expect(uncoveredOf(panel, "secrets-guard")).toEqual(["grok"]); // …and the gap is named anyway
+  });
+});
+
+describe("t-4aac93 — Plugins View Open button reaches the host command", () => {
+  it("posted view-model includes consented surfaces so the card can render Open", async () => {
+    const root = mkroot();
+    writeLockfile(root, "worlds");
+    const lockPath = path.join(root, LOCKFILE_REL_PATH);
+    const lock = JSON.parse(fs.readFileSync(lockPath, "utf8")) as { plugins: Record<string, { targets: Array<Record<string, unknown>> }> };
+    lock.plugins.worlds.targets.push({ kind: "view", file: ".tachyon/plugins/worlds/ui/zeta.html", ref: "zeta" });
+    fs.writeFileSync(lockPath, JSON.stringify(lock));
+    const payload = path.join(root, ".tachyon/plugins/worlds");
+    fs.mkdirSync(path.join(payload, "ui"), { recursive: true });
+    fs.writeFileSync(path.join(payload, "tachyon-plugin.json"), JSON.stringify({
+      name: "worlds",
+      version: "1.0.0",
+      description: "multi-surface",
+      views: [{ id: "zeta", title: "Zeta Map", surface: "editor", entry: "ui/zeta.html", fleet: "summary", actions: ["focusAgent"] }],
+    }));
+    const panel = await open(managerFor([target(root, "ws-1")]), "ws-1");
+    const worlds = pluginsMsgs(panel).at(-1)?.vm.installed.find((p) => p.name === "worlds") as { surfaces?: Array<{ id: string; title: string; kind: string }> } | undefined;
+    expect(worlds?.surfaces).toEqual([{ id: "zeta", title: "Zeta Map", kind: "editor" }]);
+  });
+
+  it("the webview openSurface message executes tachyon.openPluginSurface with plugin + view + workspace", async () => {
+    const root = mkroot();
+    writeLockfile(root, "worlds");
+    const panel = await open(managerFor([target(root, "ws-1")]), "ws-1");
+
+    panel.webview.__receive({ type: "openSurface", name: "worlds", viewId: "zeta" });
+    await flush();
+
+    expect(__getExecutedCommands()).toContainEqual({
+      command: "tachyon.openPluginSurface",
+      args: [{ pluginId: "worlds", viewId: "zeta", wsHash: "ws-1" }],
+    });
   });
 });
 

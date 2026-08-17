@@ -39,7 +39,7 @@ import { buildAssistedInstall, shellQuoteForDisplay, detectExternalToolPresence,
 import { rehydrateTools, rehydrateData, rehydrateExternalResolver, type ProvisionProgress } from "../plugins/toolProvisionRun.js";
 import { notify, showNotification } from "../workspace/NotificationService.js";
 import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock, type ExternalToolReqLock } from "@tachyon/engine/plugins/lockfile.js";
-import { buildPluginsViewModel, buildExternalStatuses, buildMcpStatuses, buildContributionStatuses, type PluginsViewModel, type UpdateCheck, type ExternalToolVM, type ExternalPresenceResult } from "../plugins/viewModel";
+import { buildPluginsViewModel, buildExternalStatuses, buildMcpStatuses, buildContributionStatuses, type PluginsViewModel, type UpdateCheck, type ExternalToolVM, type ExternalPresenceResult, type PluginSurfaceVM } from "../plugins/viewModel";
 import { AppliedStateError, AppliedStateStore } from "../plugins/appliedState.js";
 import { buildInstallConsent, buildReinstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel";
 
@@ -111,6 +111,8 @@ interface InboundMsg {
   /** spec 287 — present ⇒ the assisted install was triggered from an INSTALLED plugin's card (resolve the
    *  requirement from this plugin's lockfile entry, not a pending consent op). */
   pluginName?: string;
+  /** t-4aac93 — view id when Open names a specific surface. */
+  viewId?: string;
   /** SDD 486 Phase C — MCP server name for applyMcp / unapplyMcp. */
   server?: string;
   contributionKind?: "skill" | "hook";
@@ -359,6 +361,17 @@ export class PluginsPanelManager {
         return;
       case "openDocs":
         if (m.name) await this.openDocs(ws, m.name);
+        return;
+      case "openSurface":
+        // t-4aac93 — launch door. The card always passes viewId when it has one; the command
+        // `tachyon.openPluginSurface` is the production opener (picker lives there).
+        if (m.name) {
+          void vscode.commands.executeCommand("tachyon.openPluginSurface", {
+            pluginId: m.name,
+            ...(typeof m.viewId === "string" && m.viewId ? { viewId: m.viewId } : {}),
+            wsHash: ws.wsHash,
+          });
+        }
         return;
       case "reselect":
         if (Array.isArray(m.runtimes)) await this.guard(io, () => this.reselectOp(ws, m.runtimes as string[], io));
@@ -803,6 +816,7 @@ export class PluginsPanelManager {
       updateChecks,
       externalStatuses: this.externalStatuses(ws),
       declared: this.declaredRuntimes(ws),
+      surfaces: this.declaredSurfaces(ws),
       mcpStatuses: applied.store ? this.mcpStatuses(ws, applied.store) : undefined,
       skillStatuses: applied.store ? this.contributionStatuses(ws, applied.store, "skill") : undefined,
       hookStatuses: applied.store ? this.contributionStatuses(ws, applied.store, "hook") : undefined,
@@ -948,6 +962,37 @@ export class PluginsPanelManager {
       const { manifest } = loadManifest(text);
       if (!manifest) continue; // invalid manifest — same rule: stay silent rather than guess
       out[p.name] = manifest.runtimes.filter((rt) => supported.has(rt));
+    }
+    return out;
+  }
+
+  /**
+   * t-4aac93 — consented UI surfaces for the Open button. Lockfile view targets are the install
+   * record; titles and kind come from the payload manifest when it is readable. A view target with
+   * no matching decl still offers Open (id as the label) rather than hiding a surface the lock
+   * says is installed.
+   */
+  private declaredSurfaces(ws: WorkspaceGitPresentationTarget): Record<string, PluginSurfaceVM[]> {
+    const lock = this.lockfile(ws);
+    const out: Record<string, PluginSurfaceVM[]> = {};
+    for (const p of Object.values(lock?.plugins ?? {})) {
+      const viewTargets = p.targets.filter((t) => t.kind === "view" && typeof t.ref === "string");
+      if (viewTargets.length === 0) continue;
+      let manifestViews: Array<{ id: string; title: string; surface: "editor" | "sidebar" }> | undefined;
+      try {
+        const { manifest } = loadManifest(fs.readFileSync(path.join(ws.workspaceRoot, PAYLOAD_ROOT, p.name, MANIFEST_REL), "utf8"));
+        manifestViews = manifest?.views;
+      } catch {
+        manifestViews = undefined;
+      }
+      out[p.name] = viewTargets.map((t) => {
+        const decl = manifestViews?.find((v) => v.id === t.ref);
+        return {
+          id: t.ref as string,
+          title: decl?.title ?? (t.ref as string),
+          kind: decl?.surface ?? "editor",
+        };
+      });
     }
     return out;
   }

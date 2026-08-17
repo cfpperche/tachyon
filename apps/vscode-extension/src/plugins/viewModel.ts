@@ -1,5 +1,5 @@
-import type { PluginStatusKind, PluginAction, RuntimePill, PluginStatus, InstalledPluginVM, McpContributionVM, ContributionVM, ExternalToolVM, PluginsViewModel, UpdateCheck, BuildPluginsInput, ExternalPresenceResult } from "@tachyon/webview-ui/plugins/viewModel";
-export type { PluginStatusKind, PluginAction, RuntimePill, PluginStatus, InstalledPluginVM, McpContributionVM, ContributionVM, ExternalToolVM, PluginsViewModel, UpdateCheck, BuildPluginsInput, ExternalPresenceResult } from "@tachyon/webview-ui/plugins/viewModel";
+import type { PluginStatusKind, PluginAction, RuntimePill, PluginStatus, InstalledPluginVM, McpContributionVM, ContributionVM, ExternalToolVM, PluginsViewModel, UpdateCheck, BuildPluginsInput, ExternalPresenceResult, PluginSurfaceVM } from "@tachyon/webview-ui/plugins/viewModel";
+export type { PluginStatusKind, PluginAction, RuntimePill, PluginStatus, InstalledPluginVM, McpContributionVM, ContributionVM, ExternalToolVM, PluginsViewModel, UpdateCheck, BuildPluginsInput, ExternalPresenceResult, PluginSurfaceVM } from "@tachyon/webview-ui/plugins/viewModel";
 /**
  * spec 250 — pure view-model for the Plugins View (the extension UI). Shapes the committed lockfile +
  * the workspace's present runtimes + (optionally injected) per-plugin update-check results into a
@@ -97,7 +97,7 @@ function uncoveredRuntimes(lock: PluginLock, present: ReadonlySet<Runtime>, decl
   return SUPPORTED_RUNTIMES.filter((rt) => declaredSet.has(rt) && present.has(rt) && !installed.has(rt));
 }
 
-function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: Runtime[] | undefined, check: UpdateCheck | undefined, externalTools: ExternalToolVM[] | undefined, declared: Runtime[] | undefined, mcpServers: McpContributionVM[] | undefined, skills?: ContributionVM[], hooks?: ContributionVM[], gitHooks?: ContributionVM[]): InstalledPluginVM {
+function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: Runtime[] | undefined, check: UpdateCheck | undefined, externalTools: ExternalToolVM[] | undefined, declared: Runtime[] | undefined, mcpServers: McpContributionVM[] | undefined, skills?: ContributionVM[], hooks?: ContributionVM[], gitHooks?: ContributionVM[], surfaces?: PluginSurfaceVM[]): InstalledPluginVM {
   const status = statusFrom(check);
   const uncovered = uncoveredRuntimes(lock, present, declared);
   return {
@@ -116,6 +116,7 @@ function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: 
     ...(skills && skills.length > 0 ? { skills } : {}),
     ...(hooks && hooks.length > 0 ? { hooks } : {}),
     ...(gitHooks && gitHooks.length > 0 ? { gitHooks } : {}),
+    ...(surfaces && surfaces.length > 0 ? { surfaces } : {}),
   };
 }
 
@@ -202,7 +203,7 @@ export function buildPluginsViewModel(input: BuildPluginsInput): PluginsViewMode
   const hooks = input.hookStatuses ?? {};
   const gitHooks = input.gitHookStatuses ?? {};
   const installed = Object.values(lockfile.plugins)
-    .map((lock) => toInstalledVM(lock, input.present, input.intact?.[lock.name], checks[lock.name], externals[lock.name], input.declared?.[lock.name], mcp[lock.name], skills[lock.name], hooks[lock.name], gitHooks[lock.name]))
+    .map((lock) => toInstalledVM(lock, input.present, input.intact?.[lock.name], checks[lock.name], externals[lock.name], input.declared?.[lock.name], mcp[lock.name], skills[lock.name], hooks[lock.name], gitHooks[lock.name], input.surfaces?.[lock.name]))
     // locale-independent, stable order (plugin names are ASCII kebab by manifest contract; don't depend on locale).
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 

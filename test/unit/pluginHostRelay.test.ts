@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assemblePluginSrcdoc, isRelayActionMessage, messageTooLarge } from "@tachyon/webview-ui/webview/plugin-host/relay.js";
+import { assemblePluginSrcdoc, isRelayActionMessage, messageTooLarge, sidebarTabModel } from "@tachyon/webview-ui/webview/plugin-host/relay.js";
 
 describe("plugin host relay (spec 349 T10)", () => {
   it("nonce-stamps plugin inline scripts and owns the srcdoc CSP", () => {
@@ -27,5 +27,18 @@ describe("plugin host relay (spec 349 T10)", () => {
     expect(isRelayActionMessage({ type: "other" })).toBe(false);
     expect(messageTooLarge({ body: "x".repeat(65 * 1024) })).toBe(true);
     expect(messageTooLarge({ body: "small" })).toBe(false);
+  });
+
+  it("t-4aac93 — sidebar tabs exist only when the host sent more than one sibling", () => {
+    const one = { pluginId: "w", viewId: "one", title: "One", pluginHtml: "<p/>", key: "ws:w:one" };
+    expect(sidebarTabModel(one)).toBeUndefined();
+    expect(sidebarTabModel({ ...one, siblings: [{ key: "ws:w:one", title: "One" }] })).toBeUndefined();
+    expect(sidebarTabModel({
+      ...one,
+      siblings: [{ key: "ws:w:one", title: "One" }, { key: "ws:w:two", title: "Two" }],
+    })).toEqual([
+      { key: "ws:w:one", title: "One", selected: true },
+      { key: "ws:w:two", title: "Two", selected: false },
+    ]);
   });
 });

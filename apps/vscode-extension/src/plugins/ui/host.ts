@@ -77,6 +77,9 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
   private readonly editorPanels = new Map<string, vscode.WebviewPanel>();
   private sidebarView?: vscode.WebviewView;
   private sidebarSurfaceKey?: string;
+  private sidebarSiblingSig?: string;
+  /** Set when Open asks for a sidebar surface before the view exists; consumed by resolveWebviewView. */
+  private pendingSidebarKey?: string;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -88,20 +91,65 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
     view.onDidDispose(() => {
       if (this.sidebarView === view) this.sidebarView = undefined;
     });
-    this.renderSidebar();
+    const pending = this.pendingSidebarKey;
+    this.pendingSidebarKey = undefined;
+    this.renderSidebar(pending);
   }
 
-  openSurface(arg?: { pluginId?: string; viewId?: string; wsHash?: string } | string): void {
-    const surfaces = this.installedSurfaces().filter((s) => s.surface === "editor");
+  async openSurface(arg?: { pluginId?: string; viewId?: string; wsHash?: string } | string): Promise<void> {
     const wanted = typeof arg === "string" ? { pluginId: arg } : (arg ?? {});
-    const surface =
-      surfaces.find((s) => (!wanted.pluginId || s.pluginId === wanted.pluginId) && (!wanted.viewId || s.viewId === wanted.viewId) && (!wanted.wsHash || s.workspace.wsHash === wanted.wsHash)) ??
-      surfaces[0];
-    if (!surface) {
-      notify("No plugin editor surface is installed.");
+    const matches = this.installedSurfaces().filter((s) =>
+      (!wanted.pluginId || s.pluginId === wanted.pluginId)
+      && (!wanted.viewId || s.viewId === wanted.viewId)
+      && (!wanted.wsHash || s.workspace.wsHash === wanted.wsHash),
+    );
+    const editorMatches = matches.filter((s) => s.surface === "editor");
+    const sidebarMatches = matches.filter((s) => s.surface === "sidebar");
+
+    if (wanted.viewId) {
+      if (editorMatches[0]) {
+        this.openEditor(editorMatches[0]);
+        return;
+      }
+      if (sidebarMatches[0]) {
+        await this.revealSidebar(sidebarMatches[0]);
+        return;
+      }
+      notify("No matching plugin surface is installed.");
       return;
     }
 
+    if (editorMatches.length === 1) {
+      this.openEditor(editorMatches[0]);
+      return;
+    }
+    if (editorMatches.length > 1) {
+      const picked = await this.pickEditorSurface(editorMatches);
+      if (picked) this.openEditor(picked);
+      return;
+    }
+    if (wanted.pluginId && sidebarMatches[0]) {
+      await this.revealSidebar(sidebarMatches[0]);
+      return;
+    }
+    notify("No plugin editor surface is installed.");
+  }
+
+  refreshAll(): void {
+    const live = new Set(this.installedSurfaces().map((s) => s.key));
+    for (const key of [...this.sessions.keys()]) {
+      if (!live.has(key)) this.revoke(key);
+    }
+    for (const session of this.sessions.values()) void session.push();
+    this.renderSidebar();
+  }
+
+  dispose(): void {
+    for (const key of [...this.sessions.keys()]) this.revoke(key);
+    this.sidebarView = undefined;
+  }
+
+  private openEditor(surface: InstalledPluginSurface): void {
     const existing = this.editorPanels.get(surface.key);
     if (existing) {
       existing.reveal(vscode.ViewColumn.Active);
@@ -126,45 +174,77 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
     void session.push();
   }
 
-  refreshAll(): void {
-    const live = new Set(this.installedSurfaces().map((s) => s.key));
-    for (const key of [...this.sessions.keys()]) {
-      if (!live.has(key)) this.revoke(key);
+  /**
+   * Command Palette / no-surface door (t-be359b case 2): native QuickPick. The Plugins View door
+   * never reaches here — it passes viewId from the card.
+   */
+  private async pickEditorSurface(surfaces: InstalledPluginSurface[]): Promise<InstalledPluginSurface | undefined> {
+    type SurfacePick = vscode.QuickPickItem & { surface: InstalledPluginSurface };
+    const items: SurfacePick[] = surfaces.map((s) => ({
+      label: s.title,
+      description: s.pluginId,
+      detail: s.viewId,
+      surface: s,
+    }));
+    const picked = await vscode.window.showQuickPick(items, {
+      title: vscode.l10n.t("Open Plugin Surface"),
+      placeHolder: vscode.l10n.t("Open which plugin surface?"),
+    });
+    return picked?.surface;
+  }
+
+  private async revealSidebar(surface: InstalledPluginSurface): Promise<void> {
+    this.pendingSidebarKey = surface.key;
+    if (this.sidebarView) {
+      this.renderSidebar(surface.key);
+      this.sidebarView.show(false);
     }
-    for (const session of this.sessions.values()) void session.push();
-    this.renderSidebar();
+    await vscode.commands.executeCommand(`${PLUGIN_SIDEBAR_VIEW_TYPE}.focus`);
   }
 
-  dispose(): void {
-    for (const key of [...this.sessions.keys()]) this.revoke(key);
-    this.sidebarView = undefined;
-  }
-
-  private renderSidebar(): void {
+  private renderSidebar(wantedKey?: string): void {
     const view = this.sidebarView;
     if (!view) return;
-    const surface = this.installedSurfaces().find((s) => s.surface === "sidebar");
-    if (!surface) {
+    const sidebarSurfaces = this.installedSurfaces().filter((s) => s.surface === "sidebar");
+    if (sidebarSurfaces.length === 0) {
       this.sidebarSurfaceKey = undefined;
+      this.sidebarSiblingSig = undefined;
       view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist", "webview")] };
       view.webview.html = this.renderShell(PLUGIN_SIDEBAR_VIEW_TYPE, view.webview, undefined);
       return;
     }
-    if (this.sidebarSurfaceKey === surface.key && this.sessions.has(surface.key)) {
-      void this.sessions.get(surface.key)?.push();
+    const selected =
+      sidebarSurfaces.find((s) => s.key === wantedKey)
+      ?? sidebarSurfaces.find((s) => s.key === this.sidebarSurfaceKey)
+      ?? sidebarSurfaces[0];
+    if (!selected) return;
+    const siblings = sidebarSurfaces.length > 1
+      ? sidebarSurfaces.map((s) => ({ key: s.key, title: s.title }))
+      : undefined;
+    const siblingSig = JSON.stringify(siblings ?? []);
+    const sameSurface = this.sidebarSurfaceKey === selected.key && this.sessions.has(selected.key);
+    if (sameSurface && this.sidebarSiblingSig === siblingSig) {
+      void this.sessions.get(selected.key)?.push();
       return;
     }
     if (this.sidebarSurfaceKey) this.revoke(this.sidebarSurfaceKey);
-    this.sidebarSurfaceKey = surface.key;
-    const session = this.attachWebview(PLUGIN_SIDEBAR_VIEW_TYPE, surface, view.webview, () => undefined);
-    this.sessions.set(surface.key, session);
+    this.sidebarSurfaceKey = selected.key;
+    this.sidebarSiblingSig = siblingSig;
+    const session = this.attachWebview(PLUGIN_SIDEBAR_VIEW_TYPE, selected, view.webview, () => undefined, siblings);
+    this.sessions.set(selected.key, session);
     void session.push();
   }
 
-  private attachWebview(shellViewType: PluginShellViewType, surface: InstalledPluginSurface, webview: vscode.Webview, dispose: () => void): PluginSurfaceSession {
+  private attachWebview(
+    shellViewType: PluginShellViewType,
+    surface: InstalledPluginSurface,
+    webview: vscode.Webview,
+    dispose: () => void,
+    siblings?: Array<{ key: string; title: string }>,
+  ): PluginSurfaceSession {
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     webview.options = { enableScripts: true, localResourceRoots: [root] };
-    webview.html = this.renderShell(shellViewType, webview, surface);
+    webview.html = this.renderShell(shellViewType, webview, surface, siblings);
     const broker = new PluginActionBroker({
       pluginId: surface.pluginId,
       sessionId: surface.key,
@@ -194,8 +274,13 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
   }
 
   private handleWebviewMessage(surface: InstalledPluginSurface, broker: PluginActionBroker, projection: PluginFleetProjectionProvider, webview: vscode.Webview, message: unknown): void {
+    const typed = message as { type?: unknown; key?: unknown } | undefined;
+    if (typed?.type === "selectPluginSidebarSurface" && typeof typed.key === "string") {
+      this.renderSidebar(typed.key);
+      return;
+    }
     projection.handleMessage(message as { type?: string } | undefined);
-    if ((message as { type?: unknown } | undefined)?.type !== PLUGIN_UI_ACTION) return;
+    if (typed?.type !== PLUGIN_UI_ACTION) return;
     void broker.dispatchAction(message as PluginUiActionRelayMessage as never).then((result: PluginActionBrokerResult) => {
       void webview.postMessage({ type: PLUGIN_UI_ACTION_RESULT, id: (message as { id?: unknown }).id, result });
       if (!result.ok && result.code !== "rate_limited") {
@@ -204,11 +289,23 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
     });
   }
 
-  private renderShell(shellViewType: PluginShellViewType, webview: vscode.Webview, surface: InstalledPluginSurface | undefined): string {
+  private renderShell(
+    shellViewType: PluginShellViewType,
+    webview: vscode.Webview,
+    surface: InstalledPluginSurface | undefined,
+    siblings?: Array<{ key: string; title: string }>,
+  ): string {
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     const uri = (f: string): string => webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     const bootstrap: PluginHostBootstrap | undefined = surface
-      ? { pluginId: surface.pluginId, viewId: surface.viewId, title: surface.title, pluginHtml: fs.readFileSync(surface.entryFile, "utf8") }
+      ? {
+          pluginId: surface.pluginId,
+          viewId: surface.viewId,
+          title: surface.title,
+          pluginHtml: fs.readFileSync(surface.entryFile, "utf8"),
+          key: surface.key,
+          ...(siblings && siblings.length > 1 ? { siblings } : {}),
+        }
       : undefined;
     return renderWebviewShell({
       cspSource: webview.cspSource,
@@ -228,7 +325,10 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
     if (!session) return;
     this.sessions.delete(key);
     this.editorPanels.delete(key);
-    if (this.sidebarSurfaceKey === key) this.sidebarSurfaceKey = undefined;
+    if (this.sidebarSurfaceKey === key) {
+      this.sidebarSurfaceKey = undefined;
+      this.sidebarSiblingSig = undefined;
+    }
     session.dispose();
   }
 

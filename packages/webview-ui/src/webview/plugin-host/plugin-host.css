@@ -1,7 +1,7 @@
 .plugin-host-empty {
   color: var(--vscode-descriptionForeground);
   font: var(--ds-body) / 1.4 var(--tachyon-font-mono);
-  padding: 16px;
+  padding: var(--ds-spacing-size160);
 }
 
 .plugin-host-frame {
@@ -9,5 +9,23 @@
   display: block;
   height: 100vh;
   width: 100%;
+}
+
+/* t-4aac93 — first-party tabs only when N>1. The single-surface case keeps the 100vh frame above. */
+.plugin-host-root.has-tabs {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.plugin-host-root.has-tabs .ds-tabs {
+  flex: none;
+  padding: 0 var(--ds-spacing-size80);
+}
+
+.plugin-host-root.has-tabs .plugin-host-frame {
+  flex: 1;
+  height: auto;
+  min-height: 0;
 }
 
