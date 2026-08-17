@@ -262,7 +262,7 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("terminal.close"), agent: terminalAgent, session: tmuxSession }).strict(),
   z.object({
     action: z.literal("runtime-ops.provider.configure"),
-    provider: z.enum(["codex", "claude"]),
+    provider: z.enum(["codex", "claude", "grok"]),
     enabled: z.boolean(),
   }).strict(),
   z.object({

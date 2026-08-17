@@ -102,13 +102,14 @@ describe("Runtime Ops provider capacity projection (SDD 369 T4)", () => {
       agents: [],
       providerObservations: {
         preferences: {},
-        observations: { codex: quotaEnvelope("codex"), claude: quotaEnvelope("claude") },
+        observations: { codex: quotaEnvelope("codex"), claude: quotaEnvelope("claude"), grok: quotaEnvelope("grok") },
       },
     });
 
-    expect(snapshot.providerCapacity.map((provider) => provider.provider)).toEqual(["codex", "claude"]);
-    expect(snapshot.providerCapacity.map((provider) => provider.configuration.state)).toEqual(["disabled", "disabled"]);
+    expect(snapshot.providerCapacity.map((provider) => provider.provider)).toEqual(["codex", "claude", "grok"]);
+    expect(snapshot.providerCapacity.map((provider) => provider.configuration.state)).toEqual(["disabled", "disabled", "disabled"]);
     expect(snapshot.providerCapacity.map((provider) => provider.quota)).toEqual([
+      { state: "unavailable", observedAt: GENERATED_AT, reason: "source-disabled" },
       { state: "unavailable", observedAt: GENERATED_AT, reason: "source-disabled" },
       { state: "unavailable", observedAt: GENERATED_AT, reason: "source-disabled" },
     ]);
@@ -179,7 +180,7 @@ describe("Runtime Ops provider capacity projection (SDD 369 T4)", () => {
 
 function state(
   observations: Record<string, unknown>,
-  enabled: readonly ("codex" | "claude")[] = ["codex", "claude"],
+  enabled: readonly ("codex" | "claude" | "grok")[] = ["codex", "claude", "grok"],
 ): unknown {
   return {
     preferences: Object.fromEntries(enabled.map((provider) => [provider, preference(provider)])),
@@ -187,18 +188,18 @@ function state(
   };
 }
 
-function preference(provider: "codex" | "claude"): unknown {
+function preference(provider: "codex" | "claude" | "grok"): unknown {
   return {
     scope: {
       kind: "provider-account",
       provider,
-      key: provider === "codex" ? "ps_1111111111111111" : "ps_2222222222222222",
+      key: scopeKey(provider),
     },
     sources: ["cli"],
   };
 }
 
-function quotaEnvelope(provider: "codex" | "claude"): CollectorEnvelopeV1 {
+function quotaEnvelope(provider: "codex" | "claude" | "grok"): CollectorEnvelopeV1 {
   return {
     schemaVersion: 1 as const,
     collector: { id: `tachyon-${provider}-test`, version: "1.0.0" },
@@ -208,7 +209,7 @@ function quotaEnvelope(provider: "codex" | "claude"): CollectorEnvelopeV1 {
       scope: {
         kind: "provider-account" as const,
         provider,
-        key: provider === "codex" ? "ps_1111111111111111" : "ps_2222222222222222",
+        key: scopeKey(provider),
       },
       source: "cli" as const,
       confidence: "exact" as const,
@@ -224,7 +225,7 @@ function quotaEnvelope(provider: "codex" | "claude"): CollectorEnvelopeV1 {
 }
 
 function unavailableEnvelope(
-  provider: "codex" | "claude",
+  provider: "codex" | "claude" | "grok",
   reason: "timeout",
   lastGoodAt: string,
 ): CollectorEnvelopeV1 {
@@ -237,7 +238,7 @@ function unavailableEnvelope(
       scope: {
         kind: "provider-account" as const,
         provider,
-        key: provider === "codex" ? "ps_1111111111111111" : "ps_2222222222222222",
+        key: scopeKey(provider),
       },
       source: "cli" as const,
       observedAt: OBSERVED_AT,
@@ -246,4 +247,10 @@ function unavailableEnvelope(
     }],
     diagnostics: [],
   };
+}
+
+function scopeKey(provider: "codex" | "claude" | "grok"): string {
+  if (provider === "codex") return "ps_1111111111111111";
+  if (provider === "claude") return "ps_2222222222222222";
+  return "ps_4444444444444444";
 }

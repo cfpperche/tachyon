@@ -191,7 +191,7 @@ const providerQuota = z.discriminatedUnion("state", [
 ]);
 
 const providerCapacity = z.object({
-  provider: z.enum(["codex", "claude"]),
+  provider: z.enum(["codex", "claude", "grok"]),
   scope: z.literal("provider-account"),
   configuration: z.discriminatedUnion("state", [
     z.object({ state: z.literal("disabled") }).strict(),
@@ -230,13 +230,14 @@ const snapshotV2 = z.object({
   generatedAt: timestamp,
   summary: summaryFacts,
   runtimes: z.array(runtime).max(MAX_RUNTIMES),
-  providerCapacity: z.array(providerCapacity).length(2),
+  providerCapacity: z.array(providerCapacity).length(3),
   error: z.object({ code: z.literal("snapshot-unavailable") }).strict().optional(),
 }).strict().superRefine((value, context) => {
   validateSnapshotFacts(value, context);
   const providers = value.providerCapacity.map((entry) => entry.provider);
-  if (providers.length !== new Set(providers).size || !providers.includes("codex") || !providers.includes("claude")) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "provider capacity must bind codex and claude exactly once" });
+  if (providers.length !== new Set(providers).size
+    || !providers.includes("codex") || !providers.includes("claude") || !providers.includes("grok")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "provider capacity must bind codex, claude and grok exactly once" });
   }
 });
 
@@ -325,7 +326,7 @@ export function mergeRuntimeOpsSnapshotsV1(values: readonly RuntimeOpsSnapshot[]
 }
 
 function mergeProviderCapacity(values: readonly RuntimeOpsSnapshotV2[]): RuntimeOpsProviderCapacityV2[] {
-  return (["codex", "claude"] as const).map((provider) => {
+  return (["codex", "claude", "grok"] as const).map((provider) => {
     const entries = values.map((value) => value.providerCapacity.find((entry) => entry.provider === provider)!);
     const configurations = new Set(entries.map((entry) => JSON.stringify(entry.configuration)));
     if (configurations.size !== 1) throw new Error(`Runtime Ops provider configuration disagrees for '${provider}'`);

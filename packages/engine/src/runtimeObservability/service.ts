@@ -23,7 +23,7 @@ import { validateCollectorEnvelopeV1 } from "./validate.js";
 
 export const PROVIDER_OBSERVATION_LAST_GOOD_STATE_KEY = "tachyon.runtimeObservability.lastGood.v1";
 
-const PROVIDERS = ["codex", "claude"] as const satisfies readonly RuntimeObservabilityProviderV1[];
+const PROVIDERS = ["codex", "claude", "grok"] as const satisfies readonly RuntimeObservabilityProviderV1[];
 const HOST_COLLECTOR = { id: "tachyon-provider-host", version: "1.0.0" } as const;
 const DEFAULT_INTERVAL_MS = 60_000;
 const DEFAULT_COLLECTION_TIMEOUT_MS = 20_000;
@@ -201,8 +201,8 @@ export class ProviderObservationService {
    * constructor.
    *
    * Deliberately NOT a list of provider names: the wiring in `engineService` decides what exists, and
-   * a reader asking "does Grok have a quota channel?" gets its answer from the absence of a Grok
-   * source here rather than from a table that would have to remember to say no. Order is the
+   * a reader asking whether a runtime has a quota channel gets its answer from the registered
+   * sources here rather than from a table that would have to stay in step. Order is the
    * registration order, which is also the order the constructor rejected duplicates in.
    */
   describeChannels(): ProviderQuotaChannelDescriptorV1[] {

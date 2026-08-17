@@ -318,6 +318,12 @@ describe("daemon engine service", () => {
             configuration: { state: "disabled" },
             quota: { state: "unavailable", reason: "source-disabled" },
           },
+          {
+            provider: "grok",
+            scope: "provider-account",
+            configuration: { state: "disabled" },
+            quota: { state: "unavailable", reason: "source-disabled" },
+          },
         ],
       },
     });

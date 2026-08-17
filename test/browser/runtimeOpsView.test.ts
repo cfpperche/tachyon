@@ -255,6 +255,11 @@ describe("Runtime Ops view (layout + session inspection — t-2a49b2)", () => {
 
     let surface = await openRuntimeOpsFixture(page, server.origin, "provider-healthy", { width: 1100, height: 760 });
     expect(await surface.$(".runtime-ops-provider-row")).not.toBeNull();
+    expect(await surface.$$eval(".runtime-ops-provider-row", (rows) => rows.length)).toBe(3);
+    expect(await surface.$eval('[data-provider="grok"]', (el) => el.textContent)).toContain("1% used");
+    expect(await surface.$eval('[data-provider="grok"]', (el) => el.textContent)).toContain("Resets 8/24/26, 5:28 AM");
+    expect(await surface.$eval('[data-provider="grok"]', (el) => el.textContent))
+      .toContain("Read-only Grok CLI billing control plane; no inference turn.");
     expect(await surface.$eval(".runtime-ops-provider-row", (el) => getComputedStyle(el).display)).toBe("grid");
     expect(await hasNoHorizontalOverflow(surface)).toBe(true);
 
@@ -267,6 +272,7 @@ describe("Runtime Ops view (layout + session inspection — t-2a49b2)", () => {
     expect(controlFocus).toEqual({ active: true, outlineWidth: "2px", outlineStyle: "solid" });
 
     surface = await openRuntimeOpsFixture(page, server.origin, "provider-healthy", { width: 340, height: 900 });
+    expect(await surface.$$eval(".runtime-ops-provider-row", (rows) => rows.length)).toBe(3);
     expect(await surface.$eval(".runtime-ops-provider-row", (el) => getComputedStyle(el).display)).toBe("flex");
     expect(await hasNoHorizontalOverflow(surface)).toBe(true);
     await page.close();

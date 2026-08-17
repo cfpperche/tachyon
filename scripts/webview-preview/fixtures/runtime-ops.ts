@@ -57,7 +57,10 @@ const providerHealthy = withProviderState(providerObservationState({
     { name: "session", usedPercent: 26, windowMinutes: 300, resetsAt: "2026-07-10T00:00:00.000Z" },
     { name: "weekly", usedPercent: 58, windowMinutes: 10_080, resetsAt: "2026-07-15T00:00:00.000Z" },
   ]),
-}));
+  grok: quotaEnvelope("grok", [
+    { name: "weekly", usedPercent: 1, windowMinutes: 10_080, resetsAt: "2026-08-24T08:28:21.629Z" },
+  ]),
+}, ["codex", "claude", "grok"]));
 
 const providerExhausted = withProviderState(providerObservationState({
   codex: quotaEnvelope("codex", [
