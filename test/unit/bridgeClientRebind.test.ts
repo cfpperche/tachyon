@@ -552,6 +552,47 @@ describe("BridgeClientRebindCoordinator", () => {
     expect(deps.notifies.some(({ m, l }) => l === "error" && m.includes("post-resume stability window"))).toBe(true);
   });
 
+  it("t-147361 fatia C: resume_fail audit and alarm keep AggregateError respawn/teardown causes, not only the wrapper", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const auditPath = path.join(auditDir, "aggregate-cause.jsonl");
+    const ledger = new Map([["claude", baseRecord({
+      def: { cmd: "claude", kind: "agent" },
+      resume: { runtime: "claude", sessionId: "sess-1" },
+      bridgeClient: { boundGeneration: 0, wired: true },
+    })]]);
+    const running = new Set(["claude"]);
+    const respawnError = new Error("can't find pane: %0");
+    const killError = new Error("no current client");
+    const wrapper = "could not replace session 'tachyon-abcd1234-claude': respawn and teardown both failed";
+    const deps = makeDeps({
+      ledger,
+      running,
+      auditPath,
+      resumeImpl: async () => {
+        throw new AggregateError([respawnError, killError], wrapper, { cause: respawnError });
+      },
+    });
+
+    const coordinator = new BridgeClientRebindCoordinator(deps);
+    await coordinator.onListenerReady();
+
+    const failLine = fs.readFileSync(auditPath, "utf8").trim().split("\n")
+      .map((line) => JSON.parse(line) as { phase: string; error?: string; causes?: string[] })
+      .find((event) => event.phase === "resume_fail");
+    expect(failLine).toBeDefined();
+    expect(failLine!.error).toContain(wrapper);
+    expect(failLine!.error).toContain("can't find pane: %0");
+    expect(failLine!.error).toContain("no current client");
+    expect(failLine!.causes).toEqual(["can't find pane: %0", "no current client"]);
+
+    const alarm = deps.notifies.find(({ l, m }) => l === "error" && m.includes("Bridge client rebind of 'claude' failed"));
+    expect(alarm?.m).toContain(wrapper);
+    expect(alarm?.m).toContain("can't find pane: %0");
+    expect(alarm?.m).toContain("no current client");
+    expect(alarm?.m).toContain("left stopped; no cold spawn");
+  });
+
   it("bumps generation once per onListenerReady and reconstructs suspects after reload", async () => {
     const auditDir = tmpDir();
     dirs.push(auditDir);

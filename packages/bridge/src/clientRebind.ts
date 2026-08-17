@@ -73,6 +73,8 @@ export interface RebindAuditEvent {
   phase: string;
   finalState?: ClientRebindState;
   error?: string;
+  /** Inner AggregateError `.errors` / `.cause` messages. Omitted when the thrown value has none. */
+  causes?: string[];
   hardKill?: boolean;
   attempts?: number;
   waitedMs?: number;
@@ -146,6 +148,39 @@ interface QueueItem {
 }
 
 const sleepDefault = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * t-147361 fatia C — `startSessionCommandUnlocked` throws AggregateError with the
+ * respawn and teardown errors in `.errors` (respawn also in `.cause`). Persisting
+ * only `.message` left the 20:43 resume_fail as the wrapper sentence.
+ */
+function describeRebindFailure(err: unknown): { error: string; causes?: string[] } {
+  const message = err instanceof Error ? err.message : String(err);
+  const causes: string[] = [];
+  const seen = new Set<unknown>([err]);
+
+  const push = (value: unknown): void => {
+    if (value == null || seen.has(value)) return;
+    seen.add(value);
+    const text = value instanceof Error ? value.message : String(value);
+    if (text && text !== message && !causes.includes(text)) causes.push(text);
+    walk(value);
+  };
+
+  const walk = (value: unknown): void => {
+    if (value instanceof AggregateError) {
+      if (value.cause !== undefined) push(value.cause);
+      for (const nested of value.errors) push(nested);
+      return;
+    }
+    if (value instanceof Error && value.cause !== undefined) push(value.cause);
+  };
+
+  walk(err);
+  return causes.length > 0
+    ? { error: `${message}: ${causes.join("; ")}`, causes }
+    : { error: message };
+}
 
 /** Host-state key for the durable monotonic generation (single owner per workspace+instance). */
 export function bridgeGenerationStateKey(workspaceHash: string, bridgeInstanceId: string): string {
@@ -704,7 +739,7 @@ export class BridgeClientRebindCoordinator {
       }
     } catch (err) {
       rt.clientState = "failed";
-      const msg = err instanceof Error ? err.message : String(err);
+      const { error, causes } = describeRebindFailure(err);
       this.audit({
         at: new Date(now()).toISOString(),
         agent: name,
@@ -712,10 +747,11 @@ export class BridgeClientRebindCoordinator {
         fromGeneration: suspectG,
         phase: "resume_fail",
         finalState: "failed",
-        error: msg,
+        error,
+        ...(causes ? { causes } : {}),
         hardKill,
       });
-      this.deps.notify(`Bridge client rebind of '${name}' failed: ${msg} (left stopped; no cold spawn)`, "error");
+      this.deps.notify(`Bridge client rebind of '${name}' failed: ${error} (left stopped; no cold spawn)`, "error");
       this.noteFailure(suspectG);
     }
   }
