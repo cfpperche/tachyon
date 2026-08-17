@@ -4,6 +4,36 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.7 — as telas param de discordar entre si
+
+### O espaçamento e o tamanho de texto agora são os mesmos em toda parte
+
+A queixa que abriu esta trilha foi que **as telas pareciam diferentes umas das outras**. Nesta versão
+as últimas quatro superfícies entraram na mesma escala: Plugins, o painel do agente, a barra lateral e
+o quadro.
+
+Elas não mudam de aparência — mudam de **origem**. Cada distância e cada tamanho de texto agora vêm da
+escala herdada do editor, em vez de valores escolhidos tela a tela. Quando a Microsoft mudar a
+densidade do VS Code, o Tachyon acompanha.
+
+Um detalhe que vale a pena: onde a medida era **geometria** e não ritmo — a coluna de nome da barra
+lateral, por exemplo — o número deixou de ser fixo e passou a ser **calculado** a partir das peças que
+o formam. Se o ponto de estado mudar de tamanho, a coluna acompanha sozinha.
+
+### Plugin com mais de uma tela deixa de mostrar só a primeira
+
+Um plugin pode oferecer várias telas. Até aqui o Tachyon abria sempre a primeira e ignorava o resto:
+não havia como escolher, a barra lateral mostrava só uma, e o cartão do plugin não tinha botão de
+abrir.
+
+Agora o cartão tem **Abrir**, com escolha quando há mais de uma tela e abertura direta quando há uma
+só. A barra lateral ganha abas. Plugin de tela única continua igual.
+
+### E a limpeza que você não vê
+
+Rodar os testes não cria mais pasta na raiz do projeto. Um teste escrevia capturas de tela ali a cada
+execução, e nenhuma verificação lia essas imagens.
+
 ## 0.93.6 — um engine travado deixa de ser um beco sem saída
 
 ### O Tachyon agora derruba o próprio morto
