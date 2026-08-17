@@ -53,6 +53,17 @@ export function matchCodexBootstrapInput(output: string, text: string, submit: b
   return undefined;
 }
 
+/**
+ * t-80c26e — when Codex refused the projected Bridge table, say that, not the raw TOML line.
+ * Requires both measured halves: the load error AND the `mcp_servers.tachyon_bridge` path.
+ * A comment or an unrelated config error is not this sentence.
+ */
+export function describeCodexBridgeHomeRejection(output: string): string | undefined {
+  if (!/Error loading config\.toml:/i.test(output)) return undefined;
+  if (!/mcp_servers\.tachyon_bridge/.test(output)) return undefined;
+  return "this agent's private Codex home lost the Tachyon Bridge — Codex refused `mcp_servers.tachyon_bridge` while loading config.toml (the projected file was replaced by the owner's personal Codex state). The agent cannot boot until that projection is rewritten.";
+}
+
 /** Classifies stable Codex terminal affordances only; it never retains pane text. */
 export class CodexLaunchReadiness implements RuntimeLaunchReadinessAdapter {
   classify(output: string) {
@@ -64,6 +75,18 @@ export class CodexLaunchReadiness implements RuntimeLaunchReadinessAdapter {
     }
     if (MODEL_REJECTED_RE.test(liveOutput)) {
       return { state: "rejected" as const, code: "runtime_model_rejected" as const };
+    }
+    // t-80c26e — Codex 0.147.0 (cotacodex pane, 2026-08-17) exits on:
+    //   Error loading config.toml: invalid transport
+    //   in `mcp_servers.tachyon_bridge`
+    // Reproduced cousin (command + url in the same table):
+    //   Error loading config.toml: url is not supported for stdio
+    //   in `mcp_servers.tachyon_bridge`
+    // The generic "invalid configuration" / "failed to load" patterns below do not match
+    // "Error loading config.toml" or "invalid transport", so this used to fall through
+    // to runtime_process_exited and the owner only saw the raw TOML line.
+    if (/Error loading config\.toml:/i.test(liveOutput)) {
+      return { state: "rejected" as const, code: "runtime_config_rejected" as const };
     }
     if (/\b(?:invalid (?:configuration|config)|configuration (?:error|failed)|failed to (?:load|parse) (?:configuration|config))\b/i.test(liveOutput)) {
       return { state: "rejected" as const, code: "runtime_config_rejected" as const };

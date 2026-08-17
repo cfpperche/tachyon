@@ -55,6 +55,7 @@ import { createDefaultLaunchPreflightRegistry } from "../runtime/defaultLaunchPr
 import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs, grokMemoryEnv } from "../runtime/adapters/grokMemory.js";
 import {
   CodexLaunchReadiness,
+  describeCodexBridgeHomeRejection,
   matchCodexBootstrapInput,
   type CodexBootstrapInputMatch,
 } from "../runtime/adapters/codexLaunchReadiness.js";
@@ -1309,7 +1310,17 @@ export class AgentManager {
           /* the pane may already be gone; an unexplained auth rejection is still honest */
         }
       }
-      const primary = new RuntimeLaunchReadinessError(readiness.code, authRequired);
+      let detail: string | undefined;
+      if (readiness.code === "runtime_config_rejected" && adapter.runtime === "codex") {
+        try {
+          detail = describeCodexBridgeHomeRejection(
+            await this.opts.tmux.capturePane(session, { lines: 80, joinWrapped: true }),
+          );
+        } catch {
+          /* the pane may already be gone; the bare code is still a config rejection */
+        }
+      }
+      const primary = new RuntimeLaunchReadinessError(readiness.code, authRequired, detail);
       if (authRequired) {
         this.reportAuthRequired(name, authRequired);
       }

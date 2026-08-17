@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import {
   CodexLaunchReadiness,
+  describeCodexBridgeHomeRejection,
   matchCodexBootstrapInput,
 } from "@tachyon/engine/runtime/adapters/codexLaunchReadiness.js";
-import { GenericLaunchReadiness, LaunchReadiness } from "@tachyon/engine/runtime/launchReadiness.js";
+import { GenericLaunchReadiness, LaunchReadiness, RuntimeLaunchReadinessError } from "@tachyon/engine/runtime/launchReadiness.js";
 import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 describe("CodexLaunchReadiness", () => {
@@ -143,6 +144,39 @@ describe("t-d501fc: per-runtime model-rejection shape must be caught by classify
     const rejection = "Couldn't set model 'grok-bogus-9': Invalid params: \"unknown model id\". "
       + "Run 'grok models' to see available models.";
     expect(adapter.classify(rejection)).toEqual({ state: "rejected", code: "runtime_model_rejected" });
+  });
+});
+
+describe("t-80c26e: Codex lost-Bridge config rejection", () => {
+  const pane = [
+    "To continue this session, run codex resume 01a010da-9ef3-7ba3-9b4e-6101ed089256",
+    "Error loading config.toml: invalid transport",
+    "in `mcp_servers.tachyon_bridge`",
+  ].join("\n");
+
+  it("classifies the measured cotacodex boot error as config_rejected, not a silent process exit", () => {
+    const adapter = new CodexLaunchReadiness();
+    expect(adapter.classify(pane)).toEqual({ state: "rejected", code: "runtime_config_rejected" });
+    expect(adapter.classify([
+      "Error loading config.toml: url is not supported for stdio",
+      "in `mcp_servers.tachyon_bridge`",
+    ].join("\n"))).toEqual({ state: "rejected", code: "runtime_config_rejected" });
+    // Rejection still wins if a stale composer remains in the tail.
+    expect(adapter.classify(`${pane}\n› Implement {feature}\n  gpt-5.6-sol · Context 0% used`)).toEqual({
+      state: "rejected",
+      code: "runtime_config_rejected",
+    });
+  });
+
+  it("names the lost Bridge only when both measured halves are present", () => {
+    expect(describeCodexBridgeHomeRejection(pane)).toMatch(/lost the Tachyon Bridge/);
+    expect(describeCodexBridgeHomeRejection("Error loading config.toml: unknown configuration field `foo`")).toBeUndefined();
+    expect(describeCodexBridgeHomeRejection("talking about mcp_servers.tachyon_bridge in a transcript")).toBeUndefined();
+    expect(new RuntimeLaunchReadinessError(
+      "runtime_config_rejected",
+      undefined,
+      describeCodexBridgeHomeRejection(pane),
+    ).message).toMatch(/^runtime_config_rejected: this agent's private Codex home lost the Tachyon Bridge/);
   });
 });
 

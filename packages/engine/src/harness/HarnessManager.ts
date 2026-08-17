@@ -143,6 +143,11 @@ function tomlString(s: string): string {
  * copied `~/.codex/config.toml` cannot leak into a private home. Table headers only (measured
  * shape); body lines until the next table or EOF are removed with the header.
  */
+/** Table header only — a comment or a similarly named key is not this table (t-80c26e). */
+function configHasCodexBridgeTable(toml: string): boolean {
+  return /^\s*\[mcp_servers\.tachyon_bridge\]\s*$/m.test(toml);
+}
+
 function stripCodexProjectsTables(toml: string): string {
   if (toml.length === 0) return "";
   const lines = toml.split("\n");
@@ -3172,6 +3177,16 @@ export class HarnessManager {
 
   private seedCodexHomeOnlyConfig(home: string): void {
     const target = path.join(home, "config.toml");
+    try {
+      const existing = fs.readFileSync(target, "utf8");
+      // t-80c26e — rematerialize on resume/restart used to copy the owner's ~/.codex/config.toml
+      // over a Tachyon-projected file, deleting `[mcp_servers.tachyon_bridge]` and creating an
+      // auth.json symlink. If the projection is still on disk, leave it. This is home coherence,
+      // not a new isolation rule: the file we already wrote stays the file the agent boots from.
+      if (configHasCodexBridgeTable(existing)) return;
+    } catch {
+      /* absent or unreadable — seed as today */
+    }
     try {
       fs.copyFileSync(path.join(this.realCodexHome, "config.toml"), target);
     } catch {
