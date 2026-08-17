@@ -149,7 +149,9 @@ export interface RuntimeOpsRuntimeV1 {
 }
 
 
-export type RuntimeOpsProviderV2 = "codex" | "claude" | "grok";
+export const RUNTIME_OPS_PROVIDERS_V2 = ["codex", "claude", "grok"] as const;
+
+export type RuntimeOpsProviderV2 = typeof RUNTIME_OPS_PROVIDERS_V2[number];
 
 export type RuntimeOpsProviderSourceV2 = "cli" | "oauth";
 
