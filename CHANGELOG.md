@@ -4,6 +4,34 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.11 — dois consertos no que a versão anterior acabou de entregar
+
+### Review Changes deixa de mostrar a história inteira do projeto
+
+Ao abrir o review de um agente de longa duração, a lista vinha com milhares de arquivos — quase tudo
+mudança antiga do projeto, não trabalho daquele agente.
+
+A causa: cada worktree guarda a referência contra a qual comparar, gravada no dia em que ela nasceu.
+Para um agente temporário isso é sempre recente. Para um agente que vive há semanas, a referência
+envelhece junto com ele, e o review passa a comparar contra um ponto do passado distante.
+
+Agora as duas portas do review — a do agente e a de integrar o trabalho — resolvem essa referência do
+mesmo jeito: preferem o branch principal, e só caem na referência de nascimento se não houver.
+
+O que **não** mudou é o que cada uma responde. A porta de integrar continua mostrando os commits que
+seriam introduzidos; a do agente continua mostrando a árvore de trabalho, inclusive o que ainda não
+foi commitado. A tela também passa a **dizer** contra qual referência está comparando, em vez de você
+ter que deduzir.
+
+### O botão Enable CLI do grok volta a funcionar
+
+O grok apareceu no painel de capacidade na versão passada, mas o botão que liga a observação não fazia
+nada — sem erro, sem mensagem.
+
+A lista de provedores aceitos estava escrita em três lugares e só dois foram atualizados. Agora existe
+**uma** lista, e todos os pontos que precisam dela a consultam. Um provedor novo passa a funcionar em
+todos os caminhos ou quebra o teste — não some em silêncio num botão.
+
 ## 0.93.10 — comentar uma linha do diff e mandar o lote para o agente
 
 ### O review deixa de morrer no chat
