@@ -202,6 +202,17 @@ export interface NoticeVM {
   read: boolean;
   actionsLive: boolean;
 }
+/**
+ * SDD 512 — the current action-less product notice (what used to go to the VS Code
+ * status bar). Distinct from `notices[]` (the Human Inbox). Last write wins; absent
+ * means nothing to show. `level` is a field, never inferred from text or icon.
+ */
+export interface StatusNoticeVM {
+  message: string;
+  level: "info" | "warn" | "error";
+  /** When this notice was set. A timestamp, not an expiry. */
+  at: string;
+}
 export interface BridgeVM { port: string; connected: boolean }
 export interface WorkspaceRef { hash: string; name: string }
 /** spec 245 — per-folder Project Handoff badge state (drives the sidebar open-button + its dot). */
@@ -284,6 +295,12 @@ export interface FleetVM {
   pins: PinVM[];
   /** spec 415 — oldest-first open human attention. */
   notices?: NoticeVM[];
+  /**
+   * SDD 512 — last action-less status notice. Last write wins; absent means nothing
+   * to show. There is no expiry — the notice stays until replaced or dismissed.
+   * `level` is a field on the value, never inferred from text or icon.
+   */
+  statusNotice?: StatusNoticeVM;
   /** spec 245 — the per-folder Project Handoff state (drives the header open-button + badge). */
   handoff?: HandoffVM;
   /**

@@ -6,7 +6,11 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Design decisions
 
-_Choices made where the spec/plan was ambiguous. The decision + why this option over the others considered in the moment._
+- **Fatia 1 field name is `statusNotice`, not another row in `notices[]`.** The inbox is the Human Inbox (actions, collapsed counts, read state). The status-bar replacement is one last-write-wins message. Mixing them would make the footer a second inbox. (`t-72e93a`, estadogrok)
+- **`level` is a required field on that object.** Same text can be `info` or `error`; the projector copies `level` and never reads `message` to decide it. (`t-72e93a`)
+- **No timer and no `expiresAt`.** The store is `set` / `dismiss` / `get`. `at` is when the notice was written, not when it dies. A footer that fades reintroduces the defect. (`t-72e93a`)
+- **State lives on the source (`statusNotice?: () => …`), not a process singleton.** Multi-root would share one notice if this were a module global. Fatia 3 hangs a `StatusNoticeStore` on the workspace and writes from the provider. (`t-72e93a`)
+- **In-memory is enough.** The closed-sidebar `error` case is the same engine process remounting the projection. Disk persist would be machinery for a case the 23h41 sample never saw. (`t-72e93a`)
 
 ## Deviations
 

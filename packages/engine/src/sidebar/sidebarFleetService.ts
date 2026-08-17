@@ -70,6 +70,15 @@ export interface SidebarFleetSource {
     read: boolean;
     actionsLive: boolean;
   }>;
+  /**
+   * SDD 512 fatia 1 — last action-less status notice. Last write wins; no timer.
+   * Absent means nothing to show. Level is a field on the value, never inferred.
+   */
+  statusNotice?: () => {
+    message: string;
+    level: "info" | "warn" | "error";
+    at: string;
+  } | undefined;
   attentionOf(agent: string): AgentAttention | undefined;
   /** spec 390 — open/assigned MC tasks for focus projection (optional when TaskStore absent). */
   focusTasks?: () => FocusTaskInput[];
@@ -149,6 +158,7 @@ export async function buildSidebarFleet(
   }));
 
   const engineLogHasError = options.engineLogHasError?.();
+  const statusNotice = source.statusNotice?.();
   const running = new Set(all.filter((agent) => agent.running).map((agent) => agent.name));
   const externalTools = source.externalTools ?? new ExternalToolRegistry();
   const liveAgents = agentRows.filter((agent) => agent.running && !agent.dead);
@@ -382,6 +392,11 @@ export async function buildSidebarFleet(
     // t-aa2780 — only stated when somebody actually read the ring; see the option's doc for why
     // "unread" must not collapse into `false`.
     ...(engineLogHasError === undefined ? {} : { engineLogHasError }),
+    // SDD 512 — last action-less notice. Omitted when the source has none. Level is copied
+    // as a field; the projector does not infer it and does not attach an expiry.
+    ...(statusNotice ? {
+      statusNotice: { message: statusNotice.message, level: statusNotice.level, at: statusNotice.at },
+    } : {}),
   };
 }
 

@@ -193,6 +193,13 @@ const fleet = z.object({
     read: z.boolean(),
     actionsLive: z.boolean(),
   }).strict()).max(100).default([]),
+  // SDD 512 — current action-less status notice. Distinct from `notices` (the inbox).
+  // Level is a required field. There is no expiry field: last write wins until dismissed.
+  statusNotice: z.object({
+    message: displayText(512, 1),
+    level: z.enum(["info", "warn", "error"]),
+    at: text(64, 1),
+  }).strict().optional(),
   proposals: z.array(z.object({
     id: z.string().regex(/^[a-f0-9]{12}$/),
     name,
