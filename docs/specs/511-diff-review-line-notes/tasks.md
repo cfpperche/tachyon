@@ -33,9 +33,10 @@ _Generated from `plan.md` on 2026-08-17. Work top-to-bottom. Check boxes as task
 
 **Fatia 2 — protocolo e fiação.**
 
-- [ ] `protocol.ts` — `WorkspaceQueryV1` ganha a leitura das notas (reconciliada **na leitura**);
+- [x] `protocol.ts` — `WorkspaceQueryV1` ganha a leitura das notas (reconciliada **na leitura**);
       `WorkspaceCommandMethodV1` ganha a mutação, no molde de `sidebar.mutate`.
-- [ ] Handler de consulta e de comando no engine.
+      **t-115091: `review.view` + `review.mutate` (`note.upsert` / `note.hint`).**
+- [x] Handler de consulta e de comando no engine.
 - [ ] Provar que `packages/engine/src` e `packages/webview-ui/src` seguem com zero `vscode`:
       `bash scripts/check-engine-boundary.sh`.
 

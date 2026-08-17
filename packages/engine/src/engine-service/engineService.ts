@@ -26,6 +26,7 @@ import { projectActivityContext } from "../runtime-api/activityProjection.js";
 import { projectHandoffView } from "../runtime-api/handoffProjection.js";
 import { projectSidebarView } from "../runtime-api/sidebarProjection.js";
 import { applySidebarMutation } from "../sidebar/sidebarMutationService.js";
+import { applyReviewMutation, projectReviewNotes } from "../worktree/reviewNotesService.js";
 import { RuntimeOpsSnapshotService } from "../runtimeOps/snapshotService.js";
 import { CodexAppServerObservationSource } from "../runtimeObservability/codexAppServerSource.js";
 import { ClaudeStatusLineObservationSource } from "../runtimeObservability/claudeStatusLineSource.js";
@@ -82,6 +83,8 @@ import {
   workspaceHandoffViewSuccessV1,
   workspaceSidebarMutationSuccessV1,
   workspaceSidebarViewSuccessV1,
+  workspaceReviewMutationSuccessV1,
+  workspaceReviewNotesViewSuccessV1,
   workspaceRuntimeOpsViewSuccessV1,
   workspaceExtensionCommandSuccessV1,
   workspaceExtensionQuerySuccessV1,
@@ -566,6 +569,25 @@ async function executeWorkspaceQuery(
       studio: projectPinStudio(workspace.pinStore, query.input.id),
     });
   }
+  if (query.method === "review.view") {
+    const checkout = reviewCheckoutPath(workspace, query.input.worktree);
+    const record = reviewWorktreeRecord(workspace, query.input.worktree);
+    let changedFiles;
+    if (record?.baseRef) {
+      try {
+        changedFiles = await workspace.worktrees.changedFiles(checkout, record.baseRef);
+      } catch {
+        changedFiles = undefined;
+      }
+    }
+    return workspaceReviewNotesViewSuccessV1(projectReviewNotes({
+      workspaceRoot: workspace.workspaceRoot,
+      checkoutRoot: checkout,
+      worktree: query.input.worktree,
+      k: query.input.k,
+      ...(changedFiles ? { changedFiles } : {}),
+    }));
+  }
   return workspaceProbeViewSuccessV1(await workspace.probeView(query.input.caller));
 }
 
@@ -592,6 +614,15 @@ async function executeWorkspaceCommand(
   if (command.method === "sidebar.mutate") {
     const result = await applySidebarMutation(workspace, command.input, onViewsChanged);
     return workspaceSidebarMutationSuccessV1(command, result);
+  }
+  if (command.method === "review.mutate") {
+    const checkout = reviewCheckoutPath(workspace, command.input.worktree);
+    const result = applyReviewMutation({
+      workspaceRoot: workspace.workspaceRoot,
+      checkoutRoot: checkout,
+      rawInput: command.input,
+    });
+    return workspaceReviewMutationSuccessV1(command, result);
   }
   if (command.method === "studio.submit") {
     return workspaceCommandSuccessV1(command, workspace.studioSubmit(command.input));
@@ -969,4 +1000,18 @@ async function closeService(
   try { await workspace.dispose(); } catch (error) { errors.push(error); }
   try { host.dispose(); } catch (error) { errors.push(error); }
   if (errors.length > 0) throw new AggregateError(errors, "persistent engine shutdown failed");
+}
+
+function reviewWorktreeRecord(workspace: Workspace, worktree: string) {
+  return workspace.ledger.get(worktree)?.worktree
+    ?? workspace.pipelineRunWorktree(worktree)
+    ?? workspace.managedWorktrees.get(worktree)
+    ?? workspace.managedWorktrees.list({ status: "active" })
+      .find((entry) => entry.agent === worktree || entry.slug === worktree);
+}
+
+function reviewCheckoutPath(workspace: Workspace, worktree: string): string {
+  const record = reviewWorktreeRecord(workspace, worktree);
+  if (record?.path && fs.existsSync(record.path)) return record.path;
+  throw new Error(`review notes worktree '${worktree}' has no checkout`);
 }

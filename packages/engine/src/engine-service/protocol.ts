@@ -34,6 +34,17 @@ import {
   type SidebarMutationInputV1,
 } from "../runtime-api/sidebarCommands.js";
 import {
+  isReviewMutationInputV1,
+  isReviewMutationResultIdentityV1,
+  isReviewNotesQueryInputV1,
+  type ReviewMutationInputV1,
+} from "../runtime-api/reviewCommands.js";
+import {
+  isReviewNotesViewV1,
+  parseReviewNotesViewV1,
+  type ReviewNotesViewV1,
+} from "../runtime-api/reviewProjection.js";
+import {
   isSidebarViewV1,
   parseSidebarViewV1,
   type SidebarViewV1,
@@ -264,13 +275,14 @@ export type WorkspaceCommandMethodV1 =
   | "handoff.ensure"
   | "handoff.distill"
   | "sidebar.mutate"
+  | "review.mutate"
   | "extension.invoke";
 
 export type WorkspaceAgentCommandMethodV1 = Extract<WorkspaceCommandMethodV1, `agent.${string}`>;
 export type WorkspaceAgentLifecycleCommandMethodV1 = Exclude<WorkspaceAgentCommandMethodV1, "agent.input">;
 export type WorkspaceSimpleCommandMethodV1 = Exclude<
   WorkspaceCommandMethodV1,
-  "studio.submit" | "task.studio.apply" | "pin.studio.apply" | "handoff.ensure" | "handoff.distill" | "sidebar.mutate" | "extension.invoke"
+  "studio.submit" | "task.studio.apply" | "pin.studio.apply" | "handoff.ensure" | "handoff.distill" | "sidebar.mutate" | "review.mutate" | "extension.invoke"
 >;
 
 /** Exact versioned wire shape of the four config-backed Studio forms. */
@@ -366,6 +378,10 @@ export type WorkspaceCommandV1 = {
   input: SidebarMutationInputV1;
 } | {
   schemaVersion: 1;
+  method: "review.mutate";
+  input: ReviewMutationInputV1;
+} | {
+  schemaVersion: 1;
   method: "extension.invoke";
   input: ExtensionCommandV1;
 };
@@ -438,6 +454,14 @@ export type WorkspaceCommandResultV1 =
     }
   | {
       schemaVersion: 1;
+      method: "review.mutate";
+      status: "ok";
+      action: ReviewMutationInputV1["action"];
+      id: string;
+      changed: boolean;
+    }
+  | {
+      schemaVersion: 1;
       method: "extension.invoke";
       status: "ok";
       action: ExtensionCommandV1["action"];
@@ -451,7 +475,7 @@ export type WorkspaceCommandResultV1 =
       message: string;
     };
 
-export type WorkspaceQueryMethodV1 = "activity.context" | "agent.working" | "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio" | "handoff.view" | "sidebar.view" | "runtime-ops.view" | "extension.query";
+export type WorkspaceQueryMethodV1 = "activity.context" | "agent.working" | "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio" | "handoff.view" | "sidebar.view" | "runtime-ops.view" | "review.view" | "extension.query";
 
 export interface WorkspaceProbeViewRowV1 {
   runId: string;
@@ -539,6 +563,11 @@ export type WorkspaceQueryV1 =
     }
   | {
       schemaVersion: 1;
+      method: "review.view";
+      input: { worktree: string; k: number };
+    }
+  | {
+      schemaVersion: 1;
       method: "extension.query";
       input: ExtensionQueryV1;
     };
@@ -606,6 +635,12 @@ export type WorkspaceQueryResultV1 =
     }
   | {
       schemaVersion: 1;
+      method: "review.view";
+      status: "ok";
+      view: ReviewNotesViewV1;
+    }
+  | {
+      schemaVersion: 1;
       method: "extension.query";
       status: "ok";
       action: ExtensionQueryV1["action"];
@@ -665,6 +700,7 @@ export const PIN_STUDIO_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
 export const HANDOFF_VIEW_RESPONSE_MAX_BYTES = 16 * 1024 * 1024;
 export const SIDEBAR_VIEW_RESPONSE_MAX_BYTES = 16 * 1024 * 1024;
 export const RUNTIME_OPS_VIEW_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
+export const REVIEW_NOTES_VIEW_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 export const EXTENSION_OPERATION_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "agent.start",
@@ -685,6 +721,7 @@ const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "handoff.ensure",
   "handoff.distill",
   "sidebar.mutate",
+  "review.mutate",
   "extension.invoke",
 ]);
 
@@ -768,6 +805,7 @@ export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV
   if (value.method === "handoff.ensure") return hasOnlyKeys(value.input, []);
   if (value.method === "handoff.distill") return isHandoffDistillInputV1(value.input);
   if (value.method === "sidebar.mutate") return isSidebarMutationInputV1(value.input);
+  if (value.method === "review.mutate") return isReviewMutationInputV1(value.input);
   if (value.method === "extension.invoke") return isExtensionCommandV1(value.input);
   if (value.method === "agent.restart") return isWorkspaceAgentRestartInputV1(value.input);
   return hasOnlyKeys(value.input, ["agent"])
@@ -858,6 +896,11 @@ export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCo
       && isSidebarMutationResultIdentityV1(value.action, value.id)
       && typeof value.changed === "boolean";
   }
+  if (value.status === "ok" && value.method === "review.mutate") {
+    return hasOnlyKeys(value, ["schemaVersion", "method", "status", "action", "id", "changed"])
+      && isReviewMutationResultIdentityV1(value.action, value.id)
+      && typeof value.changed === "boolean";
+  }
   if (value.status === "ok" && value.method === "extension.invoke") {
     return hasOnlyKeys(value, ["schemaVersion", "method", "status", "action", "value"])
       && isExtensionCommandActionV1(value.action)
@@ -883,6 +926,7 @@ export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCo
       && value.method !== "handoff.ensure"
       && value.method !== "handoff.distill"
       && value.method !== "sidebar.mutate"
+      && value.method !== "review.mutate"
       && value.method !== "extension.invoke"
       && value.method !== "agent.stop";
   }
@@ -925,6 +969,7 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
   }
   if (value.method === "handoff.view") return hasOnlyKeys(value.input, []);
   if (value.method === "sidebar.view") return hasOnlyKeys(value.input, []);
+  if (value.method === "review.view") return isReviewNotesQueryInputV1(value.input);
   if (value.method === "runtime-ops.view") {
     const expected = value.input.refreshDetection === undefined ? [] : ["refreshDetection"];
     return hasOnlyKeys(value.input, expected)
@@ -940,7 +985,7 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
 
 export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQueryResultV1 {
   if (!isRecord(value) || value.schemaVersion !== 1
-    || (value.method !== "activity.context" && value.method !== "agent.working" && value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio" && value.method !== "handoff.view" && value.method !== "sidebar.view" && value.method !== "runtime-ops.view" && value.method !== "extension.query")) return false;
+    || (value.method !== "activity.context" && value.method !== "agent.working" && value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio" && value.method !== "handoff.view" && value.method !== "sidebar.view" && value.method !== "runtime-ops.view" && value.method !== "review.view" && value.method !== "extension.query")) return false;
   if (value.status === "ok") {
     if (value.method === "agent.working") {
       return hasOnlyKeys(value, ["schemaVersion", "method", "status", "agents"])
@@ -971,7 +1016,9 @@ export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQuer
                     ? isHandoffViewV1(value.view)
                     : value.method === "sidebar.view"
                       ? isSidebarViewV1(value.view)
-                      : isRuntimeOpsSnapshot(value.view));
+                      : value.method === "review.view"
+                        ? isReviewNotesViewV1(value.view)
+                        : isRuntimeOpsSnapshot(value.view));
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -1007,6 +1054,9 @@ export function isWorkspaceQueryResultBoundToInput(
   if (query.method === "extension.query" && result.method === "extension.query") {
     return result.action === query.input.action;
   }
+  if (query.method === "review.view" && result.method === "review.view") {
+    return result.view.worktree === query.input.worktree && result.view.k === query.input.k;
+  }
   return true;
 }
 
@@ -1017,6 +1067,9 @@ export function isWorkspaceCommandResultBoundToInput(
 ): boolean {
   if (command.method !== result.method) return false;
   if (result.status === "error") return true;
+  if (command.method === "review.mutate" && result.method === "review.mutate") {
+    return result.action === command.input.action && result.id === command.input.id;
+  }
   return command.method !== "extension.invoke"
     || (result.method === "extension.invoke" && result.action === command.input.action);
 }
@@ -1200,7 +1253,7 @@ export function workspaceCommandSuccessV1(
   }
   if (command.method === "agent.input" || command.method === "task.studio.apply" || command.method === "pin.studio.apply"
     || command.method === "handoff.ensure" || command.method === "handoff.distill"
-    || command.method === "sidebar.mutate" || command.method === "extension.invoke"
+    || command.method === "sidebar.mutate" || command.method === "review.mutate" || command.method === "extension.invoke"
     || command.method === "agent.stop") {
     throw new Error("command requires an exact outcome");
   }
@@ -1302,6 +1355,39 @@ export function workspaceSidebarMutationSuccessV1(
     changed: result.changed,
   };
   if (!isWorkspaceCommandResultV1(candidate)) throw new Error("sidebar mutation result is invalid");
+  return candidate;
+}
+
+export function workspaceReviewNotesViewSuccessV1(view: ReviewNotesViewV1): WorkspaceQueryResultV1 {
+  const result = {
+    schemaVersion: 1,
+    method: "review.view",
+    status: "ok",
+    view: parseReviewNotesViewV1(view),
+  } as const;
+  const transportEnvelope = { ok: true as const, op: "query" as const, result };
+  if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > REVIEW_NOTES_VIEW_RESPONSE_MAX_BYTES) {
+    throw new Error("review notes view exceeds its dedicated response size limit");
+  }
+  return result;
+}
+
+export function workspaceReviewMutationSuccessV1(
+  command: Extract<WorkspaceCommandV1, { method: "review.mutate" }>,
+  result: { action: ReviewMutationInputV1["action"]; id: string; changed: boolean },
+): WorkspaceCommandResultV1 {
+  if (result.action !== command.input.action || result.id !== command.input.id) {
+    throw new Error("review mutation result does not match its requested entity");
+  }
+  const candidate: WorkspaceCommandResultV1 = {
+    schemaVersion: 1,
+    method: command.method,
+    status: "ok",
+    action: result.action,
+    id: result.id,
+    changed: result.changed,
+  };
+  if (!isWorkspaceCommandResultV1(candidate)) throw new Error("review mutation result is invalid");
   return candidate;
 }
 

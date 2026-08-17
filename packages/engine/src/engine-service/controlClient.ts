@@ -6,6 +6,7 @@ import {
   BOARD_RESPONSE_MAX_BYTES,
   PIN_STUDIO_RESPONSE_MAX_BYTES,
   RUNTIME_OPS_VIEW_RESPONSE_MAX_BYTES,
+  REVIEW_NOTES_VIEW_RESPONSE_MAX_BYTES,
   SIDEBAR_VIEW_RESPONSE_MAX_BYTES,
   TASK_DETAIL_RESPONSE_MAX_BYTES,
   TASK_STUDIO_RESPONSE_MAX_BYTES,
@@ -393,9 +394,11 @@ export function requestEngineControl(
                   ? SIDEBAR_VIEW_RESPONSE_MAX_BYTES
                   : request.query.method === "runtime-ops.view"
                     ? RUNTIME_OPS_VIEW_RESPONSE_MAX_BYTES
-                    : request.query.method === "extension.query"
-                      ? EXTENSION_OPERATION_RESPONSE_MAX_BYTES
-                      : MAX_CONTROL_RESPONSE_BYTES
+                    : request.query.method === "review.view"
+                      ? REVIEW_NOTES_VIEW_RESPONSE_MAX_BYTES
+                      : request.query.method === "extension.query"
+                        ? EXTENSION_OPERATION_RESPONSE_MAX_BYTES
+                        : MAX_CONTROL_RESPONSE_BYTES
       : request.op === "invoke" && request.command.method === "extension.invoke"
         ? EXTENSION_OPERATION_RESPONSE_MAX_BYTES
         : MAX_CONTROL_RESPONSE_BYTES;

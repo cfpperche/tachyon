@@ -62,6 +62,14 @@ ele; a alternativa é não despachar integração para agente em segundo plano.
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
 
+### Fatia 2 — conteúdo do arquivo não viaja no `review.mutate`
+
+O molde de `sidebar.mutate` caberia um `content` no upsert, mas o control
+request é 64 KiB. Um arquivo de review passa disso. A mutação portanto
+aceita identidade + linha + k + hint; o engine lê o checkout. O range
+empurrado continua dica. k é parâmetro obrigatório da query e do upsert
+— a fatia 1 não inventa default, e esta também não.
+
 ## Tradeoffs
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
