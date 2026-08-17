@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NotificationService, type NotificationRequest, type UiNotificationPort } from "../../apps/vscode-extension/src/workspace/NotificationService.js";
 import { showNotification } from "../../apps/vscode-extension/src/workspace/NotificationService.js";
 import { initializeVsCodeNotifications, notify } from "../../apps/vscode-extension/src/workspace/notify.js";
@@ -61,15 +61,34 @@ describe("NotificationService", () => {
 });
 
 describe("VS Code notification routing (spec 415)", () => {
+  const projected: Array<{ message: string; level: "info" | "warn" | "error" }> = [];
+
   beforeEach(() => {
     __resetVscodeMock();
-    initializeVsCodeNotifications();
+    projected.length = 0;
+    initializeVsCodeNotifications((message, level) => {
+      projected.push({ message, level });
+      return Promise.resolve();
+    });
   });
 
-  it("routes non-modal acknowledgements to transient status feedback", () => {
+  it("pushes action-less notices into projected state", async () => {
     notify("saved", "info");
-    expect(__getStatusBarMessages()).toEqual([{ text: "$(info) Tachyon: saved", timeout: 8_000 }]);
+    await vi.waitFor(() => expect(projected).toEqual([{ message: "Tachyon: saved", level: "info" }]));
+    expect(__getStatusBarMessages()).toHaveLength(0);
     expect(__getWarningMessageCalls()).toHaveLength(0);
+  });
+
+  it("degrades visibly when projected-state delivery fails", async () => {
+    initializeVsCodeNotifications(() => Promise.reject(new Error("socket unavailable")));
+    notify("still visible", "warn");
+
+    await vi.waitFor(() => expect(__getWarningMessageCalls()).toEqual([{
+      message: "Tachyon: still visible",
+      options: undefined,
+      actions: [],
+    }]));
+    expect(__getStatusBarMessages()).toHaveLength(0);
   });
 
   it("routes non-modal choices through QuickPick", async () => {
@@ -79,6 +98,7 @@ describe("VS Code notification routing (spec 415)", () => {
       items: ["Open"],
       options: { title: "Tachyon: ready", ignoreFocusOut: true },
     }]);
+    expect(projected).toHaveLength(0);
     expect(__getWarningMessageCalls()).toHaveLength(0);
   });
 
@@ -92,6 +112,7 @@ describe("VS Code notification routing (spec 415)", () => {
       actions: ["Delete"],
     }]);
     expect(__getQuickPickCalls()).toHaveLength(0);
+    expect(projected).toHaveLength(0);
     expect(__getStatusBarMessages()).toHaveLength(0);
   });
 });

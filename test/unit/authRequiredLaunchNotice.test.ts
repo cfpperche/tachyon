@@ -12,7 +12,6 @@ import { initializeVsCodeNotifications } from "../../apps/vscode-extension/src/w
 import { showNotificationActions } from "../../apps/vscode-extension/src/workspace/NotificationService.js";
 import {
   __getQuickPickCalls,
-  __getStatusBarMessages,
   __resetVscodeMock,
   __setQuickPickResult,
 } from "../mocks/vscode.js";
@@ -24,13 +23,13 @@ import {
  * /home/gc` in the status bar — clipped. The sentence ended in `— run grok login first`, he never saw
  * it, concluded Grok was unsupported, and asked when the product would enable it.
  *
- * The mechanism was one branch: with an EMPTY actions array the notification provider skips the
- * dialog entirely and calls `setStatusBarMessage(…, 8_000)`, which clips to one status-bar cell and
- * erases itself. A non-empty array is the whole difference.
+ * The mechanism was one branch: with an EMPTY actions array the notification provider used the
+ * transient status bar. SDD 512 moved that branch to projected sidebar state; a non-empty array
+ * remains the whole difference between passive status and an actionable picker.
  *
  * So this file asserts two things and treats them as one guard:
  *
- *  1. the coupling is real — empty actions DO land in the status bar and non-empty actions do NOT
+ *  1. the coupling is real — empty actions DO land in projected state and non-empty actions do NOT
  *     (measured here against the real provider, not asserted from a comment); and
  *  2. this branch always produces a non-empty array, for every runtime that can be refused,
  *     including the ones with no measured login command.
@@ -63,23 +62,33 @@ function noticeFor(runtime: string, agent = "grok-builder") {
   });
 }
 
-describe("t-2656d7 — the status-bar branch is exactly the empty-actions branch", () => {
+describe("t-2656d7 / SDD 512 — passive status is exactly the empty-actions branch", () => {
   afterEach(() => __resetVscodeMock());
 
-  it("an action-less notice IS the status bar, and nothing else", async () => {
+  it("an action-less notice is projected sidebar status, and nothing else", async () => {
     __resetVscodeMock();
-    initializeVsCodeNotifications();
+    const projected: Array<{ message: string; level: string }> = [];
+    initializeVsCodeNotifications((message, level) => {
+      projected.push({ message, level });
+      return Promise.resolve();
+    });
 
     await showNotificationActions("agent 'grok-builder' cannot run — run grok login first", "warn", []);
 
-    // This is the owner's 2026-08-07 experience, reproduced: no dialog, one status-bar line on a timer.
-    expect(__getStatusBarMessages()).toHaveLength(1);
+    expect(projected).toEqual([{
+      message: "Tachyon: agent 'grok-builder' cannot run — run grok login first",
+      level: "warn",
+    }]);
     expect(__getQuickPickCalls()).toHaveLength(0);
   });
 
   it("one action is enough to leave it — the notice becomes a persistent pick instead", async () => {
     __resetVscodeMock();
-    initializeVsCodeNotifications();
+    const projected: string[] = [];
+    initializeVsCodeNotifications((message) => {
+      projected.push(message);
+      return Promise.resolve();
+    });
     __setQuickPickResult("Log in");
 
     let ran = false;
@@ -87,7 +96,7 @@ describe("t-2656d7 — the status-bar branch is exactly the empty-actions branch
       { label: "Log in", run: () => { ran = true; } },
     ]);
 
-    expect(__getStatusBarMessages()).toHaveLength(0);
+    expect(projected).toHaveLength(0);
     expect(__getQuickPickCalls()).toHaveLength(1);
     // It survives a focus change rather than vanishing on a timer — the property the status bar lacks.
     expect((__getQuickPickCalls()[0]?.options as { ignoreFocusOut?: boolean })?.ignoreFocusOut).toBe(true);

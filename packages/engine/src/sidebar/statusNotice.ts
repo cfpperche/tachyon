@@ -16,6 +16,21 @@ export interface StatusNotice {
   at: string;
 }
 
+export interface StatusNoticeSetInputV1 {
+  message: string;
+  level: StatusNoticeLevel;
+}
+
+export function isStatusNoticeSetInputV1(value: unknown): value is StatusNoticeSetInputV1 {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const input = value as Record<string, unknown>;
+  return Object.keys(input).length === 2
+    && typeof input.message === "string"
+    && input.message.trim().length > 0
+    && input.message.length <= 10_000
+    && (input.level === "info" || input.level === "warn" || input.level === "error");
+}
+
 export class StatusNoticeStore {
   #current: StatusNotice | undefined;
 

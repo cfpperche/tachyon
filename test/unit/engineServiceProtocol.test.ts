@@ -698,6 +698,23 @@ describe("persistent engine protocol", () => {
     })).toThrow(/invalid_string|regex|invalid/i);
   });
 
+  it("validates the shell-to-daemon status notice command", () => {
+    const command = {
+      schemaVersion: 1,
+      method: "status-notice.set",
+      input: { message: "Tachyon: saved", level: "info" },
+    } as const;
+    expect(isWorkspaceCommandV1(command)).toBe(true);
+    expect(workspaceCommandSuccessV1(command)).toEqual({
+      schemaVersion: 1,
+      method: "status-notice.set",
+      status: "ok",
+    });
+    expect(isWorkspaceCommandV1({ ...command, input: { ...command.input, extra: true } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...command, input: { ...command.input, message: " " } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...command, input: { ...command.input, level: "fatal" } })).toBe(false);
+  });
+
   it("validates review.view / review.mutate in the sidebar.mutate mould (t-115091)", () => {
     const query = { schemaVersion: 1, method: "review.view", input: { worktree: "notasgrok", k: 2 } } as const;
     const upsert = {
