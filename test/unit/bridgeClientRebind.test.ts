@@ -326,6 +326,33 @@ describe("BridgeClientRebindCoordinator", () => {
     for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
   });
 
+  it("reports an unaudited event without blocking rebind when audit append fails", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const blockingFile = path.join(auditDir, "not-a-directory");
+    fs.writeFileSync(blockingFile, "blocks mkdir", "utf8");
+    const ledger = new Map([[
+      "grok",
+      baseRecord({ bridgeClient: { boundGeneration: 0, wired: true } }),
+    ]]);
+    const deps = makeDeps({
+      ledger,
+      running: new Set(["grok"]),
+      auditPath: path.join(blockingFile, "audit.jsonl"),
+      resumeImpl: async () => { throw new Error("resume broke"); },
+    });
+
+    const coordinator = new BridgeClientRebindCoordinator(deps);
+    await expect(coordinator.onListenerReady()).resolves.toBeUndefined();
+
+    const lostFailure = deps.notifies.find(({ m }) => m.includes('"phase":"resume_fail"'));
+    expect(lostFailure?.l).toBe("error");
+    expect(lostFailure?.m).toContain("UNAUDITED");
+    expect(lostFailure?.m).toContain("resume broke");
+    expect(lostFailure?.m).toContain("not-a-directory");
+    expect(deps.notifies.some(({ m }) => m.includes("Bridge client rebind of 'grok' failed: resume broke"))).toBe(true);
+  });
+
   it("reload-safe: refuses an unsafe Delivery resume before every teardown side effect", async () => {
     const auditDir = tmpDir();
     dirs.push(auditDir);
