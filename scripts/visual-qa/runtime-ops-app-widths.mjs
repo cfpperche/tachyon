@@ -27,7 +27,7 @@
  *    `@container (max-width: 720px)` one, and only the first needs the viewport (the container query reads
  *    `.runtime-ops`'s own inline size, which `?width=` does move). Setting both is what measures both;
  *  - measure with volume, on fixtures that already exist rather than a fiction invented to photograph.
- *    `provider-healthy` is the fullest screen this surface has (summary + two providers × two quota
+ *    `provider-healthy` is the fullest screen this surface has (summary + three providers and five quota
  *    windows + three runtimes across two workspaces); `long-label` is the width-stress fixture the retired
  *    browser suite drove at 340px; `duplicate-workspace` is the one whose whole point is two workspaces
  *    with same-named agents, which is the cardinality's own case.
@@ -47,7 +47,7 @@ const widths = [880, 360];
  * guessed. Two corrections the first runs of this driver forced, both recorded because they are the kind
  * of thing that otherwise gets quietly rewritten until it passes:
  *
- *  1. the capacity block is ALWAYS present, two rows, even where no observation is configured — an
+ *  1. the capacity block is ALWAYS present, three rows, even where no observation is configured — an
  *     unobserved provider renders as "not observed" rather than vanishing. That is the honest answer and
  *     the one Control has always given: `runtime-ops/App.tsx`, these fixtures and `src/runtimeOps/` are
  *     byte-identical across this migration, so there was nowhere for a behaviour change to hide;
@@ -59,10 +59,10 @@ const widths = [880, 360];
 //
 // The quota counts follow one structural rule in `fixtures/runtime-ops.ts`, which is why they are stated
 // rather than derived here: a fixture built through `withProviderState(...)` carries that state's quota
-// windows; one built bare through `buildRuntimeOpsSnapshot({...})` carries none, and its two provider rows
+// windows; one built bare through `buildRuntimeOpsSnapshot({...})` carries none, and its three provider rows
 // both read "not observed".
 const cases = [
-  { fixture: "provider-healthy", quotas: 4, note: "the fullest screen: summary + two providers × two quota windows + three runtimes" },
+  { fixture: "provider-healthy", quotas: 5, note: "the fullest screen: summary + three providers and five quota windows + three runtimes" },
   { fixture: "throttled", quotas: 0, note: "an agent throttled with a rate-limit reset — the attention state this surface exists for" },
   { fixture: "provider-exhausted", quotas: 2, note: "100% / 99.8% — the exhausted meter and its err-toned label" },
   { fixture: "long-label", quotas: 0, note: "the width stress the retired browser suite drove at 340px" },
@@ -145,7 +145,7 @@ for (const c of cases) {
     const padded = m.padLeft && m.padLeft !== "0px" && m.padTop && m.padTop !== "0px";
     // the capacity block is always present (an unobserved provider still gets a row); the quota windows
     // are what the fixtures differ on.
-    const providersOk = m.providerRows === 2 && m.quotaWindows === c.quotas;
+    const providersOk = m.providerRows === 3 && m.quotaWindows === c.quotas;
     // the account-wide sentence is the provider block's own copy, and it is one of the two cross-workspace
     // facts the `window` cardinality rests on — so it is asserted at BOTH widths, on every fixture.
     const capacityOk = /account-wide/i.test(m.capacityCopy ?? "");
