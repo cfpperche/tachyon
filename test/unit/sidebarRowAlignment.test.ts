@@ -29,11 +29,19 @@ const SPACING_PX: Record<string, number> = {
   "--ds-spacing-size320": 32,
 };
 
+/** t-d588c3 — name-column geometry on `.row`. Same computed px as the old 28/13/72 literals. */
+const GEOMETRY_PX: Record<string, number> = {
+  "--sidebar-name-col": 28,
+  "--sidebar-child-name-col": 13,
+  "--sidebar-focus-trail": 72,
+};
+
 /** First length in a CSS value: `12px`, `var(--ds-spacing-size120)`, or a shorthand component. */
 function px(value: string | undefined, index = 0): number {
   const part = (value ?? "").trim().split(/\s+/)[index] ?? "";
-  const token = /var\(\s*(--ds-spacing-size\d+)/.exec(part)?.[1];
+  const token = /var\(\s*(--(?:ds-spacing-size\d+|sidebar-[\w-]+))/.exec(part)?.[1];
   if (token && token in SPACING_PX) return SPACING_PX[token];
+  if (token && token in GEOMETRY_PX) return GEOMETRY_PX[token];
   const n = parseInt(part, 10);
   return n;
 }
