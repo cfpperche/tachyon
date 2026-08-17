@@ -908,8 +908,8 @@ function changedFilesFrom(value: unknown): ChangedFile[] {
 
 /**
  * SDD 501 — a third identity (`worktreeId`, the managed-registry row behind a land block) alongside the
- * agent and the pipeline run. Only the ANSWER differs: that identity comes back with a `comparison`,
- * because its review is of committed history rather than of the working tree.
+ * agent and the pipeline run. `comparison.base` is the resolved review base (local trunk, then birth).
+ * `comparison.head` is present only on the land door, where the review is of committed history.
  */
 async function worktreeReview(
   ws: WorkspaceShellHandle,
@@ -918,20 +918,28 @@ async function worktreeReview(
   record: WorktreeRecord | null;
   status: WorktreeStatus | null;
   changedFiles: ChangedFile[];
-  comparison?: { base: string; head: string };
+  comparison?: { base: string; head?: string };
 }> {
   const payload = jsonObject(await extensionQuery(ws, { action: "worktree.review", ...input }), "worktree.review");
   const comparison = payload.comparison === undefined || payload.comparison === null
     ? undefined
     : jsonObject(payload.comparison, "worktree review comparison");
-  if (comparison && (typeof comparison.base !== "string" || typeof comparison.head !== "string")) {
+  if (comparison && typeof comparison.base !== "string") {
+    throw new Error("worktree review comparison is incomplete");
+  }
+  if (comparison && comparison.head !== undefined && typeof comparison.head !== "string") {
     throw new Error("worktree review comparison is incomplete");
   }
   return {
     record: payload.record === null ? null : worktreeRecordFrom(payload.record),
     status: payload.status === null ? null : worktreeStatusFrom(payload.status),
     changedFiles: changedFilesFrom(payload.changedFiles),
-    ...(comparison ? { comparison: { base: comparison.base as string, head: comparison.head as string } } : {}),
+    ...(comparison ? {
+      comparison: {
+        base: comparison.base as string,
+        ...(typeof comparison.head === "string" ? { head: comparison.head } : {}),
+      },
+    } : {}),
   };
 }
 
@@ -1117,7 +1125,7 @@ async function locationFromReviewItem(item: AgentItem | WorktreeRowItem): Promis
     worktree: item.agentName,
     cwd: review.record.path,
     path: "",
-    baseRef: review.record.baseRef,
+    baseRef: review.comparison?.base ?? review.record.baseRef,
     workspaceHash: ws.wsHash,
   };
 }
@@ -4229,7 +4237,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}' has no worktree", item.agentName), "warn");
         return undefined;
       }
-      await reviewWorktreeDiff({ cwd: review.record.path, baseRef: review.record.baseRef }, review.changedFiles, item.agentName);
+      await reviewWorktreeDiff(
+        { cwd: review.record.path, baseRef: review.comparison?.base ?? review.record.baseRef },
+        review.changedFiles,
+        item.agentName,
+      );
       return undefined;
     }),
     vscode.commands.registerCommand("tachyon.reviewSendNotes", async (item?: AgentItem | WorktreeRowItem) => {
@@ -4247,7 +4259,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("no active run worktree to review"), "warn");
         return;
       }
-      await reviewWorktreeDiff({ cwd: review.record.path, baseRef: review.record.baseRef }, review.changedFiles, runId);
+      await reviewWorktreeDiff(
+        { cwd: review.record.path, baseRef: review.comparison?.base ?? review.record.baseRef },
+        review.changedFiles,
+        runId,
+      );
     }),
     vscode.commands.registerCommand("tachyon.createWorktreePrItem", async (item: AgentItem | WorktreeRowItem) => {
       // spec 223 — open a GitHub PR from the worktree's branch. Human stays at the gate: readiness is probed at CLICK (no per-refresh gh spawn), then an

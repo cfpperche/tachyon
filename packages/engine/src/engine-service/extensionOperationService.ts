@@ -46,6 +46,8 @@ import {
   type PaneSnapshot,
 } from "../tmux/TmuxService.js";
 import { recoverTmuxServer } from "./tmuxAuthority.js";
+import { localTrunkRef, resolveTrunkRefs } from "../worktree/classify.js";
+import { defaultGitExec } from "../worktree/WorktreeManager.js";
 
 export interface ExtensionOperationContext {
   workspace: Workspace;
@@ -229,8 +231,9 @@ export async function executeExtensionQuery(
       return json({ worktrees: (await workspace.managedWorktrees.listClassified()) as unknown as JsonValue });
     }
     case "worktree.review":
-      // SDD 501 — three identities, one review. The land door's is resolved against the managed
-      // registry and answers a COMMITTED comparison; the other two keep the working-tree one.
+      // SDD 501 — three identities, one review. Both doors resolve the base the same way
+      // (local trunk, then the birth baseRef). They still answer different questions:
+      // the land door is a COMMITTED comparison; the other two keep the working-tree one.
       if ("worktreeId" in query) return inspectWorktreeForLanding(workspace, query.worktreeId);
       return inspectWorktree(workspace, "agent" in query ? query.agent : query.runId, "agent" in query);
     case "pipeline.inspect":
@@ -810,22 +813,29 @@ async function inspectAgent(workspace: Workspace, agent: string): Promise<JsonVa
 async function inspectWorktree(workspace: Workspace, identity: string, isAgent: boolean): Promise<JsonValue> {
   const record = isAgent ? workspace.ledger.get(identity)?.worktree : workspace.pipelineRunWorktree(identity);
   if (!record) return json({ record: null, status: null, changedFiles: [] });
+  // t-580570 — WHICH base is independent of AGAINST WHAT. Land already prefers the local
+  // trunk; this door keeps the working-tree comparison and now shares that base resolution.
+  // `comparison` names the base used and carries no `head`, so the surface cannot mistake
+  // this answer for the committed `base..head` the land door returns.
+  const trunkRefs = await resolveTrunkRefs(defaultGitExec, workspace.workspaceRoot);
+  const base = localTrunkRef(trunkRefs) ?? record.baseRef;
   const [status, changedFiles] = await Promise.all([
-    workspace.worktrees.status(record.path, record.baseRef),
-    workspace.worktrees.changedFiles(record.path, record.baseRef),
+    workspace.worktrees.status(record.path, base),
+    workspace.worktrees.changedFiles(record.path, base),
   ]);
   return json({
     record,
     status,
     changedFiles,
+    comparison: { base },
   });
 }
 
 /**
  * SDD 501 — the land door's review: `trunkRef..head`, the commits the land command would introduce.
  *
- * `comparison` is what distinguishes this answer from the two above it, and it is returned rather than
- * inferred so the surface can NAME the base it is showing. A row the registry does not know, or whose
+ * `comparison.head` is what distinguishes this answer from the two above it: those name the same
+ * resolved base and keep the working-tree comparison. A row the registry does not know, or whose
  * checkout is gone, answers the same empty shape the other identities do — an honest "nothing to
  * review here", never a working-tree comparison quietly substituted for the committed one.
  */
