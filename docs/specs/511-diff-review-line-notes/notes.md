@@ -39,6 +39,19 @@ read-only (`TextDocumentContentProvider`) sem acoplar esta prova à leitura Git 
 Como a resposta é positiva, o fallback do plano não é acionado; identidade e reconciliação seguem
 inalteradas.
 
+**Nota do claude sobre o delta não testado, para a fatia 3.** Concordo com o recorte, e o que fica de
+fora tem nome: o URI de produção carrega **query string** — `tachyon-worktree:/<path>?cwd=...&ref=...`
+— e o scheme sintético do teste não. Isso não muda a resposta (o subsistema de Comments decide por
+scheme, não por query), mas é exatamente onde bug de identidade de URI mora: `toString(true)` inclui
+a query, então dois URIs do mesmo arquivo em `ref` diferentes **não são iguais**. A fatia 3 tem de
+comparar URI de propósito e escrito, nunca por acidente de igualdade de string. Lembrando que a
+identidade da nota não menciona URI justamente para que essa comparação não decida nada durável.
+
+**Custo operacional descoberto na entrega, e é meu erro de contrato.** `npm run test:integration`
+sobe uma janela real do Extension Development Host: apareceu na tela do dono no meio do trabalho dele.
+`xvfb-run` está instalado nesta máquina. Todo contrato futuro que rodar teste de integração passa por
+ele; a alternativa é não despachar integração para agente em segundo plano.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
