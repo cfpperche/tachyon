@@ -1,6 +1,5 @@
 import type { NotifyLevel } from "@tachyon/engine/workspace/EngineHost.js";
 import type { NoticeAction } from "@tachyon/engine/workspace/EngineHost.js";
-import fs from "node:fs";
 
 export interface NotificationOptions {
   modal?: boolean;
@@ -60,30 +59,11 @@ export class NotificationService {
   }
 
   private async dispatch(request: NotificationRequest): Promise<string | undefined> {
-    recordNotifyMeasurement(request);
     const choice = await this.provider.notify(request);
     const picked = request.actions?.find((a) => a.label === choice);
     if (picked?.run) await picked.run();
     return choice;
   }
-}
-
-let previousMeasurementCostNs: number | undefined;
-
-/** Temporary, env-gated SDD 512 slice-0 probe. Removed after the real-session capture. */
-function recordNotifyMeasurement(request: NotificationRequest): void {
-  const file = process.env.TACHYON_NOTIFY_MEASURE_FILE;
-  if (!file) return;
-  const started = process.hrtime.bigint();
-  const base = {
-    at: new Date().toISOString(),
-    level: request.level ?? "info",
-    messageLength: request.message.length,
-    hasActions: (request.actions?.length ?? 0) > 0,
-    previousCostNs: previousMeasurementCostNs,
-  };
-  fs.appendFileSync(file, `${JSON.stringify(base)}\n`);
-  previousMeasurementCostNs = Number(process.hrtime.bigint() - started);
 }
 
 export const notificationService = new NotificationService();
