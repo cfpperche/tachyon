@@ -77,7 +77,7 @@ export function loadReviewNotes(workspaceRoot: string, worktree: string): Review
 export function readReviewNotes(
   workspaceRoot: string,
   worktree: string,
-  files: ReadonlyMap<string, string> | Readonly<Record<string, string>>,
+  files: ReadonlyMap<string, string>,
   k: number,
   opts: Omit<ReconcileNoteOpts, "knownPaths"> = {},
 ): { notes: ReviewNote[]; journal: ReviewReconcileJournal[] } {

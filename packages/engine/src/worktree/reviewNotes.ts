@@ -281,7 +281,7 @@ export function reconcileNote(
 
 export function reconcileNotes(
   notes: readonly ReviewNote[],
-  files: ReadonlyMap<string, string> | Readonly<Record<string, string>>,
+  files: ReadonlyMap<string, string>,
   k: number,
   opts: Omit<ReconcileNoteOpts, "knownPaths"> = {},
 ): { notes: ReviewNote[]; journal: ReviewReconcileJournal[] } {
@@ -486,13 +486,10 @@ function parseJournal(value: unknown): ReviewReconcileJournal | undefined {
   };
 }
 
-function filePaths(files: ReadonlyMap<string, string> | Readonly<Record<string, string>>): Set<string> {
-  return files instanceof Map ? new Set(files.keys()) : new Set(Object.keys(files));
+function filePaths(files: ReadonlyMap<string, string>): Set<string> {
+  return new Set(files.keys());
 }
 
-function fileContent(
-  files: ReadonlyMap<string, string> | Readonly<Record<string, string>>,
-  filePath: string,
-): string | undefined {
-  return files instanceof Map ? files.get(filePath) : files[filePath];
+function fileContent(files: ReadonlyMap<string, string>, filePath: string): string | undefined {
+  return files.get(filePath);
 }
