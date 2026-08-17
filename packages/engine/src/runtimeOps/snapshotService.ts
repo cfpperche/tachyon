@@ -15,9 +15,7 @@ import { buildRuntimeOpsSnapshot, type RuntimeOpsAgentInput } from "./model.js";
 import type { RuntimeOpsProviderObservationSnapshotInput } from "./providerProjection.js";
 import type { RuntimeOpsSnapshotV2 } from "./types.js";
 import { buildWorkspaceLabels, type RuntimeOpsWorkspaceInput } from "./workspaceLabels.js";
-import { cpus } from "node:os";
 import { readHostMemory } from "../host/hostResources.js";
-import { previewVitestShare } from "../host/vitestBudget.js";
 
 const execFileP = promisify(execFile);
 
@@ -210,25 +208,12 @@ export class RuntimeOpsSnapshotService {
       agents,
       pathVersions,
       providerObservations,
-      // t-7f9809 — workers from the host-wide budget preview (siblings discounted), not alone-sizing.
       hostMemory: (() => {
         const memory = readHostMemory();
         if (memory.source !== "proc-meminfo") return undefined;
-        let recommendedVitestWorkers = 0;
-        try {
-          recommendedVitestWorkers = previewVitestShare({
-            memory,
-            cpuCount: cpus().length || 1,
-          }).workers;
-        } catch {
-          // Ledger lock / infra failure: do not invent a claim and do not crash the snapshot.
-          // Zero is the honest "we cannot say a run would get workers right now" without lying high.
-          recommendedVitestWorkers = 0;
-        }
         return {
           hostMemAvailableMb: memory.memAvailableMb,
           hostMemTotalMb: memory.memTotalMb,
-          recommendedVitestWorkers,
         };
       })(),
     });

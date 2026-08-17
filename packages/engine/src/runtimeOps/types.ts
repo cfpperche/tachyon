@@ -7,12 +7,6 @@ export interface RuntimeOpsSummaryV1 {
   /** t-019dac — host MemAvailable/total (MiB) when /proc/meminfo is readable. */
   hostMemAvailableMb?: number;
   hostMemTotalMb?: number;
-  /**
-   * Suggested vitest maxWorkers a NEW run would receive right now (t-7f9809).
-   * Host-wide budget with live siblings discounted — not alone-process sizing.
-   * 0 when the budget is spent (a real admit would refuse).
-   */
-  recommendedVitestWorkers?: number;
 }
 
 

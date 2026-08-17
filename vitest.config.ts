@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { decideHeavyGate, readHostMemory } from "./packages/engine/src/host/hostResources";
-import { admitOrFallback } from "./packages/engine/src/host/vitestBudget";
+import { admitOrFallback } from "./scripts/vitestBudget";
 
 /**
  * t-019dac: auto-size workers from free RAM (grows if you add memory).

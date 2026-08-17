@@ -19,7 +19,7 @@ const DEFAULT_WORKER_MB = 320;
  * gate saturating a VS Code session during a run, at an hour when it was only busy 15% of the time.
  *
  * This is NOT a retreat from t-3ad4af. That incident was a SUM — six independent sizers dividing the
- * same RAM — and the ledger in `src/host/vitestBudget.ts` is what fixed it; the pool it divides is
+ * same RAM — and the ledger in `scripts/vitestBudget.ts` is what fixed it; the pool it divides is
  * untouched here. `vitestBudget.test.ts` used to say "the fix must not be lower the cap", and it was
  * right about the fix it was defending. Lowering the cap is a different change for a different
  * resource: it shrinks each run's SLICE, so the host admits more, smaller runs. Measured on this box

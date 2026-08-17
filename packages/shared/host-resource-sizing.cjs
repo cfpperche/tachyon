@@ -33,7 +33,7 @@ const DEFAULT_MIN_AVAILABLE_MB = 2048;
  * t-3ad4af — 768 was an estimate and it was wrong by ~2.7x. Sampling PSS per process across the full
  * `test/unit` suite, a single pool worker never exceeded 289MB and the marginal cost of adding one
  * was 215MB. The estimate mattered: it is the divisor of the whole budget, so the sizer was wrong at
- * the source. The rest of a run's cost is not per-worker at all — see `src/host/vitestBudget.ts`,
+ * the source. The rest of a run's cost is not per-worker at all — see `scripts/vitestBudget.ts`,
  * which owns the fixed per-invocation term this module never modelled.
  */
 

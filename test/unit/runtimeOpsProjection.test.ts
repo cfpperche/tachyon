@@ -235,7 +235,6 @@ describe("t-019dac/t-e3bae0 Runtime Ops summary host mem + agent resources", () 
       hostMemory: {
         hostMemAvailableMb: 2048,
         hostMemTotalMb: 16384,
-        recommendedVitestWorkers: 4,
       },
     });
     expect(() => parseRuntimeOpsSnapshot(snap)).not.toThrow();
