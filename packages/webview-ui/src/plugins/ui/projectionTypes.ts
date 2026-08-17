@@ -6,12 +6,9 @@
  * handoff state, or topology. Additions must be explicit allowlist fields and keep the projection canary green.
  */
 
-export type PluginAgentStatusV1 = "running" | "needs" | "throttled" | "done" | "idle" | "stopped" | "crashed";
+export type PluginAgentStatusV1 = "running" | "needs" | "throttled" | "idle" | "stopped" | "crashed";
 export type PluginAgentAttentionV1 = "working" | "needs-input" | "throttled";
 export type PluginAgentBadgeV1 =
-  | "continuity-fresh"
-  | "continuity-stale"
-  | "continuity-missing"
   | "persistence-active"
   | "persistence-skipped"
   | "persistence-failed"
@@ -35,7 +32,6 @@ export interface PluginFleetProjectionCountsV1 {
   running: number;
   needs: number;
   throttled: number;
-  done: number;
   idle: number;
   stopped: number;
   crashed: number;

@@ -26,7 +26,6 @@ function fakeWorkspace(pins: Pin[] = [], opts: {
   calls?: string[];
   agents?: AgentInfo[];
   attentionOf?: (agent: string) => { state: string } | undefined;
-  continuityBadge?: (agent: string) => "fresh" | "stale" | "missing" | undefined;
   observedModel?: (agent: string) => ObservedModelInput | undefined;
   proposals?: ScheduleProposal[];
   notices?: NoticeVM[];
@@ -48,7 +47,6 @@ function fakeWorkspace(pins: Pin[] = [], opts: {
     tmux: { panePid: async () => { throw new Error("no fake pane"); } },
     evidenceHandoff: async () => undefined,
     attentionOf: opts.attentionOf ?? (() => undefined),
-    continuityBadge: opts.continuityBadge ?? (() => undefined),
     persistenceHookHealth: () => undefined,
     config: {},
     handoffStore: { snapshot: () => ({ exists: false, staleness: "fresh", pendingCount: 0 }) },
@@ -458,28 +456,6 @@ describe("SidebarPrototypeProvider", () => {
     const cmd = __getExecutedCommands().at(-1);
     expect(cmd?.command).toBe("tachyon.deleteAgentItem");
     expect(cmd?.args[0]).toMatchObject({ ws, agentName: "scratch", contextValue: "agent-running-ai-temporary" });
-  });
-
-  it("does not show continuity badges for Temporary agents without Tachyon lifecycle hooks", async () => {
-    const ws = fakeWorkspace([], {
-      agents: [
-        // A RUNNING agent always has a ledger row, so the fixture carries the policy the row would:
-        // `continuity` asks the recorded CAPABILITY, which is the whole point of the separate field.
-        { name: "declared", session: "tachyon-demohash-declared", running: true, lifetime: "saved", resumePolicy: "restartable", instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true }, dead: false, crashed: false, kind: "agent" },
-        { name: "reviewer", session: "tachyon-demohash-reviewer", running: true, lifetime: "temporary", resumePolicy: "collected", instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false }, dead: false, crashed: false, kind: "agent", parent: "declared" },
-      ],
-      continuityBadge: () => "missing",
-    });
-    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
-    const { view, posted } = fakeView();
-
-    provider.resolveWebviewView(view);
-    await flushPromises();
-
-    const fleet = posted.find((m) => (m as { type?: string }).type === "fleet") as { fleets: Array<{ agents: Array<{ name: string; continuity?: string }> }> } | undefined;
-    const agents = fleet?.fleets[0]?.agents ?? [];
-    expect(agents.find((a) => a.name === "declared")?.continuity).toBe("missing");
-    expect(agents.find((a) => a.name === "reviewer")?.continuity).toBeUndefined();
   });
 
   it("does not attach stale attention to stopped agent rows", async () => {

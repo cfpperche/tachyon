@@ -2058,18 +2058,18 @@ describe("HarnessManager materialize (fs)", () => {
     expect(noPtr.hooks.SessionStart[0].hooks.length).toBe(1);
   });
 
-  it("spec 312: materializeOwnershipSettings can add continuity and Stop persistence hooks", () => {
+  it("materializeOwnershipSettings adds Stop persistence without continuity injection", () => {
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     const file = mgr.materializeOwnershipSettings("claude-x", path.join(ws, ".tachyon", "HANDOFF.md"), { silentPersistence: true });
     const settings = JSON.parse(fs.readFileSync(file, "utf8"));
     const startCmds = settings.hooks.SessionStart[0].hooks.map((h: { command: string }) => h.command);
     expect(startCmds.some((cmd: string) => cmd.includes("session-owner-record.cjs"))).toBe(true);
     expect(startCmds.some((cmd: string) => cmd.includes("handoff-pointer.cjs"))).toBe(true);
-    expect(startCmds.some((cmd: string) => cmd.includes("continuity-pointer.cjs") && cmd.includes("continuity/claude-x.md"))).toBe(true);
+    expect(startCmds.some((cmd: string) => cmd.includes("continuity-pointer"))).toBe(false);
     expect(startCmds.every((cmd: string) => cmd.includes("persistence-hooks-failures.jsonl"))).toBe(true);
     expect(settings.hooks.Stop[0].hooks[0].command).toContain("persistence-stop-record.cjs");
     expect(settings.hooks.Stop[0].hooks[0].command).toContain("persistence-hooks-failures.jsonl");
-    expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "continuity-pointer.cjs"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "continuity-pointer.cjs"))).toBe(false);
     expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "persistence-stop-record.cjs"))).toBe(true);
   });
 
@@ -2095,19 +2095,18 @@ describe("HarnessManager materialize (fs)", () => {
     expect(values.find((value) => value.startsWith("hooks.PreToolUse="))).toContain("codex-tool-hook-record.cjs");
   });
 
-  it("spec 312: materializeCodexSessionStartHookConfig can add continuity and Stop persistence hooks", () => {
+  it("materializeCodexSessionStartHookConfig adds Stop persistence without continuity injection", () => {
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     const config = mgr.materializeCodexSessionStartHookConfig("codex-x", path.join(ws, ".tachyon", "HANDOFF.md"), { silentPersistence: true });
     expect(config).toEqual(expect.any(Array));
     const [start, stop] = config as string[];
     expect(start).toContain("hooks.SessionStart=");
-    expect(start).toContain("continuity-pointer.cjs");
-    expect(start).toContain("continuity/codex-x.md");
+    expect(start).not.toContain("continuity-pointer");
     expect(stop).toContain("hooks.Stop=");
     expect(stop).toContain("persistence-stop-record.cjs");
     expect(start).toContain("persistence-hooks-failures.jsonl");
     expect(stop).toContain("persistence-hooks-failures.jsonl");
-    expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "continuity-pointer.cjs"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "continuity-pointer.cjs"))).toBe(false);
     expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "persistence-stop-record.cjs"))).toBe(true);
   });
 

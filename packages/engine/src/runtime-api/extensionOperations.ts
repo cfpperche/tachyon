@@ -50,7 +50,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   // Deliberately NOT a host-action capability — that broker refuses callers whose kind is not "agent"
   // (src/host-action/policy.ts), so registering it there would make the door agent-only.
   "worktree.land",
-  "agent.inject-continuity", "agent.resume-all", "workspace.stop-all", "pipeline.start", "pipeline.approve",
+  "agent.resume-all", "workspace.stop-all", "pipeline.start", "pipeline.approve",
   "pipeline.reject", "pipeline.cancel", "pipeline.rerun", "pipeline.dismiss", "pipeline.apply-input", "pipeline.delete",
   "bridge.restart", "bridge.stop", "bridge.refresh-tools", "config.health",
   "companion.unpair",
@@ -238,7 +238,6 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   // t-d29398 — release a preserved checkout's Git quarantine. Registry-id-scoped like the two above,
   // human-initiated from the Worktrees tab, and non-destructive: it removes the lock, never the tree.
   z.object({ action: z.literal("worktree.release-lock"), id: text(256, 1) }).strict(),
-  z.object({ action: z.literal("agent.inject-continuity"), agent: name }).strict(),
   z.object({ action: z.literal("agent.resume-all") }).strict(),
   z.object({ action: z.literal("workspace.stop-all") }).strict(),
   z.object({ action: z.literal("pipeline.start"), name, input: text(512 * 1024, 1).optional() }).strict(),

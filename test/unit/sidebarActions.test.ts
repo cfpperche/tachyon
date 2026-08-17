@@ -91,12 +91,12 @@ describe("sidebar action matrix (spec 237)", () => {
    *
    * Read it as the answer to "what does a person get on this row?", state by state.
    */
-  const PROCESS_PRESUMING: ActionId[] = ["inspect", "openPane", "stop", "kill", "reinjectContinuity", "injectPrompt"];
+  const PROCESS_PRESUMING: ActionId[] = ["inspect", "openPane", "stop", "kill", "injectPrompt"];
   const MATRIX: { state: string; vm: AgentVM; all: ActionId[]; inline: ActionId[]; live: boolean }[] = [
     {
       state: "running",
       vm: A({ status: "running" }),
-      all: ["activity", "probes", "inspect", "openPane", "stop", "kill", "restart", "restartNew", "restartForceNew", "reinjectContinuity", "injectPrompt", "continueTask", "edit", "editYaml", "clone"],
+      all: ["activity", "probes", "inspect", "openPane", "stop", "kill", "restart", "restartNew", "restartForceNew", "injectPrompt", "continueTask", "edit", "editYaml", "clone"],
       inline: ["activity", "inspect", "openPane"],
       live: true,
     },
@@ -104,7 +104,7 @@ describe("sidebar action matrix (spec 237)", () => {
       // The graceful stop did not land: the process IS still there, so the live repertoire is correct.
       state: "stop-failed",
       vm: A({ status: "stop-failed" }),
-      all: ["activity", "probes", "inspect", "openPane", "stop", "kill", "restart", "restartNew", "restartForceNew", "reinjectContinuity", "injectPrompt", "continueTask", "edit", "editYaml", "clone"],
+      all: ["activity", "probes", "inspect", "openPane", "stop", "kill", "restart", "restartNew", "restartForceNew", "injectPrompt", "continueTask", "edit", "editYaml", "clone"],
       inline: ["activity", "inspect", "openPane"],
       live: true,
     },
@@ -303,9 +303,9 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(moreActions(A({ status: "running", kind: "agent" }))).toContain("injectPrompt");
   });
 
-  it("spec 306 — a throttled agent is running-like: keeps reinjectContinuity", () => {
+  it("spec 306 — a throttled agent remains running-like", () => {
     expect(actionsFor(A({ status: "throttled", kind: "agent" }))).toContain("injectPrompt");
-    expect(actionsFor(A({ status: "throttled", kind: "agent" }))).toContain("reinjectContinuity");
+    expect(actionsFor(A({ status: "throttled", kind: "agent" }))).toContain("injectPrompt");
     expect(actionsFor(A({ status: "throttled" }))).toContain("stop");
     expect(actionsFor(A({ status: "throttled" }))).toContain("kill");
     expect(actionsFor(A({ status: "throttled" }))).not.toContain("spawn");

@@ -139,7 +139,6 @@ function fleetSource(ws: Workspace, tmux: TmuxService): SidebarFleetSource {
     listPipelines: () => [],
     lastActivityAt: () => null,
     attentionOf: () => undefined,
-    continuityBadge: () => undefined,
     persistenceHookHealth: () => undefined,
     evidenceHandoff: async () => undefined,
     readConfigLkg: () => null,

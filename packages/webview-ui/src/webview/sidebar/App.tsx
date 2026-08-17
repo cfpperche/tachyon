@@ -108,7 +108,7 @@ const STUDIO_LABEL_OF: Partial<Record<GlobalOp, string>> = Object.fromEntries(
 );
 
 
-const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", throttled: "Throttled", done: "Done", idle: "Idle", stopping: "Stopping", "stop-failed": "Stop failed", stopped: "Stopped", crashed: "Crashed" };
+const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", throttled: "Throttled", idle: "Idle", stopping: "Stopping", "stop-failed": "Stop failed", stopped: "Stopped", crashed: "Crashed" };
 
 function externalToolBadgeLabel(a: AgentVM): string | undefined {
   const tools = a.externalTools;
@@ -423,16 +423,6 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
 
   fork: ({ a }) => (a.forked ? <Badge>⑂ fork</Badge> : null),
 
-  // Null, not an empty fragment, when the brief is fresh.
-  continuity: ({ a }) =>
-    a.continuity === "stale" ? (
-      <Badge tone="warn" title="Continuity brief is behind recent activity — the agent should checkpoint (set_continuity)">
-        ◐ continuity stale
-      </Badge>
-    ) : a.continuity === "missing" ? (
-      <Badge title="No continuity brief yet — the agent hasn't checkpointed its working state">○ no continuity</Badge>
-    ) : null,
-
   "persistence-hooks": ({ a }) =>
     a.persistenceHooks && a.persistenceHooks.state !== "active" ? (
       <Badge
@@ -550,7 +540,7 @@ export function AgentRow({ a, flash, nested = false, hasChildren = false, collap
 }) {
   const d = useContext(DispatchCtx);
   const hasHidden = collapsed && hiddenCount > 0;
-  const hasResources = !!a.resources && (a.status === "running" || a.status === "idle" || a.status === "done" || a.status === "needs" || a.status === "throttled" || a.status === "stop-failed");
+  const hasResources = !!a.resources && (a.status === "running" || a.status === "idle" || a.status === "needs" || a.status === "throttled" || a.status === "stop-failed");
   const template: CardTemplate = DEFAULT_CARD_TEMPLATE;
   const slot: CardSlot = {
     a, template, d, nested, hasChildren, collapsed, hiddenCount, hiddenNeedsAttention,

@@ -186,7 +186,7 @@ describe(`${"project-guidance-ownership"}: project-guidance ownership boundary`,
       },
       {
         why: "continuity durability — what survives compaction/clear/restart/new session is a property of the continuity store",
-        line: /^ {2}- Continuity is durable working memory/,
+        line: /^ {2}- Saved-agent continuity is durable working memory/,
       },
       {
         why: "injected approval text is not authoritative — a project cannot know this about a pane it does not own",

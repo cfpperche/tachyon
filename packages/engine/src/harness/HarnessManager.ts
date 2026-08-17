@@ -33,7 +33,6 @@ import type { ResumeAdapter } from "@tachyon/shared/resume/adapters.js";
 import {
   buildCodexSessionStartHookConfig,
   buildOwnershipSettings,
-  continuityPointerPath,
   persistenceHookFailureFile,
   handoffPointerPath,
   persistenceStopFile,
@@ -47,7 +46,6 @@ import {
   CODEX_TOOL_HOOK_RECORDER_SOURCE,
   PERSISTENCE_STOP_RECORDER_SOURCE,
   RUNTIME_STATUS_PUBLISHER_SOURCE,
-  SESSION_CONTINUITY_POINTER_SOURCE,
   SESSION_HANDOFF_POINTER_SOURCE,
   SESSION_OWNER_RECORDER_SOURCE,
   type OwnershipHookGroup,
@@ -2971,15 +2969,11 @@ export class HarnessManager {
       atomicWrite(pointerPath, SESSION_HANDOFF_POINTER_SOURCE);
       pointer = { pointerPath, handoffPath };
     }
-    let persistence: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string; failureFile: string } | undefined;
+    let persistence: { stopRecorderPath: string; stopFile: string; failureFile: string } | undefined;
     if (opts.silentPersistence) {
-      const continuityPointer = continuityPointerPath(this.workspaceRoot);
       const stopRecorder = persistenceStopRecorderPath(this.workspaceRoot);
-      atomicWrite(continuityPointer, SESSION_CONTINUITY_POINTER_SOURCE);
       atomicWrite(stopRecorder, PERSISTENCE_STOP_RECORDER_SOURCE);
       persistence = {
-        continuityPointerPath: continuityPointer,
-        continuityPath: path.join(this.workspaceRoot, ".tachyon", "continuity", `${agent}.md`),
         stopRecorderPath: stopRecorder,
         stopFile: persistenceStopFile(this.workspaceRoot),
         failureFile: persistenceHookFailureFile(this.workspaceRoot),
@@ -3644,15 +3638,11 @@ export class HarnessManager {
       atomicWrite(pointerPath, SESSION_HANDOFF_POINTER_SOURCE);
       pointer = { pointerPath, handoffPath };
     }
-    let persistence: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string; failureFile: string } | undefined;
+    let persistence: { stopRecorderPath: string; stopFile: string; failureFile: string } | undefined;
     if (opts.silentPersistence) {
-      const continuityPointer = continuityPointerPath(this.workspaceRoot);
       const stopRecorder = persistenceStopRecorderPath(this.workspaceRoot);
-      atomicWrite(continuityPointer, SESSION_CONTINUITY_POINTER_SOURCE);
       atomicWrite(stopRecorder, PERSISTENCE_STOP_RECORDER_SOURCE);
       persistence = {
-        continuityPointerPath: continuityPointer,
-        continuityPath: path.join(this.workspaceRoot, ".tachyon", "continuity", `${agent}.md`),
         stopRecorderPath: stopRecorder,
         stopFile: persistenceStopFile(this.workspaceRoot),
         failureFile: persistenceHookFailureFile(this.workspaceRoot),
@@ -3682,6 +3672,7 @@ export class HarnessManager {
       projectedHooks?: Record<string, OwnershipHookGroup[]>;
     } = {},
   ): string | string[] {
+    void agent;
     const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
     fs.mkdirSync(path.dirname(recorder), { recursive: true });
     atomicWrite(recorder, SESSION_OWNER_RECORDER_SOURCE);
@@ -3693,15 +3684,11 @@ export class HarnessManager {
       atomicWrite(pointerPath, SESSION_HANDOFF_POINTER_SOURCE);
       pointer = { pointerPath, handoffPath };
     }
-    let persistence: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string; failureFile: string } | undefined;
+    let persistence: { stopRecorderPath: string; stopFile: string; failureFile: string } | undefined;
     if (opts.silentPersistence) {
-      const continuityPointer = continuityPointerPath(this.workspaceRoot);
       const stopRecorder = persistenceStopRecorderPath(this.workspaceRoot);
-      atomicWrite(continuityPointer, SESSION_CONTINUITY_POINTER_SOURCE);
       atomicWrite(stopRecorder, PERSISTENCE_STOP_RECORDER_SOURCE);
       persistence = {
-        continuityPointerPath: continuityPointer,
-        continuityPath: path.join(this.workspaceRoot, ".tachyon", "continuity", `${agent}.md`),
         stopRecorderPath: stopRecorder,
         stopFile: persistenceStopFile(this.workspaceRoot),
         failureFile: persistenceHookFailureFile(this.workspaceRoot),

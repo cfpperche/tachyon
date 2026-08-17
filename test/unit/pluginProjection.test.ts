@@ -19,17 +19,17 @@ describe("plugin fleet projection", () => {
           label: "Unit 1",
           status: "running",
           attention: "working",
-          badges: ["continuity-fresh", "persistence-active", "evidence-warn"],
+          badges: ["persistence-active", "evidence-warn"],
         },
         {
           handle: "h-7-1",
           label: "Unit 2",
           status: "needs",
           attention: "needs-input",
-          badges: ["continuity-stale", "persistence-failed", "evidence-error", "resumable", "fresh-start"],
+          badges: ["persistence-failed", "evidence-error", "resumable", "fresh-start"],
         },
       ],
-      counts: { agents: 2, running: 1, needs: 1, throttled: 0, idle: 0, done: 0, stopped: 0, crashed: 0 },
+      counts: { agents: 2, running: 1, needs: 1, throttled: 0, idle: 0, stopped: 0, crashed: 0 },
     });
   });
 
@@ -89,7 +89,6 @@ function sampleFleet(overrides: Partial<FleetVM["agents"][number]> = {}): FleetV
         name: "raw-secret-agent",
         status: "running",
         attention: "working",
-        continuity: "fresh",
         persistenceHooks: { state: "active" },
         evidence: { total: 1, stale: 1, warn: 1, error: 0 },
         ...overrides,
@@ -99,7 +98,6 @@ function sampleFleet(overrides: Partial<FleetVM["agents"][number]> = {}): FleetV
         name: "needs-help",
         status: "needs",
         attention: "needs input",
-        continuity: "stale",
         persistenceHooks: { state: "failed" },
         evidence: { total: 1, stale: 0, warn: 0, error: 1 },
         resumable: true,

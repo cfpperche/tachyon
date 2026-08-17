@@ -36,7 +36,7 @@ function dotRule(status: string): string {
 describe("t-0d689f agent state is legible", () => {
   describe("state machine (unchanged — a live process is not `working`)", () => {
     it.each([
-      ["idle attention with nobody watching yet", { attention: "idle", unseen: true }, "done"],
+      ["idle attention with nobody watching yet", { attention: "idle", unseen: true }, "idle"],
       ["idle attention already seen", { attention: "idle", unseen: false }, "idle"],
       ["needs input", { attention: "needs-input", unseen: false }, "needs"],
       ["throttled", { attention: "throttled", unseen: false }, "throttled"],
@@ -53,43 +53,26 @@ describe("t-0d689f agent state is legible", () => {
     });
 
     it("follows a turn ending and starting again", () => {
-      // working → (turn ends, unread) done → (human looks) idle → (new turn) running
+      // working → idle, regardless of focus history → (new turn) running
       expect(statusOf(RAW, "working", false)).toBe("running");
-      expect(statusOf(RAW, "idle", true)).toBe("done");
+      expect(statusOf(RAW, "idle", true)).toBe("idle");
       expect(statusOf(RAW, "idle", false)).toBe("idle");
       expect(statusOf(RAW, "working", false)).toBe("running");
     });
   });
 
   describe("the dot separates the states a human confuses", () => {
-    it("done no longer shares running's silhouette — the measured defect", () => {
-      const running = dotRule("running");
-      const done = dotRule("done");
+    it("keeps running and idle mutually distinct", () => {
+      const rules = ["running", "idle"].map(dotRule);
 
-      expect(done).not.toBe(running);
-      // Shape, not shade. The version this replaces ALSO differed textually from `running` — it had a
-      // 1px `color-mix(..., transparent)` ring — and still read identical at 7px, which is exactly how
-      // it shipped. Matching CSS text for "is it visible?" is a trap: nested `var()`/`color-mix()`
-      // parens and commas defeat naive patterns (they defeated two of mine). So pin the DESIGN
-      // decision instead — the ring is detached by a gap painted in the sidebar background, which the
-      // old translucent wash had no way to express. The rendered proof lives in the headless QA,
-      // which reads computed styles rather than source text.
-      expect(done, "done's ring must be detached by a background-coloured gap")
-        .toMatch(/--vscode-sideBar-background/);
-      expect(running).not.toMatch(/box-shadow/);
-    });
-
-    it("keeps running, idle and done mutually distinct", () => {
-      const rules = ["running", "idle", "done"].map(dotRule);
-
-      expect(new Set(rules).size).toBe(3);
+      expect(new Set(rules).size).toBe(2);
       // idle must not be drawn in the ok colour at all — that was the whole confusion.
       expect(dotRule("idle")).not.toContain("--ds-ok");
     });
 
     it("gives every rendered status its own rule", () => {
       const statuses: AgentStatus[] = [
-        "running", "needs", "throttled", "done", "idle", "stopping", "stop-failed", "stopped", "crashed",
+        "running", "needs", "throttled", "idle", "stopping", "stop-failed", "stopped", "crashed",
       ];
       const rules = statuses.map(dotRule);
 
@@ -101,7 +84,7 @@ describe("t-0d689f agent state is legible", () => {
     it("labels every status for the tooltip and the screen reader", () => {
       const app = fs.readFileSync(path.resolve(__dirname, "..", "..", "packages/webview-ui/src/webview/sidebar/App.tsx"), "utf8");
       const statuses: AgentStatus[] = [
-        "running", "needs", "throttled", "done", "idle", "stopping", "stop-failed", "stopped", "crashed",
+        "running", "needs", "throttled", "idle", "stopping", "stop-failed", "stopped", "crashed",
       ];
       const labels = /const STATUS_LABEL[^=]*=\s*\{([^}]*)\}/.exec(app)?.[1] ?? "";
 
@@ -113,15 +96,5 @@ describe("t-0d689f agent state is legible", () => {
       expect(app).toMatch(/aria-label=\{STATUS_LABEL\[a\.status\]\}/);
     });
 
-    it("names done and running differently for a screen reader", () => {
-      const app = fs.readFileSync(path.resolve(__dirname, "..", "..", "packages/webview-ui/src/webview/sidebar/App.tsx"), "utf8");
-      const labels = /const STATUS_LABEL[^=]*=\s*\{([^}]*)\}/.exec(app)?.[1] ?? "";
-      const done = /done:\s*"([^"]+)"/.exec(labels)?.[1];
-      const running = /running:\s*"([^"]+)"/.exec(labels)?.[1];
-
-      expect(done).toBeTruthy();
-      expect(running).toBeTruthy();
-      expect(done).not.toBe(running);
-    });
   });
 });

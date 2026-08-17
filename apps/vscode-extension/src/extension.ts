@@ -4088,18 +4088,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       return undefined;
     }),
-    vscode.commands.registerCommand("tachyon.reinjectContinuityItem", async (item: AgentItem) => {
-      // spec 241 — manually re-inject the agent's continuity brief (type the rebuild-context pointer into the
-      // pane). Always-on manual path; the auto path fires on a detected discontinuity at idle.
-      const ws = wsOf(item);
-      if (!ws) return;
-      try {
-        await extensionInvoke(ws, { action: "agent.inject-continuity", agent: item.agentName });
-      } catch (err) {
-        notify(err instanceof Error ? err.message : String(err), "warn");
-      }
-    }),
-
     vscode.commands.registerCommand("tachyon.injectPromptTemplate", async () => {
       // spec 381 — palette: pick template → agent → stage|submit → deliver
       const ws = await pickWorkspace();

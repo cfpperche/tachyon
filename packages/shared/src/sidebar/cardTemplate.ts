@@ -54,7 +54,6 @@ export const CARD_COMPONENT_IDS = [
   "harness",
   "resume",
   "fork",
-  "continuity",
   "persistence-hooks",
   // footer
   "focus",
@@ -98,7 +97,6 @@ export const CARD_CATALOG: Readonly<Record<CardComponentId, CardComponentSpec>> 
   harness: { region: "meta" },
   resume: { region: "meta" },
   fork: { region: "meta" },
-  continuity: { region: "meta" },
   "persistence-hooks": { region: "meta" },
 
   focus: { region: "footer" },
@@ -134,7 +132,6 @@ export const DEFAULT_CARD_TEMPLATE: CardTemplate = {
     "harness",
     "resume",
     "fork",
-    "continuity",
     "persistence-hooks",
   ],
   footer: ["focus", "checklist", "metrics-lanes", "actions"],
