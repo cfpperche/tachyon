@@ -11,6 +11,8 @@ import {
   BridgeClientRebindCoordinator,
   DEFAULT_BRIDGE_CLIENT_REBIND,
   bridgeGenerationStateKey,
+  classifyRebindAftermath,
+  formatRebindAftermathClause,
   isWiredSuspect,
   isTachyonBridgeWiredRecord,
   parseBridgeClientRebindSettings,
@@ -48,6 +50,7 @@ function makeDeps(opts: {
   resumeImpl?: (name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean }) => Promise<void>;
   canResumeImpl?: (name: string, record: SessionRecord) => Promise<RebindResumeReadiness>;
   stopImpl?: (name: string) => Promise<void>;
+  hasSessionImpl?: (name: string) => Promise<boolean>;
   onSleep?: (ms: number) => void;
 }): BridgeClientRebindDeps & {
   state: Map<string, unknown>;
@@ -100,6 +103,7 @@ function makeDeps(opts: {
     listRunning: async () => [...opts.running],
     kindOf: (name) => opts.kinds?.get(name) ?? "agent",
     isRunning: async (name) => opts.running.has(name),
+    ...(opts.hasSessionImpl ? { hasSession: opts.hasSessionImpl } : {}),
     canResume: (name, record) => opts.canResumeImpl?.(name, record) ?? Promise.resolve({ kind: "ready" as const }),
     stopGracefully: async (name) => {
       stops.push(name);
@@ -161,6 +165,29 @@ function makeDeps(opts: {
   };
   return deps;
 }
+
+describe("classifyRebindAftermath", () => {
+  it("t-147361 fatia D: process live is alive; process gone without a present session is stopped; else the limit", () => {
+    expect(classifyRebindAftermath({ processLive: true, sessionPresent: "unprobed" })).toBe("alive");
+    expect(classifyRebindAftermath({ processLive: true, sessionPresent: false })).toBe("alive");
+    expect(classifyRebindAftermath({ processLive: true, sessionPresent: true })).toBe("alive");
+    expect(classifyRebindAftermath({ processLive: false, sessionPresent: "unprobed" })).toBe("stopped");
+    expect(classifyRebindAftermath({ processLive: false, sessionPresent: false })).toBe("stopped");
+    expect(classifyRebindAftermath({ processLive: false, sessionPresent: "unknown" })).toBe("stopped");
+    expect(classifyRebindAftermath({ processLive: false, sessionPresent: true })).toBe("unobservable");
+    expect(classifyRebindAftermath({ processLive: "unknown", sessionPresent: true })).toBe("unobservable");
+    expect(classifyRebindAftermath({ processLive: "unknown", sessionPresent: false })).toBe("unobservable");
+    expect(classifyRebindAftermath({ processLive: "unknown", sessionPresent: "unprobed" })).toBe("unobservable");
+  });
+
+  it("t-147361 fatia D: alarm clause keeps failed and names only what was measured", () => {
+    expect(formatRebindAftermathClause("alive")).toBe("agent still running on the previous connection; no cold spawn");
+    expect(formatRebindAftermathClause("stopped")).toBe("left stopped; no cold spawn");
+    expect(formatRebindAftermathClause("unobservable")).toBe(
+      "Tachyon could not observe whether the agent is still running or was already stopped; no cold spawn",
+    );
+  });
+});
 
 describe("parseBridgeClientRebindSettings", () => {
   it("returns defaults for missing/invalid", () => {
@@ -629,6 +656,121 @@ describe("BridgeClientRebindCoordinator", () => {
     expect(alarm?.m).toContain(wrapper);
     expect(alarm?.m).toContain("agent still running on the previous connection");
     expect(alarm?.m).not.toContain("left stopped");
+    const failLine = fs.readFileSync(auditPath, "utf8").trim().split("\n")
+      .map((line) => JSON.parse(line) as { phase: string; observed?: string })
+      .find((event) => event.phase === "resume_fail");
+    expect(failLine?.observed).toBe("alive");
+  });
+
+  it("t-147361 fatia D: resume_fail alarm says left stopped only after measuring the process gone", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const auditPath = path.join(auditDir, "stopped-aftermath.jsonl");
+    const ledger = new Map([["claude", baseRecord({
+      def: { cmd: "claude", kind: "agent" },
+      resume: { runtime: "claude", sessionId: "sess-1" },
+      bridgeClient: { boundGeneration: 0, wired: true },
+    })]]);
+    const running = new Set(["claude"]);
+    const deps = makeDeps({
+      ledger,
+      running,
+      auditPath,
+      resumeImpl: async () => {
+        throw new Error("transcript gone");
+      },
+      stopImpl: async () => {
+        running.delete("claude");
+      },
+      hasSessionImpl: async () => false,
+    });
+
+    const coordinator = new BridgeClientRebindCoordinator(deps);
+    await coordinator.onListenerReady();
+
+    expect(running.has("claude")).toBe(false);
+    const alarm = deps.notifies.find(({ l, m }) => l === "error" && m.includes("Bridge client rebind of 'claude' failed"));
+    expect(alarm?.m).toContain("transcript gone");
+    expect(alarm?.m).toContain("left stopped; no cold spawn");
+    expect(alarm?.m).not.toContain("still running");
+    expect(alarm?.m).not.toContain("could not observe");
+    const failLine = fs.readFileSync(auditPath, "utf8").trim().split("\n")
+      .map((line) => JSON.parse(line) as { phase: string; observed?: string })
+      .find((event) => event.phase === "resume_fail");
+    expect(failLine?.observed).toBe("stopped");
+  });
+
+  it("t-147361 fatia D: session present and process not live is unobservable, not left stopped", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const auditPath = path.join(auditDir, "unobservable-aftermath.jsonl");
+    const ledger = new Map([["claude", baseRecord({
+      def: { cmd: "claude", kind: "agent" },
+      resume: { runtime: "claude", sessionId: "sess-1" },
+      bridgeClient: { boundGeneration: 0, wired: true },
+    })]]);
+    const running = new Set(["claude"]);
+    const wrapper = "could not replace session 'tachyon-abcd1234-claude': respawn and teardown both failed";
+    const deps = makeDeps({
+      ledger,
+      running,
+      auditPath,
+      stopImpl: async () => {
+        running.delete("claude");
+      },
+      resumeImpl: async () => {
+        throw new AggregateError(
+          [new Error("can't find pane: %0"), new Error("no current client")],
+          wrapper,
+        );
+      },
+      hasSessionImpl: async () => true,
+    });
+
+    const coordinator = new BridgeClientRebindCoordinator(deps);
+    await coordinator.onListenerReady();
+
+    const alarm = deps.notifies.find(({ l, m }) => l === "error" && m.includes("Bridge client rebind of 'claude' failed"));
+    expect(alarm?.m).toContain(wrapper);
+    expect(alarm?.m).toContain("Tachyon could not observe whether the agent is still running or was already stopped");
+    expect(alarm?.m).not.toContain("left stopped; no cold spawn");
+    expect(alarm?.m).not.toContain("still running on the previous connection");
+    const failLine = fs.readFileSync(auditPath, "utf8").trim().split("\n")
+      .map((line) => JSON.parse(line) as { phase: string; observed?: string })
+      .find((event) => event.phase === "resume_fail");
+    expect(failLine?.observed).toBe("unobservable");
+  });
+
+  it("t-147361 fatia D: ambiguous process inventory declares the observation limit", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const auditPath = path.join(auditDir, "strict-null-aftermath.jsonl");
+    const ledger = new Map([["claude", baseRecord({
+      def: { cmd: "claude", kind: "agent" },
+      resume: { runtime: "claude", sessionId: "sess-1" },
+      bridgeClient: { boundGeneration: 0, wired: true },
+    })]]);
+    const running = new Set(["claude"]);
+    const deps = makeDeps({
+      ledger,
+      running,
+      auditPath,
+      resumeImpl: async () => {
+        throw new Error("replacement exited during post-resume stability window");
+      },
+      stopImpl: async () => {
+        running.delete("claude");
+      },
+    });
+    deps.listRunningStrict = async () => null;
+
+    const coordinator = new BridgeClientRebindCoordinator(deps);
+    await coordinator.onListenerReady();
+
+    const alarm = deps.notifies.find(({ l, m }) => l === "error" && m.includes("Bridge client rebind of 'claude' failed"));
+    expect(alarm?.m).toContain("Tachyon could not observe whether the agent is still running or was already stopped");
+    expect(alarm?.m).not.toContain("left stopped; no cold spawn");
+    expect(alarm?.m).not.toContain("still running on the previous connection");
   });
 
   it("bumps generation once per onListenerReady and reconstructs suspects after reload", async () => {

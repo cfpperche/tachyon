@@ -106,7 +106,7 @@ export type WorkspaceBridgeServerDependencies = Partial<Record<ServerCallbackNam
 
 type RebindCallbackName =
   | "getState" | "setState" | "getLedger" | "listRunning" | "listRunningStrict" | "kindOf"
-  | "isRunning" | "canResume" | "stopGracefully" | "hardKillSession" | "resume"
+  | "isRunning" | "hasSession" | "canResume" | "stopGracefully" | "hardKillSession" | "resume"
   | "stampBridgeClient" | "markExpectedDeath" | "notify" | "deliverNotice" | "getSettings"
   | "getReloadInitiator" | "clearReloadInitiator";
 export type WorkspaceBridgeClientRebindDependencies = Partial<Record<RebindCallbackName, AdapterCallback>>
