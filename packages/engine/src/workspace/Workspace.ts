@@ -2200,6 +2200,10 @@ export class Workspace {
         const running = await this.manager.runningAgents();
         return running.includes(name);
       },
+      // t-147361 fatia D — a second instrument after resume_fail. isRunning just used
+      // the prefix inventory (and may have audited "dead"); has-session can still see
+      // the named session. Session present + process not live is unobservable, not stopped.
+      hasSession: async (name) => this.tmux.hasSession(this.manager.session(name)),
       // AgentManager's rebind-only, uncached generic-resume boundary: it distinguishes a young
       // transcript that may still appear from a record that cannot resume. Rebind must receive
       // `ready` before it stops anything.
