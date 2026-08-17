@@ -21,76 +21,103 @@
 /* spec 278 — Plugins view panel-specific styles, extracted from PluginsPanel.ts's inline <style> (spec 252)
    into one shared source linked by BOTH the real webview panel AND the dev preview harness (no drift).
    Shared tokens + components live in design-system.css (.ds-*); these are panel-specific deltas only. */
+/* SDD 505 slice 8 (t-5b06ba) — this sheet's DISTANCES and its LABEL SIZES come from the host now.
+   Every padding/margin/gap is a step of `--ds-spacing-size*` (the ten steps of the VS Code 1.133 size
+   registry, tokens.css) and every literal label size is a step of the operator ramp
+   (`--ds-operator-label3/2/1` = 10/11/12px, `--ds-operator-body1` = 13px). Plugins is an OPERATOR
+   surface (install, consent, apply) — not a reading surface. The host tokens were measured arriving
+   in a real Tachyon webview on VS Code 1.133 during t-7cb9fe; the fallbacks in tokens.css are for
+   hosts older than 1.133, not for this one.
+   Off-scale values took the NEAREST step; on a tie, the step the host itself uses more in its own
+   already-migrated CSS won (benchmark.md §2.4: 4 > 2 > 8 > 6 > 12 > 24 > 16 > 10 > 32 > 20). So
+   3→4, 5→4, 7→8, 9→8, 14→12, 40→32, and 1px→2px (1px is stroke, never distance, in all three
+   references the benchmark measured).
+   Type by ROLE, not by the number that was here: card/drawer title (was 14) → `--ds-operator-body1`
+   (the operator title role; sidebar `.name` is the same function); banner/kv/ack (was 12.5) →
+   `--ds-operator-label1`; dim metadata (was `--ds-small`/`--ds-micro` or inline 11) → label1 / label2.
+   NOT migrated, each for a stated reason, never invented: border-radius, width/height (toolbar
+   tracks 220/128, drawer 680, kv column 140), position offsets (`.busy` bottom 16px) and z-index
+   20/30 (slice 4 declared no overlay token); letter-spacing; the scrim/drawer shadow (elevation,
+   not a distance snap); `margin: 0` resets. `.dhead .x` (16px close glyph) is gone — t-4aac93
+   already replaced it with kit IconButton, so that 16 was leftover, not an icon token to keep. */
 .ws-rt b { color: var(--ds-fg); font-weight: 600; }
-.addbar { display: flex; gap: var(--ds-2); padding: var(--ds-2) 0 var(--ds-3); }
+.addbar { display: flex; gap: var(--ds-spacing-size80); padding: var(--ds-spacing-size80) 0 var(--ds-spacing-size120); }
 .addbar .ds-input { flex: 1; }
-.card-actions { margin-left: auto; display: flex; gap: var(--ds-1); flex-wrap: wrap; justify-content: flex-end; }
+.card-actions { margin-left: auto; display: flex; gap: var(--ds-spacing-size40); flex-wrap: wrap; justify-content: flex-end; }
 
-.installed-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(128px, max-content) max-content; align-items: center; gap: var(--ds-2); padding: var(--ds-3) 0 0; }
+.installed-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(128px, max-content) max-content; align-items: center; gap: var(--ds-spacing-size80); padding: var(--ds-spacing-size120) 0 0; }
 .plugin-filter { min-width: 0; }
 /* dogfood round 1 (#2) — the ad hoc box-model override that used to live here (height/border/radius/
    background, guessed at 28px) is gone: design-system.css's shared `[data-slot="select-trigger"]` rule now
    gives every KitSelect trigger the SAME box as `.ds-input` everywhere, so `.plugin-filter` and `.plugin-sort`
    line up without a per-panel patch. */
-.toolbar-count { color: var(--ds-muted); font-size: var(--ds-small); white-space: nowrap; }
+.toolbar-count { color: var(--ds-muted); font-size: var(--ds-operator-label1); white-space: nowrap; }
 
-.list { padding: var(--ds-4) 0; display: flex; flex-direction: column; gap: 10px; }
-.card-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.pname { font-size: 14px; font-weight: 600; }
-.pver { color: var(--ds-muted); font-size: var(--ds-small); }
-.pmeta { color: var(--ds-muted); font-size: var(--ds-small); margin-top: 7px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.list { padding: var(--ds-spacing-size160) 0; display: flex; flex-direction: column; gap: var(--ds-spacing-size100); }
+.card-top { display: flex; align-items: baseline; gap: var(--ds-spacing-size100); flex-wrap: wrap; }
+.pname { font-size: var(--ds-operator-body1); font-weight: 600; }
+.pver { color: var(--ds-muted); font-size: var(--ds-operator-label1); }
+.pmeta { color: var(--ds-muted); font-size: var(--ds-operator-label1); margin-top: var(--ds-spacing-size80); display: flex; flex-wrap: wrap; gap: var(--ds-spacing-size60) var(--ds-spacing-size120); align-items: center; }
 .src { font-family: var(--ds-mono); }
 /* spec 287 — installed-card external (system) tools row. */
-.pext { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ds-border); display: flex; flex-direction: column; gap: 5px; }
-.pext .ext-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: var(--ds-small); }
+.pext { margin-top: var(--ds-spacing-size80); padding-top: var(--ds-spacing-size80); border-top: 1px solid var(--ds-border); display: flex; flex-direction: column; gap: var(--ds-spacing-size40); }
+.pext .ext-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ds-spacing-size40); font-size: var(--ds-operator-label1); }
 .pext .ev { font-family: var(--ds-mono); color: var(--ds-info); }
 /* t-fb216a — installed-card runtime-coverage notice: this workspace runs a runtime the plugin supports and the
    install never covered. Wraps at narrow widths (the card is measured at 880 and 360). */
-.pgap { margin-top: 8px; padding: var(--ds-2) var(--ds-3); border-radius: var(--ds-radius); border: 1px solid color-mix(in srgb, var(--ds-warn) 45%, transparent); background: color-mix(in srgb, var(--ds-warn) 8%, transparent); font-size: var(--ds-small); line-height: 1.5; }
-.rt { font-size: var(--ds-micro); padding: 1px 8px; border-radius: 10px; border: 1px solid var(--ds-border); white-space: nowrap; }
+.pgap { margin-top: var(--ds-spacing-size80); padding: var(--ds-spacing-size80) var(--ds-spacing-size120); border-radius: var(--ds-radius); border: 1px solid color-mix(in srgb, var(--ds-warn) 45%, transparent); background: color-mix(in srgb, var(--ds-warn) 8%, transparent); font-size: var(--ds-operator-label1); line-height: 1.5; }
+.rt { font-size: var(--ds-operator-label2); padding: var(--ds-spacing-size20) var(--ds-spacing-size80); border-radius: 10px; border: 1px solid var(--ds-border); white-space: nowrap; }
 .rt.has  { color: var(--ds-ok); border-color: color-mix(in srgb, var(--ds-ok) 50%, transparent); }
 .rt.miss { color: var(--ds-muted); opacity: .7; }
 
-.warnline { margin: var(--ds-2) 0; padding: var(--ds-2) var(--ds-3); border-radius: var(--ds-radius); border: 1px solid color-mix(in srgb, var(--ds-warn) 45%, transparent); background: color-mix(in srgb, var(--ds-warn) 8%, transparent); color: var(--ds-warn); font-size: 12.5px; }
+.warnline { margin: var(--ds-spacing-size80) 0; padding: var(--ds-spacing-size80) var(--ds-spacing-size120); border-radius: var(--ds-radius); border: 1px solid color-mix(in srgb, var(--ds-warn) 45%, transparent); background: color-mix(in srgb, var(--ds-warn) 8%, transparent); color: var(--ds-warn); font-size: var(--ds-operator-label1); }
 
 /* consent drawer */
-.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 20; display: flex; justify-content: center; align-items: flex-start; padding: 40px 16px; overflow-y: auto; }
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 20; display: flex; justify-content: center; align-items: flex-start; padding: var(--ds-spacing-size320) var(--ds-spacing-size160); overflow-y: auto; }
 .drawer { width: 100%; max-width: 680px; background: var(--vscode-editor-background); border: 1px solid var(--ds-border); border-radius: 10px; box-shadow: 0 12px 48px rgba(0,0,0,.4); }
-.dhead { padding: 16px 20px; border-bottom: 1px solid var(--ds-border); display: flex; align-items: center; gap: 10px; }
-.dhead .ttl { font-size: 14px; font-weight: 600; } .dhead .x { margin-left: auto; color: var(--ds-muted); font-size: 16px; padding: 2px 6px; }
-.dbody { padding: 4px 20px 8px; }
-.sec { padding: 14px 0; border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 60%, transparent); }
+.dhead { padding: var(--ds-spacing-size160) var(--ds-spacing-size200); border-bottom: 1px solid var(--ds-border); display: flex; align-items: center; justify-content: space-between; gap: var(--ds-spacing-size100); }
+.dhead .ttl { font-size: var(--ds-operator-body1); font-weight: 600; }
+.dbody { padding: var(--ds-spacing-size40) var(--ds-spacing-size200) var(--ds-spacing-size80); }
+.sec { padding: var(--ds-spacing-size120) 0; border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 60%, transparent); }
 .sec:last-child { border-bottom: 0; }
-.sec h3 { font-size: var(--ds-micro); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-muted); margin: 0 0 var(--ds-2); }
-.kv { display: grid; grid-template-columns: 140px 1fr; gap: 4px 12px; font-size: 12.5px; }
-.kv .k { color: var(--ds-muted); } .kv .v { font-family: var(--ds-mono); font-size: var(--ds-small); overflow-wrap: anywhere; }
-.perm { background: color-mix(in srgb, var(--ds-warn) 9%, transparent); border: 1px solid color-mix(in srgb, var(--ds-warn) 40%, transparent); border-radius: var(--ds-radius); padding: var(--ds-2) 10px; }
-.cmd { font-family: var(--ds-mono); font-size: var(--ds-small); background: var(--ds-input-bg); border-radius: 4px; padding: 5px 9px; margin: var(--ds-1) 0; overflow-wrap: anywhere; }
+.sec h3 { font-size: var(--ds-operator-label2); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-muted); margin: 0 0 var(--ds-spacing-size80); }
+.kv { display: grid; grid-template-columns: 140px 1fr; gap: var(--ds-spacing-size40) var(--ds-spacing-size120); font-size: var(--ds-operator-label1); }
+.kv .k { color: var(--ds-muted); } .kv .v { font-family: var(--ds-mono); font-size: var(--ds-operator-label1); overflow-wrap: anywhere; }
+.perm { background: color-mix(in srgb, var(--ds-warn) 9%, transparent); border: 1px solid color-mix(in srgb, var(--ds-warn) 40%, transparent); border-radius: var(--ds-radius); padding: var(--ds-spacing-size80) var(--ds-spacing-size100); }
+.cmd { font-family: var(--ds-mono); font-size: var(--ds-operator-label1); background: var(--ds-input-bg); border-radius: 4px; padding: var(--ds-spacing-size40) var(--ds-spacing-size80); margin: var(--ds-spacing-size40) 0; overflow-wrap: anywhere; }
 .cmd .ev { color: var(--ds-info); }
-.diff { font-family: var(--ds-mono); font-size: var(--ds-small); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); overflow: hidden; }
-.diff .dl { padding: 3px 12px; white-space: pre-wrap; }
+.diff { font-family: var(--ds-mono); font-size: var(--ds-operator-label1); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); overflow: hidden; }
+.diff .dl { padding: var(--ds-spacing-size40) var(--ds-spacing-size120); white-space: pre-wrap; }
 .diff .dl.add { background: var(--vscode-diffEditor-insertedTextBackground, color-mix(in srgb, var(--ds-ok) 12%, transparent)); }
 .diff .dl.add::before { content: "+ "; color: var(--ds-ok); }
-.dfoot { padding: 14px 20px; border-top: 1px solid var(--ds-border); display: flex; align-items: center; gap: 10px; }
-.dfoot .fp { color: var(--ds-muted); font-size: var(--ds-micro); font-family: var(--ds-mono); margin-right: auto; }
+.dfoot { padding: var(--ds-spacing-size120) var(--ds-spacing-size200); border-top: 1px solid var(--ds-border); display: flex; align-items: center; gap: var(--ds-spacing-size100); }
+.dfoot .fp { color: var(--ds-muted); font-size: var(--ds-operator-label2); font-family: var(--ds-mono); margin-right: auto; }
 /* skill collision Keep/Replace control */
-.collrow { display: flex; align-items: center; gap: 10px; margin: 6px 0; flex-wrap: wrap; }
+.collrow { display: flex; align-items: center; gap: var(--ds-spacing-size100); margin: var(--ds-spacing-size60) 0; flex-wrap: wrap; }
 .collrow .ds-mono { overflow-wrap: anywhere; flex: 1; }
 .seg { display: inline-flex; border: 1px solid var(--ds-border); border-radius: 5px; overflow: hidden; }
-.seg button { padding: 3px 12px; font-size: var(--ds-small); color: var(--ds-muted); }
+.seg button { padding: var(--ds-spacing-size40) var(--ds-spacing-size120); font-size: var(--ds-operator-label1); color: var(--ds-muted); }
 .seg button.seg-on { background: var(--ds-btn-bg); color: var(--ds-btn-fg); }
 .seg button.seg-danger { background: var(--ds-err); color: var(--ds-on-err); }
-.ackline { display: flex; align-items: flex-start; gap: var(--ds-2); margin-top: 10px; font-size: 12.5px; color: var(--ds-warn); }
-.ackline input { margin-top: 3px; }
+.ackline { display: flex; align-items: flex-start; gap: var(--ds-spacing-size80); margin-top: var(--ds-spacing-size100); font-size: var(--ds-operator-label1); color: var(--ds-warn); }
+.ackline input { margin-top: var(--ds-spacing-size40); }
 /* spec 263 — per-runtime install selector */
-.rtsel { display: flex; flex-wrap: wrap; gap: var(--ds-2); }
-.rtrow { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); cursor: pointer; font-size: var(--ds-small); color: var(--ds-muted); }
+.rtsel { display: flex; flex-wrap: wrap; gap: var(--ds-spacing-size80); }
+.rtrow { display: inline-flex; align-items: center; gap: var(--ds-spacing-size80); padding: var(--ds-spacing-size40) var(--ds-spacing-size120); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); cursor: pointer; font-size: var(--ds-operator-label1); color: var(--ds-muted); }
 .rtrow.on { border-color: color-mix(in srgb, var(--ds-ok) 55%, transparent); background: color-mix(in srgb, var(--ds-ok) 8%, transparent); color: var(--ds-fg); }
 .rtrow input { margin: 0; }
 .rtrow .rtname { font-weight: 600; }
 
-.busy { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30; background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: 20px; padding: 6px 16px; font-size: var(--ds-small); display: flex; align-items: center; gap: var(--ds-2); }
+.busy { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30; background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: 20px; padding: var(--ds-spacing-size60) var(--ds-spacing-size160); font-size: var(--ds-operator-label1); display: flex; align-items: center; gap: var(--ds-spacing-size80); }
 /* t-963b66 — result toast moved to product ToastHost (shared/ui + design-system .ds-toast*). */
+
+/* t-5b06ba — dim metadata that used to be inline font-size:11px / margin px on App.tsx. Role is
+   secondary operator copy (paths, hashes, install hints), so label2 + spacing steps. */
+.meta-line { font-size: var(--ds-operator-label2); }
+.meta-line.break-all { word-break: break-all; }
+.row-lead { margin-left: var(--ds-spacing-size60); }
+.stack-tight { margin-top: var(--ds-spacing-size40); }
+.stack { margin-top: var(--ds-spacing-size60); }
 
 @media (max-width: 720px) {
   .installed-toolbar { grid-template-columns: 1fr; }
