@@ -6,10 +6,10 @@ _Generated from `plan.md` on 2026-08-17. Work top-to-bottom. Check boxes as task
 
 **Fatia 0 — medir o volume antes de desenhar. Nada começa antes disso.**
 
-- [ ] Quantos `notify()` disparam por minuto em uso real? ~288 pontos alcançam a porta, e eu não sei
+- [x] Quantos `notify()` disparam por minuto em uso real? ~288 pontos alcançam a porta, e eu não sei
       a taxa. Instrumentar ou amostrar uma sessão de trabalho. **Se for alto, o rodapé vira
       piscadeira e o desenho do histórico muda.** Declarar a amostra.
-- [ ] Qual a distribuição por nível — `info`, `warn`, `error`? Ela decide o que merece persistir.
+- [x] Qual a distribuição por nível — `info`, `warn`, `error`? Ela decide o que merece persistir.
 
 **Fatia 1 — o estado no engine, sem `vscode`.**
 
