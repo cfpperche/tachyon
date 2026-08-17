@@ -28,6 +28,8 @@ import {
   workspaceProbeViewSuccessV1,
   workspaceSidebarMutationSuccessV1,
   workspaceSidebarViewSuccessV1,
+  workspaceReviewMutationSuccessV1,
+  workspaceReviewNotesViewSuccessV1,
   workspaceTaskDetailViewSuccessV1,
   workspaceTaskStudioApplySuccessV1,
   workspaceTaskStudioViewSuccessV1,
@@ -694,6 +696,75 @@ describe("persistent engine protocol", () => {
       ...sidebarView(),
       fleet: { ...sidebarView().fleet, pins: [{ ...sidebarView().fleet.pins[0]!, id: "p-nope00" }] },
     })).toThrow(/invalid_string|regex|invalid/i);
+  });
+
+  it("validates review.view / review.mutate in the sidebar.mutate mould (t-115091)", () => {
+    const query = { schemaVersion: 1, method: "review.view", input: { worktree: "notasgrok", k: 2 } } as const;
+    const upsert = {
+      schemaVersion: 1,
+      method: "review.mutate",
+      input: {
+        action: "note.upsert",
+        id: "c-1",
+        worktree: "notasgrok",
+        baseRef: "abc1234",
+        path: "src/a.ts",
+        body: "check the caller",
+        line: 3,
+        k: 2,
+      },
+    } as const;
+    const hint = {
+      schemaVersion: 1,
+      method: "review.mutate",
+      input: { action: "note.hint", id: "c-1", worktree: "notasgrok", hintRange: { startLine: 40, endLine: 40 } },
+    } as const;
+    expect(isWorkspaceQueryV1(query)).toBe(true);
+    expect(isWorkspaceQueryV1({ ...query, input: { ...query.input, extra: true } })).toBe(false);
+    expect(isWorkspaceQueryV1({ ...query, input: { worktree: "../escape", k: 2 } })).toBe(false);
+    expect(isWorkspaceQueryV1({ ...query, input: { worktree: "notasgrok" } })).toBe(false);
+    expect(isWorkspaceCommandV1(upsert)).toBe(true);
+    expect(isWorkspaceCommandV1(hint)).toBe(true);
+    expect(isWorkspaceCommandV1({ ...upsert, input: { ...upsert.input, extra: true } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...upsert, input: { ...upsert.input, id: "c/1" } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...upsert, input: { ...upsert.input, content: "sneak" } })).toBe(false);
+    expect(() => workspaceCommandSuccessV1(upsert)).toThrow(/exact outcome/i);
+
+    const mutation = workspaceReviewMutationSuccessV1(upsert, {
+      action: "note.upsert",
+      id: "c-1",
+      changed: true,
+    });
+    expect(mutation).toEqual({
+      schemaVersion: 1,
+      method: "review.mutate",
+      status: "ok",
+      action: "note.upsert",
+      id: "c-1",
+      changed: true,
+    });
+    expect(isWorkspaceCommandResultV1(mutation)).toBe(true);
+    expect(isWorkspaceCommandResultBoundToInput(upsert, mutation)).toBe(true);
+    expect(() => workspaceReviewMutationSuccessV1(upsert, {
+      action: "note.hint",
+      id: "c-1",
+      changed: true,
+    })).toThrow(/does not match/i);
+
+    const result = workspaceReviewNotesViewSuccessV1({
+      schemaVersion: 1,
+      worktree: "notasgrok",
+      k: 2,
+      notes: [],
+    });
+    expect(isWorkspaceQueryResultV1(result)).toBe(true);
+    expect(isWorkspaceQueryResultBoundToInput(query, result)).toBe(true);
+    expect(isWorkspaceQueryResultBoundToInput(
+      { ...query, input: { worktree: "other", k: 2 } },
+      result,
+    )).toBe(false);
+    if (result.status !== "ok" || result.method !== "review.view") throw new Error("expected review result");
+    expect(isWorkspaceQueryResultV1({ ...result, view: { ...result.view, extra: true } })).toBe(false);
   });
 
   it("keeps authenticated Probe reads separate, exact and response-bounded", () => {
