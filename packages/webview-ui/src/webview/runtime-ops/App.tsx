@@ -544,13 +544,15 @@ function Usage({ value }: { value: RuntimeOpsValue<RuntimeOpsUsageV1> }) {
 }
 
 function providerLabel(provider: RuntimeOpsProviderV2): string {
-  return provider === "codex" ? "Codex" : "Claude";
+  if (provider === "codex") return "Codex";
+  if (provider === "claude") return "Claude";
+  return "Grok";
 }
 
 function providerSourceDisclosure(provider: RuntimeOpsProviderV2): string {
-  return provider === "codex"
-    ? "Read-only Codex CLI app-server; credentials stay with Codex."
-    : "Reduced Claude CLI status-line telemetry; no inference turn.";
+  if (provider === "codex") return "Read-only Codex CLI app-server; credentials stay with Codex.";
+  if (provider === "claude") return "Reduced Claude CLI status-line telemetry; no inference turn.";
+  return "Read-only Grok CLI billing control plane; no inference turn.";
 }
 
 function providerQuotaMetadata(provider: RuntimeOpsProviderCapacityV2): string {
