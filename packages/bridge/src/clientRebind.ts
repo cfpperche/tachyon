@@ -882,8 +882,12 @@ export class BridgeClientRebindCoordinator {
       const dir = path.dirname(this.deps.auditPath);
       fs.mkdirSync(dir, { recursive: true });
       fs.appendFileSync(this.deps.auditPath, `${JSON.stringify(event)}\n`, "utf8");
-    } catch {
-      /* never block rebind on audit I/O */
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      this.deps.notify(
+        `UNAUDITED Bridge client rebind event ${JSON.stringify(event)}; audit write to '${this.deps.auditPath}' failed: ${detail}`,
+        "error",
+      );
     }
   }
 }
