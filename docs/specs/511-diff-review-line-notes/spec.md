@@ -2,11 +2,16 @@
 
 _Created 2026-08-17._
 
-**Status:** draft
+**Status:** shipped-partial
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Closure:** o MECANISMO shipou na 0.93.10 — âncora sem URI, reconciliação na leitura, `outdated`,
+store, protocolo e lote (977 linhas de engine, `48c42a9d` + `14ad1514`). A SUPERFÍCIE foi aposentada
+no mesmo dia pela SDD 513, depois do primeiro uso real: o painel Comments do VS Code se revelava
+sozinho. `apps/vscode-extension/src/review/comments.ts` sai; o engine fica. Ver `notes.md`.
 
 ## Intent
 

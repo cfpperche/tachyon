@@ -265,3 +265,30 @@ também não. Adotar 3 seria arredondar. A fatia de reconciliação tem de
 guardar outro discriminante ou aceitar `outdated` residual; o k de captura,
 se existir, é só para baixar a taxa (k=3 zera `.md` e quase zera `.css`/`.tsx`,
 média 357 B/nota), não para prometer casamento único.
+
+## Superfície aposentada pela SDD 513 (2026-08-17)
+
+O mecanismo desta spec fica. A **superfície** foi aposentada no mesmo dia em que shipou, depois do
+primeiro uso real: escrever uma nota fazia o painel Comments do VS Code se revelar sozinho e tomar a
+barra inferior. Decisão do dono: *"vamos aposentar isso e criar nosso proprio diffreview integrado com
+nosso sistema e nao usar do vscode que fica pessimo em UX"*.
+
+**Isto reverte a minha recomendação.** Eu recomendei o Desenho 1 — hospedar no editor nativo — com o
+argumento de que possuir o editor compra ergonomia e não corretude. O argumento sobre corretude
+continua certo. O que eu subestimei foi que a ergonomia **é** o produto aqui: a feature existe porque
+apontar em prosa no chat tinha ergonomia ruim, e trocar ergonomia ruim por outra não era o objetivo.
+
+**A reversão custou um arquivo, e isso não foi sorte.** Medido no dia:
+
+    engine, agnóstico ..................  977 linhas — identidade, snapshot, reconciliação,
+                                                       outdated, store, protocolo, projeção, comandos
+    apps/.../review/comments.ts ........  665 linhas — o único acoplamento
+
+A decisão de **não colocar URI na identidade da nota** foi tomada nesta spec justamente para a
+superfície de render não decidir nada durável. Ela pagou exatamente como previsto.
+
+A prova da fatia 0a — `CommentController` aceita thread em URI virtual read-only — fica sem uso, mas
+continua válida e medida. Se algum dia alguém quiser voltar ao editor nativo, a pergunta já está
+respondida.
+
+Continuação em `docs/specs/513-tachyon-diff-review/`.
