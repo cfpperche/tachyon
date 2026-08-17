@@ -4,6 +4,45 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.9 — dois avisos que ninguém usava saem do cartão do agente
+
+### O cartão perde `done` e `continuity stale`
+
+Duas etiquetas somem da barra lateral, e as duas somem pelo mesmo motivo: nenhuma levava a uma ação.
+
+O **`done`** dizia "o turno terminou e você ainda não focou este agente". Ele media **clique de foco**
+e apresentava isso como atenção — no cartão do agente com quem você está conversando, "não visto" era
+tecnicamente verdade e factualmente falso. Um agente ocioso agora mostra `idle`, e só.
+
+O **`continuity stale`** avisava que o resumo de um agente estava atrás da atividade recente. Só que
+quem pode resolver isso é o agente, não você. Um alerta sem ação disponível para quem o lê não é
+informação — é ruído.
+
+### A memória por agente deixa de ter máquina em volta
+
+O resumo de continuidade continua existindo como um arquivo Markdown por agente, e as ferramentas de
+ler e escrever continuam as mesmas. O que saiu foi tudo o que orbitava esse arquivo: o cálculo de
+defasagem, o lembrete automático, os arquivos de estado paralelos e o coletor de órfãos.
+
+A medição que decidiu: em toda a vida do projeto, o lembrete automático disparou **uma vez**. Dezenove
+agentes tinham arquivo de estado, dez deles órfãos — apesar de existir um coletor justamente para
+isso.
+
+Duas mil linhas a menos, e o dado que importava ficou.
+
+### Agente temporário não é mais convidado a escrever resumo
+
+Um agente criado para uma tarefa é dispensado quando ela termina. Ele não tem um "eu futuro" para
+quem escrever. Mesmo assim, todos escreviam — e cada resumo virava lixo.
+
+Agora só agente declarado no projeto recebe esse pedido. Foi daí que vinham os órfãos.
+
+### E o que ainda não aparece
+
+Boa parte desta versão é fundação para uma funcionalidade que ainda não tem tela: **anotar uma linha
+do diff e mandar o lote para o agente**. O motor que mantém a anotação apontando para o lugar certo
+depois que o arquivo muda já está no produto, com os testes. A interface vem depois.
+
 ## 0.93.8 — o cartão do agente deixa de ser configurável
 
 ### O layout do cartão sai da configuração e volta a ser produto
