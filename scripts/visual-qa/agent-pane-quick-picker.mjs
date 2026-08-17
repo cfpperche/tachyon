@@ -74,6 +74,7 @@ await build({
 
 writeFileSync(path.join(OUT, "agent-pane-quick-picker.html"), `<!doctype html><html><head><meta charset="utf-8">
 <link rel="stylesheet" href="${path.join(ROOT, "node_modules/@xterm/xterm/css/xterm.css")}">
+<link rel="stylesheet" href="${path.join(ROOT, "packages/webview-ui/src/webview/shared/tokens.css")}">
 <link rel="stylesheet" href="${path.join(ROOT, "packages/webview-ui/src/webview/shared/quick-picker.css")}">
 <link rel="stylesheet" href="${path.join(ROOT, "packages/webview-ui/src/webview/agent-pane/agent-pane.css")}">
 </head><body><div id="root"></div><script src="./agent-pane-quick-picker.js"></script></body></html>`);
