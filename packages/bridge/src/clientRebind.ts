@@ -63,6 +63,10 @@ export type RebindResumeReadiness =
   | { kind: "retry"; reason: string }
   | { kind: "denied"; reason: string };
 
+/** t-147361 fatia D — what a failed rebind left behind, measured after the failure, never
+ * inferred from the wait-loop's pre-resume "dead". */
+export type RebindAftermath = "alive" | "stopped" | "unobservable";
+
 export interface RebindAuditEvent {
   at: string;
   /** Agent name, or "*" for a whole-inventory scan event. */
@@ -75,6 +79,8 @@ export interface RebindAuditEvent {
   error?: string;
   /** Inner AggregateError `.errors` / `.cause` messages. Omitted when the thrown value has none. */
   causes?: string[];
+  /** t-147361 fatia D — measured after resume_fail / no-ledger, before the alarm speaks. */
+  observed?: RebindAftermath;
   hardKill?: boolean;
   attempts?: number;
   waitedMs?: number;
@@ -101,6 +107,13 @@ export interface BridgeClientRebindDeps {
   kindOf: (name: string) => "agent" | "terminal";
   /** Still RUNNING? (preflight + wait loops). */
   isRunning: (name: string) => Promise<boolean>;
+  /**
+   * t-147361 fatia D — session presence after a failed rebind. Optional; when omitted,
+   * aftermath classifies from process liveness only. A positive must not be ignored:
+   * session present + process not live is unobservable, not "left stopped". Timeout
+   * should throw; a boolean false is a measured negative.
+   */
+  hasSession?: (name: string) => Promise<boolean>;
   /** Fresh, read-only proof that the generic resume path is available, retryable, or permanently
    * denied. This must run before any expected-death marker or stop. */
   canResume: (name: string, record: SessionRecord) => Promise<RebindResumeReadiness>;
@@ -180,6 +193,31 @@ function describeRebindFailure(err: unknown): { error: string; causes?: string[]
   return causes.length > 0
     ? { error: `${message}: ${causes.join("; ")}`, causes }
     : { error: message };
+}
+
+/**
+ * t-147361 fatia D — combine a fresh process probe with an optional session probe.
+ * Alive is only the process responding. Stopped requires a measured process-negative
+ * and no proof the session is still there. Everything else declares the limit.
+ */
+export function classifyRebindAftermath(input: {
+  processLive: boolean | "unknown";
+  sessionPresent: boolean | "unknown" | "unprobed";
+}): RebindAftermath {
+  if (input.processLive === true) return "alive";
+  if (input.processLive === false && input.sessionPresent !== true) return "stopped";
+  return "unobservable";
+}
+
+export function formatRebindAftermathClause(observed: RebindAftermath): string {
+  switch (observed) {
+    case "alive":
+      return "agent still running on the previous connection; no cold spawn";
+    case "stopped":
+      return "left stopped; no cold spawn";
+    case "unobservable":
+      return "Tachyon could not observe whether the agent is still running or was already stopped; no cold spawn";
+  }
 }
 
 /** Host-state key for the durable monotonic generation (single owner per workspace+instance). */
@@ -590,6 +628,7 @@ export class BridgeClientRebindCoordinator {
     const ledgerSnapshot = this.deps.getLedger(name);
     if (!ledgerSnapshot) {
       rt.clientState = "failed";
+      const observed = await this.observeAftermath(name);
       this.audit({
         at: new Date(now()).toISOString(),
         agent: name,
@@ -598,8 +637,12 @@ export class BridgeClientRebindCoordinator {
         phase: "preflight_skip",
         finalState: "failed",
         error: "no ledger record for resume",
+        observed,
       });
-      this.deps.notify(`Bridge client rebind of '${name}' failed: no ledger record (left stopped; no cold spawn)`, "error");
+      this.deps.notify(
+        `Bridge client rebind of '${name}' failed: no ledger record (${formatRebindAftermathClause(observed)})`,
+        "error",
+      );
       this.noteFailure(suspectG);
       return;
     }
@@ -740,6 +783,7 @@ export class BridgeClientRebindCoordinator {
     } catch (err) {
       rt.clientState = "failed";
       const { error, causes } = describeRebindFailure(err);
+      const observed = await this.observeAftermath(name);
       this.audit({
         at: new Date(now()).toISOString(),
         agent: name,
@@ -749,9 +793,13 @@ export class BridgeClientRebindCoordinator {
         finalState: "failed",
         error,
         ...(causes ? { causes } : {}),
+        observed,
         hardKill,
       });
-      this.deps.notify(`Bridge client rebind of '${name}' failed: ${error} (left stopped; no cold spawn)`, "error");
+      this.deps.notify(
+        `Bridge client rebind of '${name}' failed: ${error} (${formatRebindAftermathClause(observed)})`,
+        "error",
+      );
       this.noteFailure(suspectG);
     }
   }
@@ -911,6 +959,35 @@ export class BridgeClientRebindCoordinator {
         "error",
       );
     }
+  }
+
+  /**
+   * Fresh measurement after a failed rebind. Do not reuse the wait-loop's pre-resume
+   * "dead": that is what let 20:43 claim left stopped about a live session.
+   */
+  private async observeAftermath(name: string): Promise<RebindAftermath> {
+    let processLive: boolean | "unknown" = "unknown";
+    try {
+      if (this.deps.listRunningStrict) {
+        const list = await this.deps.listRunningStrict();
+        processLive = list === null ? "unknown" : list.includes(name);
+      } else {
+        processLive = await this.deps.isRunning(name);
+      }
+    } catch {
+      processLive = "unknown";
+    }
+
+    let sessionPresent: boolean | "unknown" | "unprobed" = "unprobed";
+    if (this.deps.hasSession) {
+      try {
+        sessionPresent = await this.deps.hasSession(name);
+      } catch {
+        sessionPresent = "unknown";
+      }
+    }
+
+    return classifyRebindAftermath({ processLive, sessionPresent });
   }
 
   private audit(event: RebindAuditEvent): void {
