@@ -88,6 +88,9 @@
    attention badge. */
 .card.awaiting-human { border-color: var(--ds-err); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ds-err) 55%, transparent); }
 .card.awaiting-human:hover { background: color-mix(in srgb, var(--ds-err) 6%, var(--ds-hover)); }
+/* t-55fa50 — top: -9px hangs the spotlight tag over the card edge. That is a position offset, not
+   padding/margin/gap; the spacing scale has no negative step, and snapping to size80/size100 would
+   move the tag 1px. */
 .card .next-tag { position: absolute; top: -9px; right: var(--ds-spacing-size80); font-size: var(--ds-operator-label3); letter-spacing: .05em; color: var(--ds-btn-fg); background: var(--ds-btn-bg); padding: 0 var(--ds-spacing-size80); border-radius: 8px; }
 .card-header, .card-footer { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-spacing-size80); min-width: 0; }
 .card-header { align-items: flex-start; margin-bottom: var(--ds-spacing-size80); }
@@ -186,7 +189,7 @@
 .more-menu { position: fixed; min-width: 172px; max-width: calc(100vw - var(--ds-spacing-size120)); background: var(--ds-menu-bg); color: var(--ds-menu-fg); border: 1px solid var(--vscode-menu-border, var(--ds-border)); border-radius: 5px; padding: var(--ds-spacing-size40); box-shadow: 0 6px 22px rgba(0,0,0,.45); }
 .more-item { display: flex; align-items: center; gap: var(--ds-spacing-size80); width: 100%; padding: var(--ds-spacing-size40) var(--ds-spacing-size80); border-radius: 4px; color: inherit; text-align: left; white-space: nowrap; }
 .more-item:hover, .more-item:focus-visible { background: var(--ds-menu-selection-bg); color: var(--ds-menu-selection-fg); }
-.more-item .codicon { font-size: 14px; opacity: .9; }
+.more-item .codicon { font-size: 14px; opacity: .9; } /* icon; 14 is between the two ramps */
 
 .col-body::-webkit-scrollbar, .board::-webkit-scrollbar { height: 8px; width: 8px; }
 .col-body::-webkit-scrollbar-thumb, .board::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--ds-fg) 25%, transparent); border-radius: 4px; }

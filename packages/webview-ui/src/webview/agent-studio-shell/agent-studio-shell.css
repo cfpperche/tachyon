@@ -10,8 +10,9 @@
  * decided per element. Off-scale distances took the nearest step; on a tie, the step the host
  * itself uses more in its own already-migrated CSS won (benchmark.md §2.4:
  * 4 > 2 > 8 > 6 > 12 > 24 > 16 > 10 > 32 > 20). So 1px badge pad → 2px (1px is stroke in the three
- * references, never distance). The two inline `margin-top:12px` in App.tsx become size120 via
- * `.ash-label-break`.
+ * references, never distance). The two former inline 12-pixel top margins in App.tsx are
+ * `--ds-spacing-size120` via `.ash-label-break`. t-55fa50: this sheet has no remaining raw
+ * padding/margin/gap literal; do not re-count the historical 12-pixel mention as distance debt.
  *
  * Density by role:
  *   READING  .hint, .ash-native-config-risk, .ash-native-config-empty, .ash-runtime-readiness,
@@ -75,7 +76,7 @@
 }
 .ash-identity-heading { display: flex; gap: var(--ds-spacing-size120); align-items: flex-start; justify-content: space-between; }
 .ash-identity-actions { display: flex; flex-wrap: wrap; gap: var(--ds-spacing-size40); }
-.ash-runtime-readiness { display: grid; gap: var(--ds-spacing-size80); padding: var(--ds-spacing-size80); border-left: 3px solid var(--ds-focus); background: color-mix(in srgb, var(--ds-focus) 7%, transparent); font-size: var(--ds-reading-body3); line-height: var(--ds-reading-body3-line); }
+.ash-runtime-readiness { display: grid; gap: var(--ds-spacing-size80); padding: var(--ds-spacing-size80); border-left: 3px solid var(--ds-focus); background: color-mix(in srgb, var(--ds-focus) 7%, transparent); font-size: var(--ds-reading-body3); line-height: var(--ds-reading-body3-line); } /* 3px = accent rail (stroke), not distance */
 .ash-runtime-readiness-heading { display: flex; gap: var(--ds-spacing-size120); align-items: flex-start; justify-content: space-between; }
 .ash-runtime-readiness ul { display: grid; gap: var(--ds-spacing-size40); margin: 0; padding-left: var(--ds-spacing-size160); }
 .ash-runtime-readiness-limited { border-color: var(--ds-warn); }
@@ -95,7 +96,7 @@
 .ash-profile-replace-confirm-title { font-weight: var(--tachyon-weight-semibold); }
 .ash-profile-replace-confirm code { overflow-wrap: anywhere; }
 .ash-profile-replace-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ds-spacing-size80); }
-.ash-profile-notice { padding: var(--ds-spacing-size80); border-left: 3px solid var(--ds-ok); font-size: var(--ds-operator-label1); }
+.ash-profile-notice { padding: var(--ds-spacing-size80); border-left: 3px solid var(--ds-ok); font-size: var(--ds-operator-label1); } /* 3px = accent rail (stroke), not distance */
 .ash-profile-notice-error { border-color: var(--ds-err); color: var(--ds-err); }
 .checks { display: flex; flex-direction: column; gap: var(--ds-spacing-size40); font-size: var(--ds-operator-label1); }
 .ash-check-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ds-spacing-size80); }
