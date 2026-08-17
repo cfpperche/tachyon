@@ -52,13 +52,13 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     // what a row paints its state from: the status union, never a boolean.
     expect(roster).toMatch(/STATUS_LABEL\[a\.status\]/);
     expect(roster).not.toMatch(/\ba\.running\b/);
-    // and the union is genuinely nine wide. Without this, forbidding `a.running` alone would still pass
+    // and the union keeps every live lifecycle/attention state. Without this, forbidding `a.running` alone would still pass
     // if AgentStatus itself collapsed back to two values — the defect, not the spelling of it.
     const types = readFileSync("packages/shared/src/sidebar/types.ts", "utf8");
     const union = /export type AgentStatus =([^;]+);/.exec(types);
     expect(union, "AgentStatus must be a declared union in packages/shared/src/sidebar/types.ts").toBeTruthy();
     const statuses = union![1].split("|").map((s) => s.trim()).filter(Boolean);
-    expect(statuses, `AgentStatus must keep its nine states, got ${statuses.join(", ")}`).toHaveLength(9);
+    expect(statuses, `AgentStatus must keep its eight states, got ${statuses.join(", ")}`).toHaveLength(8);
     const approvals = readFileSync("packages/webview-ui/src/webview/approval/App.tsx", "utf8");
     expect(approvals).toContain("PageChrome");
     expect(approvals).toContain("EmptyState");

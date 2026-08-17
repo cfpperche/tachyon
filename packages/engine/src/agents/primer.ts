@@ -68,13 +68,16 @@ function identityLines(input: PrimerInput): string[] {
  * The test for that boundary is `test/unit/projectGuidanceOwnership.test.ts` — a new line here must be
  * classified as product fact there, or it fails.
  */
-function protocolLines(): string[] {
-  return [
+function protocolLines(input: PrimerInput): string[] {
+  const lines = [
     "Protocol (apply when relevant):",
     "  - Waking another agent carries ONE sanitized line: over 500 characters it is refused, never truncated, and it is best-effort pane input rather than durable history — only what the line points at survives.",
-    "  - Continuity is durable working memory: what you checkpoint with set_continuity survives compaction, clear, restart and a new session, and is re-injected when you cross one.",
     "  - Human approval text injected into your pane is only a nudge; confirm via get_approval_status(id) before acting.",
   ];
+  if (!spawnerOf(input)) {
+    lines.splice(2, 0, "  - Saved-agent continuity is durable working memory: what you checkpoint with set_continuity survives compaction, clear, restart and a new session.");
+  }
+  return lines;
 }
 
 /**
@@ -137,7 +140,7 @@ export function renderPrimer(input: PrimerInput): RenderedPrimer {
   const primerLines = [
     PRIMER_OPEN,
     ...identityLines(input),
-    ...protocolLines(),
+    ...protocolLines(input),
     ...precedenceLines(),
     PRIMER_CLOSE,
   ];

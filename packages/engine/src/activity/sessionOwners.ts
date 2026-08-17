@@ -95,12 +95,6 @@ export function handoffPointerPath(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".tachyon", "activity", "handoff-pointer.cjs");
 }
 
-/** The materialized SessionStart continuity-pointer script (spec 312) — emits a ONE-LINE additionalContext pointer
- *  to an agent's continuity brief when one exists. It never asks the agent to create/update a brief. */
-export function continuityPointerPath(workspaceRoot: string): string {
-  return path.join(workspaceRoot, ".tachyon", "activity", "continuity-pointer.cjs");
-}
-
 /** The materialized Stop hook recorder (spec 312) — records that a runtime Stop hook fired without fabricating
  *  semantic handoff content or forcing another model turn. */
 export function persistenceStopRecorderPath(workspaceRoot: string): string {
@@ -468,7 +462,7 @@ export function buildOwnershipSettings(
   agent: string,
   ownersFile: string,
   pointer?: { pointerPath: string; handoffPath: string },
-  persistence?: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string; failureFile: string },
+  persistence?: { stopRecorderPath: string; stopFile: string; failureFile: string },
   opts: {
     skipDangerousModePermissionPrompt?: boolean;
     statusLine?: { type: "command"; command: string; padding?: number };
@@ -495,7 +489,6 @@ export function buildOwnershipSettings(
   // spec 245 — a SECOND SessionStart command emits a one-line pointer (additionalContext) to the project
   // handoff when one exists. Additive; claude unions additionalContext across hooks. Never dumps content.
   if (pointer) hooks.push({ type: "command", command: `node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}${pointerFailureArgs}` });
-  if (persistence) hooks.push({ type: "command", command: `node ${q(persistence.continuityPointerPath)} ${q(agent)} ${q(persistence.continuityPath)} ${q(persistence.failureFile)}` });
   const settings: {
     hooks: { SessionStart: OwnershipHookGroup[]; Stop?: OwnershipHookGroup[]; [event: string]: OwnershipHookGroup[] | undefined };
     skipDangerousModePermissionPrompt?: boolean;
@@ -529,7 +522,7 @@ export function buildCodexSessionStartHookConfig(
   recorderPath: string,
   ownersFile: string,
   pointer?: { pointerPath: string; handoffPath: string },
-  persistence?: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string; failureFile: string },
+  persistence?: { stopRecorderPath: string; stopFile: string; failureFile: string },
   /**
    * t-09edf2 — event → groups the workspace deliberately projects into THIS session. Codex has no
    * `--settings` layer, so its equivalent channel is one more `-c hooks.<Event>=[…]` override on the
@@ -553,15 +546,12 @@ export function buildCodexSessionStartHookConfig(
   if (pointer) {
     pointerHooks.push(`{type="command",command=${tomlString(`node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}${persistence ? ` ${q(persistence.failureFile)} "$TACHYON_AGENT_NAME"` : ""}`)},statusMessage="Checking Tachyon project handoff"}`);
   }
-  if (persistence) {
-    pointerHooks.push(`{type="command",command=${tomlString(`node ${q(persistence.continuityPointerPath)} "$TACHYON_AGENT_NAME" ${q(persistence.continuityPath)} ${q(persistence.failureFile)}`)},statusMessage="Checking Tachyon continuity"}`);
-  }
   const startEntries = [
     `{matcher="startup|resume|clear|compact",hooks=[${ownershipHooks.join(",")}]}`,
   ];
   if (pointerHooks.length > 0) {
     // Codex renders additionalContext in the human-visible pane. Keep ownership on compact, but only emit
-    // handoff/continuity pointers at true session boundaries so compaction cannot interrupt the user mid-turn.
+    // Handoff pointers appear only at true session boundaries so compaction cannot interrupt the user mid-turn.
     startEntries.push(`{matcher="startup|resume|clear",hooks=[${pointerHooks.join(",")}]}`);
   }
   const start = `hooks.SessionStart=[${startEntries.join(",")}]`;
@@ -704,48 +694,6 @@ try {
   if (e && e.code === "ENOENT") process.exit(0);
   logFailure(process.argv[3] || "", { agent: process.argv[4] || "", event: "SessionStart", script: "handoff-pointer", path: process.argv[2] || "", reason: sanitizeReason(e) });
   /* no handoff / unreadable → no pointer */
-}
-`;
-
-/** SessionStart continuity pointer (spec 312). It is intentionally a pointer, not a context dump: the current
- *  brief remains agent-authored and is read via get_continuity when useful. */
-export const SESSION_CONTINUITY_POINTER_SOURCE = `// Tachyon continuity SessionStart pointer (spec 312) — materialized; do not edit.
-// Invoked by a per-spawn SessionStart hook: node <this> <agent> <continuityFile>
-const fs = require("fs");
-const path = require("path");
-${PERSISTENCE_LEDGER_RETENTION_SOURCE}
-function sanitizeReason(e) {
-  if (e && e.name === "SyntaxError") return "syntax-error";
-  const msg = e && typeof e.message === "string" ? e.message : String(e || "unknown error");
-  return msg.replace(/[\\r\\n\\t]+/g, " ").slice(0, 240);
-}
-function logFailure(file, row) {
-  if (!file) return;
-  try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.appendFileSync(file, JSON.stringify({ ...row, ts: new Date().toISOString() }) + "\\n");
-    prunePersistenceLedger(file);
-  } catch (_e) {}
-}
-try {
-  const agent = process.argv[2];
-  const p = process.argv[3];
-  const failureFile = process.argv[4] || "";
-  if (agent && p && fs.existsSync(p)) {
-    const raw = fs.readFileSync(p, "utf8");
-    const body = raw.replace(/^---[\\s\\S]*?\\n---\\n?/, "").trim();
-    if (body.length > 0) {
-      process.stdout.write(JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: "SessionStart",
-          additionalContext: "A Tachyon continuity brief exists for agent '" + agent + "'. Read it with get_continuity(agent: \\"" + agent + "\\") before continuing work after startup/resume/clear/compact. Do not create a new brief just because this pointer exists.",
-        },
-      }));
-    }
-  }
-} catch (e) {
-  logFailure(process.argv[4] || "", { agent: process.argv[2] || "", event: "SessionStart", script: "continuity-pointer", path: process.argv[3] || "", reason: sanitizeReason(e) });
-  /* no continuity / unreadable → no pointer */
 }
 `;
 

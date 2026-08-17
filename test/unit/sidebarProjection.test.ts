@@ -31,10 +31,9 @@ function minimalFleet(agentStatus: string) {
 }
 
 describe("parseSidebarViewV1 agent status enum", () => {
-  it("accepts status done (done=unseen idle)", () => {
-    const view = parseSidebarViewV1(minimalFleet("done"));
-    expect(view.fleet.agents[0]?.status).toBe("done");
-    expect(isSidebarViewV1(minimalFleet("done"))).toBe(true);
+  it("rejects the removed sidebar status done", () => {
+    expect(() => parseSidebarViewV1(minimalFleet("done"))).toThrow();
+    expect(isSidebarViewV1(minimalFleet("done"))).toBe(false);
   });
 
   it("accepts the full live/stop status set", () => {
@@ -42,7 +41,6 @@ describe("parseSidebarViewV1 agent status enum", () => {
       "running",
       "needs",
       "throttled",
-      "done",
       "idle",
       "stopping",
       "stop-failed",

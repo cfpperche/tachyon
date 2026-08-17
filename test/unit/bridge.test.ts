@@ -125,7 +125,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "complete_node",
       "complete_pin",
       "continue_task",
-      "continuity_status",
       "create_pin",
       "create_task",
       "create_validation",
@@ -918,189 +917,17 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(validations.list()).toHaveLength(1); // discovery is read-only; the one existing validation came from the prior test
   });
 
-  it("continuity tools round-trip through MCP onto the per-agent file (spec 241)", async () => {
-    const status0 = await client.callTool({ name: "continuity_status", arguments: { agent: "claude" } });
-    expect(JSON.parse((status0.content as Array<{ text: string }>)[0].text)).toMatchObject({ agent: "claude", exists: false }); // cold start
+  it("continuity tools round-trip plain Markdown through the per-agent file", async () => {
     const cold = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
-    expect((cold.content as Array<{ text: string }>)[0].text).toContain("# Derived Open Work");
+    expect((cold.content as Array<{ text: string }>)[0].text).toBe("(no continuity brief yet)");
 
-    const set = await client.callTool({ name: "set_continuity", arguments: { agent: "claude", content: "# Current Goal\nship spec 241", status: "active" } });
+    const markdown = "# Current Goal\nship the plain file\n";
+    const set = await client.callTool({ name: "set_continuity", arguments: { agent: "claude", content: markdown } });
     expect(set.isError).toBeFalsy();
-    // the file door agrees with the tool door
-    expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "continuity", "claude.md"), "utf8")).toContain("ship spec 241");
+    expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "continuity", "claude.md"), "utf8")).toBe(markdown);
 
     const got = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
-    expect(JSON.stringify(got.content)).toContain("ship spec 241");
-
-    const status1 = await client.callTool({ name: "continuity_status", arguments: { agent: "claude" } });
-    const parsed = JSON.parse((status1.content as Array<{ text: string }>)[0].text);
-    expect(parsed).toMatchObject({ agent: "claude", exists: true, status: "active", source_activity_seq: 7, current_activity_seq: 7, lag: 0 });
-  });
-
-  it("get_continuity derives open work without storing it and leads with stale lag", async () => {
-    const task = await tasks.create({ title: "Reconcile live continuity", author: "human" });
-    await tasks.update(task.id, { status: "triaged", assignee: "claude" });
-    await tasks.update(task.id, { status: "active" });
-    const pin = await pins.create("Review continuity contract", "claude");
-    await pins.create("Another agent's reminder", "codex");
-    activitySeq = 108;
-
-    await client.callTool({
-      name: "set_continuity",
-      arguments: { agent: "claude", content: "# Current Goal\nship", source_activity_seq: 7 },
-    });
-    const got = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
-    const text = (got.content as Array<{ text: string }>)[0].text;
-
-    expect(text).toMatch(/^STALE: continuity brief is 101 activity records behind/);
-    expect(text).toContain(`- ${task.id}: Reconcile live continuity`);
-    expect(text).toContain(`- ${pin.id}: Review continuity contract`);
-    expect(text).not.toContain("Another agent's reminder");
-    expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "continuity", "claude.md"), "utf8")).not.toContain("Derived Open Work");
-
-    activitySeq = 7;
-    await tasks.update(task.id, { status: "done" });
-    await pins.setDone(pin.id, true);
-  });
-
-  it("set_continuity does not store or accumulate derived open work from a full read response", async () => {
-    const authoredBody = "# Current Goal\nkeep the narrative";
-    await client.callTool({
-      name: "set_continuity",
-      arguments: { agent: "claude", content: authoredBody },
-    });
-
-    const storedBodies: string[] = [];
-    for (let cycle = 0; cycle < 5; cycle += 1) {
-      const read = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
-      const projection = (read.content as Array<{ text: string }>)[0].text;
-      await client.callTool({
-        name: "set_continuity",
-        arguments: { agent: "claude", content: projection },
-      });
-      storedBodies.push(continuity.read("claude")?.body ?? "");
-    }
-
-    expect(storedBodies).toEqual(Array.from({ length: 5 }, () => authoredBody));
-    expect(storedBodies.every((body) => !body.includes("# Derived Open Work"))).toBe(true);
-  });
-
-  it("set_continuity does not persist a stale prefix from a full read response", async () => {
-    activitySeq = 108;
-    await client.callTool({
-      name: "set_continuity",
-      arguments: { agent: "claude", content: "# Current Goal\nrefresh", source_activity_seq: 7 },
-    });
-    const staleRead = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
-    const staleProjection = (staleRead.content as Array<{ text: string }>)[0].text;
-    expect(staleProjection).toMatch(/^STALE:/);
-
-    await client.callTool({
-      name: "set_continuity",
-      arguments: { agent: "claude", content: staleProjection },
-    });
-
-    expect(continuity.read("claude")?.body).toBe("# Current Goal\nrefresh");
-    const freshRead = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
-    expect((freshRead.content as Array<{ text: string }>)[0].text).not.toMatch(/^STALE:/);
-    activitySeq = 7;
-  });
-
-  it("set_continuity does not store the cold-start placeholder from a full read response", async () => {
-    continuity.remove("claude");
-    const coldRead = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
-    const coldProjection = (coldRead.content as Array<{ text: string }>)[0].text;
-
-    await client.callTool({
-      name: "set_continuity",
-      arguments: { agent: "claude", content: coldProjection },
-    });
-
-    expect(continuity.read("claude")?.body).toBe("");
-  });
-
-  it("set_continuity preserves a derived open work heading inside the authored narrative", async () => {
-    const authoredContent = [
-      "# Current Goal",
-      "keep the narrative",
-      "",
-      "# Derived Open Work",
-      "",
-      "This human-authored context stays.",
-      "",
-      "# Next",
-      "continue",
-    ].join("\n");
-    await client.callTool({
-      name: "set_continuity",
-      arguments: { agent: "claude", content: authoredContent },
-    });
-
-    const read = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
-    const projection = (read.content as Array<{ text: string }>)[0].text;
-    await client.callTool({
-      name: "set_continuity",
-      arguments: { agent: "claude", content: projection },
-    });
-
-    expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "continuity", "claude.md"), "utf8"))
-      .toContain("# Derived Open Work\n\nThis human-authored context stays.\n\n# Next");
-  });
-
-  it("set_continuity preserves human-authored YAML frontmatter", async () => {
-    const authoredBody = "---\ntitle: Human notes\n---\n# Current Goal\ncontinue";
-    await client.callTool({
-      name: "set_continuity",
-      arguments: { agent: "claude", content: authoredBody },
-    });
-    const read = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
-    const projection = (read.content as Array<{ text: string }>)[0].text;
-
-    await client.callTool({
-      name: "set_continuity",
-      arguments: { agent: "claude", content: projection },
-    });
-
-    expect(continuity.read("claude")?.body).toBe(authoredBody);
-  });
-
-  it("set_continuity warns after removed task ids and wiki links", async () => {
-    await client.callTool({
-      name: "set_continuity",
-      arguments: { agent: "claude", content: "# Open Threads\n- t-ed20f5\n- [[decision-log]]" },
-    });
-    const rewritten = await client.callTool({
-      name: "set_continuity",
-      arguments: { agent: "claude", content: "# Open Threads\n- complete" },
-    });
-
-    const text = (rewritten.content as Array<{ text: string }>)[0].text;
-    expect(text).toContain("continuity updated");
-    expect(text).toContain("removed references: t-ed20f5, [[decision-log]]");
-    expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "continuity", "claude.md"), "utf8")).toContain("- complete");
-  });
-
-  it("set_continuity describes authored narrative and derived open work", async () => {
-    const { tools: listed } = await client.listTools();
-    const tool = listed.find((candidate) => candidate.name === "set_continuity");
-
-    expect(tool?.description).toContain("authored continuity narrative");
-    expect(tool?.description).toContain("derives your open tasks and pins during reads");
-    expect(tool?.description).not.toContain("keep it SHORT");
-  });
-
-  it("set_continuity keeps advisory drop detection non-blocking for malformed prior content", async () => {
-    const continuityPath = nodePath.join(pinsRoot, ".tachyon", "continuity", "claude.md");
-    fs.writeFileSync(continuityPath, "malformed prior content with t-ed20f5", "utf8");
-
-    const rewritten = await client.callTool({
-      name: "set_continuity",
-      arguments: { agent: "claude", content: "# Current Goal\nrecover" },
-    });
-
-    expect(rewritten.isError).toBeFalsy();
-    expect((rewritten.content as Array<{ text: string }>)[0].text).toBe("continuity updated");
-    expect(fs.readFileSync(continuityPath, "utf8")).toContain("# Current Goal\nrecover");
+    expect((got.content as Array<{ text: string }>)[0].text).toBe(markdown);
   });
 
   it("project-handoff tools round-trip through MCP: append (any agent) + CAS rewrite (owner) (spec 245)", async () => {

@@ -3,7 +3,6 @@ import type {
   AgentChecklistLine,
   AgentVM,
   AgentStatus,
-  ContinuityBadge,
   EvidenceBadge,
   PersistenceHookBadge,
   ModelSource,
@@ -251,7 +250,6 @@ export interface AgentExtras {
   /** SDD 478 M5 — the managed-entry arm; absent means the caller had no entry to read. */
   kind?: EntryKind;
   adhoc?: boolean;
-  continuity?: ContinuityBadge;
   /** spec 390 — glance focus line (task / brief / continuity). */
   focus?: AgentFocus;
   /** t-281339 — current checklist step or `absent`. */
@@ -265,7 +263,6 @@ export interface AgentExtras {
   /** SDD 477 / t-5bfb72 — the runtime says this agent is not authenticated; undefined = not latched.
    *  `action` is the measured human action, never credential material. */
   authRequired?: { runtime: string; action: string };
-  /** t-a39c7d — idle turn finished and not yet focused by human (sidebar status "done"). */
   unseen?: boolean;
   /** t-8354ae — row rendered under invalid config (ledger/LKG degraded mode). */
   configInvalid?: boolean;
@@ -278,15 +275,13 @@ export interface AgentExtras {
 
 /** The sidebar grouping bucket. NOTE: mixes lifecycle (running/stopped/crashed) with running-attention
  *  (needs/idle) — matches the approved prototype; the lifecycle-vs-attention split is a tracked follow-up. */
-export function statusOf(a: AgentRaw, attention?: string, unseen?: boolean): AgentStatus {
+export function statusOf(a: AgentRaw, attention?: string, _unseen?: boolean): AgentStatus {
   if (a.dead) return a.crashed ? "crashed" : "stopped";
   if (a.stopping) return "stopping";
   if (a.stopFailed) return "stop-failed";
   if (!a.running) return "stopped";
   if (attention === "needs-input") return "needs";
   if (attention === "throttled") return "throttled";
-  // t-a39c7d — done = idle + unseen (herdr); decays to idle after markSeen.
-  if (attention === "idle" && unseen) return "done";
   if (attention === "idle") return "idle";
   return "running";
 }
@@ -296,16 +291,13 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
   const visibleAttention = alive ? x.attention : undefined;
   const visibleAwaitingHuman = alive ? x.awaitingHuman : undefined;
   const visibleAuthRequired = alive ? x.authRequired : undefined;
-  const visibleUnseen = alive ? x.unseen === true : false;
   // spec 390 — never surface "working" as a badge (live-dot already means alive/busy).
   const attention =
     visibleAttention === "needs-input"
       ? "needs input"
       : visibleAttention === "throttled"
         ? "throttled"
-        : visibleAttention === "idle" && visibleUnseen
-          ? "done"
-          : undefined;
+        : undefined;
   const sub = a.dead ? deadSubline(a) : a.cleanExited ? "exited (0)" : undefined;
   const stopping = a.stopping && !a.dead ? "stopping..." : undefined;
   const stopFailed = a.stopFailed && !a.dead ? stopFailedSubline(a.stopFailure) : undefined;
@@ -328,7 +320,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
           ...(modelFact.divergence ? { modelDivergence: true } : {}),
         }
       : {}),
-    status: statusOf(a, visibleAttention, visibleUnseen),
+    status: statusOf(a, visibleAttention),
     ...(attention ? { attention } : {}),
     ...(a.parent ? { parent: a.parent } : {}),
     ...(a.delegator ? { delegator: a.delegator } : {}),
@@ -365,7 +357,6 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     kind: x.kind ?? "agent",
     ...(x.adhoc ? { adhoc: true } : {}),
     ...(x.canDismiss ? { canDismiss: true } : {}),
-    ...(x.continuity ? { continuity: x.continuity } : {}),
     ...(x.focus ? { focus: x.focus } : {}),
     ...(x.checklist ? { checklist: x.checklist } : {}),
     ...(x.persistenceHooks ? { persistenceHooks: x.persistenceHooks } : {}),

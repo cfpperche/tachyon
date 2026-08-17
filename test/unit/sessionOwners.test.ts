@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, CODEX_TOOL_HOOK_RECORDER_SOURCE, CODEX_UPDATE_PLAN_HOOK_MATCHER, PERSISTENCE_STOP_RECORDER_SOURCE, RUNTIME_STATUS_PUBLISHER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, appendOwnerRow, compactSessionOwnerRows, compactSpawnSettings, persistenceHookFailureFile, prunePersistenceLedger, readSessionOwners, removeSessionOwnerRows, removeSpawnSettings, resolveRotationFollow, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";
+import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, CODEX_TOOL_HOOK_RECORDER_SOURCE, CODEX_UPDATE_PLAN_HOOK_MATCHER, PERSISTENCE_STOP_RECORDER_SOURCE, RUNTIME_STATUS_PUBLISHER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, appendOwnerRow, compactSessionOwnerRows, compactSpawnSettings, persistenceHookFailureFile, prunePersistenceLedger, readSessionOwners, removeSessionOwnerRows, removeSpawnSettings, resolveRotationFollow, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";
 import { AGENT_TOKEN_ENV_VAR, URL_ENV_VAR } from "@tachyon/shared/bridge/env.js";
 import { URL_ENV_VAR as spawnUrlEnvVar, AGENT_TOKEN_ENV_VAR as spawnTokenEnvVar } from "@tachyon/bridge/token.js";
 import { makeTempDir } from "../helpers/tempDir.js";
@@ -226,19 +226,14 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     expect(s.skipDangerousModePermissionPrompt).toBe(true);
   });
 
-  it("spec 312: buildOwnershipSettings can add continuity SessionStart + Stop bookkeeping hooks", () => {
+  it("buildOwnershipSettings adds Stop bookkeeping without a continuity SessionStart hook", () => {
     const s = buildOwnershipSettings("/ws/.tachyon/activity/rec.cjs", "claude-x", "/ws/.tachyon/activity/owners.jsonl", undefined, {
-      continuityPointerPath: "/ws/.tachyon/activity/continuity-pointer.cjs",
-      continuityPath: "/ws/.tachyon/continuity/claude-x.md",
       stopRecorderPath: "/ws/.tachyon/activity/persistence-stop-record.cjs",
       stopFile: "/ws/.tachyon/activity/persistence-stop.jsonl",
       failureFile: "/ws/.tachyon/activity/persistence-hooks-failures.jsonl",
     });
     const startCmds = s.hooks.SessionStart[0].hooks.map((h) => h.command);
-    expect(startCmds).toEqual([
-      "node '/ws/.tachyon/activity/rec.cjs' 'claude-x' '/ws/.tachyon/activity/owners.jsonl' '/ws/.tachyon/activity/persistence-hooks-failures.jsonl'",
-      "node '/ws/.tachyon/activity/continuity-pointer.cjs' 'claude-x' '/ws/.tachyon/continuity/claude-x.md' '/ws/.tachyon/activity/persistence-hooks-failures.jsonl'",
-    ]);
+    expect(startCmds).toEqual(["node '/ws/.tachyon/activity/rec.cjs' 'claude-x' '/ws/.tachyon/activity/owners.jsonl' '/ws/.tachyon/activity/persistence-hooks-failures.jsonl'"]);
     expect(s.hooks.Stop?.[0].hooks[0].command).toBe("node '/ws/.tachyon/activity/persistence-stop-record.cjs' 'claude-x' '/ws/.tachyon/activity/persistence-stop.jsonl' '/ws/.tachyon/activity/persistence-hooks-failures.jsonl'");
   });
 
@@ -247,14 +242,12 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
       pointerPath: "/ws/.tachyon/activity/handoff-pointer.cjs",
       handoffPath: "/ws/.tachyon/HANDOFF.md",
     }, {
-      continuityPointerPath: "/ws/.tachyon/activity/continuity-pointer.cjs",
-      continuityPath: "/ws/.tachyon/continuity/claude-x.md",
       stopRecorderPath: "/ws/.tachyon/activity/persistence-stop-record.cjs",
       stopFile: "/ws/.tachyon/activity/persistence-stop.jsonl",
       failureFile: "/ws/.tachyon/activity/persistence-hooks-failures.jsonl",
     });
     const startCmds = s.hooks.SessionStart[0].hooks.map((h) => h.command);
-    expect(startCmds).toHaveLength(3);
+    expect(startCmds).toHaveLength(2);
     for (const cmd of [...startCmds, s.hooks.Stop?.[0].hooks[0].command ?? ""]) {
       expect(cmd).toContain("/ws/.tachyon/activity/persistence-hooks-failures.jsonl");
     }
@@ -280,10 +273,8 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     expect(pointerEntry).toContain("handoff-pointer.cjs");
   });
 
-  it("spec 312: buildCodexSessionStartHookConfig adds continuity and Stop hook overrides", () => {
+  it("buildCodexSessionStartHookConfig adds Stop without a continuity pointer", () => {
     const c = buildCodexSessionStartHookConfig("/ws/.tachyon/activity/rec.cjs", "/ws/.tachyon/activity/owners.jsonl", undefined, {
-      continuityPointerPath: "/ws/.tachyon/activity/continuity-pointer.cjs",
-      continuityPath: "/ws/.tachyon/continuity/codex.md",
       stopRecorderPath: "/ws/.tachyon/activity/persistence-stop-record.cjs",
       stopFile: "/ws/.tachyon/activity/persistence-stop.jsonl",
       failureFile: "/ws/.tachyon/activity/persistence-hooks-failures.jsonl",
@@ -291,14 +282,9 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     expect(c).toEqual(expect.any(Array));
     const [start, stop] = c as string[];
     expect(start).toContain("hooks.SessionStart=");
-    expect(start).toContain("continuity-pointer.cjs");
-    expect(start).toContain("/ws/.tachyon/continuity/codex.md");
+    expect(start).not.toContain("continuity-pointer");
     expect(stop).toContain("hooks.Stop=");
     expect(stop).toContain("persistence-stop-record.cjs");
-    const compactEntry = /matcher="startup\|resume\|clear\|compact",hooks=\[([^\]]*)\]/.exec(start)?.[1] ?? "";
-    const pointerEntry = /matcher="startup\|resume\|clear",hooks=\[([^\]]*)\]/.exec(start)?.[1] ?? "";
-    expect(compactEntry).not.toContain("continuity-pointer.cjs");
-    expect(pointerEntry).toContain("continuity-pointer.cjs");
     expect(start).toContain("/ws/.tachyon/activity/persistence-hooks-failures.jsonl");
     expect(stop).toContain("/ws/.tachyon/activity/persistence-hooks-failures.jsonl");
   });
@@ -340,7 +326,6 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     // Compiles the materialized recorder the way `node <file>` would — guards against a broken template string.
     expect(() => new Function(SESSION_OWNER_RECORDER_SOURCE)).not.toThrow();
     expect(() => new Function(SESSION_HANDOFF_POINTER_SOURCE)).not.toThrow();
-    expect(() => new Function(SESSION_CONTINUITY_POINTER_SOURCE)).not.toThrow();
     expect(() => new Function(PERSISTENCE_STOP_RECORDER_SOURCE)).not.toThrow();
     expect(() => new Function(CODEX_TOOL_HOOK_RECORDER_SOURCE)).not.toThrow();
     expect(SESSION_OWNER_RECORDER_SOURCE).toContain("appendFileSync");
@@ -364,13 +349,6 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
         args: (badPath: string, failureFile: string) => [badPath, failureFile],
         input: "",
         match: { agent: "", event: "SessionStart", script: "handoff-pointer" },
-      },
-      {
-        source: SESSION_CONTINUITY_POINTER_SOURCE,
-        file: "continuity-pointer.cjs",
-        args: (badPath: string, failureFile: string) => ["codex-x", badPath, failureFile],
-        input: "",
-        match: { agent: "codex-x", event: "SessionStart", script: "continuity-pointer" },
       },
       {
         source: PERSISTENCE_STOP_RECORDER_SOURCE,

@@ -134,15 +134,10 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
       }
     });
 
-    it("states that continuity is durable without prescribing when to checkpoint", () => {
-      for (const input of [delegatedAdhoc, plainAdhoc, declared]) {
-        const { primer } = renderPrimer(input);
-        expect(primer).toMatch(/Continuity is durable working memory/);
-        expect(primer).toMatch(/survives compaction, clear, restart and a new session/);
-
-        // The exact policy this repository's maintainer wanted reversed on 2026-08-05.
-        expect(primer).not.toMatch(/only when material state/);
-        expect(primer).not.toMatch(/set_continuity only/);
+    it("asks only saved agents to checkpoint continuity", () => {
+      expect(renderPrimer(declared).primer).toMatch(/Saved-agent continuity is durable working memory/);
+      for (const input of [delegatedAdhoc, plainAdhoc]) {
+        expect(renderPrimer(input).primer).not.toContain("set_continuity");
       }
     });
 

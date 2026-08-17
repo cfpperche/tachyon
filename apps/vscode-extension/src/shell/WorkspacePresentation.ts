@@ -170,7 +170,7 @@ function pluginAgentStatus(
   if (!running) return "stopped";
   if (attention === "needs-input") return "needs";
   if (attention === "throttled") return "throttled";
-  if (attention === "idle" && unseen) return "done";
+  void unseen;
   if (attention === "idle") return "idle";
   return "running";
 }

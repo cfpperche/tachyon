@@ -14,7 +14,6 @@ describe("persistent engine activity lifecycle actions", () => {
     await restartAgentWithActivity(workspace, recorder(events), "codex");
     expect(events).toEqual([
       "reset:codex",
-      "checkpoint:codex",
       "note:hash:codex:restarted",
       "restart:codex",
       "arm:hash:codex",
@@ -56,7 +55,6 @@ function fakeWorkspace(events: string[], options: { failStart?: boolean } = {}):
       restart: async (agent) => { events.push(`restart:${agent}`); },
     },
     lifecycle: { resetBackoff: (agent) => { events.push(`reset:${agent}`); } },
-    checkpointBeforeTeardown: async (agent) => { events.push(`checkpoint:${agent}`); },
     resumeAgent: async (agent) => { events.push(`resume:${agent}`); },
   };
 }
