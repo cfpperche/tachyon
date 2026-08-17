@@ -34,6 +34,10 @@ import {
   type SidebarMutationInputV1,
 } from "../runtime-api/sidebarCommands.js";
 import {
+  isStatusNoticeSetInputV1,
+  type StatusNoticeSetInputV1,
+} from "../sidebar/statusNotice.js";
+import {
   isReviewMutationInputV1,
   isReviewMutationResultIdentityV1,
   isReviewNotesQueryInputV1,
@@ -275,6 +279,7 @@ export type WorkspaceCommandMethodV1 =
   | "handoff.ensure"
   | "handoff.distill"
   | "sidebar.mutate"
+  | "status-notice.set"
   | "review.mutate"
   | "extension.invoke";
 
@@ -376,6 +381,10 @@ export type WorkspaceCommandV1 = {
   schemaVersion: 1;
   method: "sidebar.mutate";
   input: SidebarMutationInputV1;
+} | {
+  schemaVersion: 1;
+  method: "status-notice.set";
+  input: StatusNoticeSetInputV1;
 } | {
   schemaVersion: 1;
   method: "review.mutate";
@@ -721,6 +730,7 @@ const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "handoff.ensure",
   "handoff.distill",
   "sidebar.mutate",
+  "status-notice.set",
   "review.mutate",
   "extension.invoke",
 ]);
@@ -805,6 +815,7 @@ export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV
   if (value.method === "handoff.ensure") return hasOnlyKeys(value.input, []);
   if (value.method === "handoff.distill") return isHandoffDistillInputV1(value.input);
   if (value.method === "sidebar.mutate") return isSidebarMutationInputV1(value.input);
+  if (value.method === "status-notice.set") return isStatusNoticeSetInputV1(value.input);
   if (value.method === "review.mutate") return isReviewMutationInputV1(value.input);
   if (value.method === "extension.invoke") return isExtensionCommandV1(value.input);
   if (value.method === "agent.restart") return isWorkspaceAgentRestartInputV1(value.input);

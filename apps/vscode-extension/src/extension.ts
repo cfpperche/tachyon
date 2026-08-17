@@ -1495,7 +1495,17 @@ function registerGlobalSettingsRecovery(context: vscode.ExtensionContext): void 
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  initializeVsCodeNotifications();
+  initializeVsCodeNotifications(async (message, level) => {
+    const clients = activeClientRegistry?.list() ?? [];
+    if (clients.length === 0) throw new Error("no workspace engine is attached");
+    const results = await Promise.all(clients.map((client) => client.invoke(crypto.randomUUID(), {
+      schemaVersion: 1,
+      method: "status-notice.set",
+      input: { message, level },
+    })));
+    const failure = results.find((result) => result.status === "error");
+    if (failure?.status === "error") throw new Error(`${failure.code}: ${failure.message}`);
+  });
 
   // t-aaad95 — BEFORE any early return. The global settings file is per person, not per project:
   // zero workspaces open is exactly when someone needs `agentPane.enabled` answered and the recovery

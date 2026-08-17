@@ -186,6 +186,7 @@ import { selectAssignedWork } from "../agents/assignmentSelection.js";
 import type { InternalChecklistRead } from "../runtime/internalChecklist.js";
 import type { InternalChecklistTurnJudgment } from "../runtime/internalChecklistTurn.js";
 import { readAgentInternalChecklist } from "../sidebar/readAgentInternalChecklist.js";
+import { StatusNoticeStore, type StatusNoticeSetInputV1 } from "../sidebar/statusNotice.js";
 import { isVerifiedSince } from "./verifyRecordReader.js";
 import { defaultGitExec } from "../worktree/WorktreeManager.js";
 import { appendDoorbellOverflowEvent, hasDoorbellRung } from "./doorbell.js";
@@ -505,6 +506,8 @@ export class Workspace {
   private readonly runtimeSlack: RuntimeSlackMonitor;
   /** t-9552f3 — session-local completion doorbell latch (in-memory). */
   private readonly completionHints = new CompletionHintStore();
+  /** SDD 512 — process-local last-write-wins notice projected in every sidebar read. */
+  private readonly statusNoticeStore = new StatusNoticeStore();
   /** t-6f0377 — session-local and deliberately non-durable: death cancels the intent. */
   private readonly pendingContextRenewal = new Map<string, ContextRenewalMode>();
   /** t-b88106 — a relaunch never changes whether an agent is visible; this owns that rule. */
@@ -3303,6 +3306,14 @@ export class Workspace {
   listNoticeInbox(): import("./noticeInbox.js").NoticeInboxEntry[] {
     const host = this.host as EngineHost & { listNoticeInbox?: () => import("./noticeInbox.js").NoticeInboxEntry[] };
     return host.listNoticeInbox?.() ?? [];
+  }
+
+  statusNotice(): ReturnType<StatusNoticeStore["get"]> {
+    return this.statusNoticeStore.get();
+  }
+
+  setStatusNotice(input: StatusNoticeSetInputV1): void {
+    this.statusNoticeStore.set(input);
   }
 
   markNoticeRead(id: string): boolean {

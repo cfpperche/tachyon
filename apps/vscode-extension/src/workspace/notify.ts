@@ -7,10 +7,12 @@ import {
   type UiNotificationPort,
 } from "./NotificationService.js";
 
-const STATUS_FEEDBACK_MS = 8_000;
+export type StatusNoticePush = (message: string, level: NotifyLevel) => Promise<void>;
 
-/** spec 415 — modal safety stays native; every non-modal path avoids Notification Center. */
+/** spec 415 — modal safety stays native; ordinary non-modal paths avoid Notification Center. */
 class VsCodeNotificationProvider implements UiNotificationPort {
+  constructor(private readonly pushStatusNotice: StatusNoticePush) {}
+
   async notify(request: NotificationRequest): Promise<string | undefined> {
     const level = request.level ?? "info";
     const message = request.prefix === false ? request.message : `Tachyon: ${request.message}`;
@@ -45,23 +47,27 @@ class VsCodeNotificationProvider implements UiNotificationPort {
       });
     }
 
-    vscode.window.setStatusBarMessage(statusMessage(message, level), STATUS_FEEDBACK_MS);
+    try {
+      await this.pushStatusNotice(message, level);
+    } catch (error) {
+      // SDD 512 / t-147361 fatia A mould: the secondary write may fail, but the fact must not
+      // disappear. The native non-modal notice is an explicit degradation path, not the ordinary
+      // notification authority; using this same provider again would recurse into the failed write.
+      console.error(`[tachyon] sidebar status notice delivery failed: ${error instanceof Error ? error.message : String(error)}`);
+      if (level === "error") await vscode.window.showErrorMessage(message);
+      else if (level === "warn") await vscode.window.showWarningMessage(message);
+      else await vscode.window.showInformationMessage(message);
+    }
     return undefined;
   }
 }
 
 /** Bind the extension-wide modal/status/QuickPick service to the VS Code shell at activation. */
-export function initializeVsCodeNotifications(): void {
-  setNotificationProvider(new VsCodeNotificationProvider());
+export function initializeVsCodeNotifications(pushStatusNotice: StatusNoticePush = () => Promise.reject(new Error("no workspace engine is attached"))): void {
+  setNotificationProvider(new VsCodeNotificationProvider(pushStatusNotice));
 }
 
 /** One toast voice for the whole extension (and every Workspace). */
 export function notify(message: string, level: NotifyLevel = "info"): void {
   serviceNotify(message, level);
-}
-
-function statusMessage(message: string, level: NotifyLevel): string {
-  if (level === "error") return `$(error) ${message}`;
-  if (level === "warn") return `$(warning) ${message}`;
-  return `$(info) ${message}`;
 }

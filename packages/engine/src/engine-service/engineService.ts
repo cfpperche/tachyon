@@ -613,6 +613,11 @@ async function executeWorkspaceCommand(
     );
     return workspaceHandoffDistillSuccessV1(command, result);
   }
+  if (command.method === "status-notice.set") {
+    workspace.setStatusNotice(command.input);
+    onViewsChanged("agents");
+    return workspaceCommandSuccessV1(command);
+  }
   if (command.method === "sidebar.mutate") {
     const result = await applySidebarMutation(workspace, command.input, onViewsChanged);
     return workspaceSidebarMutationSuccessV1(command, result);

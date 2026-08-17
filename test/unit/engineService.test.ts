@@ -348,6 +348,17 @@ describe("daemon engine service", () => {
       view: { fleet: { pins: [{ id: seedPin.id, done: true }] } },
     });
 
+    expect(await first.invoke("operation-status-notice-set-0001", {
+      schemaVersion: 1,
+      method: "status-notice.set",
+      input: { message: "Tachyon: saved", level: "info" },
+    })).toEqual({ schemaVersion: 1, method: "status-notice.set", status: "ok" });
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "agents");
+    expect(await first.query({ schemaVersion: 1, method: "sidebar.view", input: {} })).toMatchObject({
+      status: "ok",
+      view: { fleet: { statusNotice: { message: "Tachyon: saved", level: "info", at: expect.any(String) } } },
+    });
+
     const coldHandoff = await first.query({ schemaVersion: 1, method: "handoff.view", input: {} });
     expect(coldHandoff).toMatchObject({
       method: "handoff.view",
