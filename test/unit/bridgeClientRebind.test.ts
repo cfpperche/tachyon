@@ -593,6 +593,44 @@ describe("BridgeClientRebindCoordinator", () => {
     expect(alarm?.m).toContain("left stopped; no cold spawn");
   });
 
+  it("t-147361 fatia D: resume_fail alarm does not say left stopped when the session is still alive", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const auditPath = path.join(auditDir, "alive-aftermath.jsonl");
+    const ledger = new Map([["claude", baseRecord({
+      def: { cmd: "claude", kind: "agent" },
+      resume: { runtime: "claude", sessionId: "sess-1" },
+      bridgeClient: { boundGeneration: 0, wired: true },
+    })]]);
+    const running = new Set(["claude"]);
+    const wrapper = "could not replace session 'tachyon-abcd1234-claude': respawn and teardown both failed";
+    const deps = makeDeps({
+      ledger,
+      running,
+      auditPath,
+      stopImpl: async () => {
+        running.delete("claude");
+      },
+      resumeImpl: async () => {
+        // Failed replace left the original session up — the 20:43 shape.
+        running.add("claude");
+        throw new AggregateError(
+          [new Error("can't find pane: %0"), new Error("no current client")],
+          wrapper,
+        );
+      },
+    });
+
+    const coordinator = new BridgeClientRebindCoordinator(deps);
+    await coordinator.onListenerReady();
+
+    expect(running.has("claude")).toBe(true);
+    const alarm = deps.notifies.find(({ l, m }) => l === "error" && m.includes("Bridge client rebind of 'claude' failed"));
+    expect(alarm?.m).toContain(wrapper);
+    expect(alarm?.m).toContain("agent still running on the previous connection");
+    expect(alarm?.m).not.toContain("left stopped");
+  });
+
   it("bumps generation once per onListenerReady and reconstructs suspects after reload", async () => {
     const auditDir = tmpDir();
     dirs.push(auditDir);
