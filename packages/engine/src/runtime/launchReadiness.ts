@@ -38,8 +38,8 @@ export class RuntimeLaunchReadinessError extends Error {
    */
   readonly authRequired?: AuthRequiredEvidence;
 
-  constructor(readonly code: RuntimeLaunchRejectionCode, authRequired?: AuthRequiredEvidence) {
-    super(authRequired ? `${code}: ${authRequired.humanAction}` : code);
+  constructor(readonly code: RuntimeLaunchRejectionCode, authRequired?: AuthRequiredEvidence, detail?: string) {
+    super(authRequired ? `${code}: ${authRequired.humanAction}` : detail ? `${code}: ${detail}` : code);
     this.name = "RuntimeLaunchReadinessError";
     if (authRequired) this.authRequired = authRequired;
   }

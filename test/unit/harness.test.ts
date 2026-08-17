@@ -1102,6 +1102,45 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.realpathSync(path.join(res.home, "auth.json"))).toBe(fs.realpathSync(path.join(codexHome, "auth.json")));
   });
 
+  it("t-80c26e: rematerialize does not copy the owner's config over a projected tachyon_bridge table", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex-adopt");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    fs.writeFileSync(path.join(codexHome, "config.toml"), [
+      'model = "owner-personal"',
+      `[projects.${JSON.stringify("/home/goat/Agent0")}]`,
+      'trust_level = "trusted"',
+      "",
+    ].join("\n"));
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const first = mgr.materializeHomeOnly("coder", codex);
+    const projected = [
+      `[projects.${JSON.stringify(path.resolve(ws))}]`,
+      'trust_level = "trusted"',
+      "",
+      "[mcp_servers.tachyon_bridge]",
+      'url = "http://127.0.0.1:42897/mcp"',
+      'bearer_token_env_var = "TACHYON_AGENT_BRIDGE_TOKEN"',
+      "",
+    ].join("\n");
+    fs.writeFileSync(path.join(first.home, "config.toml"), projected);
+    fs.writeFileSync(path.join(codexHome, "config.toml"), 'model = "should-not-land"\n');
+
+    mgr.materializeHomeOnly("coder", codex);
+    const kept = fs.readFileSync(path.join(first.home, "config.toml"), "utf8");
+    expect(kept).toBe(projected);
+    expect(kept).not.toContain("should-not-land");
+    expect(kept).not.toContain("owner-personal");
+    expect(kept).not.toContain("/home/goat/Agent0");
+
+    // A comment naming the table is not the table — seed still runs.
+    fs.writeFileSync(path.join(first.home, "config.toml"), "# see [mcp_servers.tachyon_bridge]\nmodel = \"comment-only\"\n");
+    mgr.materializeHomeOnly("coder", codex);
+    const seeded = fs.readFileSync(path.join(first.home, "config.toml"), "utf8");
+    expect(seeded).toContain("should-not-land");
+    expect(seeded).not.toContain("comment-only");
+  });
+
   it("canonical Codex profiles suppress the real native config in their private home", () => {
     const codexHome = path.join(path.dirname(realHome), "realcodex");
     fs.mkdirSync(codexHome, { recursive: true });
