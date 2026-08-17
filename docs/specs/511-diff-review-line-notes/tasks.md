@@ -10,9 +10,12 @@ _Generated from `plan.md` on 2026-08-17. Work top-to-bottom. Check boxes as task
       próprio e read-only (`tachyon-worktree:`). Prova exigida: a thread aparece no diff aberto pelo
       comando de review, com o `+` na régua. Se **não** aceitar, registrar em `notes.md` e seguir pelo
       fallback do plano — âncora no arquivo real —, sem mexer em identidade nem reconciliação.
-- [ ] Medir o k do contexto do snapshot: quantos casamentos ficam ambíguos com k = 0, 1 e 3 linhas nos
+- [x] Medir o k do contexto do snapshot: quantos casamentos ficam ambíguos com k = 0, 1 e 3 linhas nos
       diffs reais deste repositório. Adotar o menor k que zera a ambiguidade e **declarar a amostra**
       em `notes.md`. Sem esse número, nada de escrever a reconciliação.
+      **Medido t-232111: nenhum k ∈ {0,1,3} zera (k=3 = 4.433% em review-all; k=5 extra = 2.716%).
+      Pior caso: `scripts/webview-preview/routes.json:486`, bloco de 7 linhas em 43 posições.
+      Não arredondar — a reconciliação herda `outdated` por ambiguidade como caminho estrutural.**
 
 **Fatia 1 — engine: o dado e a corretude, sem `vscode`.**
 
