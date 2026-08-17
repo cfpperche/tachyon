@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import * as vscode from "vscode";
-import { __getOutputChannels, __getStatusBarMessages, __resetVscodeMock } from "../mocks/vscode.js";
+import { __getOutputChannels, __resetVscodeMock } from "../mocks/vscode.js";
 import { SidebarPrototypeProvider } from "../../apps/vscode-extension/src/webview/SidebarPrototype.js";
 import { initializeVsCodeNotifications } from "../../apps/vscode-extension/src/workspace/notify.js";
 import { SHELL_DIAGNOSTIC_CHANNEL, __resetShellDiagnosticLog, describeFailure, formatIssuePath } from "../../apps/vscode-extension/src/workspace/shellDiagnosticLog.js";
@@ -60,12 +60,18 @@ function channelText(): string {
 }
 
 describe("t-74274c — a sidebar validation failure reaches disk with its Zod path", () => {
+  const projected: string[] = [];
+
   beforeEach(() => {
     __resetVscodeMock();
     // The channel is a module singleton; without this it would keep appending to the array the mock
     // reset just dropped, and every case after the first would read an empty log.
     __resetShellDiagnosticLog();
-    initializeVsCodeNotifications();
+    projected.length = 0;
+    initializeVsCodeNotifications((message) => {
+      projected.push(message);
+      return Promise.resolve();
+    });
   });
 
   /**
@@ -95,17 +101,17 @@ describe("t-74274c — a sidebar validation failure reaches disk with its Zod pa
       expect(logged).toContain("too_big");
     });
 
-    it(`names the overflowing field in the status bar too (${door})`, async () => {
+    it(`names the overflowing field in projected sidebar status too (${door})`, async () => {
       const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [failingWorkspace(build())]);
       provider.resolveWebviewView(fakeView());
       await flushPromises();
 
-      const status = __getStatusBarMessages().map((entry) => entry.text).join("\n");
-      // A truncating surface gets the ANSWER, not the first 80 characters of a JSON array. The owner
+      const status = projected.join("\n");
+      // The passive surface gets the ANSWER, not the first 80 characters of a JSON array. The owner
       // burned a session's context on a grep the path answers in one second.
       expect(status).toContain("fleet.agents[3].focus.full");
       expect(status).toContain(SHELL_DIAGNOSTIC_CHANNEL);
-      expect(status, "the raw issue JSON is back in the status bar").not.toContain('"code"');
+      expect(status, "the raw issue JSON is back in passive status").not.toContain('"code"');
     });
   }
 
@@ -120,7 +126,7 @@ describe("t-74274c — a sidebar validation failure reaches disk with its Zod pa
     // No path exists to report here, and inventing one would be worse than saying so. What must NOT
     // regress is that the failure still lands somewhere a human can read after the toast expires.
     expect(channelText()).toContain("bridge socket closed");
-    expect(__getStatusBarMessages().map((entry) => entry.text).join("\n")).toContain("bridge socket closed");
+    expect(projected.join("\n")).toContain("bridge socket closed");
   });
 });
 
