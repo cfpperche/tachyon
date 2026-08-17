@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { CARD_COMPONENT_IDS, CARD_TEMPLATE_VERSION, type CardComponentId } from "@tachyon/shared/sidebar/cardTemplate.js";
 import type { FleetVM, HandoffVM, PinVM, ProposalVM, WorkspaceRef } from "@tachyon/shared/sidebar/types.js";
 import { fitSidebarWireText, SIDEBAR_FOCUS_FULL_MAX, SIDEBAR_PIN_TEXT_MAX } from "../sidebar/wireText.js";
 import { AGENT_NAME_PATTERN } from "../config/nameValidation.js";
@@ -36,15 +35,6 @@ const optionalDisplayText = (max: number, marker = "…") => z.preprocess(
   (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
   displayText(max, 1, marker).optional(),
 );
-/** SDD 479 — the wire may only carry ids the catalog actually implements. */
-const cardComponentId = z.enum(CARD_COMPONENT_IDS as unknown as [CardComponentId, ...CardComponentId[]]);
-/** One complete card template. Shared by the project's base and by every resolved runtime override. */
-const cardTemplate = z.object({
-  version: z.literal(CARD_TEMPLATE_VERSION),
-  header: z.array(cardComponentId).max(CARD_COMPONENT_IDS.length),
-  meta: z.array(cardComponentId).max(CARD_COMPONENT_IDS.length),
-  footer: z.array(cardComponentId).max(CARD_COMPONENT_IDS.length),
-}).strict();
 // Agent/config names are identities, not display prose: truncating them could redirect an action to
 // a different entity. The authoring doors already require this alphabet; the reader therefore keeps
 // the full identity instead of imposing a second, contradictory size rule (t-a11ac5).
@@ -238,21 +228,6 @@ const fleet = z.object({
   // outside the engine process cannot read that ring, and "unset" has to stay distinguishable from
   // "read it, no errors" — the sidebar draws no dot for either, but only one of them is a measurement.
   engineLogHasError: z.boolean().optional(),
-  // SDD 479 — declared here, or this STRICT object drops the field and the whole fleet with it (the
-  // failure SDD 478 M5 hit: an undeclared field made ROWS vanish, not just that field). The ids are
-  // re-checked against the live catalog, so a wire value the product cannot render never reaches the
-  // renderer even if something upstream stopped validating.
-  cardTemplate: z.object({
-    base: cardTemplate,
-    // SDD 479 phase 3 — overrides arrive already RESOLVED to complete templates, so the wire carries
-    // no inheritance for the renderer to re-interpret. Keys are runtime names, bounded like any other
-    // wire string; one the product does not run simply never matches a row.
-    runtimes: z.record(z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/), cardTemplate).optional(),
-  }).strict().optional(),
-  cardTemplateRefusal: z.object({
-    file: displayText(256, 1),
-    errors: z.array(displayText(2_000, 1)).min(1).max(100),
-  }).strict().optional(),
 }).strict().superRefine((value, context) => {
   const agentNames = [...value.agents, ...value.terminals].map((row) => row.name);
   if (new Set(agentNames).size !== agentNames.length) {

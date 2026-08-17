@@ -726,17 +726,6 @@
             }
           }
         },
-        "sidebar": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "Workspace-owned sidebar presentation.",
-          "properties": {
-            "cardTemplate": {
-              "type": "object",
-              "description": "Agent-card layout (a 'version' plus any of the card regions). The contents are validated by the product's own card-template parser rather than by this schema, and a refused template falls back to the default card with the reason shown in Control."
-            }
-          }
-        },
         "handoff": {
           "type": "object",
           "additionalProperties": false,

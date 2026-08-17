@@ -127,30 +127,6 @@ export interface CockpitStrings {
   settingsWritesTo: string;
   settingsWritesToEither: string;
   settingsWritesToNothing: string;
-  /** SDD 479 phase 4 — the Control → Settings card-template block. */
-  cardTemplateTitle: string;
-  cardTemplateHint: string;
-  cardTemplateComposer: string;
-  cardTemplateBody: string;
-  cardTemplateYamlHint: string;
-  cardTemplateCopy: string;
-  cardTemplateReset: string;
-  cardTemplateCriticalNote: string;
-  cardTemplateInlineNote: string;
-  /** SDD 479 phase 5 — the "which home is in effect" statement and the personal home's controls. */
-  cardTemplateInEffect: string;
-  cardTemplatePersonalActive: string;
-  cardTemplatePersonalRefused: string;
-  cardTemplatePersonalNone: string;
-  cardTemplateProjectNone: string;
-  cardTemplateProjectConfigured: string;
-  cardTemplateProjectRefused: string;
-  cardTemplateHomeLabel: string;
-  cardTemplateHomeProject: string;
-  cardTemplateHomePersonal: string;
-  cardTemplateCopyJson: string;
-  cardTemplateJsonHint: string;
-  cardTemplateOpenSettings: string;
   companionTitle: string;
   companionHint: string;
   companionBody: string;
@@ -236,7 +212,6 @@ export type CockpitAction =
   | { type: "refresh" }
   | { type: "copyDiagnostics" }
   | { type: "openSettings" }
-  | { type: "openPersonalCardTemplate" }
   | { type: "openDoctor" }
   | { type: "setSection"; section: SectionId }
   /** t-d16a39 — shell-level workspace scope. t-72ff5a — always a real wsHash: the "all workspaces"
@@ -369,12 +344,6 @@ export const openDoctorAction = (): CockpitAction => ({ type: "openDoctor" });
 export const setSectionAction = (section: SectionId): CockpitAction => ({ type: "setSection", section });
 export const navigateReturnAction = (routeKey: string): CockpitAction => ({ type: "navigateReturn", routeKey });
 export const navigateStudioParentAction = (routeKey: string): CockpitAction => ({ type: "navigateStudioParent", routeKey });
-/**
- * SDD 479 phase 5 — open the settings editor filtered to the personal card-template key. A distinct
- * action from `openConfigFile`: one home is a file in the repo, the other a key in VS Code settings,
- * and the block's button must land on the one the person actually picked.
- */
-export const openPersonalCardTemplateAction = (): CockpitAction => ({ type: "openPersonalCardTemplate" });
 
 export const openProjectHandoffAction = (): CockpitAction => ({ type: "openProjectHandoff" });
 export const switchControlWorkspaceAction = (wsHash: string): CockpitAction => ({ type: "switchControlWorkspace", wsHash });

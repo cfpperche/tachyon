@@ -157,23 +157,6 @@ export interface WorktreeRow {
   land?: import("@tachyon/engine/worktree/land.js").LandSuggestion;
 }
 
-/**
- * SDD 479 phase 5 — which card-template home is in effect, for the statement the settings surface
- * owes the human (ratified fork 1: "the settings UI says which one is in effect").
- *
- * Live state, not a restatement of the precedence rule: the failure this prevents is a personal
- * override quietly contradicting the project's template, which is indistinguishable from a broken
- * project template until something says which one the cards are actually using.
- */
-export interface CardTemplateState {
-  /** the personal override in the global Tachyon settings file: absent, in effect, or refused */
-  personal: "none" | "active" | "refused";
-  /** why it was refused — the same diagnostics the sidebar banner shows, from the same validator */
-  personalErrors?: string[];
-  /** one row per scoped workspace: does its own tachyon.yml write a template, and was it honored */
-  projects: Array<{ folder: string; configured: boolean; refused: boolean }>;
-}
-
 export interface ApprovalRow {
   id: string;
   status?: string;
@@ -281,8 +264,6 @@ export interface WorkspaceBundle {
    * counter that reads zero while work waits on disk.
    */
   validationsAwaitingHuman?: number;
-  /** SDD 479 phase 5 — does THIS folder's tachyon.yml write a card template, and was it honored? */
-  cardTemplate?: { configured: boolean; refused: boolean };
   tmux?: { state: string; version?: string };
   companion?: Omit<CompanionSettings, "wsHash" | "folderName">;
   /** SDD 488 F4 — settings.ideBrowser.enabled for Control Settings (absent on older engines). */
@@ -391,13 +372,10 @@ export interface SectionsModel {
    * is no single value to show and none to write back.
    */
   idleNotify?: { wsHash: string; folderName: string; configured?: number | "never"; defaultMinutes: number };
-  /** SDD 479 phase 5 — see CardTemplateState. */
-  cardTemplate?: CardTemplateState;
   /**
    * t-aaad95 — the per-person, per-machine half of Tachyon's settings, read from the global Tachyon
-   * file. It arrives as an option rather than as bundle data for the same reason `cardTemplate` does:
-   * it belongs to one person on one machine, not to any workspace, and it must answer with zero
-   * workspaces open.
+   * file. It arrives as an option rather than as bundle data because it belongs to one person on one
+   * machine, not to any workspace, and it must answer with zero workspaces open.
    */
   globalSettings?: GlobalSettingsState;
 }
@@ -408,8 +386,6 @@ export interface GlobalSettingsState {
   activityCodeTheme: "auto" | "dark" | "light";
   agentPaneEnabled: boolean;
   gitPath: string;
-  /** whether a personal card template is authored; the template itself is edited in its own block */
-  hasCardTemplate: boolean;
   /** named errors when the document was refused and the last known good is in use */
   refusal?: string[];
 }
@@ -420,13 +396,6 @@ export function buildSectionsModel(
     section?: SectionId;
     nowIso?: string;
     wsHash?: string;
-    /**
-     * SDD 479 phase 5 — the PERSONAL override's state, read from the global Tachyon settings file
-     * by the host (t-aaad95; it was VS Code settings before). It
-     * arrives as an option rather than as bundle data because it belongs to one person on one
-     * machine: no workspace owns it, and no engine should ever project it.
-     */
-    personalCardTemplate?: { state: "none" | "active" | "refused"; errors?: string[] },
     /** t-aaad95 — the global Tachyon settings file's current state; see GlobalSettingsState. */
     globalSettings?: GlobalSettingsState,
   },
@@ -522,17 +491,6 @@ export function buildSectionsModel(
       }
     : undefined;
 
-  // SDD 479 phase 5 — the two homes side by side, so the block can say which one the cards use.
-  const cardTemplate: CardTemplateState = {
-    personal: opts?.personalCardTemplate?.state ?? "none",
-    ...(opts?.personalCardTemplate?.errors?.length ? { personalErrors: opts.personalCardTemplate.errors } : {}),
-    projects: scoped.map((b) => ({
-      folder: b.control.folderName,
-      configured: b.cardTemplate?.configured === true,
-      refused: b.cardTemplate?.refused === true,
-    })),
-  };
-
   return {
     checkedAt: control.checkedAt,
     section: opts?.section && COCKPIT_SECTION_IDS.includes(opts.section) ? opts.section : "overview",
@@ -567,7 +525,6 @@ export function buildSectionsModel(
     ...(companionNeedsWorkspacePick ? { companionNeedsWorkspacePick: true } : {}),
     ...(ideBrowser ? { ideBrowser } : {}),
     ...(idleNotify ? { idleNotify } : {}),
-    cardTemplate,
     ...(opts?.globalSettings ? { globalSettings: opts.globalSettings } : {}),
   };
 }

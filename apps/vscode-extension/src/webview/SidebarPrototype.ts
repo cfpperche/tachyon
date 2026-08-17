@@ -1,6 +1,4 @@
-import path from "node:path";
 import * as vscode from "vscode";
-import { sharedGlobalSettings } from "@tachyon/engine/config/globalSettings.js";
 import { isAgentRow, type FleetVM, type AgentVM, type SidebarBootVM } from "@tachyon/shared/sidebar/types.js";
 import { fleetMessage } from "@tachyon/webview-ui/webview/sidebar/messages";
 import { isSectionId } from "../sections/resolveSection.js";
@@ -13,23 +11,6 @@ import { recordShellFailure, revealShellDiagnostics, SHELL_DIAGNOSTIC_CHANNEL } 
 import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 import type { WorkspaceSidebarTarget, SidebarShellCommandContext } from "../shell/SidebarTarget.js";
 import { controlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
-import {
-  mergeCardTemplateConfigs,
-  parseCardTemplate,
-  DEFAULT_CARD_TEMPLATE,
-  type CardTemplateConfig,
-} from "@tachyon/shared/sidebar/cardTemplate.js";
-
-/**
- * SDD 479 phase 5 — the personal card-template override's key; t-aaad95 moved its home from VS Code
- * settings to `sidebar.cardTemplate` in the global Tachyon settings file.
- *
- * The project's template lives in `tachyon.yml` and travels with the repo; this one belongs to one
- * person on one machine, which is why it is read HERE (the shell) rather than in the engine's
- * projection: it is the same class of state as `sortPrefs` and `collapsedKeys` above, and it must not
- * become something an agent-authored checkout can carry.
- */
-const PERSONAL_CARD_TEMPLATE_KEY = "sidebar.cardTemplate";
 
 export const PIN_PREVIEW_VIEW_TYPE = "tachyonPinPreview";
 
@@ -143,60 +124,6 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     return (this.collapsedCache ??= this.memento?.get<string[]>(COLLAPSED_KEYS_KEY) ?? []);
   }
 
-  /**
-   * SDD 479 phase 5 — layer the personal override onto ONE folder's project template.
-   *
-   * Per folder, not once for the window: multi-root means two folders can legitimately carry
-   * different project templates, and the personal document's unmentioned regions inherit whichever
-   * one this row's folder actually has. Parsing per folder is what makes "personal wins" mean
-   * "personal wins over THIS project", instead of over whichever root happened to be first.
-   *
-   * Fail-closed and named: an invalid personal override falls back to the project's template (and so
-   * to the default beneath it) and returns the diagnostic, so the fallback can explain itself instead
-   * of reading as the feature not working. `parseCardTemplate` is the SAME validator `tachyon.yml`
-   * uses — a second one that could disagree with it is the failure this phase exists to avoid.
-   */
-  private cardTemplateFor(fleet: FleetVM): { config?: CardTemplateConfig; refusal?: string[] } {
-    const store = sharedGlobalSettings();
-    // t-aaad95 — TWO refusals can now reach this banner, and both have to.
-    //
-    // The store refuses a bad DOCUMENT whole (fail-closed, last-known-good), which is what a hand
-    // edit trips; `parseCardTemplate` below refuses a template that is well-formed on its own but
-    // invalid against THIS folder's project base. Reporting only the second would leave a person who
-    // broke the file staring at cards that silently ignore their template.
-    const documentRefusal = store.refusal();
-    if (documentRefusal) {
-      const projectOnly = mergeCardTemplateConfigs(fleet.cardTemplate, undefined);
-      return { ...(projectOnly ? { config: projectOnly } : {}), refusal: documentRefusal.errors };
-    }
-    // t-aaad95 — the store already normalized "nothing configured": `null` and `{}`, which is what a
-    // person leaves behind after clearing the key, both parse to `undefined` there. Repeating that
-    // rule here would be a second place it could drift from the loader's.
-    const written = store.current().sidebarCardTemplate;
-    const project = fleet.cardTemplate;
-    const projectOnly = mergeCardTemplateConfigs(project, undefined);
-    if (written === undefined) return projectOnly ? { config: projectOnly } : {};
-    const parsed = parseCardTemplate(written, PERSONAL_CARD_TEMPLATE_KEY, project?.base ?? DEFAULT_CARD_TEMPLATE);
-    if (!parsed.config) {
-      return { ...(projectOnly ? { config: projectOnly } : {}), refusal: parsed.errors };
-    }
-    return { config: mergeCardTemplateConfigs(project, parsed.config) ?? projectOnly ?? undefined };
-  }
-
-  /** The fleets as the webview sees them: the engine's projection plus this person's own layer. */
-  private withPersonalCardTemplate(fleets: FleetVM[]): FleetVM[] {
-    return fleets.map((fleet) => {
-      const { config, refusal } = this.cardTemplateFor(fleet);
-      return {
-        ...fleet,
-        ...(config ? { cardTemplate: config } : {}),
-        ...(refusal?.length
-          ? { personalCardTemplateRefusal: { file: `${sharedGlobalSettings().file} · ${PERSONAL_CARD_TEMPLATE_KEY}`, errors: refusal } }
-          : {}),
-      };
-    });
-  }
-
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
@@ -222,20 +149,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       extend: ["page-chrome"],
     });
     void this.push();
-    // SDD 479 phase 5 — editing the personal override must repaint the cards, or the person is
-    // editing a template they cannot see take effect until something unrelated triggers a refresh.
-    // t-aaad95 — the override moved from a VS Code settings key to the global Tachyon file, so this
-    // watches that FILE instead of a configuration event. `create` matters as much as `change`: a
-    // temp+rename write (and a first-ever edit) arrives as a create, not a change.
-    const settingsFile = sharedGlobalSettings().file;
-    const settingsWatch = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(vscode.Uri.file(path.dirname(settingsFile)), path.basename(settingsFile)),
-    );
-    settingsWatch.onDidChange(() => void this.push());
-    settingsWatch.onDidCreate(() => void this.push());
-    settingsWatch.onDidDelete(() => void this.push());
     view.onDidDispose(() => {
-      settingsWatch.dispose();
       if (this.view === view) {
         this.pushGeneration += 1;
         this.view = undefined;
@@ -303,12 +217,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     view.badge = undefined;
     // spec 242 — prefs travel WITH the fleet so the first render is already in the saved order (D8 no flicker).
     // spec 278 — built via the shared envelope so a `fleet`-shape drift breaks the build, not the preview harness.
-    // SDD 479 phase 5 — the personal layer is applied on the way OUT, not stored: `lastFleets` stays
-    // the engine's own projection, so a settings change re-derives from it without a re-fetch, and
-    // nothing persists a template that belongs to one person on one machine.
     void view.webview.postMessage(
       // SDD 504 — discovery travels WITH the fleet, so the two can never disagree on the wire.
-      fleetMessage(this.withPersonalCardTemplate(this.lastFleets), this.sortPrefs(), this.collapsedKeys(), this.appVersion, selected, this.getBoot?.()),
+      fleetMessage(this.lastFleets, this.sortPrefs(), this.collapsedKeys(), this.appVersion, selected, this.getBoot?.()),
     );
   }
 
@@ -393,12 +304,6 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       }
       if (m.op === "openHandoff") return void vscode.commands.executeCommand("tachyon.openProjectHandoff", m.hash); // spec 245
       if (m.op === "openConfig") return void vscode.commands.executeCommand("tachyon.openConfig", m.hash); // t-8354ae
-      // t-aaad95 — the personal override's home is now a FILE, and opening it is also the documented
-      // recovery path when Control itself cannot open. `tachyon.openGlobalSettings` creates the
-      // document if it does not exist yet, so this never lands on a missing file.
-      if (m.op === "openPersonalCardTemplate") {
-        return void vscode.commands.executeCommand("tachyon.openGlobalSettings");
-      }
       if (m.op === "doctor") return void vscode.commands.executeCommand("tachyon.doctor", m.hash); // t-8354ae
       // SDD 504 — the failed state's two actions. `openOutput` reveals the SAME channel the failure
       // summary already names in its own text ("full detail in Output → Tachyon"), so the button and

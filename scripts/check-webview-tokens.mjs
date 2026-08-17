@@ -123,18 +123,13 @@ export const HEX_EXCEPTIONS = Object.freeze([
   },
   {
     file: "packages/webview-ui/src/webview/settings/settings.css",
-    values: ["#0002", "#007fd4", "#3ba55d", "#444", "#4443", "#888", "#cca700", "#f14c4c"],
-    reason: "Settings still carries vscode-var fallbacks and 4-digit alpha hex (#4443/#0002) from the card-template preview; the pairing QR plate moved to --ds-plate in SDD 505 slice 4.",
+    values: ["#007fd4", "#3ba55d", "#444", "#888", "#f14c4c"],
+    reason: "Settings still carries vscode-var fallbacks; the pairing QR plate moved to --ds-plate in SDD 505 slice 4.",
   },
   {
     file: "packages/webview-ui/src/webview/shared/ErrorBoundary.tsx",
     values: ["#5a1d1d", "#a1260d", "#fff"],
     reason: "Inline crash-plate vscode-var fallbacks so a render error stays readable even if the DS sheet failed to load.",
-  },
-  {
-    file: "packages/webview-ui/src/webview/shared/control/CardTemplateBlock.tsx",
-    values: ["#4443"],
-    reason: "Preview-frame border fallback copied from settings.css's 4-digit panel-border hex; same debt, same replacement (--ds-border).",
   },
   {
     file: "packages/webview-ui/src/webview/shared/engine-workspace.css",

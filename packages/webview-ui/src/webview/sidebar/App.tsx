@@ -8,8 +8,8 @@ import {
 } from "@tachyon/shared/sidebar/types";
 import { bootNeedsTick, pendingBootFolders, resolveBootState, type SidebarBootState } from "./bootState";
 import {
-  inlineMembers, readmittedCriticalComponents, resolveCardTemplate, topLevelComponents,
-  type CardComponentId, type CardRegion, type CardTemplate, type CardTemplateConfig,
+  DEFAULT_CARD_TEMPLATE, inlineMembers, topLevelComponents,
+  type CardComponentId, type CardRegion, type CardTemplate,
 } from "@tachyon/shared/sidebar/cardTemplate";
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 // t-6e2952 — the Control tab's tiles derive from the SAME catalog Control's own TabsBar order comes from
@@ -73,7 +73,7 @@ export interface Dispatch {
 // SDD 504 — `retryStart` and `openOutput` are the failed state's two actions. Both are new here
 // because the failed state itself is new: before this change an attach failure fell through to the
 // welcome, so the sidebar offered to CREATE a workspace whose startup had just been rejected.
-export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "openConfig" | "openPersonalCardTemplate" | "openControl" | "doctor" | "retryStart" | "openOutput" | "studio:agents" | "studio:terminals" | "studio:schedules";
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "retryStart" | "openOutput" | "studio:agents" | "studio:terminals" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/remove etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -177,42 +177,6 @@ function ConfigDiscardBanner({ discards }: { discards: NonNullable<FleetVM["conf
   );
 }
 
-/**
- * SDD 479 — a written card template that could not be honored. The fleet is FINE (the config loaded);
- * only the layout fell back to the default, so this is `role="status"`, warn-toned, and never claims
- * the file is invalid. Without it the fallback is indistinguishable from the feature not working.
- */
-export function CardTemplateRefusalBanner({ refusal, personal = false }: { refusal: NonNullable<FleetVM["cardTemplateRefusal"]>; personal?: boolean }) {
-  const d = useContext(DispatchCtx);
-  const [first, ...rest] = refusal.errors;
-  return (
-    <div class="config-error-banner card-template-banner" role="status">
-      <div class="config-error-title">
-        <Icon name="warning" />
-        {/* SDD 479 phase 5 — a refused PERSONAL override falls back to the project's template, which
-            may itself be a written one; saying "the default" there would name a layout the person is
-            not looking at. Each banner states the fallback its own home actually has. */}
-        <strong>{personal ? "Personal card layout ignored — using this project's" : "Card layout ignored — showing the default"}</strong>
-      </div>
-      <div class="config-error-summary" title={refusal.errors.join("\n")}>
-        {first}{rest.length > 0 ? ` (+${rest.length} more)` : ""}
-      </div>
-      <div class="config-error-actions">
-        {/* The project's home is a file this button can open; the personal one is a VS Code settings
-            key, opened by the command that surface owns.
-
-            The label is SHORT for the personal home rather than "Open <the full settings id>": at the
-            sidebar's narrowest the long id overflowed its own banner (seen in the phase-5 shots, the
-            same class of defect t-b164b2 found in a badge). The title line above already says which
-            home was ignored, so the button does not have to repeat it. */}
-        <Button variant="default" onClick={() => d.global(personal ? "openPersonalCardTemplate" : "openConfig")}>
-          {personal ? "Open settings" : `Open ${refusal.file}`}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 /** spec 378 — a TEXTUAL provenance marker for the model suffix (never styling alone): "· declared"/"· profile"
  *  before the first live observation, "· stale" once an observation survives a process-preserving boundary
  *  (in-TUI /clear, resume) without a fresh one yet, or "≠ declared" when the observed model diverges from
@@ -310,22 +274,6 @@ interface CardSlot {
   metricsOpen: boolean;
   onToggle?: () => void;
   onToggleMetrics?: () => void;
-  /** SDD 479 — critical components this template omits that the row's state puts back (fork 3). */
-  readmitted: readonly CardComponentId[];
-}
-
-/**
- * SDD 479 — a re-admitted component explains itself in its own tooltip. Someone who curated a layout
- * and then sees a badge they removed needs to know the product put it back, and why, or the template
- * looks broken.
- */
-function cardTitle(slot: CardSlot, id: CardComponentId, base?: string): string | undefined {
-  const note = "Your card template omits this badge — Tachyon is showing it because this row is in that state.";
-  if (!slot.readmitted.includes(id)) return base;
-  return base ? `${base}\n\n${note}` : note;
-  // `base` is optional because not every critical badge necessarily carries a tooltip.
-  // Returning undefined leaves the attribute off entirely, so an un-configured card is unchanged —
-  // which the phase-1 equality proof checks on every run.
 }
 
 type CardComponentRenderer = (slot: CardSlot) => preact.ComponentChildren;
@@ -350,21 +298,13 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
 
   // The model label and its provenance marker live INSIDE `.name` (catalog `inlineWith`), where the
   // sidebar's CSS and the row's reading order expect them.
-  //
-  // t-045d44 — `options.model.maxChars` shortens the PAINTED label only. The full value moves into
-  // `title`, because a truncated identifier a person cannot recover is worse than a long one: model
-  // names differ in their tails ("…-4-20250514" vs "…-4-5-20251001"), so a clipped label can read as
-  // a different model entirely. Truncation happens in the string rather than in CSS so the tooltip
-  // can be attached exactly when something was actually hidden.
   model: (slot) => {
     const model = slot.a.model;
     if (!model) return null;
-    const max = slot.template.options?.model?.maxChars;
-    const clipped = max !== undefined && model.length > max ? `${model.slice(0, max - 1)}…` : model;
     return (
       <>
         <span class="model-sep"> — </span>
-        <span class="model" {...(clipped === model ? {} : { title: model })}>{clipped}</span>
+        <span class="model">{model}</span>
         <InlineRun slot={slot} host="model" />
       </>
     );
@@ -412,7 +352,7 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
 
   "config-invalid": (slot) =>
     slot.a.configInvalid ? (
-      <Badge tone="err" title={cardTitle(slot, "config-invalid", "tachyon.yml is invalid — row shown from session ledger or last-known-good snapshot (read-only for spawn)")}>
+      <Badge tone="err" title="tachyon.yml is invalid — row shown from session ledger or last-known-good snapshot (read-only for spawn)">
         config invalid
       </Badge>
     ) : null,
@@ -432,7 +372,7 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
 
   "awaiting-human": (slot) =>
     slot.a.awaitingHuman ? (
-      <Badge tone="warn" title={cardTitle(slot, "awaiting-human", slot.a.awaitingHuman.reason || "needs a human — request_human_attention")}>
+      <Badge tone="warn" title={slot.a.awaitingHuman.reason || "needs a human — request_human_attention"}>
         ◆ needs you
       </Badge>
     ) : null,
@@ -443,7 +383,7 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
     slot.a.authRequired ? (
       <Badge
         tone="err"
-        title={cardTitle(slot, "auth-required", `${slot.a.authRequired.runtime} reports this agent is not authenticated — ${slot.a.authRequired.action}. Tachyon will not retry or restart it automatically.`)}
+        title={`${slot.a.authRequired.runtime} reports this agent is not authenticated — ${slot.a.authRequired.action}. Tachyon will not retry or restart it automatically.`}
       >
         ◆ auth required
       </Badge>
@@ -509,17 +449,11 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
      look like work. Open card → show the id and the status word (`task` when
      active, `triaged` when parked). Live agent without a card → say so (not a
      warn badge). A dead card must not claim current work. */
-  focus: ({ a, template }) => {
+  focus: ({ a }) => {
     const focus = a.focus;
     const boardTaskId = focus?.source === "task" ? focus.taskId : undefined;
     const showNone = !boardTaskId && isAgentRow(a) && agentIsLive(a);
     if (!focus && !showNone) return null;
-    // t-045d44 — `options.focus.lines` is a CSS concern, so it is passed as a custom property and the
-    // clamping stays in sidebar.css. Wrapping is the COMPONENT's business (spec.md § narrow sidebar);
-    // the template only says how many lines it may use. Absent → no property → the stylesheet's own
-    // single-line rule, unchanged, which is what keeps the default byte-identical.
-    const lines = template.options?.focus?.lines;
-    const lineStyle = lines === undefined ? {} : { style: `--card-focus-lines:${lines}` };
 
     if (boardTaskId && focus) {
       const parked = focus.taskStatus === "triaged";
@@ -527,7 +461,7 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
       const srcClass = parked ? "src-triaged" : "src-task";
       const boardStatus = parked ? "triaged" : "active";
       return (
-        <div class="row-focus" data-testid="agent-board-line" data-board-status={boardStatus} title={`${label} · ${boardTaskId}\n${focus.full}`} {...lineStyle}>
+        <div class="row-focus" data-testid="agent-board-line" data-board-status={boardStatus} title={`${label} · ${boardTaskId}\n${focus.full}`}>
           <span class="focus-arrow" aria-hidden="true">↳</span>
           <span class={`focus-src ${srcClass}`}>{label}</span>
           <span class="focus-id">{boardTaskId}</span>
@@ -540,7 +474,7 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
       const src = focus?.source === "continuity" ? "goal" : focus?.source;
       const title = focus ? `no board task · ${src}\n${focus.full}` : "no board task";
       return (
-        <div class="row-focus" data-testid="agent-board-none" title={title} {...lineStyle}>
+        <div class="row-focus" data-testid="agent-board-none" title={title}>
           <span class="focus-arrow" aria-hidden="true">↳</span>
           <span class="focus-src src-none">no board task</span>
           {focus?.text ? <span class="focus-text">{focus.text}</span> : null}
@@ -590,16 +524,12 @@ function CardRegionView({ slot, region }: { slot: CardSlot; region: CardRegion }
 }
 
 /**
- * SDD 479 phase 2 — the meta region, plus any critical component this row's state re-admits.
- *
- * Returns `null` when NOTHING rendered, and the wrapper follows: `.row-meta` exists when it has
- * content, not when the row happens to carry a field. That answers the question phase 1 left open —
- * once a template can omit components, a fixed field-based predicate would leave an empty div
- * (padding and all) on rows whose badges the person hid. It also retires two pre-existing cases of the
- * same bug: a row with `worktree` but no live branch, and one whose persistence hooks are healthy.
+ * The meta region. Returns `null` when NOTHING rendered, and the wrapper follows: `.row-meta`
+ * exists when it has content, not when the row happens to carry a field. A row with `worktree`
+ * but no live branch, or one whose persistence hooks are healthy, must not grow an empty div.
  */
 function CardMetaRegion({ slot }: { slot: CardSlot }): preact.VNode | null {
-  const ids = [...topLevelComponents(slot.template, "meta"), ...slot.readmitted];
+  const ids = topLevelComponents(slot.template, "meta");
   const rendered = ids
     .map((id) => ({ id, node: CARD_COMPONENTS[id](slot) }))
     .filter((entry) => entry.node !== null && entry.node !== undefined && entry.node !== false);
@@ -612,29 +542,19 @@ function InlineRun({ slot, host }: { slot: CardSlot; host: CardComponentId }) {
   return <>{inlineMembers(slot.template, host).map((id) => <Fragment key={id}>{CARD_COMPONENTS[id](slot)}</Fragment>)}</>;
 }
 
-export function AgentRow({ a, flash, nested = false, hasChildren = false, collapsed = false, hiddenCount = 0, hiddenNeedsAttention = false, onToggle, metricsOpen = false, onToggleMetrics, cardTemplate }: {
+export function AgentRow({ a, flash, nested = false, hasChildren = false, collapsed = false, hiddenCount = 0, hiddenNeedsAttention = false, onToggle, metricsOpen = false, onToggleMetrics }: {
   a: AgentVM; flash: boolean; nested?: boolean; hasChildren?: boolean; collapsed?: boolean; hiddenCount?: number; hiddenNeedsAttention?: boolean; onToggle?: () => void;
   /** spec 386 — metrics detail lanes open for this agent (independent of hierarchy collapse). */
   metricsOpen?: boolean;
   onToggleMetrics?: () => void;
-  /**
-   * SDD 479 — the folder's card configuration: the project template plus any resolved per-runtime
-   * override. Omitted — or a terminal row, or a runtime with no override — renders the default card.
-   */
-  cardTemplate?: CardTemplateConfig;
 }) {
   const d = useContext(DispatchCtx);
   const hasHidden = collapsed && hiddenCount > 0;
   const hasResources = !!a.resources && (a.status === "running" || a.status === "idle" || a.status === "done" || a.status === "needs" || a.status === "throttled" || a.status === "stop-failed");
-  // SDD 479 — the resolver, not the caller, enforces both rules: the ratified V1 boundary (a terminal
-  // row takes the default whatever this folder configured) and the per-runtime override lookup.
-  const template = resolveCardTemplate(a, cardTemplate);
-  // Ratified fork 3 — the one place the product overrides the person: a failure state the template
-  // omits is re-admitted for THIS row, and says so in its tooltip.
-  const readmitted = readmittedCriticalComponents(template, a);
+  const template: CardTemplate = DEFAULT_CARD_TEMPLATE;
   const slot: CardSlot = {
     a, template, d, nested, hasChildren, collapsed, hiddenCount, hiddenNeedsAttention,
-    hasHidden, hasResources, metricsOpen, onToggle, onToggleMetrics, readmitted,
+    hasHidden, hasResources, metricsOpen, onToggle, onToggleMetrics,
   };
   return (
     <div class={`row${nested ? " child" : ""}${flash ? " flash" : ""}${metricsOpen && hasResources ? " metrics-open" : ""}`} data-name={a.name.toLowerCase()}>
@@ -761,16 +681,12 @@ export function AgentsRoster({
   const k = (suffix: string) => `${scope}:${suffix}`;
   // t-8354ae — while config is invalid, never show the empty-fleet placeholder as the sole signal
   // (banner + ledger/LKG rows replace the "destroyed fleet" illusion).
-  // SDD 479 — a refused card template is reported HERE, beside the config banner, because this is
-  // where the consequence is: the cards below are the default layout, not the one that was written.
   const banner = (
     <>
       {fleet.configError ? <ConfigErrorBanner err={fleet.configError} /> : null}
-      {/* t-7d6013 — same place, same reason as the card-template refusal below: the consequence of a
-          dropped line is the fleet drawn underneath it, running defaults nobody asked for. */}
+      {/* t-7d6013 — the consequence of a dropped line is the fleet drawn underneath it, running
+          defaults nobody asked for. */}
       {fleet.configDiscards ? <ConfigDiscardBanner discards={fleet.configDiscards} /> : null}
-      {fleet.cardTemplateRefusal ? <CardTemplateRefusalBanner refusal={fleet.cardTemplateRefusal} /> : null}
-      {fleet.personalCardTemplateRefusal ? <CardTemplateRefusalBanner refusal={fleet.personalCardTemplateRefusal} personal /> : null}
     </>
   );
   // spec 242 — a flat, human-sorted list (default name-asc is stable: a status change only recolors the dot
@@ -806,7 +722,6 @@ export function AgentsRoster({
           onToggle={() => toggle(k(`a:${r.agent.name}`))}
           metricsOpen={metricsOpen.has(k(`m:${r.agent.name}`))}
           onToggleMetrics={() => onToggleMetrics(r.agent.name)}
-          cardTemplate={fleet.cardTemplate}
         />
       ))}
     </div>

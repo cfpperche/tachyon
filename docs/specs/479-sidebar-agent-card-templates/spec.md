@@ -2,9 +2,13 @@
 
 _Created 2026-07-27._
 
-**Status:** in-progress
-<!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
-     When this ships, add a **Closure:** line here recording what shipped (commit/evidence). -->
+**Status:** abandoned
+**Closure:** Abandoned 2026-08-17 by `t-0af538`. The spec never shipped. A configuration surface
+leaked into the product (Control → Settings "Agent card layout", `settings.sidebar.cardTemplate`,
+eleven UI strings that named development spec numbers — the owner saw *"Where the model label came
+from (spec 378)"* and called it abominable). The default layout is now THE layout, fixed in code;
+the catalog and renderer stay so the card itself does not change. The checklist footer line
+(`t-281339`) is part of that layout. This is not a revert of a delivery — there was no delivery.
 
 **Ratified 2026-07-27** (task `t-067540`, journal `j-946d602f8d47`): the human accepted all five
 proposed decisions as written, and added one boundary that was not in the proposal — **V1 applies to

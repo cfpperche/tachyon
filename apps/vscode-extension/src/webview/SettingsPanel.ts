@@ -1,6 +1,5 @@
 import * as vscode from "vscode";
 import { buildSectionsModel, collectNeedsFor, type SectionsModel, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
-import { parseCardTemplate } from "@tachyon/shared/sidebar/cardTemplate.js";
 import { sharedGlobalSettings } from "@tachyon/engine/config/globalSettings.js";
 import { cockpitStrings } from "./controlStrings.js";
 import { POLL, READY, settingsModelMessage } from "@tachyon/webview-ui/webview/settings/messages";
@@ -44,9 +43,8 @@ export class SettingsPanelManager {
       app,
       styleFiles: ["codicon.css", "tokens.css", "faces.css", "design-system.css", "quick-picker.css", "control-typography.css", "engine-workspace.css", "settings.css"],
       title: () => vscode.l10n.t("Settings"),
-      bootstrapGlobals: (_target, uri) => ({
+      bootstrapGlobals: () => ({
         __TACHYON_STRINGS__: cockpitStrings(),
-        __tachyonCardPreviewCss: uri("sidebar.css"),
       }),
       refreshKindFor: settingsRefreshKind,
       bind: (session) => {
@@ -61,7 +59,7 @@ export class SettingsPanelManager {
     if (!project) throw new Error("Settings dashboard has no project");
     const bundles = await this.deps.collect(collectNeedsFor("settings"));
     session.post(settingsModelMessage(buildSectionsModel(bundles, {
-      section: "settings", wsHash: project, personalCardTemplate: personalCardTemplateState(),
+      section: "settings", wsHash: project,
       globalSettings: globalSettingsState(),
     })));
   }
@@ -71,7 +69,7 @@ export class SettingsPanelManager {
     const project = session.target.project;
     if (!project) throw new Error("Settings dashboard has no project");
     if (c.type === "openDoctor") this.deps.openDoctor();
-    else if (c.type === "openGlobalSettingsFile" || c.type === "openPersonalCardTemplate") {
+    else if (c.type === "openGlobalSettingsFile") {
       await vscode.commands.executeCommand("tachyon.openGlobalSettings");
     } else if (c.type === "openConfigFile") await this.deps.openConfigFile(project);
     else if (c.type === "copyText" && typeof c.text === "string") await vscode.env.clipboard.writeText(c.text);
@@ -97,13 +95,6 @@ export function settingsRefreshKind(message: unknown): RefreshKind | undefined {
 function globalSettingsState(): NonNullable<SectionsModel["globalSettings"]> {
   const store = sharedGlobalSettings(); const current = store.current(); const refusal = store.refusal();
   return { file: store.file, activityCodeTheme: current.activityCodeTheme, agentPaneEnabled: current.agentPaneEnabled,
-    gitPath: current.gitPath, hasCardTemplate: current.sidebarCardTemplate !== undefined,
+    gitPath: current.gitPath,
     ...(refusal ? { refusal: refusal.errors } : {}) };
-}
-
-function personalCardTemplateState(): { state: "none" | "active" | "refused"; errors?: string[] } {
-  const written = sharedGlobalSettings().current().sidebarCardTemplate;
-  if (written == null || (typeof written === "object" && !Array.isArray(written) && Object.keys(written).length === 0)) return { state: "none" };
-  const parsed = parseCardTemplate(written, "sidebar.cardTemplate");
-  return parsed.config ? { state: "active" } : { state: "refused", errors: parsed.errors };
 }

@@ -74,5 +74,5 @@ settings:
   #   suppressOwnChanges: true
   #   dedupeWindowMs: 30000
   #
-  # Per-person, per-machine settings (activity.codeTheme, agentPane.enabled, sidebar.cardTemplate,
+  # Per-person, per-machine settings (activity.codeTheme, agentPane.enabled,
   # gitPath) do NOT belong here — they live in ~/.tachyon/settings.json. See README -> Settings.

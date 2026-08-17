@@ -15,7 +15,6 @@ import { runtimePromptAdapter } from "@tachyon/shared/agents/runtimePromptAdapte
 import { ATTESTED_RUNTIMES } from "@tachyon/shared/runtime/attestedRuntimes.js";
 import { parseLaunchCommand } from "@tachyon/shared/runtime/launchPreflight.js";
 export { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
-import { parseCardTemplate, type CardTemplateConfig } from "@tachyon/shared/sidebar/cardTemplate.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
 import { parseChecklistBlock, type ChecklistConfig } from "./checklistRequireIn.js";
 import { PROJECTED_HOOK_CLASSES as AGENT_HOOK_PROJECTION_CLASSES, type ProjectedHookClass } from "../plugins/agentHookProjection.js";
@@ -574,20 +573,6 @@ export interface TachyonConfig {
      */
     ideBrowser?: { enabled?: boolean; homeUrl?: string };
     /**
-     * SDD 479 — the sidebar agent card's layout, owned by the project (it travels with the repo).
-     *
-     * A malformed template is refused WHOLE and recorded in `cardTemplateRefusal` rather than being
-     * half-applied: the sidebar renders the DEFAULT card and says why, instead of a layout built from
-     * the lines that happened to parse.
-     *
-     * t-48dd8d — this key used to be the ONE exception to a loader that refused the whole file over
-     * any complaint, because bricking a workspace over a cosmetic layout typo was a worse failure
-     * than the one being prevented. Every key is treated that way now, so what was an exception is
-     * simply the rule; the reason it was carved out first is still worth reading. What stays specific
-     * to this key is the refusal TRAVELLING to the sidebar so the fallback can explain itself.
-     */
-    sidebar?: { cardTemplate?: CardTemplateConfig; cardTemplateRefusal?: string[] };
-    /**
      * t-e4f662 — how long something may wait in the Human Inbox before it is MARKED stale.
      *
      * Display only, as ratified: nothing here auto-approves, auto-denies or auto-closes, and an
@@ -648,7 +633,7 @@ export const KNOWN_SETTINGS_KEYS = [
   "maxAgents", "checklist", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree",
   "projectGuidance", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection",
   "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind",
-  "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications",
+  "gitDelivery", "delivery", "taskNotifications", "humanInbox", "agentNotifications",
 ] as const;
 
 /**
@@ -1649,33 +1634,6 @@ export function parseConfig(yamlText: string): ParseResult {
             }
           }
           if (Object.keys(out).length > 0) settings.ideBrowser = out;
-        }
-      }
-      // SDD 479 phase 2 — the project's agent-card layout. Same SHAPE of validation as `companion`
-      // above (unknown key refused by name, block dropped whole, discards accumulated); a DIFFERENT
-      // severity, for the reason recorded on `settings.sidebar` in the type above.
-      if (raw.settings.sidebar !== undefined) {
-        if (!isPlainObject(raw.settings.sidebar)) {
-          discarded.push("settings.sidebar: must be a mapping with 'cardTemplate'");
-        } else {
-          const sb = raw.settings.sidebar;
-          for (const key of Object.keys(sb)) {
-            // `options:` is NOT accepted yet: per-component options are named in the ratified schema
-            // but no component implements one, and accepting a key we cannot honor would be a promise
-            // the card does not keep. Refused by name, with where it went.
-            if (key !== "cardTemplate") discarded.push(`settings.sidebar: unknown key '${key}' (allowed: cardTemplate)`);
-          }
-          if (sb.cardTemplate !== undefined) {
-            const parsed = parseCardTemplate(sb.cardTemplate);
-            if (parsed.config) {
-              settings.sidebar = { cardTemplate: parsed.config };
-            } else {
-              // Refused whole: the sidebar renders the DEFAULT card and says why, rather than showing
-              // a layout half-built from the lines that happened to parse.
-              settings.sidebar = { cardTemplateRefusal: parsed.errors };
-              for (const error of parsed.errors) warnings.push(`${error} — the sidebar is using the default card layout`);
-            }
-          }
         }
       }
       // t-e4f662 — the Human Inbox's staleness threshold. Same validation SHAPE as the blocks above

@@ -68,34 +68,21 @@ describe("global settings document", () => {
     expect(parsed.errors.join("\n")).toMatch(/unknown key 'maxAgents'/);
   });
 
-  it("keeps the card template in its AUTHORED form so silent regions still inherit the project's", () => {
-    const written = { version: 1, header: ["name"] };
-    const parsed = parseGlobalSettings({ version: 1, sidebar: { cardTemplate: written } }, "settings.json");
+  it("ignores a retired sidebar.cardTemplate without refusing the rest of the file", () => {
+    const parsed = parseGlobalSettings({
+      version: 1,
+      activity: { codeTheme: "light" },
+      sidebar: { cardTemplate: { version: 1, header: ["name"] } },
+    }, "settings.json");
     expect(parsed.errors).toEqual([]);
-    // Not the resolved template: `meta`/`footer` must stay unmentioned, or the project's choice for
-    // them would be silently overwritten by the default.
-    expect(parsed.settings?.sidebarCardTemplate).toEqual(written);
-  });
-
-  it("treats a cleared card template as 'nothing configured', not as a refusal", () => {
-    for (const cleared of [null, {}]) {
-      const parsed = parseGlobalSettings({ version: 1, sidebar: { cardTemplate: cleared } }, "settings.json");
-      expect(parsed.errors).toEqual([]);
-      expect(parsed.settings?.sidebarCardTemplate).toBeUndefined();
-    }
-  });
-
-  it("refuses an invalid card template with the same validator tachyon.yml uses", () => {
-    const parsed = parseGlobalSettings({ version: 1, sidebar: { cardTemplate: { version: 99 } } }, "settings.json");
-    expect(parsed.settings).toBeUndefined();
-    expect(parsed.errors.join("\n")).toMatch(/unknown template version/);
+    expect(parsed.settings?.activityCodeTheme).toBe("light");
+    expect(parsed.settings).not.toHaveProperty("sidebarCardTemplate");
   });
 
   it("round-trips through the authored document shape", () => {
     const document = toGlobalSettingsDocument({
       activityCodeTheme: "light",
       agentPaneEnabled: false,
-      sidebarCardTemplate: { version: 1, header: ["name"] },
       gitPath: "/usr/local/bin/git",
     });
     const parsed = parseGlobalSettings(document, "settings.json");
@@ -103,7 +90,6 @@ describe("global settings document", () => {
     expect(parsed.settings).toEqual({
       activityCodeTheme: "light",
       agentPaneEnabled: false,
-      sidebarCardTemplate: { version: 1, header: ["name"] },
       gitPath: "/usr/local/bin/git",
     });
   });

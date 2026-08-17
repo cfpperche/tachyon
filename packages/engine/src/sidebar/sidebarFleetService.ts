@@ -386,17 +386,6 @@ export async function buildSidebarFleet(
     // t-aa2780 — only stated when somebody actually read the ring; see the option's doc for why
     // "unread" must not collapse into `false`.
     ...(engineLogHasError === undefined ? {} : { engineLogHasError }),
-    // SDD 479 — the project's card layout, or the reason a written one was refused. Never both:
-    // `parseCardTemplate` returns a template or errors, so a half-applied layout has no path here.
-    // `settings` is optional in practice even though the type declares it: a hand-built config (every
-    // headless test, and a degraded/last-known-good projection) can arrive without it. Guarding only
-    // `config` here threw and took the WHOLE fleet push down with it.
-    ...(source.config?.settings?.sidebar?.cardTemplate
-      ? { cardTemplate: source.config.settings.sidebar.cardTemplate }
-      : {}),
-    ...(source.config?.settings?.sidebar?.cardTemplateRefusal?.length
-      ? { cardTemplateRefusal: { file: "tachyon.yml", errors: source.config.settings.sidebar.cardTemplateRefusal } }
-      : {}),
   };
 }
 

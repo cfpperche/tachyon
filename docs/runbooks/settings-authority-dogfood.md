@@ -49,13 +49,8 @@ with the VS Code settings UI gone, a wrong label is the only thing a person has 
 ## 3. A hand edit is picked up without a reload
 
 1. With Control open, edit `~/.tachyon/settings.json` by hand and change `activity.codeTheme`.
-2. Add a personal card template:
-   ```json
-   { "version": 1, "sidebar": { "cardTemplate": { "version": 1, "meta": ["harness"] } } }
-   ```
 
-**Expect:** the sidebar agent cards repaint with the new `meta` row **without** reloading the window.
-Regions you did not list keep whatever the project's `tachyon.yml` chose.
+**Expect:** Control's Settings screen picks up the new theme **without** reloading the window.
 
 ## 4. Recovery — the step this design owes the most to
 

@@ -411,7 +411,7 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
             type="button"
             class="agent-pane__btn"
             disabled={busy}
-            title="Open prompt template picker (spec 381)"
+            title="Open prompt template picker"
             onClick={() => postMessage({ type: "agent-pane/inject-template" })}
           >
             Template…

@@ -26,7 +26,6 @@ export function readLegacyVsCodeSettings(resource?: vscode.Uri): LegacySettingVa
     gitPath: written("gitPath"),
     activityCodeTheme: written("activity.codeTheme"),
     agentPaneEnabled: written("agentPane.enabled"),
-    sidebarCardTemplate: written("sidebar.cardTemplate"),
     worktreesRevealInWorkspace: written("worktrees.revealInWorkspace"),
     taskNotifications: {
       enabled: written("taskNotifications.enabled"),
