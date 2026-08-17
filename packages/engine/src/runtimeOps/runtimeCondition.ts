@@ -14,8 +14,8 @@
  *
  *  - CONFIGURATION/CAPABILITY — can Tachyon operate this runtime, and how much of that has actually
  *    been measured? All the supported runtimes are observable here.
- *  - QUOTA/SLACK — how much room is left right now? Codex has a firm channel, Claude has a fragile
- *    one, and Grok has none at all.
+ *  - QUOTA/SLACK — how much room is left right now? Firm machine channels stay distinct from
+ *    fragile rendered-surface channels.
  *
  * Collapsing them produces the exact misreading this task was filed over: Grok looks covered because
  * it is covered on the first axis, and it is not covered on the second.
@@ -27,7 +27,7 @@
  *    claim was `verified` (behaviourally observed) or only `declared` (documented, never observed).
  *  - OBSERVABLE NOW — a live quota source exists on this host and has produced a reading.
  *
- * A runtime can be any combination of the three. Grok is manageable, measured, and NOT observable.
+ * A runtime can be any combination of the three; wiring and explicit consent decide observability.
  *
  * ## Why this is not a sixth runtime list
  *

@@ -76,7 +76,7 @@ export interface ProviderCostFactV1 {
 }
 
 /**
- * Grok (and any runtime without a remaining-quota channel) must declare that absence by name.
+ * A configuration source that does not itself carry quota must declare that absence by name.
  * Never fill a `provider-quota` fact with zeros or invent headroom from session token spend.
  */
 export type ConfigurationQuotaChannelV1 =
@@ -101,7 +101,7 @@ export interface ProviderConfigurationFactV1 {
   confidence: ObservationConfidenceV1;
   observedAt: string;
   freshness: ObservationFreshnessV1;
-  /** Named refusal of the quota axis — configuration is observable; remaining capacity is not. */
+  /** Named refusal by this configuration payload; quota may arrive through a separate source. */
   quotaChannel: ConfigurationQuotaChannelV1;
   grokVersion?: string;
   projectTrusted?: boolean;

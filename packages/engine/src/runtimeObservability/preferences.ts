@@ -7,7 +7,7 @@ import type {
 
 export const PROVIDER_OBSERVATION_PREFERENCES_STATE_KEY = "tachyon.runtimeObservability.preferences.v1";
 
-const PROVIDERS = ["codex", "claude"] as const satisfies readonly RuntimeObservabilityProviderV1[];
+const PROVIDERS = ["codex", "claude", "grok"] as const satisfies readonly RuntimeObservabilityProviderV1[];
 const SOURCES = new Set<ProviderSourceKindV1>(["cli", "oauth"]);
 const SOURCE_PRIORITY: Record<ProviderSourceKindV1, number> = { cli: 0, oauth: 1 };
 const SAFE_SCOPE_KEY = /^ps_[0-9a-f]{16,64}$/u;
@@ -82,7 +82,6 @@ export class ProviderObservationPreferences {
     provider: RuntimeObservabilityProviderV1,
     input: ProviderObservationPreferenceInputV1,
   ): Promise<ProviderObservationPreferenceV1 | undefined> {
-    // Quota preferences remain Codex/Claude-only; Grok configuration uses a separate axis/source.
     if (!(PROVIDERS as readonly string[]).includes(provider) || !record(input)) {
       throw new TypeError("provider observation preference is invalid");
     }
