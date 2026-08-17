@@ -18,7 +18,7 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
         "Read another managed entry's terminal output. Live rows return the visible pane by default " +
         "(what a human looking at that entry's terminal sees); pass lines to reach into scrollback. " +
         "Stopped rows return bounded postmortem output when Tachyon retained it in memory, falling back to " +
-        "the durable pipe-pane transcript (t-6a6a00, survives kill-session and an extension reload) when " +
+        "the durable pipe-pane transcript (survives kill-session and an extension reload) when " +
         "nothing is retained; otherwise the error distinguishes stopped-without-output from unknown.",
       inputSchema: {
         name: AGENT_NAME,
@@ -84,7 +84,7 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
         "through the same hardened submit path notify_agent uses and is REFUSED with a structured error " +
         "(receipt: refused-busy) if the recipient is working/throttled — write_input is a direct command " +
         "gesture, so a busy recipient is never queued silently; use notify_agent or wait for idle instead. " +
-        "Also REFUSED (receipt: refused-not-ready, t-f87651) while a Codex-class agent is still bootstrapping " +
+        "Also REFUSED (receipt: refused-not-ready) while a Codex-class agent is still bootstrapping " +
         "(runtime not ready) — except an explicit answering=true response that exactly matches a measured " +
         "Codex bootstrap screen and its closed input grammar (receipt: answered-bootstrap). A spawn receipt " +
         "is not proof the first contract landed; otherwise wait for ready or persist the contract to the task " +
@@ -92,12 +92,12 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
         "key (`t` or U+001B/Escape); ordinary raw pre-ready input remains refused. " +
         "A non-empty runtime composer draft is refused with receipt: refused-composer unless answering=true " +
         "and the recipient is needs-input. " +
-        "needs-input is ALLOWED (t-8605be): that state means the recipient is blocked on an interactive prompt, " +
+        "needs-input is ALLOWED: that state means the recipient is blocked on an interactive prompt, " +
         "and answering it is write_input's most legitimate use — set answering=true to document that intent and " +
         "get a receipt: answered-prompt back. submit=false only types the text with no Enter — raw, unsubmitted " +
         "keystrokes can land in or concatenate with whatever the recipient's composer already holds, so the " +
         "caller should know the recipient's state. " +
-        "GOVERNANCE (t-bec361/t-b5f896): as an agent you may type into only yourself, an agent below you in your own " +
+        "GOVERNANCE: as an agent you may type into only yourself, an agent below you in your own " +
         "lineage, or a Saved Agent you own in the roster — typing into someone else's terminal is a command gesture, not a message. To reach a sibling, " +
         "a parent or any other agent, use notify_agent, which is not lineage-scoped.",
       inputSchema: {
@@ -200,10 +200,10 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
         "sibling, anyone in the fleet). NOT a chat channel: it types ONE sanitized, single-line, provenance-" +
         "prefixed message into the recipient's terminal and submits it when the recipient appears idle — a waiting agent " +
         "only wakes on input that starts a turn. Busy recipients may be queued until idle. Also REFUSED " +
-        "(receipt: refused-not-ready, t-f87651) while the recipient is still bootstrapping (runtime not ready). " +
+        "(receipt: refused-not-ready) while the recipient is still bootstrapping (runtime not ready). " +
         "Targets must be running AGENTS " +
         "(not terminals) and not yourself. Best-effort pane input, not durable history. " +
-        "A recipient whose composer holds a human draft is HELD, not written over (t-a53dd9, receipt: held-human-draft): " +
+        "A recipient whose composer holds a human draft is HELD, not written over (receipt: held-human-draft): " +
         "the check is taken against the pane at the moment of delivery, not from the attention poll, and the notice is " +
         "delivered when the draft clears — or expires with the loss reported to the human. Two residues remain, both " +
         "measured rather than assumed: a keystroke landing between that read and the write is still possible (tmux has no " +
@@ -217,7 +217,7 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
             + "short summary instead. A completion should carry task id, state, commit/tree or blocker, and `pointer`.",
         ),
         pointer: z.string().min(1).max(200).optional().describe(
-          "durable record holding the full detail — a task id (t-abc123), an artifact ref or a path. Appended to the "
+          "durable record holding the full detail — a task id, an artifact ref or a path. Appended to the "
             + "delivered line and stored with the notice, so the recipient can open it from Attention/Activity "
             + "instead of reading your pane.",
         ),
@@ -352,7 +352,7 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
     "read_notices",
     {
       description:
-        "spec 493 — read the durable record of notify_agent doorbells rung FOR you, independent of whether the pane " +
+        "Read the durable record of notify_agent doorbells rung FOR you, independent of whether the pane " +
         "delivery ever landed. `notify_agent`'s one drain window is your working→idle attention edge; a coordinator " +
         "that stays busy (or that restarted since the notice rang) never opens it and would otherwise never know a " +
         "doorbell rang. This reads `.tachyon/doorbells.jsonl`, which witnesses every notify_agent call regardless of " +

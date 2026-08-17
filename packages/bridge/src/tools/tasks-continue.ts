@@ -9,7 +9,7 @@ export function registerContinueTaskTool(mcp: McpServer, deps: BridgeDeps): void
     "continue_task",
     {
       description:
-        "Continue an unfinished task on a DIFFERENT declared agent (t-7551f9). Writes a focused " +
+        "Continue an unfinished task on a DIFFERENT declared agent. Writes a focused " +
         "handoff under .tachyon/session-continuation/ and spawns the destination as a NEW session " +
         "with that handoff as task brief. Does NOT migrate native resume/tool state; does NOT stop " +
         "the source agent; does NOT change cmd on the source. Use when the source runtime hit a " +

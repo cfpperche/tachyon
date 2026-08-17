@@ -108,7 +108,7 @@ export function registerWaitTools(mcp: McpServer, deps: BridgeDeps): void {
           return fail(
             new Error(
               `wait_for_output refused: caller '${callerName}' may wait only on itself, an agent it spawned, or a sibling sharing its own parent ` +
-                `(policy: lineage-scoped, t-fe5dbe) — '${name}' is out of scope`,
+                `(policy: lineage-scoped) — '${name}' is out of scope`,
             ),
           );
         }
