@@ -59,7 +59,13 @@ A documentação pública afirma que os comentários acompanham a linha quando o
 
 O código da revisão medida não implementa essa promessa entre snapshots do diff:
 
-1. os dados persistidos não contêm conteúdo da linha, blob, hunk ou baseRef;
+1. os dados persistidos não contêm blob, hash de hunk ou `baseRef` — e o conteúdo que existe nunca
+   é usado para relocalizar. Correção do claude a esta linha: o registro **contém** conteúdo em
+   `selectedText` (`/tmp/tachyon-t00bf87-orca/src/shared/diff-comment-types.ts:34` e
+   `src/shared/diff-comment-schema.ts:8`), mas ele só alimenta render de excerto
+   (`src/renderer/src/lib/markdown-review-notes.ts:111-115` e `:183`) e comparação de snapshot
+   (`src/renderer/src/store/slices/diffComments.ts:91`). Nenhum caminho o usa para reposicionar.
+   Isso **reforça** a conclusão: a matéria-prima da âncora está guardada e não é aproveitada;
 2. `diffIdentity` nunca é produzido nem consumido em `src/`;
 3. a única coordenada usada para recriar a UI é `lineNumber`;
 4. nenhuma mutação reage a refresh Git, commit, amend ou rebase;
