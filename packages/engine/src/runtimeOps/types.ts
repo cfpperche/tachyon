@@ -149,7 +149,7 @@ export interface RuntimeOpsRuntimeV1 {
 }
 
 
-export type RuntimeOpsProviderV2 = "codex" | "claude";
+export type RuntimeOpsProviderV2 = "codex" | "claude" | "grok";
 
 export type RuntimeOpsProviderSourceV2 = "cli" | "oauth";
 

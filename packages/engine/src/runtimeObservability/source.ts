@@ -86,7 +86,7 @@ export interface ProviderObservationSource {
   observe(request: ProviderObservationRequestV1): Promise<CollectorEnvelopeV1>;
 }
 
-/** Configuration-axis source. Must never emit `provider-quota` facts; quota absence is declared by name. */
+/** Configuration-axis source. Must never emit `provider-quota` facts; its own quota absence is declared by name. */
 export interface ConfigurationObservationSource {
   readonly runtime: "grok";
   readonly source: ProviderSourceKindV1;

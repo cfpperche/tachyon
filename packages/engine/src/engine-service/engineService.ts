@@ -29,6 +29,7 @@ import { applySidebarMutation } from "../sidebar/sidebarMutationService.js";
 import { applyReviewMutation, projectReviewNotes } from "../worktree/reviewNotesService.js";
 import { RuntimeOpsSnapshotService } from "../runtimeOps/snapshotService.js";
 import { CodexAppServerObservationSource } from "../runtimeObservability/codexAppServerSource.js";
+import { GrokUsageObservationSource } from "../runtimeObservability/grokUsageSource.js";
 import { ClaudeStatusLineObservationSource } from "../runtimeObservability/claudeStatusLineSource.js";
 import { ClaudeStatusLineCaptureTransport } from "../runtimeObservability/claudeStatusLineCapture.js";
 import { ProviderObservationPreferences, type ProviderObservationStatePort } from "../runtimeObservability/preferences.js";
@@ -349,6 +350,7 @@ export async function startDaemonEngineService(
       [
         new CodexAppServerObservationSource(),
         new ClaudeStatusLineObservationSource({ readCapture: claudeStatusLineCapture.readCapture }),
+        new GrokUsageObservationSource(),
       ],
       {
         state: providerState,
@@ -364,8 +366,8 @@ export async function startDaemonEngineService(
       host,
       bridgeTransport,
       // t-458497 — the cached provider-observation state the runtime-condition projection reads. The
-      // channel inventory comes from the sources registered just above, so "grok has no quota
-      // channel" is the ABSENCE of a grok source here rather than a name written down somewhere.
+      // channel inventory comes from the sources registered just above; presence or absence is
+      // derived from that wiring rather than a provider-name table.
       runtimeQuotaObservations: () => ({
         channels: observationsForCondition.describeChannels(),
         preferences: providerPreferences.all(),

@@ -7,7 +7,7 @@ export function emptyRuntimeOpsSnapshot(now = new Date()): RuntimeOpsSnapshotV2 
     generatedAt: observedAt,
     summary: { runtimes: 0, managedAgents: 0 },
     runtimes: [],
-    providerCapacity: ["codex", "claude"].map((provider) => ({
+    providerCapacity: ["codex", "claude", "grok"].map((provider) => ({
       provider: provider as RuntimeOpsProviderV2,
       scope: "provider-account" as const,
       configuration: { state: "disabled" as const },

@@ -12,7 +12,7 @@ import type {
   RuntimeOpsProviderV2,
 } from "./types.js";
 
-const PROVIDERS = ["codex", "claude"] as const satisfies readonly RuntimeOpsProviderV2[];
+const PROVIDERS = ["codex", "claude", "grok"] as const satisfies readonly RuntimeOpsProviderV2[];
 const SOURCES = ["cli", "oauth"] as const satisfies readonly ProviderSourceKindV1[];
 const SAFE_SCOPE_KEY = /^ps_[0-9a-f]{16,64}$/u;
 
