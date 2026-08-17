@@ -191,12 +191,12 @@ function Card({ p, dispatch, mcpLocked }: { p: InstalledPluginVM; dispatch: Plug
                 ? <Badge tone="ok"><Icon name="check" /> installed</Badge>
                 : <Badge tone="warn"><Icon name="warning" /> missing</Badge>}
               {/* spec 289 — disclose which host binaries satisfy this requirement + which one resolved */}
-              {e.names && e.names.length > 1 && <span class="ds-dim" style="font-size:11px;margin-left:6px">any of: {e.names.join(" / ")}</span>}
-              {e.present && e.resolvedPath && <span class="ds-dim ds-mono" style="font-size:11px;margin-left:6px">{e.resolvedPath}</span>}
+              {e.names && e.names.length > 1 && <span class="ds-dim meta-line row-lead">any of: {e.names.join(" / ")}</span>}
+              {e.present && e.resolvedPath && <span class="ds-dim ds-mono meta-line row-lead">{e.resolvedPath}</span>}
               {!e.present && e.installable && (
-                <Button icon="terminal" style="margin-left:6px" onClick={() => dispatch.installExternal(e.name, p.name)}>Install in terminal</Button>
+                <Button icon="terminal" class="row-lead" onClick={() => dispatch.installExternal(e.name, p.name)}>Install in terminal</Button>
               )}
-              {!e.present && !e.installable && <span class="ds-dim" style="font-size:11px;margin-left:6px">Manual: {e.manual}</span>}
+              {!e.present && !e.installable && <span class="ds-dim meta-line row-lead">Manual: {e.manual}</span>}
             </div>
           ))}
         </div>
@@ -217,9 +217,9 @@ function ContributionList({ plugin, kind, items, dispatch, locked }: { plugin: s
       <span class="ev">{kind} · {item.name}</span>{" "}
       {item.applied ? <Badge tone="ok"><Icon name="check" /> applied</Badge> : <Badge tone="warn"><Icon name="circle-slash" /> installed · not applied</Badge>}
       {!locked && (item.applied
-        ? <Button style="margin-left:6px" onClick={() => dispatch.unapplyContribution(plugin, kind, item.name)}>Un-apply</Button>
-        : <Button style="margin-left:6px" onClick={() => dispatch.applyContribution(plugin, kind, item.name)}>Apply</Button>)}
-      {kind === "hook" && item.applied && <span class="ds-dim" style="font-size:11px;margin-left:6px">Restart a running session to disarm</span>}
+        ? <Button class="row-lead" onClick={() => dispatch.unapplyContribution(plugin, kind, item.name)}>Un-apply</Button>
+        : <Button class="row-lead" onClick={() => dispatch.applyContribution(plugin, kind, item.name)}>Apply</Button>)}
+      {kind === "hook" && item.applied && <span class="ds-dim meta-line row-lead">Restart a running session to disarm</span>}
     </div>)}
   </div>;
 }
@@ -241,9 +241,9 @@ function McpContributionList({ plugin, servers, dispatch, locked }: { plugin: st
             ? <Badge tone="ok"><Icon name="check" /> applied</Badge>
             : <Badge tone="warn"><Icon name="circle-slash" /> installed · not applied</Badge>}
           {!locked && (s.applied
-            ? <Button style="margin-left:6px" onClick={() => dispatch.unapplyMcp(plugin, s.name)}>Un-apply</Button>
-            : <Button style="margin-left:6px" onClick={() => dispatch.applyMcp(plugin, s.name)}>Apply</Button>)}
-          {s.applied && <span class="ds-dim" style="font-size:11px;margin-left:6px">Restart a running session to drop the tools</span>}
+            ? <Button class="row-lead" onClick={() => dispatch.unapplyMcp(plugin, s.name)}>Un-apply</Button>
+            : <Button class="row-lead" onClick={() => dispatch.applyMcp(plugin, s.name)}>Apply</Button>)}
+          {s.applied && <span class="ds-dim meta-line row-lead">Restart a running session to drop the tools</span>}
         </div>
       ))}
     </div>
@@ -259,10 +259,10 @@ export function ViewConsentSection({ vm }: { vm: ConsentVM }) {
       {rows.map((v) => (
         <div key={v.id} class="cmd">
           <span class="ev">{v.surface}</span> <b>{v.title}</b> <span class="ds-dim">({v.id})</span>
-          <div class="ds-dim ds-mono" style="font-size:11px;word-break:break-all">{v.entry}</div>
-          <div class="ds-dim" style="font-size:11px">{v.disclosure}</div>
+          <div class="ds-dim ds-mono meta-line break-all">{v.entry}</div>
+          <div class="ds-dim meta-line">{v.disclosure}</div>
           {v.actions.length > 0 && (
-            <div class="ds-dim" style="font-size:11px;margin-top:4px">
+            <div class="ds-dim meta-line stack-tight">
               actions: {v.actions.map((a) => `${a.name} — ${a.disclosure}`).join("; ")}
             </div>
           )}
@@ -432,7 +432,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
                   <span class="ds-dim">({hook.matchers.length > 0 ? hook.matchers.join(", ") : "all tools"})</span>
                 </div>
               ))}
-              <div class="ds-dim" style="margin-top:6px">
+              <div class="ds-dim stack">
                 This package registers these hooks in the selected runtime settings. Tachyon-managed agent sessions receive them only when this workspace classifies <b>{vm.pluginName}</b> as <span class="ds-mono">enforcement</span> under <span class="ds-mono">settings.agentHookProjection</span>; an unclassified plugin projects nothing.
               </div>
             </div>
@@ -462,7 +462,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
                 {vm.removeSummary.removedCount > 0 && <><span class="k">hook groups removed</span><span class="v">{vm.removeSummary.removedCount}</span></>}
                 <span class="k">orphans kept</span><span class="v">{vm.removeSummary.orphans}</span>
               </div>
-              <div class="ds-dim" style="margin-top:6px">The plugin's committed payload and any empty directories this install created are also removed.</div>
+              <div class="ds-dim stack">The plugin's committed payload and any empty directories this install created are also removed.</div>
             </div>
           )}
 
@@ -537,7 +537,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
                   {g.chainsPrior && <div class="ds-dim">your existing {g.event} hook runs first, then this</div>}
                 </div>
               ))}
-              <div class="ds-dim" style="margin-top:6px">Runs for you, the agent, and your IDE at commit time; it can read staged content and block the commit. <span class="ds-mono">git commit --no-verify</span> bypasses it. Removing the plugin restores your prior hook setup.</div>
+              <div class="ds-dim stack">Runs for you, the agent, and your IDE at commit time; it can read staged content and block the commit. <span class="ds-mono">git commit --no-verify</span> bypasses it. Removing the plugin restores your prior hook setup.</div>
             </div>
           )}
 
@@ -557,11 +557,11 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
               {vm.tools.map((t) => (
                 <div key={t.name} class="cmd">
                   <span class="ev">{t.name}@{t.version}</span> <span class="ds-dim">{t.platform}</span>
-                  <div class="ds-mono" style="font-size:11px;word-break:break-all">{t.declaredUrl}</div>
-                  {t.finalUrl !== t.declaredUrl && <div class="ds-dim ds-mono" style="font-size:11px;word-break:break-all">→ {t.finalUrl}</div>}
-                  <div class="ds-dim ds-mono" style="font-size:11px">sha256 {t.sha256.slice(0, 16)}… · publisher {t.publisher}</div>
+                  <div class="ds-mono meta-line break-all">{t.declaredUrl}</div>
+                  {t.finalUrl !== t.declaredUrl && <div class="ds-dim ds-mono meta-line break-all">→ {t.finalUrl}</div>}
+                  <div class="ds-dim ds-mono meta-line">sha256 {t.sha256.slice(0, 16)}… · publisher {t.publisher}</div>
                   {t.launchPolicy && (
-                    <div class="ds-dim" style="font-size:11px;margin-top:4px">
+                    <div class="ds-dim meta-line stack-tight">
                       <Icon name="warning" /> Always launches with{" "}
                       {t.launchPolicy.env && <span class="ds-mono">env {Object.entries(t.launchPolicy.env).map(([k, v]) => `${k}=${v}`).join(" ")}</span>}
                       {t.launchPolicy.args && <span class="ds-mono"> args {t.launchPolicy.args.join(" ")}</span>}
@@ -571,7 +571,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
                   )}
                 </div>
               ))}
-              <div class="ds-dim" style="margin-top:6px">The <span class="ds-mono">sha256</span> proves the bytes match the plugin's manifest — it does <b>not</b> vouch for the publisher. Verify you trust <b>{vm.tools.map((t) => t.publisher).filter((p, i, a) => a.indexOf(p) === i).join(", ")}</b>. The binary is installed read-only + content-addressed under <span class="ds-mono">.tachyon/bin</span> and re-validated before every run.</div>
+              <div class="ds-dim stack">The <span class="ds-mono">sha256</span> proves the bytes match the plugin's manifest — it does <b>not</b> vouch for the publisher. Verify you trust <b>{vm.tools.map((t) => t.publisher).filter((p, i, a) => a.indexOf(p) === i).join(", ")}</b>. The binary is installed read-only + content-addressed under <span class="ds-mono">.tachyon/bin</span> and re-validated before every run.</div>
             </div>
           )}
 
@@ -588,12 +588,12 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
               {vm.data.map((d) => (
                 <div key={d.name} class="cmd">
                   <span class="ev">{d.name}@{d.version}</span> <span class="ds-dim">{d.platform}</span>
-                  <div class="ds-mono" style="font-size:11px;word-break:break-all">{d.declaredUrl}</div>
-                  {d.finalUrl !== d.declaredUrl && <div class="ds-dim ds-mono" style="font-size:11px;word-break:break-all">→ {d.finalUrl}</div>}
-                  <div class="ds-dim ds-mono" style="font-size:11px">sha256 {d.sha256.slice(0, 16)}… · publisher {d.publisher}</div>
+                  <div class="ds-mono meta-line break-all">{d.declaredUrl}</div>
+                  {d.finalUrl !== d.declaredUrl && <div class="ds-dim ds-mono meta-line break-all">→ {d.finalUrl}</div>}
+                  <div class="ds-dim ds-mono meta-line">sha256 {d.sha256.slice(0, 16)}… · publisher {d.publisher}</div>
                 </div>
               ))}
-              <div class="ds-dim" style="margin-top:6px">A pinned, checksummed DATA file (e.g. model weights) installed read-only + content-addressed under <span class="ds-mono">.tachyon/data</span>. It is <b>never executed</b> — a tool reads it via the <span class="ds-mono">_tachyon-data</span> resolver.</div>
+              <div class="ds-dim stack">A pinned, checksummed DATA file (e.g. model weights) installed read-only + content-addressed under <span class="ds-mono">.tachyon/data</span>. It is <b>never executed</b> — a tool reads it via the <span class="ds-mono">_tachyon-data</span> resolver.</div>
             </div>
           )}
 
@@ -612,18 +612,18 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
                   <span class="ev">{e.name}</span>{" "}
                   {e.present ? <span class="ds-badge ok"><Icon name="check" /> installed</span> : <span class="ds-badge warn"><Icon name="warning" /> missing</span>}
                   {/* spec 289 — disclose the candidate binaries that satisfy this requirement + which resolved */}
-                  {e.names && e.names.length > 1 && <div class="ds-dim" style="font-size:11px;margin-top:3px">any of: {e.names.join(" / ")}</div>}
-                  {e.present && e.resolvedPath && <div class="ds-dim ds-mono" style="font-size:11px;margin-top:3px">{e.resolvedPath}</div>}
+                  {e.names && e.names.length > 1 && <div class="ds-dim meta-line stack-tight">any of: {e.names.join(" / ")}</div>}
+                  {e.present && e.resolvedPath && <div class="ds-dim ds-mono meta-line stack-tight">{e.resolvedPath}</div>}
                   {!e.present && e.install && (
                     <>
-                      <div class="ds-dim ds-mono" style="font-size:11px;margin-top:3px">{e.install.join(" ")}</div>
-                      <Button icon="terminal" style="margin-top:4px" onClick={() => dispatch.installExternal(e.name)}>Install in terminal</Button>
+                      <div class="ds-dim ds-mono meta-line stack-tight">{e.install.join(" ")}</div>
+                      <Button icon="terminal" class="stack-tight" onClick={() => dispatch.installExternal(e.name)}>Install in terminal</Button>
                     </>
                   )}
-                  {!e.present && !e.install && <div class="ds-dim" style="font-size:11px;margin-top:3px">Manual: {e.manual}</div>}
+                  {!e.present && !e.install && <div class="ds-dim meta-line stack-tight">Manual: {e.manual}</div>}
                 </div>
               ))}
-              <div class="ds-dim" style="margin-top:6px">An assisted install runs your system package manager in a visible terminal where your OS prompts for your password — Tachyon never sees it. The plugin installs regardless; a skill needing a missing tool fails closed at runtime.</div>
+              <div class="ds-dim stack">An assisted install runs your system package manager in a visible terminal where your OS prompts for your password — Tachyon never sees it. The plugin installs regardless; a skill needing a missing tool fails closed at runtime.</div>
             </div>
           )}
         </div>
