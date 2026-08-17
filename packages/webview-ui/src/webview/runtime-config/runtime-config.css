@@ -163,7 +163,9 @@
   border-radius: var(--ds-radius);
   background: var(--ds-menu-bg);
   color: var(--ds-menu-fg);
-  /* raw #000: --ds-shadow-2 is 0 10px 24px; applying it would choose elevation, not snap a distance. */
+  /* t-55fa50 — raw #000 is the shadow mix, not chrome and not a syntax role. --ds-shadow-2 is
+     0 10px 24px; applying it would choose elevation, not snap a distance. --ds-plate-fg is also
+     #000 but names the inverted-plate foreground, not a shadow channel. */
   box-shadow: 0 6px 18px color-mix(in srgb, #000 38%, transparent);
 }
 
