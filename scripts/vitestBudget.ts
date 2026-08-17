@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { withProcessLockSync } from "../locks/processLock.js";
-import type { HostMemorySnapshot } from "./hostResources.js";
+import { withProcessLockSync } from "../packages/engine/src/locks/processLock.js";
+import type { HostMemorySnapshot } from "../packages/engine/src/host/hostResources.js";
 import hostResourceCostInputs from "@tachyon/shared/host-resource-cost-inputs.cjs";
 
 /**

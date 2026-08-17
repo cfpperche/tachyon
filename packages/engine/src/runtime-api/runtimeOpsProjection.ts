@@ -214,7 +214,6 @@ const summaryFacts = z.object({
   /** t-019dac — host mem facts (optional; present when /proc/meminfo is readable). */
   hostMemAvailableMb: count.optional(),
   hostMemTotalMb: count.optional(),
-  recommendedVitestWorkers: count.optional(),
 }).strict();
 
 const snapshotV1 = z.object({
@@ -303,7 +302,7 @@ export function mergeRuntimeOpsSnapshotsV1(values: readonly RuntimeOpsSnapshot[]
   const hostMem = [...parsed]
     .reverse()
     .map((value) => value.summary)
-    .find((summary) => summary.hostMemAvailableMb !== undefined || summary.hostMemTotalMb !== undefined || summary.recommendedVitestWorkers !== undefined);
+    .find((summary) => summary.hostMemAvailableMb !== undefined || summary.hostMemTotalMb !== undefined);
   const base = {
     generatedAt: latestTimestamp(parsed.map((value) => value.generatedAt)) ?? new Date(0).toISOString(),
     summary: {
@@ -314,7 +313,6 @@ export function mergeRuntimeOpsSnapshotsV1(values: readonly RuntimeOpsSnapshot[]
       bridgeIssues: agents.filter((entry) => entry.bridge.state !== "ok" && entry.bridge.state !== "not-wired").length,
       ...(hostMem?.hostMemAvailableMb !== undefined ? { hostMemAvailableMb: hostMem.hostMemAvailableMb } : {}),
       ...(hostMem?.hostMemTotalMb !== undefined ? { hostMemTotalMb: hostMem.hostMemTotalMb } : {}),
-      ...(hostMem?.recommendedVitestWorkers !== undefined ? { recommendedVitestWorkers: hostMem.recommendedVitestWorkers } : {}),
     },
     runtimes: merged,
     ...(parsed.some((value) => value.error) ? { error: { code: "snapshot-unavailable" as const } } : {}),
