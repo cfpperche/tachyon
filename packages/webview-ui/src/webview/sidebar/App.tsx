@@ -4,7 +4,7 @@ import { Button, Badge, EmptyState, DenseRow } from "../shared/ui";
 import {
   SAMPLE, TABS, searchIndex, isAgentRow,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
-  type SidebarBootVM, type SidebarFolderPhase,
+  type SidebarBootVM, type SidebarFolderPhase, type StatusNoticeVM,
 } from "@tachyon/shared/sidebar/types";
 import { bootNeedsTick, pendingBootFolders, resolveBootState, type SidebarBootState } from "./bootState";
 import {
@@ -1260,6 +1260,30 @@ function BootRowNotice({ boot }: { boot?: SidebarBootVM }) {
   );
 }
 
+/**
+ * SDD 512 fatia 2 / t-bd9fb8 — the status-bar replacement. Fixed under the tab panel, outside
+ * tab routing. Last write wins; no timer. `level` is painted from the field, never inferred.
+ * `<details>` is the path to the rest of a long message (median 135, max 161). Absent notice
+ * renders nothing so the list keeps its height.
+ */
+function StatusNoticeFooter({ notice }: { notice: StatusNoticeVM }) {
+  return (
+    <footer
+      class={`status-footer level-${notice.level}`}
+      data-testid="sidebar-status-footer"
+      data-level={notice.level}
+      role={notice.level === "error" ? "alert" : "status"}
+    >
+      <details>
+        <summary class="status-footer-summary">
+          <span class={`notice-level l-${notice.level}`}>{notice.level}</span>
+          <span class="status-footer-message">{notice.message}</span>
+        </summary>
+      </details>
+    </footer>
+  );
+}
+
 export function App({
   fleets = [SAMPLE],
   dispatch,
@@ -1728,6 +1752,7 @@ export function App({
           renderSelected(selected)
         ) : null}
       </div>
+      {selected?.statusNotice ? <StatusNoticeFooter notice={selected.statusNotice} /> : null}
       {open && <CmdK fleets={fleets} selectedHash={selectedHash} onClose={closeK} onPick={pick} />}
       <MoreMenu menu={menu} onClose={() => setMenu(null)} />
       {continuePick && selected ? (

@@ -435,6 +435,38 @@ export const sidebarFixtures: Record<string, Fixture<SidebarFixtureVM>> = {
    * first one is the expensive case the owner's rule leaves standing: the key name is misspelled, so
    * the whole entry is dropped and a delegated codex agent falls back to `danger-full-access`.
    */
+  /**
+   * SDD 512 fatia 2 — short info notice under a live roster. The collapsed footer must stay one
+   * operator row so a short list is not shorter than the status it replaced.
+   */
+  "status-notice": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...SAMPLE,
+      statusNotice: {
+        message: "Nothing to review",
+        level: "info",
+        at: "2026-08-17T12:00:00.000Z",
+      },
+    } as FleetVM,
+  },
+
+  /**
+   * SDD 512 fatia 2 — measured max (161 chars) at error, with the agent list still on screen.
+   * The footer must keep a path to the rest; ellipsis-only is the original defect.
+   */
+  "status-notice-long": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...SAMPLE,
+      statusNotice: {
+        message: "an action-less notice is precisely the branch that routes to setStatusBarMessage — clipped by width, erased on a timer, no button. That is where the owner's run grok login first went.",
+        level: "error",
+        at: "2026-08-17T12:00:00.000Z",
+      },
+    } as FleetVM,
+  },
+
   "config-discards": {
     provenance: "synthetic-edge",
     vm: {
