@@ -24,7 +24,6 @@ const UNIT = path.join(ROOT, "test/unit");
 const REAL_HARNESS_CODEX_FILES = [
   "engineService.test.ts",
   "workspaceHeadless.test.ts",
-  "continuityWiring.test.ts",
 ] as const;
 
 function unitTestFiles(): Array<{ file: string; source: string }> {

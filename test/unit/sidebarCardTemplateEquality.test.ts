@@ -46,6 +46,7 @@ const HEADER = [
   "#   task focus lines (t-195a6c) — an assigned card now carries data-board-status (active|triaged)",
   "#     so a parked assignment cannot be mistaken for in-progress work. The default fixtures have no",
   "#     triaged status, so the visible label stays \"task\"; only the status attribute is new.",
+  "#   t-ef2d6b — continuity freshness badges are removed; the saved Markdown file remains agent-owned.",
   "#",
   "# Regenerate ONLY for an intentional card change: UPDATE_SIDEBAR_CARD_GOLDEN=1 npx vitest run test/unit/sidebarCardTemplateEquality.test.ts",
   "# Serialized by test/helpers/staticPreact.ts; fixtures in test/fixtures/sidebar/agentCardFixtures.ts.",

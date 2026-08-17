@@ -60,7 +60,7 @@ function isFleetArray(fleet: FleetVM | readonly FleetVM[]): fleet is readonly Fl
 }
 
 function emptyCounts(): PluginFleetProjectionCountsV1 {
-  return { agents: 0, running: 0, needs: 0, throttled: 0, done: 0, idle: 0, stopped: 0, crashed: 0 };
+  return { agents: 0, running: 0, needs: 0, throttled: 0, idle: 0, stopped: 0, crashed: 0 };
 }
 
 function defaultLabel(target: PluginProjectionTarget): string {
@@ -69,7 +69,6 @@ function defaultLabel(target: PluginProjectionTarget): string {
 
 function toPluginStatus(status: AgentVM["status"]): PluginAgentStatusV1 {
   if (status === "stopping" || status === "stop-failed") return "running";
-  if (status === "done") return "done";
   return status;
 }
 
@@ -83,9 +82,6 @@ function toPluginAttention(attention: string | undefined, status: AgentVM["statu
 
 function badgesFor(agent: AgentVM): PluginAgentBadgeV1[] {
   const badges: PluginAgentBadgeV1[] = [];
-  if (agent.continuity === "fresh") badges.push("continuity-fresh");
-  if (agent.continuity === "stale") badges.push("continuity-stale");
-  if (agent.continuity === "missing") badges.push("continuity-missing");
   if (agent.persistenceHooks?.state === "active") badges.push("persistence-active");
   if (agent.persistenceHooks?.state === "skipped") badges.push("persistence-skipped");
   if (agent.persistenceHooks?.state === "failed") badges.push("persistence-failed");

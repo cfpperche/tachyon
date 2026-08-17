@@ -192,7 +192,6 @@ export interface ActivityLifecycleWorkspace {
     restart(agent: string, opts?: { stop?: "graceful" | "force"; session?: "resume" | "new"; gracefulTimeoutMs?: number }): Promise<unknown>;
   };
   lifecycle: { resetBackoff(agent: string): void };
-  checkpointBeforeTeardown(agent: string): Promise<void>;
   resumeAgent(agent: string): Promise<void>;
 }
 
@@ -218,7 +217,6 @@ export async function restartAgentWithActivity(
   opts?: { stop?: "graceful" | "force"; session?: "resume" | "new"; gracefulTimeoutMs?: number },
 ): Promise<unknown> {
   workspace.lifecycle.resetBackoff(agent);
-  await workspace.checkpointBeforeTeardown(agent);
   return loggedLifecycleAction(activityLog, workspace.wsHash, agent, "restarted", () => workspace.manager.restart(agent, opts));
 }
 

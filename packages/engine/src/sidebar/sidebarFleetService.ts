@@ -71,7 +71,6 @@ export interface SidebarFleetSource {
     actionsLive: boolean;
   }>;
   attentionOf(agent: string): AgentAttention | undefined;
-  continuityBadge(agent: string): "fresh" | "stale" | "missing" | undefined;
   /** spec 390 — open/assigned MC tasks for focus projection (optional when TaskStore absent). */
   focusTasks?: () => FocusTaskInput[];
   /** spec 390 — continuity markdown body for Current Goal parse (optional). */
@@ -246,9 +245,6 @@ export async function buildSidebarFleet(
         // policy directly. A Saved agent that has never been started has no ledger row and therefore no
         // policy; asking the policy would render it as Temporary and offer to dismiss it.
         adhoc: agent.lifetime === "temporary",
-        // The continuity pointer is part of the same injected hook set, so it asks the same
-        // capability question rather than re-deriving from identity.
-        continuity: agent.running && hasLifecycleHooks(agent) ? source.continuityBadge(agent.name) : undefined,
         ...(focus ? { focus } : {}),
         ...(checklist ? { checklist } : {}),
         persistenceHooks: hookHealth ? {
@@ -405,6 +401,6 @@ function scheduleSummary(definition: { every?: string; at?: string; spawn?: stri
 
 function nodeStatus(status: string): AgentStatus {
   return status === "running" ? "running"
-    : status === "done" || status === "completed" ? "idle"
+    : status === "completed" ? "idle"
       : status === "failed" ? "crashed" : "stopped";
 }

@@ -1,26 +1,16 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { ContinuityMeta } from "@tachyon/engine/continuity/ContinuityStore.js";
 import { listPendingApprovalRequests } from "@tachyon/engine/approvals/approvalRequest.js";
-import {
-  decomposeContinuityRead,
-  removedContinuityReferences,
-  renderContinuity,
-  renderMissingContinuity,
-} from "@tachyon/engine/continuity/presentation.js";
 import { type BridgeDeps, AGENT_NAME, contextRenewalRequestRefusal, fail, ok, resolveDeclaredActor } from "./shared.js";
 
 export function registerContinuityTools(mcp: McpServer, deps: BridgeDeps): void {
 
-  // spec 241 — per-agent continuity: YOUR private working memory, re-injected when you cross a discontinuity
-  // (compaction / clear / new session / restart). Distinct from pins (shared) and the role doc (contract).
+  // Per-agent plain Markdown working memory. Distinct from pins (shared) and the role doc (contract).
   mcp.registerTool(
     "get_continuity",
     {
       description:
-        "Read YOUR continuity brief (.tachyon/continuity/<agent>.md) — your saved working state " +
-        "(current goal, decisions, next steps, open threads). Call this after a compaction / new session / " +
-        "restart to rebuild what you were doing. Returns '(no continuity brief yet)' on a cold start.",
+        "Read YOUR saved continuity file (.tachyon/continuity/<agent>.md). Returns '(no continuity brief yet)' when absent.",
       inputSchema: { agent: AGENT_NAME.describe("your agent name — the value of your $TACHYON_AGENT_NAME env var; never guess it") },
     },
     async ({ agent }) => {
@@ -31,17 +21,7 @@ export function registerContinuityTools(mcp: McpServer, deps: BridgeDeps): void 
         const selfActor = resolveDeclaredActor(deps, agent);
         if (!selfActor.ok) return fail(new Error(selfActor.message));
         if (!selfActor.name) return fail(new Error("get_continuity requires a resolvable agent identity"));
-        const brief = deps.continuity.read(selfActor.name);
-        if (!brief) {
-          return ok(renderMissingContinuity(selfActor.name, deps.tasks.listRaw(), deps.pins.list()));
-        }
-        return ok(renderContinuity({
-          agent: selfActor.name,
-          brief,
-          currentActivitySeq: deps.currentActivitySeq?.(selfActor.name),
-          tasks: deps.tasks.listRaw(),
-          pins: deps.pins.list(),
-        }));
+        return ok(deps.continuity.read(selfActor.name) ?? "(no continuity brief yet)");
       } catch (err) {
         return fail(err);
       }
@@ -52,82 +32,23 @@ export function registerContinuityTools(mcp: McpServer, deps: BridgeDeps): void 
     "set_continuity",
     {
       description:
-        "Checkpoint YOUR authored continuity narrative. Record your goal, state, decisions, next steps, and relevant artifacts. " +
-        "Tachyon derives your open tasks and pins during reads. Do not copy that checklist into this narrative. " +
-        "This call replaces the authored body and preserves Tachyon metadata. Removed task IDs and wiki links produce advisory warnings.",
+        "Write YOUR saved continuity file (.tachyon/continuity/<agent>.md). This replaces the file's Markdown content.",
       inputSchema: {
         agent: AGENT_NAME.describe(
           "your EXACT Tachyon agent name (as shown in Tachyon's nudge / the sidebar, and in your $TACHYON_AGENT_NAME env var) — " +
             "do NOT guess; a wrong name writes the brief to the wrong file",
         ),
-        content: z.string().max(20000).describe("the full brief body (markdown sections above)"),
-        status: z.enum(["active", "paused", "blocked", "done"]).optional().describe("active (default) | paused | blocked | done"),
-        source_activity_seq: z.number().int().nonnegative().optional().describe("usually omit — Tachyon anchors freshness to the current activity seq"),
+        content: z.string().max(20000).describe("the complete Markdown file content"),
       },
     },
-    async ({ agent, content, status, source_activity_seq }) => {
+    async ({ agent, content }) => {
       try {
         if (!deps.continuity) return fail(new Error("continuity is not available"));
         const selfActor = resolveDeclaredActor(deps, agent);
         if (!selfActor.ok) return fail(new Error(selfActor.message));
         if (!selfActor.name) return fail(new Error("set_continuity requires a resolvable agent identity"));
-        const self = selfActor.name;
-        let previousBody = "";
-        let previousMeta: ContinuityMeta | undefined;
-        try {
-          const previousBrief = deps.continuity.read(self);
-          previousBody = previousBrief?.body ?? "";
-          previousMeta = previousBrief?.meta;
-        } catch {
-          // Drop detection is advisory. A malformed old brief must not prevent ContinuityStore.write recovery.
-        }
-        const authoredContent = decomposeContinuityRead(content, previousMeta);
-        const removed = removedContinuityReferences(previousBody, authoredContent);
-        const res = deps.continuity.write(self, authoredContent, {
-          updatedBy: "agent",
-          status,
-          sourceActivitySeq: source_activity_seq ?? deps.currentActivitySeq?.(self),
-        });
-        deps.onContinuityChanged?.(self);
-        const warnings = [
-          res.warning,
-          removed.length > 0 ? `removed references: ${removed.join(", ")}. Confirm that each removal was intended.` : undefined,
-        ].filter((warning): warning is string => warning !== undefined);
-        return ok(warnings.length > 0 ? `continuity updated — ${warnings.join(" ")}` : "continuity updated");
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
-
-  mcp.registerTool(
-    "continuity_status",
-    {
-      description:
-        "Report the freshness of an agent's continuity brief: whether it exists, its status, when it was last " +
-        "updated, and how far behind current activity it is (lag). Use to decide whether to re-read or refresh it.",
-      inputSchema: { agent: AGENT_NAME.describe("the agent name") },
-    },
-    async ({ agent }) => {
-      try {
-        if (!deps.continuity) return fail(new Error("continuity is not available"));
-        const brief = deps.continuity.read(agent);
-        if (!brief) return ok(JSON.stringify({ agent, exists: false }));
-        const cur = deps.currentActivitySeq?.(agent);
-        const seq = typeof brief.meta.source_activity_seq === "number" ? brief.meta.source_activity_seq : undefined;
-        const lag = cur !== undefined && seq !== undefined ? Math.max(0, cur - seq) : undefined;
-        return ok(
-          JSON.stringify({
-            agent,
-            exists: true,
-            status: brief.meta.status,
-            updated_at: brief.meta.updated_at,
-            updated_by: brief.meta.updated_by,
-            source_activity_seq: seq,
-            current_activity_seq: cur,
-            lag,
-          }),
-        );
+        deps.continuity.write(selfActor.name, content);
+        return ok("continuity updated");
       } catch (err) {
         return fail(err);
       }

@@ -10,12 +10,11 @@ import type { ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
 import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 import type { ExternalToolsSummaryVM } from "@tachyon/shared/externalTools/types.js";
 
-export type AgentStatus = "running" | "needs" | "throttled" | "done" | "idle" | "stopping" | "stop-failed" | "stopped" | "crashed";
+export type AgentStatus = "running" | "needs" | "throttled" | "idle" | "stopping" | "stop-failed" | "stopped" | "crashed";
 /** spec 378 — where `AgentVM.model` came from: a live transcript observation, an explicit `--model` flag,
  *  or the runtime's profile default (no explicit flag, no observation yet). */
 export type ModelSource = "observed" | "declared" | "profile";
 /** spec 241 — per-agent continuity brief freshness: missing (none yet) | stale (behind activity) | fresh. */
-export type ContinuityBadge = "fresh" | "stale" | "missing";
 /** spec 390 — source of the human-glance focus line on an agent row. */
 export type FocusSource = "task" | "brief" | "continuity";
 /** spec 390 — projected "what this agent is working on" for fleet glance. */
@@ -98,8 +97,6 @@ export interface AgentVM {
   pane?: boolean;
   /** this agent IS a forked sibling (spec 225 — `def.fork`); drives the ⑂ fork badge. */
   forked?: boolean;
-  /** spec 241 — continuity brief freshness badge (undefined = don't show, e.g. terminals / non-ai). */
-  continuity?: ContinuityBadge;
   /** spec 390 — glance focus line (task / brief / continuity goal); omit when no source. */
   focus?: AgentFocus;
   /** t-281339 — current checklist step, or `absent`. Omit for mute / all-completed / `no-channel`. */

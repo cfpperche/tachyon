@@ -25,7 +25,6 @@ const LIVE: ReadonlySet<AgentStatus> = new Set([
   "running",
   "needs",
   "throttled",
-  "done",
   "idle",
   "stopping",
   "stop-failed",
@@ -50,7 +49,7 @@ export function agentIsStopped(a: Pick<AgentVM, "status">): boolean {
  * Includes stop-failed (not in grouping.agentNeedsAttention).
  */
 export function agentNeedsYou(a: Pick<AgentVM, "status" | "attention" | "awaitingHuman" | "authRequired">): boolean {
-  if (a.status === "needs" || a.status === "throttled" || a.status === "stop-failed" || a.status === "done") return true;
+  if (a.status === "needs" || a.status === "throttled" || a.status === "stop-failed") return true;
   if (a.awaitingHuman) return true;
   // SDD 477 / t-5bfb72 — a lost login reads as plain "idle", which is the whole defect. Only a human
   // can clear it, so it belongs in the attention filter even though the row keeps its idle status.

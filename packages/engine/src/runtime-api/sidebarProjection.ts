@@ -40,7 +40,7 @@ const optionalDisplayText = (max: number, marker = "…") => z.preprocess(
 // the full identity instead of imposing a second, contradictory size rule (t-a11ac5).
 const name = z.string().min(1).regex(AGENT_NAME_PATTERN);
 const count = z.number().int().nonnegative().max(1_000_000);
-const agentStatus = z.enum(["running", "needs", "throttled", "done", "idle", "stopping", "stop-failed", "stopped", "crashed"]);
+const agentStatus = z.enum(["running", "needs", "throttled", "idle", "stopping", "stop-failed", "stopped", "crashed"]);
 const evidence = z.object({
   total: count,
   stale: count,
@@ -111,7 +111,6 @@ const agent = z.object({
   exited: z.boolean().optional(),
   pane: z.boolean().optional(),
   forked: z.boolean().optional(),
-  continuity: z.enum(["fresh", "stale", "missing"]).optional(),
   focus: z.object({
     text: displayText(128, 1),
     source: z.enum(["task", "brief", "continuity"]),

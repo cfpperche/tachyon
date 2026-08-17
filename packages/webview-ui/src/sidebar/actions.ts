@@ -9,7 +9,7 @@ import { isAgentRow, type AgentVM } from "@tachyon/shared/sidebar/types";
 export type ActionId =
   | "activity" | "probes" | "inspect" | "openPane" | "stop" | "kill" | "reapPane"
   | "restart" | "restartNew" | "restartForceNew"
-  | "spawn" | "resume" | "fork" | "reinjectContinuity" | "injectPrompt"
+  | "spawn" | "resume" | "fork" | "injectPrompt"
   // t-41117e — Continue task in… (webview opens destination picker; host only runs agent.continue-task).
   | "continueTask"
   // t-4662e9 — no `rename`. Renaming a canonical agent is the Agent Form's operation (it carries the
@@ -46,7 +46,6 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   spawn: { icon: "play", label: "Start" },
   resume: { icon: "debug-continue", label: "Resume (with context)" },
   fork: { icon: "git-branch", label: "Fork session" },
-  reinjectContinuity: { icon: "history", label: "Re-inject continuity" },
   injectPrompt: { icon: "symbol-snippet", label: "Inject prompt template" },
   continueTask: { icon: "debug-step-over", label: "Continue task in…" },
   promote: { icon: "save", label: "Save as terminal declaration" },
@@ -59,7 +58,7 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
 };
 
 const isRunning = (a: AgentVM) =>
-  a.status === "running" || a.status === "needs" || a.status === "throttled" || a.status === "done" || a.status === "idle" || a.status === "stop-failed";
+  a.status === "running" || a.status === "needs" || a.status === "throttled" || a.status === "idle" || a.status === "stop-failed";
 /** Activity is a durable, per-agent history. It does not require a live tmux pane; a stopped AI row may still
  *  have useful log/context to inspect before the user decides between Resume and a fresh start. */
 const canViewActivity = (a: AgentVM) => isAgentRow(a);
@@ -137,7 +136,7 @@ export function actionsFor(a: AgentVM): ActionId[] {
   if (canResume(a)) out.push("resume");
   if (a.forkable) out.push("fork");
   // spec 381 — injectPrompt joins reinject as a mid-session operator op on live AI panes.
-  if (isRunning(a) && isAgentRow(a)) out.push("reinjectContinuity", "injectPrompt");
+  if (isRunning(a) && isAgentRow(a)) out.push("injectPrompt");
   // t-41117e — Saved Agent only (not Temporary, not terminal). Webview opens the destination picker.
   if (isAgentRow(a) && !a.adhoc) out.push("continueTask");
   if (a.worktree) out.push("reviewWorktree", "createPr");

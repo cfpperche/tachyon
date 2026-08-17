@@ -9,7 +9,6 @@ export function destinationBusy(a: AgentVM): boolean {
   return a.status === "running"
     || a.status === "needs"
     || a.status === "throttled"
-    || a.status === "done"
     || a.status === "idle"
     || a.status === "stopping"
     || a.status === "stop-failed";
