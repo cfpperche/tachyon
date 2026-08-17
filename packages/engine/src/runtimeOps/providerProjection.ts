@@ -5,14 +5,14 @@ import type {
   RuntimeObservabilityProviderV1,
 } from "../runtimeObservability/types.js";
 import { validateCollectorEnvelopeV1 } from "../runtimeObservability/validate.js";
-import type {
-  RuntimeOpsProviderCapacityV2,
-  RuntimeOpsProviderQuotaV2,
-  RuntimeOpsProviderUnavailableReasonV2,
-  RuntimeOpsProviderV2,
+import {
+  RUNTIME_OPS_PROVIDERS_V2,
+  type RuntimeOpsProviderV2,
+  type RuntimeOpsProviderCapacityV2,
+  type RuntimeOpsProviderQuotaV2,
+  type RuntimeOpsProviderUnavailableReasonV2,
 } from "./types.js";
 
-const PROVIDERS = ["codex", "claude", "grok"] as const satisfies readonly RuntimeOpsProviderV2[];
 const SOURCES = ["cli", "oauth"] as const satisfies readonly ProviderSourceKindV1[];
 const SAFE_SCOPE_KEY = /^ps_[0-9a-f]{16,64}$/u;
 
@@ -39,7 +39,7 @@ export function projectRuntimeOpsProviderCapacity(
   const preferences = record(root?.preferences);
   const observations = record(root?.observations);
 
-  return PROVIDERS.map((provider) => {
+  return RUNTIME_OPS_PROVIDERS_V2.map((provider) => {
     const preference = projectPreference(preferences?.[provider], provider);
     if (!preference) return disabledCapacity(provider, observedAt);
     return {

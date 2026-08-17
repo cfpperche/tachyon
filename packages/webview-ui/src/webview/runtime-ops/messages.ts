@@ -3,6 +3,7 @@ import {
   type RuntimeOpsProviderV2,
   type RuntimeOpsSnapshot,
 } from "../../runtimeOps/types";
+import { RUNTIME_OPS_PROVIDERS_V2 } from "@tachyon/engine/runtimeOps/types.js";
 import type { InspectedSession } from "@tachyon/engine/runtimeOps/sessionInspection.js";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
@@ -131,6 +132,6 @@ export function isRuntimeOpsSetProviderObservationAction(
   const action = value as Record<string, unknown>;
   return Object.keys(action).length === 3
     && action.type === RUNTIME_OPS_SET_PROVIDER_OBSERVATION
-    && (action.provider === "codex" || action.provider === "claude")
+    && (RUNTIME_OPS_PROVIDERS_V2 as readonly unknown[]).includes(action.provider)
     && typeof action.enabled === "boolean";
 }
