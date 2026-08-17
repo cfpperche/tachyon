@@ -88,6 +88,7 @@ await build({
 writeFileSync(path.join(OUT, "agent-pane-foreign-client.html"), `<!doctype html>
 <html><head><meta charset="utf-8">
 <link rel="stylesheet" href="${path.join(ROOT, "node_modules/@xterm/xterm/css/xterm.css")}">
+<link rel="stylesheet" href="${path.join(ROOT, "packages/webview-ui/src/webview/shared/tokens.css")}">
 <link rel="stylesheet" href="${path.join(ROOT, "packages/webview-ui/src/webview/agent-pane/agent-pane.css")}">
 </head><body><div id="root"></div><script src="./agent-pane-foreign-client.js"></script></body></html>
 `);
