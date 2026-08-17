@@ -21,11 +21,11 @@ _Generated from `plan.md` on 2026-08-17. Work top-to-bottom. Check boxes as task
 
 **Fatia 2 — o rodapé.**
 
-- [ ] Região fixa em `sidebar/App.tsx`, **fora do roteamento de abas**.
-- [ ] Escala herdada do host em `sidebar.css` — nada de valor escolhido nesta tela; a 0.93.7
+- [x] Região fixa em `sidebar/App.tsx`, **fora do roteamento de abas**.
+- [x] Escala herdada do host em `sidebar.css` — nada de valor escolhido nesta tela; a 0.93.7
       estabeleceu isso e a 511 manteve.
-- [ ] Sem temporizador: a última mensagem fica até ser substituída ou dispensada.
-- [ ] Caminho para o texto inteiro quando ele não cabe. **Cortar com reticências e mais nada é trocar
+- [x] Sem temporizador: a última mensagem fica até ser substituída ou dispensada.
+- [x] Caminho para o texto inteiro quando ele não cabe. **Cortar com reticências e mais nada é trocar
       uma célula que corta por outra que corta.**
 
 **Fatia 3 — o provedor troca de destino.**
@@ -79,6 +79,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 - [ ] Evidence: a sidebar em duas larguras, com uma mensagem curta e uma longa, e um `error` visível ao
       mesmo tempo que a lista de agentes
+      (fatia 2 captured the footer half at 880/360 in `.tachyon/visual-qa/t-bd9fb8-sidebar-status-footer/`)
 - [ ] Verdict:
 
 ## Cookbook

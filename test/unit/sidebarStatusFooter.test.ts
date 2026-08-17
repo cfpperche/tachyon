@@ -115,5 +115,9 @@ describe("t-bd9fb8 — sidebar status footer", () => {
     expect(footer).toContain("var(--ds-err)");
     expect(footer).not.toMatch(/padding:\s*\d+px/);
     expect(footer).not.toMatch(/font-size:\s*\d+px/);
+    // The open state lives on <details>, not on the <footer>. `.status-footer[open]` is a no-op
+    // that leaves the one-line clamp in place — ellipsis with no path out.
+    expect(footer).toContain("details[open]");
+    expect(footer).not.toMatch(/\.status-footer\[open\]/);
   });
 });

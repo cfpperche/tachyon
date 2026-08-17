@@ -636,13 +636,13 @@
   .status-footer-summary::before {
     content: "▶"; flex: none; font-size: var(--ds-operator-label3); color: var(--ds-muted);
   }
-  .status-footer[open] .status-footer-summary::before { content: "▼"; }
-  .status-footer[open] .status-footer-summary { align-items: flex-start; }
+  .status-footer details[open] .status-footer-summary::before { content: "▼"; }
+  .status-footer details[open] .status-footer-summary { align-items: flex-start; }
   .status-footer-message {
     min-width: 0; flex: 1 1 auto;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     font-size: var(--ds-operator-label2);
   }
-  .status-footer[open] .status-footer-message { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+  .status-footer details[open] .status-footer-message { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
 
   @media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation: none !important; transition: none !important; } }
