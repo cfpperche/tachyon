@@ -13,10 +13,10 @@ _Generated from `plan.md` on 2026-08-17. Work top-to-bottom. Check boxes as task
 
 **Fatia 1 — o estado no engine, sem `vscode`.**
 
-- [ ] O aviso corrente entra na projeção que `buildSidebarFleet` monta, com nível como **campo**,
+- [x] O aviso corrente entra na projeção que `buildSidebarFleet` monta, com nível como **campo**,
       nunca inferido de texto ou ícone.
-- [ ] `runtime-api/sidebarProjection.ts` — o contrato versionado ganha o campo.
-- [ ] Provar zero `vscode` em `packages/engine/src` e `packages/webview-ui/src`:
+- [x] `runtime-api/sidebarProjection.ts` — o contrato versionado ganha o campo.
+- [x] Provar zero `vscode` em `packages/engine/src` e `packages/webview-ui/src`:
       `bash scripts/check-engine-boundary.sh`.
 
 **Fatia 2 — o rodapé.**
