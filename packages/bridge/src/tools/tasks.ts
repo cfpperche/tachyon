@@ -286,7 +286,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
       try {
         const caller = deps.caller ?? { kind: "legacy" as const };
         if (caller.kind !== "agent" || !caller.name) {
-          return fail(new Error("flag_for_human requires an agent-authenticated caller (spec 351); legacy/external/human callers cannot flag"));
+          return fail(new Error("flag_for_human requires an agent-authenticated caller; legacy/external/human callers cannot flag"));
         }
         if (subject) {
           const prototype = new TaskPrototypeStore(deps.workspaceRoot, id).read().prototypes.find((p) => p.id === subject.prototypeId);
@@ -318,7 +318,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
       try {
         const caller = deps.caller ?? { kind: "legacy" as const };
         if (caller.kind !== "agent" || !caller.name) {
-          return fail(new Error("clear_human_flag requires an agent-authenticated caller (spec 351); legacy/external/human callers cannot clear"));
+          return fail(new Error("clear_human_flag requires an agent-authenticated caller; legacy/external/human callers cannot clear"));
         }
         const task = await deps.tasks.update(id, { awaitingHuman: null });
         deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
@@ -349,7 +349,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
         "flight. Adds an item to the Tachyon Attention Stack + sidebar badge with your one-line reason; clears automatically the " +
         "moment you next produce real output (the human responding IS the clear condition — no explicit " +
         "clear call needed). There is no `agent` param — the target is always the Bridge-resolved caller, " +
-        "agent-authenticated only (mirrors request_human_approval/flag_for_human, spec 351); legacy/external/" +
+        "agent-authenticated only (mirrors request_human_approval/flag_for_human); legacy/external/" +
         "human callers cannot self-declare this for someone else. Distinct from flag_for_human, which flags a " +
         "Task on the board, not your live pane. Not for a real authorization decision — use " +
         "request_human_approval for that.",
@@ -361,7 +361,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
       try {
         const caller = deps.caller ?? { kind: "legacy" as const };
         if (caller.kind !== "agent" || !caller.name) {
-          return fail(new Error("request_human_attention requires an agent-authenticated caller (spec 351); legacy/external/human callers cannot request attention"));
+          return fail(new Error("request_human_attention requires an agent-authenticated caller; legacy/external/human callers cannot request attention"));
         }
         deps.flagAwaitingHuman?.(caller.name, reason);
         return ok(JSON.stringify({ agent: caller.name, reason }, null, 2));
@@ -411,7 +411,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
         "List bounded Task summaries for Board. Omits body by default; use get_task for one full task. " +
         "Surfaces actionable work first (active > triaged > inbox > landed > done > dropped) so the default " +
         "cap never silently truncates the queue an orchestrator needs; pass status to filter to one lane. " +
-        "fields:\"compact\" (t-ee0a19) returns only id/status/priority/kind/title/assignee/deps for board sweeps — " +
+        "fields:\"compact\" returns only id/status/priority/kind/title/assignee/deps for board sweeps — " +
         "measured ~2.6x cheaper than full on a real board; default \"full\" keeps the prior summary shape. " +
         "When a page does not cover every matching task the response says so (returned of total + next offset).",
       inputSchema: {

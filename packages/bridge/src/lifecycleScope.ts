@@ -70,7 +70,7 @@ export function lifecycleScopeRefusal(tool: LifecycleTool, caller: string, targe
   const owner = lineage.parentOf(target) ?? lineage.declaredOwnerOf(target);
   const policy =
     `${tool} refused: caller '${caller}' may ${ACTION[tool]} only itself, an agent below it in its own lineage, ` +
-    `or a Saved Agent it owns in the roster (policy: lifecycle-scoped, t-bec361/t-b5f896)`;
+    `or a Saved Agent it owns in the roster (policy: lifecycle-scoped)`;
   const ownership = owner
     ? `'${target}' is not in that lineage — it belongs to '${owner}'`
     : `'${target}' is not in that lineage — it has no lineage parent, so it is top-level and answers to the human, not to an agent`;

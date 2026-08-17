@@ -170,7 +170,7 @@ export class WaitOutputConcurrencyGate {
 export function waitOutputConcurrencyRefusalMessage(cap: number): string {
   return (
     `wait_for_output refused: at most ${cap} concurrent wait_for_output call(s) are allowed workspace-wide ` +
-    `(shared tmux queue cap, t-384a3f) — wait for an in-flight call to finish or time out, then retry`
+    `(shared tmux queue cap) — wait for an in-flight call to finish or time out, then retry`
   );
 }
 

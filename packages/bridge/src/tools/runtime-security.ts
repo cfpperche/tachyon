@@ -7,7 +7,7 @@ export function registerRuntimeSecurityTools(mcp: McpServer, deps: BridgeDeps): 
   mcp.registerTool(
     "reconcile_runtime_credentials",
     {
-      description: "t-14cf7c — list orphan runtime homes that retain credentials, or retire credentials for explicitly named orphan agents. Cache is retained. Every apply re-proves the agent is absent and the home is unoccupied and unchanged; there is no unattended sweep. Run dry_run first.",
+      description: "List orphan runtime homes that retain credentials, or retire credentials for explicitly named orphan agents. Cache is retained. Every apply re-proves the agent is absent and the home is unoccupied and unchanged; there is no unattended sweep. Run dry_run first.",
       inputSchema: {
         dry_run: z.boolean().optional().default(true),
         agent_names: z.array(z.string().min(1)).optional().default([]).describe("exact orphan names to reconcile; required for apply"),

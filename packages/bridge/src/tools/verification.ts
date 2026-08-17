@@ -8,7 +8,7 @@ export function registerVerificationCoreTools(mcp: McpServer, deps: BridgeDeps):
     "attach_evidence",
     {
       description:
-        "Attach ONE EVIDENCE record to a worktree agent (spec 273): an advisory, a review judgment, " +
+        "Attach ONE EVIDENCE record to a worktree agent: an advisory, a review judgment, " +
         "a Visual-QA verdict + screenshot refs, or a note. Evidence informs readers and never gates/blocks. " +
         "Provide targetAgent, kind (free label e.g. 'judgment'|'advisory'), severity (info|warn|error), a one-line " +
         "summary, and optionally detail, data (structured), artifacts (worktree-relative refs), producer (your " +
@@ -59,7 +59,7 @@ export function registerVerificationCoreTools(mcp: McpServer, deps: BridgeDeps):
     "list_evidence",
     {
       description:
-        "Read a worktree agent's non-binary EVIDENCE records (spec 273), newest-first, each flagged fresh/stale " +
+        "Read a worktree agent's non-binary EVIDENCE records, newest-first, each flagged fresh/stale " +
         "(stale = the worktree HEAD moved past the commit it was produced against). Records live next to their " +
         "files under .tachyon/evidence/, so list_evidence still reads after the agent is dismissed. Use it to read " +
         "advisories, review judgments and other evidence a child produced.",
@@ -79,7 +79,7 @@ export function registerVerificationCoreTools(mcp: McpServer, deps: BridgeDeps):
     "complete_node",
     {
       description:
-        "Signal that THIS pipeline node's task is finished (spec 230). Pass runId, nodeId, and nonce " +
+        "Signal that THIS pipeline node's task is finished. Pass runId, nodeId, and nonce " +
         "from your environment (TACHYON_RUN_ID / TACHYON_NODE_ID / TACHYON_NODE_NONCE). The node is " +
         "authenticated by its nonce, not by identity. Errors on a bad token, a non-running node, a " +
         "duplicate signal, or an unknown/closed run. Optionally pass a short `summary` of what you did " +

@@ -95,7 +95,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         "(shell, server, build) is refused here and belongs to spawn_terminal, which starts it with no task, lineage, brief or worktree. " +
         "For a Temporary delegated agent, pass parent=<your own agent name — find it in your $TACHYON_AGENT_NAME env var, never guess it>; " +
         "when starting a declared Saved Agent, omit parent because ownership comes only from the saved roster. " +
-        "DELEGATION CONTRACT (spec 246): when you spawn a Temporary AI agent (cmd is an AI CLI), you MUST hand it a " +
+        "DELEGATION CONTRACT: when you spawn a Temporary AI agent (cmd is an AI CLI), you MUST hand it a " +
         "structured brief — task + context + constraints + (deliverable OR done_when) — or the call is rejected. " +
         "The contract is delivered to the child as its opening brief, so fill it with real substance. " +
         "Pass skip_contract_reason=<why, ≥10 chars> ONLY for a genuinely trivial spawn (recorded, surfaced to the human). " +
@@ -105,11 +105,11 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         "inbox, closed, or assigned to someone else) is refused HERE, naming the reason, instead of launching an " +
         "agent that discovers it a turn later. Triage stays a SEPARATE, DELIBERATE decision — not a human-only one: " +
         "an inbox task is never claimed by spawning at it, and whoever triages leaves author and reason in the " +
-        "task journal (t-f33480). The old wording said \"human decision\" and nothing enforced it; a boundary that " +
+        "task journal. The old wording said \"human decision\" and nothing enforced it; a boundary that " +
         "is neither imposed nor audited is a sentence, so the enforcement became the TRACE rather than the caller. " +
         "With parent set, the child's brief already teaches it to call notify_agent(to: \"<your name>\", summary: ...) when the " +
-        "deliverable/done_when is met — no need to tell it separately. That lands on your pane the next time you go idle " +
-        "(spec 341); a coordinator that stays busy past that (spec 493, t-167b5c) should also poll " +
+        "deliverable/done_when is met — no need to tell it separately. That lands on your pane the next time you go idle; " +
+        "a coordinator that stays busy past that should also poll " +
         "read_notices(agent: \"<your name>\") rather than assume the pane wake-up alone caught it. " +
         "Subject to the maxAgents guardrail.",
       inputSchema: {
@@ -421,7 +421,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
     "kill_agent",
     {
       description:
-        "Compatibility name: stop a running managed entry (kills its tmux session). GOVERNANCE (t-bec361): " +
+        "Compatibility name: stop a running managed entry (kills its tmux session). GOVERNANCE: " +
         "as an agent you may stop only yourself, an agent below you in your own lineage, or a Saved Agent you own " +
         "in the roster — never a sibling, a parent, or an unrelated fleet member. An out-of-scope target is refused with a structured error naming " +
         "the target's owner. For a Temporary that owns a checkout this call also removes its worktree and branch, " +
@@ -604,10 +604,10 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
     "restart_agent",
     {
       description:
-        "Restart a managed entry (spec 389). stop=graceful|force (default graceful) × session=resume|new (default resume; falls back to new when resume is unavailable). " +
+        "Restart a managed entry. stop=graceful|force (default graceful) × session=resume|new (default resume; falls back to new when resume is unavailable). " +
         "Graceful asks the CLI to exit, waits, then force-kills the tmux session only if still alive (never dismisses a Temporary instance). " +
         "Force replaces the process immediately. Crash/watch auto-restarts use force+new internally. " +
-        "GOVERNANCE (t-bec361/t-b5f896): as an agent you may restart only yourself, an agent below you in your own " +
+        "GOVERNANCE: as an agent you may restart only yourself, an agent below you in your own " +
         "lineage, or a Saved Agent you own in the roster; an out-of-scope target is refused with a structured error naming the target's owner.",
       inputSchema: {
         name: AGENT_NAME,
@@ -1036,10 +1036,10 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
     "agent_touched_files",
     {
       description:
-        "t-75e9c7 — which files has each LIVE agent already touched, read from its OWN worktree diff " +
-        "(current base-branch merge-base vs working tree, spec 213) instead of anyone declaring it. " +
+        "Which files has each LIVE agent already touched, read from its OWN worktree diff " +
+        "(current base-branch merge-base vs working tree) instead of anyone declaring it. " +
         "Using the current merge-base prevents a Saved Agent's stale creation base from attributing " +
-        "main-branch drift to that agent (t-004255). Replaces the coordinator " +
+        "main-branch drift to that agent. Replaces the coordinator " +
         "writing that list from memory into every brief: this is a FACT observed during the work, not a " +
         "promise made before it. Includes UNCOMMITTED changes on purpose — an agent with zero commits " +
         "yet is not reported as having 'touched nothing', because that would be exactly the lie this " +

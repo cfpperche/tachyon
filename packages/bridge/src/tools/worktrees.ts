@@ -10,7 +10,7 @@ export function registerWorktreeTools(mcp: McpServer, deps: BridgeDeps): void {
     "create_worktree",
     {
       description:
-        "Create a Tachyon-managed git worktree under the canonical worktree base (spec 392). " +
+        "Create a Tachyon-managed git worktree under the canonical worktree base. " +
         "kind=change creates an implementation/task checkout at <base>/<wsHash>/change/<slug>. " +
         "Registers the entry so VS Code multi-root reveal can include it. Does not spawn an agent.",
       inputSchema: {
@@ -64,7 +64,7 @@ export function registerWorktreeTools(mcp: McpServer, deps: BridgeDeps): void {
     "worktree_audit",
     {
       description:
-        "spec 444 — list Tachyon-managed worktree registry entries WITH a fail-closed hygiene " +
+        "List Tachyon-managed worktree registry entries WITH a fail-closed hygiene " +
         "classification per entry: record-only (path gone), ready-to-remove (clean, unoccupied, " +
         "no unique commits vs its recorded base), needs-review (dirty and/or unique commits, with " +
         "a stated reason), or occupied (a live agent holds it). Read-only — never mutates the " +
@@ -198,7 +198,7 @@ export function registerWorktreeTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Remove a managed git worktree via the WorktreeManager engine (occupancy fail-closed). " +
         "Caller must own the entry (creator/agent) or be privileged. " +
-        "t-621613 — one exception, for residue nothing else can reach: an AGENT entry whose agent is " +
+        "One exception, for residue nothing else can reach: an AGENT entry whose agent is " +
         "provably gone (not declared, not live, not in the session ledger) may be removed by any " +
         "agent caller, because there is no inhabitant left to protect. It is still classification-gated, " +
         "so a home that is dirty, occupied or holding unlanded commits is refused like any other. " +
@@ -244,7 +244,7 @@ export function registerWorktreeTools(mcp: McpServer, deps: BridgeDeps): void {
     "reconcile_worktrees",
     {
       description:
-        "t-e74631 — sweep CHANGE worktrees and remove the ones that are provably safe, without " +
+        "Sweep CHANGE worktrees and remove the ones that are provably safe, without " +
         "waiting for the agent that created each to wake up. Authority is hierarchical: the owner, " +
         "its registered lineage ancestors, and the host human may all ask. Authority never bypasses " +
         "the material locks — every removal still re-proves clean, unoccupied, and contained in base " +
