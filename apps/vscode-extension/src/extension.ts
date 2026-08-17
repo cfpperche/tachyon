@@ -2271,13 +2271,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           // "0 pending" with requests waiting on disk. A read failure is deliberately NOT swallowed
           // into an empty list — Control's own error card is honest, a silent zero is not.
           approvals: pendingApprovalRows(ws.workspaceRoot),
-          // SDD 479 phase 5 — which card-template home this folder itself wrote, for Control's
-          // "in effect" statement. Read from the SAME loaded config the sidebar projects from, so the
-          // statement and the cards cannot disagree about what the project asked for.
-          cardTemplate: {
-            configured: !!ws.config?.settings?.sidebar?.cardTemplate,
-            refused: (ws.config?.settings?.sidebar?.cardTemplateRefusal?.length ?? 0) > 0,
-          },
           // t-585d5c — the idle-notification window this folder wrote, read from the SAME loaded
           // config the monitor resolves against, so Settings cannot show a number the engine is not
           // using. Absent stays absent: it means "never configured", not "set to the default".

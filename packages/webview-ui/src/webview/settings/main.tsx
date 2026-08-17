@@ -1,8 +1,7 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { GlobalSettingsState, SectionsModel } from "../../sections/model";
-import { CardTemplateBlock } from "../shared/control/CardTemplateBlock";
-import { formatCompanionPairClipboard, openGlobalSettingsFileAction, openPersonalCardTemplateAction, setGlobalSettingsAction, type CockpitAction, type CockpitStrings, type CompanionPairOffer } from "../shared/control/messages";
+import { formatCompanionPairClipboard, openGlobalSettingsFileAction, setGlobalSettingsAction, type CockpitAction, type CockpitStrings, type CompanionPairOffer } from "../shared/control/messages";
 import { Button, PageChrome } from "../shared/ui";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
@@ -474,15 +473,6 @@ export function SettingsApp({ model: m, strings: s, pairOffer, post }: SettingsA
               </div>
             </section>
           </div>
-          {/* SDD 479 phase 4 — compose a card layout and watch the REAL card update (ratified fork 5). */}
-          <CardTemplateBlock
-            s={s}
-            onOpenConfig={() => p.onOpenConfigFile(settingsWsHash)}
-            // SDD 479 phase 5 — the personal home is a settings KEY, so its button opens the settings
-            // editor filtered to that key rather than a file.
-            onOpenSettings={() => p.onPost(openPersonalCardTemplateAction())}
-            inEffect={m.cardTemplate}
-          />
 
           {m.globalSettings ? <GlobalSettingsBlock s={s} settings={m.globalSettings} onPost={p.onPost} /> : null}
 

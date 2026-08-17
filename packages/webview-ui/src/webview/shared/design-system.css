@@ -60,7 +60,7 @@ a { color: var(--ds-link); }
   justify-content: center;
   gap: var(--ds-icon-gap);
   margin: 0;
-  /* A FLOOR for the shrunk variants only (icon-only below, `.ck-card-entry-move`, the sidebar's
+  /* A FLOOR for the shrunk variants only (icon-only below, the sidebar's
      22px act hits) — NOT the nominal height, which the control box above computes as
      --ds-control-h (34px) and which is taller than this. Raising this floor to the nominal would
      inflate every deliberately-dense button in the product; leaving it at 28 changes nothing that

@@ -4,7 +4,6 @@
  * `SAMPLE` for a model produced by the (extracted) rules layer reading live fleet state — the
  * components don't change. This is the "UI decoupled from rules" contract.
  */
-import type { CardTemplateConfig } from "./cardTemplate.js";
 import type { ConfigDiscardsVM } from "../config/configDiscards.js";
 import type { EntryKind } from "../config/entry.js";
 import type { ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
@@ -318,28 +317,6 @@ export interface FleetVM {
    * has the same job in both.
    */
   configDiscards?: ConfigDiscardsVM;
-  /**
-   * SDD 479 — the project's agent-card layout, per FOLDER (it comes from that folder's tachyon.yml):
-   * the template every agent row uses, plus any per-runtime override, each already resolved to a
-   * COMPLETE template. Absent means the default card. It rides INSIDE the fleet rather than beside it
-   * like `sortPrefs`: those are one person's preferences across every root, this is one project's, and
-   * multi-root means two folders can legitimately disagree.
-   */
-  cardTemplate?: CardTemplateConfig;
-  /**
-   * SDD 479 — a written template that was refused, and why. The card falls back to the default; this
-   * is what lets the fallback explain itself instead of reading as the feature not working.
-   */
-  cardTemplateRefusal?: { file: string; errors: string[] };
-  /**
-   * SDD 479 phase 5 — the same, for the PERSONAL override in the global Tachyon settings file
-   * (t-aaad95). Its own field rather
-   * than a second entry in the one above, because the two homes fail independently: a project
-   * template and a personal one can be refused in the same window, and a human fixing them needs to
-   * know which file to open. Attached by the shell (SidebarPrototype), never by the engine — this
-   * layer belongs to one person on one machine and never rides the workspace projection.
-   */
-  personalCardTemplateRefusal?: { file: string; errors: string[] };
 }
 
 /**

@@ -1,12 +1,9 @@
 /**
  * t-aaad95 — the global Tachyon settings DOCUMENT: its schema, its validation and its defaults.
  *
- * Split from the file-backed store (`globalSettings.ts`) for a reason the build enforces: Control's
- * card-template block is bundled for the WEBVIEW, and it needs the schema version to emit a snippet
- * a person can paste. Importing the store there pulled `node:fs`/`node:os`/`node:path` into a browser
- * bundle and broke it. Keeping the document pure means the schema has exactly one definition that
- * every side — shell, engine, webview, CLI — can share, instead of a constant copied into the one
- * place that could not import it.
+ * Split from the file-backed store (`globalSettings.ts`) so the document stays pure: no `node:fs`
+ * / `node:os` / `node:path`. The schema has exactly one definition that every side — shell, engine,
+ * webview, CLI — can share.
  *
  * Why a file and not VS Code settings (ratified in `docs/proposals/tachyon-settings-single-authority.md`):
  * these values must answer with **zero workspaces open** and must be readable by CLI/headless and by
@@ -22,8 +19,6 @@
  * bad value must never be able to hide the surface that would repair it — see `resolveGlobalSettings`.
  */
 
-import { parseCardTemplate } from "../sidebar/cardTemplate.js";
-
 export const GLOBAL_SETTINGS_SCHEMA_VERSION = 1 as const;
 export const GLOBAL_SETTINGS_DIRNAME = ".tachyon";
 export const GLOBAL_SETTINGS_FILENAME = "settings.json";
@@ -36,16 +31,6 @@ export interface GlobalSettings {
   activityCodeTheme: ActivityCodeTheme;
   /** Layer-2 agent pane. Fails toward `true`; see the file header. */
   agentPaneEnabled: boolean;
-  /**
-   * This person's card layout, kept as the AUTHORED document rather than a parsed template.
-   *
-   * That is not laziness: `parseCardTemplate` resolves a silent region against whatever base it is
-   * given, and the sidebar gives it THIS FOLDER's project template. Storing the resolved form would
-   * pin every region against the default and silently end "a region you do not list keeps whatever
-   * that project chose" — the exact inheritance SDD 479 phase 5 ratified. Absent = the project's wins
-   * alone. Validated at load against the default base, so a broken document is still refused early.
-   */
-  sidebarCardTemplate?: unknown;
   /** Path to the git binary Tachyon spawns. Empty = fall back to `git.path`, then probing, then PATH. */
   gitPath: string;
 }
@@ -61,7 +46,6 @@ export interface GlobalSettingsDocument {
   version: typeof GLOBAL_SETTINGS_SCHEMA_VERSION;
   activity?: { codeTheme?: ActivityCodeTheme };
   agentPane?: { enabled?: boolean };
-  sidebar?: { cardTemplate?: unknown };
   gitPath?: string;
 }
 
@@ -107,8 +91,11 @@ export function parseGlobalSettings(raw: unknown, source: string): GlobalSetting
     };
   }
 
-  const known = new Set(["version", "activity", "agentPane", "sidebar", "gitPath"]);
+  const known = new Set(["version", "activity", "agentPane", "gitPath"]);
+  // `sidebar` was the card-template override (SDD 479). The spec was abandoned; the key is ignored
+  // so an old file does not refuse the whole document.
   for (const key of Object.keys(raw)) {
+    if (key === "sidebar") continue;
     if (!known.has(key)) errors.push(`${source}: unknown key '${key}' (expected ${[...known].join(", ")})`);
   }
 
@@ -152,31 +139,6 @@ export function parseGlobalSettings(raw: unknown, source: string): GlobalSetting
     }
   }
 
-  if (raw.sidebar !== undefined) {
-    if (!isPlainObject(raw.sidebar)) {
-      errors.push(`${source}: 'sidebar' must be a mapping`);
-    } else {
-      for (const key of Object.keys(raw.sidebar)) {
-        if (key !== "cardTemplate") errors.push(`${source}: sidebar: unknown key '${key}' (expected cardTemplate)`);
-      }
-      const written = raw.sidebar.cardTemplate;
-      // `null` and `{}` are what a person leaves behind after clearing the key — neither is an
-      // attempt to configure anything, so neither is a refusal. Same rule the VS Code key had.
-      const cleared = written === undefined || written === null
-        || (isPlainObject(written) && Object.keys(written).length === 0);
-      if (!cleared) {
-        // The SAME validator `tachyon.yml` uses. A second one that could disagree with it is the
-        // failure SDD 479 phase 5 already exists to avoid.
-        const parsed = parseCardTemplate(written, `${source}: sidebar.cardTemplate`);
-        if (!parsed.config) errors.push(...parsed.errors);
-        else {
-          settings.sidebarCardTemplate = written; // authored form; see the field's comment
-          authored.add("sidebarCardTemplate");
-        }
-      }
-    }
-  }
-
   if (raw.gitPath !== undefined) {
     if (typeof raw.gitPath !== "string") errors.push(`${source}: gitPath: must be a string`);
     else {
@@ -194,7 +156,6 @@ export function toGlobalSettingsDocument(settings: GlobalSettings): GlobalSettin
     version: GLOBAL_SETTINGS_SCHEMA_VERSION,
     activity: { codeTheme: settings.activityCodeTheme },
     agentPane: { enabled: settings.agentPaneEnabled },
-    ...(settings.sidebarCardTemplate === undefined ? {} : { sidebar: { cardTemplate: settings.sidebarCardTemplate } }),
     gitPath: settings.gitPath,
   };
 }

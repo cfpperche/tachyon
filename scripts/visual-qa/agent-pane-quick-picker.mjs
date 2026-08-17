@@ -88,7 +88,7 @@ for (const width of [880, 360]) {
   await page.waitForSelector(".xterm-screen", { timeout: 15000 });
   if (!riskOnly) {
     await page.screenshot({ path: path.join(OUT, `before-agent-pane-${width}.png`) });
-    await page.click('button[title="Open prompt template picker (spec 381)"]');
+    await page.click('button[title="Open prompt template picker"]');
   }
   await page.waitForSelector('[data-testid="agent-pane-template-picker-filter"]', { visible: true, timeout: 5000 });
   if (!riskOnly) {
@@ -111,7 +111,7 @@ for (const width of [880, 360]) {
 
   if (riskOnly) await page.reload({ waitUntil: "networkidle0" });
   else {
-    await page.click('button[title="Open prompt template picker (spec 381)"]');
+    await page.click('button[title="Open prompt template picker"]');
     await page.waitForSelector('[data-testid="agent-pane-template-picker-filter"]', { visible: true });
   }
   const beforeEscape = await page.evaluate(() => window.__messages.length);

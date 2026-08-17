@@ -95,15 +95,6 @@ describe("only values a person actually authored, and only valid ones", () => {
       .toEqual({ agentPaneEnabled: false });
   });
 
-  it("carries the card template in its authored form", () => {
-    const template = { version: 1, header: ["name"] };
-    expect(planGlobalImport({ sidebarCardTemplate: template }, []))
-      .toEqual({ sidebarCardTemplate: template });
-    // a cleared key is not a configuration
-    expect(planGlobalImport({ sidebarCardTemplate: {} }, [])).toEqual({});
-    expect(planGlobalImport({ sidebarCardTemplate: null }, [])).toEqual({});
-  });
-
   it("carries every task-notification key that was authored", () => {
     expect(planYmlImport({
       taskNotifications: { enabled: false, suppressOwnChanges: false, dedupeWindowMs: 0, events: ["created"] },

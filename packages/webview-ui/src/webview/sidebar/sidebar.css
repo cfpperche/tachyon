@@ -526,15 +526,13 @@
   .config-error-actions { display: flex; gap: var(--ds-spacing-size60); flex-wrap: wrap; }
   .config-error-actions .ds-btn { font-size: var(--ds-operator-label2); padding: var(--ds-spacing-size40) var(--ds-spacing-size80); }
 
-  /* SDD 479 — a refused card template. Same shape as the config banner, WARN tone: the config is
-     valid and the fleet is live; only the layout fell back to the default. */
-  /* t-7d6013 — a discarded declaration shares that tone for the same reason: the file loaded and the
-     fleet is live; only some of what was written is not running. */
-  .card-template-banner, .discard-banner {
+  /* t-7d6013 — a discarded declaration: the file loaded and the fleet is live; only some of what
+     was written is not running. */
+  .discard-banner {
     border-color: color-mix(in srgb, var(--ds-warn, #cca700) 55%, transparent);
     background: color-mix(in srgb, var(--ds-warn, #cca700) 12%, var(--vscode-sideBar-background, transparent));
   }
-  .card-template-banner .config-error-title, .discard-banner .config-error-title { color: var(--ds-warn, #cca700); }
+  .discard-banner .config-error-title { color: var(--ds-warn, #cca700); }
   /* The consequence line: quieter than the discarded text itself, which is the part a human acts on. */
   .config-discard-note { font-size: var(--ds-operator-label3); line-height: 1.35; color: var(--ds-muted); }
   /* SDD 479 phase 5 — a banner action must never run past its own border at the sidebar's narrowest;

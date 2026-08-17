@@ -27,7 +27,6 @@ export interface LegacySettingValues {
   gitPath?: unknown;
   activityCodeTheme?: unknown;
   agentPaneEnabled?: unknown;
-  sidebarCardTemplate?: unknown;
   worktreesRevealInWorkspace?: unknown;
   taskNotifications?: {
     enabled?: unknown;
@@ -65,14 +64,6 @@ export function planGlobalImport(
   }
   if (typeof legacy.gitPath === "string" && legacy.gitPath.trim() !== "" && !alreadyAuthored.has("gitPath")) {
     patch.gitPath = legacy.gitPath;
-  }
-  // The card template is carried across in its AUTHORED form — the same reason `GlobalSettings`
-  // stores it that way: a resolved template would pin regions the person never mentioned.
-  const template = legacy.sidebarCardTemplate;
-  const templateCleared = template === undefined || template === null
-    || (typeof template === "object" && !Array.isArray(template) && Object.keys(template as object).length === 0);
-  if (!templateCleared && !alreadyAuthored.has("sidebarCardTemplate")) {
-    patch.sidebarCardTemplate = template;
   }
   return patch;
 }
