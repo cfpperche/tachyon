@@ -326,7 +326,7 @@ export function mergeRuntimeOpsSnapshotsV1(values: readonly RuntimeOpsSnapshot[]
 }
 
 function mergeProviderCapacity(values: readonly RuntimeOpsSnapshotV2[]): RuntimeOpsProviderCapacityV2[] {
-  return (["codex", "claude"] as const).map((provider) => {
+  return (["codex", "claude", "grok"] as const).map((provider) => {
     const entries = values.map((value) => value.providerCapacity.find((entry) => entry.provider === provider)!);
     const configurations = new Set(entries.map((entry) => JSON.stringify(entry.configuration)));
     if (configurations.size !== 1) throw new Error(`Runtime Ops provider configuration disagrees for '${provider}'`);

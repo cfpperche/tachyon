@@ -79,6 +79,7 @@ describe("Runtime Ops persistent projection", () => {
           quota: { state: "available", observedAt: "2026-07-14T12:01:00.000Z", windows: [{ usedPercent: 37 }] },
         },
         { provider: "claude", configuration: { state: "disabled" } },
+        { provider: "grok", configuration: { state: "disabled" } },
       ],
     });
   });
@@ -202,6 +203,12 @@ function snapshotV2(
       },
       {
         provider: "claude",
+        scope: "provider-account",
+        configuration: { state: "disabled" },
+        quota: { state: "unavailable", observedAt: generatedAt, reason: "source-disabled" },
+      },
+      {
+        provider: "grok",
         scope: "provider-account",
         configuration: { state: "disabled" },
         quota: { state: "unavailable", observedAt: generatedAt, reason: "source-disabled" },
