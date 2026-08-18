@@ -119,7 +119,12 @@ const agent = z.object({
     full: displayText(SIDEBAR_FOCUS_FULL_MAX, 1, "… — open the agent for the full brief"),
   }).strict().optional(),
   checklist: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("step"), text: displayText(500, 1) }).strict(),
+    z.object({
+      kind: z.literal("step"),
+      text: displayText(500, 1),
+      position: z.number().int().positive().max(1_000_000),
+      total: z.number().int().positive().max(1_000_000),
+    }).strict(),
     z.object({ kind: z.literal("absent") }).strict(),
   ]).optional(),
   persistenceHooks: persistenceHooks.optional(),
@@ -138,6 +143,13 @@ const agent = z.object({
   forkable: z.boolean().optional(),
   canDismiss: z.boolean().optional(),
 }).strict().superRefine((value, context) => {
+  if (value.checklist?.kind === "step" && value.checklist.position > value.checklist.total) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["checklist", "position"],
+      message: "checklist position must not exceed total",
+    });
+  }
   if ((value.model === undefined) !== (value.modelSource === undefined)) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "sidebar model and provenance must appear together" });
   }

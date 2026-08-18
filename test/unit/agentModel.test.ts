@@ -170,8 +170,8 @@ describe("agentModel.toAgentVM (spec 237)", () => {
   });
   it("t-281339: passes through the checklist line and omits it when absent", () => {
     expect(toAgentVM(raw({ name: "claude", running: true }), {
-      checklist: { kind: "step", text: "write the line" },
-    }).checklist).toEqual({ kind: "step", text: "write the line" });
+      checklist: { kind: "step", text: "write the line", position: 2, total: 4 },
+    }).checklist).toEqual({ kind: "step", text: "write the line", position: 2, total: 4 });
     expect(toAgentVM(raw({ name: "pi", running: true })).checklist).toBeUndefined();
     expect(toAgentVM(raw({ name: "grok", running: true }), { checklist: { kind: "absent" } }).checklist).toEqual({
       kind: "absent",

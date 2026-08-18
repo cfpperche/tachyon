@@ -21,7 +21,9 @@ describe("t-281339 — projectAgentChecklistLine", () => {
       { text: "verify at 360", status: "pending" },
     ]);
     expect(currentChecklistStepText(snap)).toBe("write the sidebar line");
-    expect(projectAgentChecklistLine(snap, COM)).toEqual({ kind: "step", text: "write the sidebar line" });
+    expect(projectAgentChecklistLine(snap, COM)).toEqual({
+      kind: "step", text: "write the sidebar line", position: 2, total: 3,
+    });
   });
 
   it("falls through to the next pending when nothing is in-progress", () => {
@@ -30,7 +32,30 @@ describe("t-281339 — projectAgentChecklistLine", () => {
       { text: "Steep the tea", status: "pending" },
       { text: "Serve the tea", status: "pending" },
     ]);
-    expect(projectAgentChecklistLine(snap, COM)).toEqual({ kind: "step", text: "Steep the tea" });
+    expect(projectAgentChecklistLine(snap, COM)).toEqual({
+      kind: "step", text: "Steep the tea", position: 2, total: 3,
+    });
+  });
+
+  it("numbers the first step from the ordered snapshot", () => {
+    const snap = snapshotOf([
+      { text: "Start here", status: "in-progress" },
+      { text: "Finish later", status: "pending" },
+    ]);
+    expect(projectAgentChecklistLine(snap, COM)).toEqual({
+      kind: "step", text: "Start here", position: 1, total: 2,
+    });
+  });
+
+  it("numbers the last step from the ordered snapshot", () => {
+    const snap = snapshotOf([
+      { text: "First", status: "completed" },
+      { text: "Second", status: "completed" },
+      { text: "Last", status: "pending" },
+    ]);
+    expect(projectAgentChecklistLine(snap, COM)).toEqual({
+      kind: "step", text: "Last", position: 3, total: 3,
+    });
   });
 
   it("occupies no line when every step is completed", () => {
@@ -55,11 +80,15 @@ describe("t-281339 — projectAgentChecklistLine", () => {
 
   it("pending / open turn shows the last known step and never a verdict", () => {
     const snap = snapshotOf([{ text: "still going", status: "in-progress" }]);
-    expect(projectAgentChecklistLine(snap, PENDING)).toEqual({ kind: "step", text: "still going" });
+    expect(projectAgentChecklistLine(snap, PENDING)).toEqual({
+      kind: "step", text: "still going", position: 1, total: 1,
+    });
     expect(projectAgentChecklistLine(MUTE, PENDING)).toBeUndefined();
     expect(projectAgentChecklistLine(snap, { state: "pending", reason: "turn-not-completed" })).toEqual({
       kind: "step",
       text: "still going",
+      position: 1,
+      total: 1,
     });
   });
 

@@ -491,8 +491,10 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
         </div>
       );
     }
+    const position = `(${checklist.position}/${checklist.total})`;
     return (
-      <div class="row-checklist" data-testid="agent-checklist-line" data-checklist="step" title={checklist.text}>
+      <div class="row-checklist" data-testid="agent-checklist-line" data-checklist="step" title={`${position} ${checklist.text}`}>
+        <span class="checklist-position">{position}</span>
         <span class="checklist-text">{checklist.text}</span>
       </div>
     );

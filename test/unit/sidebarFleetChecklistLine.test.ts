@@ -56,7 +56,9 @@ describe("t-281339 — fleet projection of the plan line", () => {
         judgment: { state: "verdict", verdict: "no-channel" },
       },
     }));
-    expect(fleet.agents.find((a) => a.name === "claude")?.checklist).toEqual({ kind: "step", text: "write the line" });
+    expect(fleet.agents.find((a) => a.name === "claude")?.checklist).toEqual({
+      kind: "step", text: "write the line", position: 1, total: 1,
+    });
     expect(fleet.agents.find((a) => a.name === "grok")?.checklist).toEqual({ kind: "absent" });
     expect(fleet.agents.find((a) => a.name === "pi")?.checklist).toBeUndefined();
     expect(JSON.stringify(fleet.agents)).not.toContain("no-channel");
