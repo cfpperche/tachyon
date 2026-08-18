@@ -5,14 +5,14 @@ import { activityNormalizerForRuntime } from "@tachyon/engine/activity/logWriter
 import { instructionsDeliverable } from "@tachyon/engine/config/loadConfig.js";
 import { headlessProbeAdapters } from "@tachyon/engine/probe/adapters/registry.js";
 import { runtimeProjectsPersistentInstructions } from "@tachyon/engine/agents/persistentInstructionsLaunch.js";
+import { runtimeUsesSilentPersistenceHooks } from "@tachyon/engine/runtime/parity.js";
 import {
   PARITY_DIMENSIONS,
   PARITY_RUNTIMES,
   RUNTIME_PARITY,
   parityDeclarationErrors,
-  runtimeUsesSilentPersistenceHooks,
   type ParityCell,
-} from "@tachyon/engine/runtime/parity.js";
+} from "./runtimeParity.declaration.js";
 
 function declaredWired(cell: ParityCell): boolean {
   return cell.projection.verdict === "wired";

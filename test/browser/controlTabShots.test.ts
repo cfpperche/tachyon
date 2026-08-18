@@ -5,7 +5,8 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { SAMPLE, type FleetVM } from "@tachyon/shared/sidebar/types.js";
+import { type FleetVM } from "@tachyon/shared/sidebar/types.js";
+import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
 import { CONTROL_SECTION_NAV } from "@tachyon/webview-ui/webview/sidebar/sectionNav.js";
 
 /**

@@ -1,26 +1,25 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { App, type GlobalOp } from "./App";
-import { SAMPLE, type FleetVM, type SidebarBootVM } from "@tachyon/shared/sidebar/types";
+import { type FleetVM, type SidebarBootVM } from "@tachyon/shared/sidebar/types";
 import { FLEET, readyMessage, type SidebarHostMessage } from "./messages";
 
 // The webview iframe entry. The host (SidebarPrototypeProvider) pushes the live fleet via postMessage
-// once we signal "ready"; standalone preview keeps SAMPLE, while the real webview waits for live data.
+// once we signal "ready"; standalone preview injects a fixture the same way.
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
 
 // spec 278 — the ready handshake works in BOTH modes: the real webview signals the vscode host; standalone
 // (the dev preview harness) it posts to `window` so the harness can inject a fixture deterministically (no
-// 10×-post race). `vscode` stays `undefined` standalone, so the SAMPLE default below is preserved.
+// 10×-post race).
 const signalReady = (): void => {
   if (vscode) vscode.postMessage(readyMessage());
   else window.postMessage(readyMessage(), "*");
 };
 
 function Root() {
-  // In the real webview start empty (the host pushes live fleets after "ready"); SAMPLE only when opened
-  // standalone (no vscode api) so the dev/design preview still has data. Never show SAMPLE in production.
-  const [fleets, setFleets] = useState<FleetVM[]>(vscode ? [] : [SAMPLE]);
+  // Start empty. The host (or the preview harness) pushes live fleets after "ready".
+  const [fleets, setFleets] = useState<FleetVM[]>([]);
   /**
    * SDD 504 — `undefined` until the host says otherwise, and that default is the fix.
    *

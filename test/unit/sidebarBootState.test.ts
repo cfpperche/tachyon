@@ -5,7 +5,8 @@ import { __resetVscodeMock } from "../mocks/vscode.js";
 import { SidebarPrototypeProvider } from "../../apps/vscode-extension/src/webview/SidebarPrototype.js";
 import { controlWorkspaceScope } from "../../apps/vscode-extension/src/webview/shared/ControlWorkspaceScope.js";
 import { initializeVsCodeNotifications } from "../../apps/vscode-extension/src/workspace/notify.js";
-import { SAMPLE, type FleetVM, type SidebarBootVM, type TabId } from "@tachyon/shared/sidebar/types.js";
+import { type FleetVM, type SidebarBootVM, type TabId } from "@tachyon/shared/sidebar/types.js";
+import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
 import {
   DELAYED_AFTER_MS,
   bootNeedsTick,

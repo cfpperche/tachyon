@@ -12,7 +12,8 @@ import type { PinDetailRead } from "@tachyon/engine/pins/PinStore.js";
 import type { AgentInfo } from "@tachyon/engine/agents/AgentManager.js";
 import { legacySidebarTarget, type LegacySidebarSource, type WorkspaceSidebarTarget } from "../../apps/vscode-extension/src/shell/SidebarTarget.js";
 import type { ObservedModelInput } from "@tachyon/engine/sidebar/agentModel.js";
-import { SAMPLE, type FleetVM, type NoticeVM } from "@tachyon/shared/sidebar/types.js";
+import { type FleetVM, type NoticeVM } from "@tachyon/shared/sidebar/types.js";
+import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
 import type { SidebarFleetV1 } from "@tachyon/engine/runtime-api/sidebarProjection.js";
 import type { ScheduleProposal } from "@tachyon/engine/schedule/ProposalStore.js";
 

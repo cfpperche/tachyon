@@ -16,8 +16,12 @@ import {
   type VitestBudgetTrailEvent,
   type VitestClaim,
 } from "../../scripts/vitestBudget.js";
-import { recommendVitestMaxWorkers, type HostMemorySnapshot } from "@tachyon/engine/host/hostResources.js";
+import hostResourceSizing from "../../scripts/host-resource-sizing.cjs";
+import type hostMemory from "@tachyon/shared/host-memory.cjs";
 import hostResourceCostInputs from "@tachyon/shared/host-resource-cost-inputs.cjs";
+
+const { recommendVitestMaxWorkers } = hostResourceSizing;
+type HostMemorySnapshot = hostMemory.HostMemorySnapshot;
 
 /**
  * t-3ad4af — the defect was a SUM, so every test here is about more than one sizer.

@@ -12,9 +12,9 @@
  *      parameter that separates a dashboard (one panel per section per project) from a document (one panel
  *      per identity). Twelve hand-written managers were rejected in `spec.md` precisely so that this stays
  *      a row in a table rather than a class to read;
- *   2. what does the bundle budget measure. `cockpitBundleBudget.test.ts` measured one hardcoded filename
- *      (`dist/webview/cockpit.js`); with N apps that shape cannot survive, so its successor walks THIS list
- *      and measures every app's eager entry plus the reachable total.
+ *   2. what does the bundle budget measure. The budget numbers themselves live next to
+ *      `webviewAppBudget.test.ts` — not on these rows — so they do not ship in the extension host.
+ *      The test still walks THIS list; a new app without a budget key fails typecheck.
  *
  * `esbuild.mjs` cannot import a TypeScript module, so it carries its own `WEBVIEW_APP_VIEWS` array and
  * `test/unit/webviewAppBudget.test.ts` fails if the two ever disagree, in either direction. That is the same
@@ -78,39 +78,30 @@ interface WebviewAppBase {
    * dev fixture. Those declare `iconName` on their config instead.
    */
   section?: SectionId;
-  /**
-   * Budget for this app's EAGER entry — the bytes the webview must fetch and execute before it can paint
-   * anything. Lazily-imported route bodies land in chunks and are not counted here; the reachable total
-   * below is what bounds those.
-   */
-  eagerBudgetBytes: number;
 }
 
 export type WebviewAppEntry = WebviewAppBase & WebviewAppHost;
 
-/** 350 KB — SDD 410's eager gate, carried forward per app rather than for the one app that used to exist. */
-const EAGER_BUDGET_BYTES = 350 * 1024;
-
-export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
+const WEBVIEW_APP_ROWS = [
   // SDD 485 C1–C3's proof surface. Dev-only, never contributed as a command, never opened by
   // `extension.ts` — the same status as spec 350's two studio fakes, and like them it buys NO exemption
   // from the Phase A conformance contract (it is a `conform` row in `WEBVIEW_SURFACES`). It exists so the
   // mechanism this phase delivers is exercised by a REAL app rather than only by test doubles: a second
   // entry in the splitting invocation (without which "shared chunks" is a claim with no witness), a second
   // measurement for the budget test, and a live host wiring that C4/C5 can copy.
-  { view: "section-app-fixture", viewId: "tachyonSectionAppFixture", host: "section", cardinality: "document", eagerBudgetBytes: 64 * 1024 },
+  { view: "section-app-fixture", viewId: "tachyonSectionAppFixture", host: "section", cardinality: "document" },
   // SDD 485 C4 — the task detail, the FIRST shipped app on this mechanism and the motivating case the
   // "twelve sections" framing would have missed: `document`, so one panel per identity and two task
   // details stand side by side. It keeps the `tachyonTaskDetail` viewType SDD 410 retired to a
   // serializer-only tombstone, so a pre-410 window state revives INTO this app rather than redirecting
   // through Control (see TaskDetailPanel.ts).
-  { view: "task-detail", viewId: "tachyonTaskDetail", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "task-detail", viewId: "tachyonTaskDetail", host: "section", cardinality: "document" },
   // SDD 485 D14 — one Pins document app per (project, pin). Read and edit are modes of this key.
-  { view: "pin-preview", viewId: "tachyonPinPreview", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "pin-preview", viewId: "tachyonPinPreview", host: "section", cardinality: "document" },
   // D13 — editing-only documents. "new" is the provisional creation identity; saved entities use their id.
-  { view: "terminal-studio-shell", viewId: "tachyonTerminalStudioShell", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
-  { view: "schedule-studio-shell", viewId: "tachyonScheduleStudioShell", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
-  { view: "agent-studio-shell", viewId: "tachyonAgentStudioShell", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "terminal-studio-shell", viewId: "tachyonTerminalStudioShell", host: "section", cardinality: "document" },
+  { view: "schedule-studio-shell", viewId: "tachyonScheduleStudioShell", host: "section", cardinality: "document" },
+  { view: "agent-studio-shell", viewId: "tachyonAgentStudioShell", host: "section", cardinality: "document" },
   // SDD 485 C5 — the Board, and the maintainer's motivating case #1 (the Board open beside an agent
   // terminal). `dashboard` is the whole of its difference from the task detail above: one panel per project,
   // and re-opening it reveals the panel that is already open rather than making a second. `view` stays
@@ -118,7 +109,7 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // stylesheets already ship under; the viewType is NEW (`tachyonBoard`) so the retired Board viewType's
   // serializer can keep redirecting a pre-410 panel instead of colliding with this one — the opposite call
   // from C4's, and for the opposite reason: that tombstone has no live redirect left to preserve.
-  { view: "board", viewId: "tachyonBoard", section: "mission", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "board", viewId: "tachyonBoard", section: "mission", host: "section", cardinality: "dashboard" },
   // SDD 485 D1 — the tmux Server Inspector, the FIRST Phase D migration and the app that introduced
   // `window`. The socket is one per user, shared by every workspace in the window (`WEBVIEW_SURFACES`
   // recorded that when 410 retired this panel: "no per-workspace scoping needed — the tmux socket is
@@ -133,7 +124,7 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // persists, since it has no project and no identity. So a pre-410 window state is not migrated, it is
   // already valid, and restore REVIVES instead of redirecting. (C4 reused its viewType for a weaker
   // version of this reason; C5 could not, because its tombstone carried an incompatible `wsHash`.)
-  { view: "inspector", viewId: "tachyonServerInspector", section: "tmux", host: "section", cardinality: "window", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "inspector", viewId: "tachyonServerInspector", section: "tmux", host: "section", cardinality: "window" },
   // SDD 485 D2 — Plugins, the SECOND Phase D migration and the second `dashboard`. Where D1's tmux found
   // the third cardinality by not fitting, this one is the case the spec's table always described: a plugin
   // install is a per-workspace fact end to end (the lockfile is `<workspaceRoot>/.tachyon/plugins-lock.json`,
@@ -145,7 +136,7 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // a dashboard key is made of, so restore REVIVES through a one-field rename (`migrateLegacy` in
   // PluginsPanel.ts) instead of disposing and reopening. That is C4's call rather than C5's, and the
   // difference is not the tombstone — all three were redirects — but whether the id still names the app.
-  { view: "plugins", viewId: "tachyonPlugins", section: "plugins", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "plugins", viewId: "tachyonPlugins", section: "plugins", host: "section", cardinality: "dashboard" },
   // SDD 485 D3 — Runtime Ops, the THIRD Phase D migration and the SECOND `window` app. It is also the
   // first surface whose cardinality contradicts its launcher neighbour, which is why the reason is here
   // rather than only in the host file: the tile beside it, Runtime CONFIG, is a `dashboard`
@@ -165,10 +156,10 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // `tachyonRuntimeOpsView`, names spec 367's retired WebviewView — a different surface KIND that was
   // never registered in production, so there is no record to revive and reuse would buy nothing. See
   // `RUNTIME_OPS_VIEW_TYPE`'s own comment for the full table of the five calls this series has now made.
-  { view: "runtime-ops", viewId: "tachyonRuntimeOps", section: "runtime", host: "section", cardinality: "window", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "runtime-ops", viewId: "tachyonRuntimeOps", section: "runtime", host: "section", cardinality: "window" },
   // SDD 485 D8 — unlike adjacent Runtime Ops, buildSnapshot(wsHash) reads one workspace root.
   // New id: Runtime Config was born inside Control and has no retired standalone panel.
-  { view: "runtime-config", viewId: "tachyonRuntimeConfig", section: "runtime-config", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "runtime-config", viewId: "tachyonRuntimeConfig", section: "runtime-config", host: "section", cardinality: "dashboard" },
   // SDD 485 D4 — the Human Inbox, the FOURTH Phase D migration and the third `dashboard`. D3 established
   // that "it is a Control section" says nothing about cardinality and that the question is whether the
   // surface's data source ACCEPTS a project; here the answer is yes, everywhere, and it predates this
@@ -195,8 +186,8 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // (`section` → `controlSectionIcon`), so this row declares `section: "inbox"` and the host declares no
   // `iconName` at all. That fix is what stops the tab and the tile wearing different glyphs — the exact
   // divergence a fourth hand-written `iconName` would have re-opened.
-  { view: "human-inbox", viewId: "tachyonHumanInbox", section: "inbox", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
-  { view: "handoff", viewId: "tachyonHandoff", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "human-inbox", viewId: "tachyonHumanInbox", section: "inbox", host: "section", cardinality: "dashboard" },
+  { view: "handoff", viewId: "tachyonHandoff", host: "section", cardinality: "dashboard" },
   // SDD 500 — System replaces D5's Engine app and D11's Overview app with ONE row, and it inherits the
   // cardinality both had for the same reason: `buildSectionsModel` accepts a wsHash and filters bundles
   // before producing `control.workspaces`, so every fact on this screen is rooted at one project.
@@ -207,36 +198,34 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   //
   // The viewId is NEW. Both retired ids named half of this screen, so reusing either would leave a name
   // in the manifest that lies about what it opens — the call C5 made, not C4's.
-  { view: "system", viewId: "tachyonSystem", section: "system", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "system", viewId: "tachyonSystem", section: "system", host: "section", cardinality: "dashboard" },
   // SDD 485 D6 — Worktrees is filtered by buildSectionsModel's wsHash before its classified rows are
   // exposed, so it is one dashboard per project. It never had a standalone id; use a new one.
-  { view: "worktrees", viewId: "tachyonWorktrees", section: "worktrees", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "worktrees", viewId: "tachyonWorktrees", section: "worktrees", host: "section", cardinality: "dashboard" },
   // t-5f2b5b — SDD 485 D7's Fleet app is GONE (owner decision, 2026-08-07: the sidebar Agents tab is the
   // only fleet). Its `tachyonFleet` viewType lives on only in extension.ts's dispose-only serializer loop,
   // which is where a retired id belongs — not here, where a row means "this surface still creates a panel".
   // SDD 485 D10 — companion and every mutation accept one wsHash. Settings was born in Control,
   // so there is no retired standalone id or persisted shape to revive.
-  { view: "settings", viewId: "tachyonSettings", section: "settings", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "settings", viewId: "tachyonSettings", section: "settings", host: "section", cardinality: "dashboard" },
   // SDD 485 D17 — Activity has no launcher tile. Its route and feed source both take the immutable
   // (workspace, agent) pair, so each pair is one document and two agents may remain open side by side.
   // The retired viewType still names this exact app; its legacy wsHash/agent state maps without residue.
-  { view: "activity", viewId: "tachyonActivity", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "activity", viewId: "tachyonActivity", host: "section", cardinality: "document" },
   // SDD 513 fatia 3 — worktree review as a document: one tab per (project, worktree), revealed
   // rather than duplicated. No launcher tile; the review command is the only open door.
-  { view: "review", viewId: "tachyonReview", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "review", viewId: "tachyonReview", host: "section", cardinality: "document" },
   // SDD 485 D18 — probeView(caller?) is one source with two immutable identity variants. Encoding the
   // workspace-wide scope and agent scope as distinct document identities keeps the existing cardinality:
   // every panel is still keyed by project + required identity, and the retired viewType/state revive whole.
-  { view: "probes", viewId: "tachyonProbes", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
-];
+  { view: "probes", viewId: "tachyonProbes", host: "section", cardinality: "document" },
+] as const satisfies readonly WebviewAppEntry[];
 
-/**
- * Budget for the whole REACHABLE graph of one app: its eager entry plus every chunk reachable from it.
- * The eager budget alone cannot see the cost this phase actually risks — code-splitting makes it trivial to
- * keep an entry small by pushing everything behind a dynamic import, and a reader six months from now
- * comparing against 410's ~244 KB deserves to know whether the reversal moved bytes or merely moved them.
- */
-export const WEBVIEW_APP_REACHABLE_BUDGET_BYTES = 2 * 1024 * 1024;
+/** Shipped manifest — widened so optional fields stay optional for every consumer. */
+export const WEBVIEW_APPS: readonly WebviewAppEntry[] = WEBVIEW_APP_ROWS;
+
+/** Literal app names from the manifest — the budget table is indexed by this union. */
+export type WebviewAppName = (typeof WEBVIEW_APP_ROWS)[number]["view"];
 
 /** the apps `SectionPanelManager` drives — everything except Control's departing singleton. */
 export function sectionApps(): WebviewAppEntry[] {

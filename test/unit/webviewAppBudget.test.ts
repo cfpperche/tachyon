@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { WEBVIEW_APPS, WEBVIEW_APP_REACHABLE_BUDGET_BYTES } from "../../apps/vscode-extension/src/webview/webviewApps.js";
+import { WEBVIEW_APPS, type WebviewAppName } from "../../apps/vscode-extension/src/webview/webviewApps.js";
+import { WEBVIEW_APP_EAGER_BUDGET_BYTES, WEBVIEW_APP_REACHABLE_BUDGET_BYTES } from "./webviewAppBudget.table.js";
 import { WEBVIEW_SURFACES } from "../../apps/vscode-extension/src/webview/surfaces.js";
 import { workspaceRoot } from "../helpers/repositorySourceScan.js";
 
@@ -78,8 +79,9 @@ describe("standalone webview app budgets (SDD 485 C3)", () => {
     for (const app of WEBVIEW_APPS) {
       expect(existsSync(entryFile(app.view)), `app '${app.view}' has no built entry at ${entryFile(app.view)}`).toBe(true);
       const size = statSync(entryFile(app.view)).size;
-      report.push(`${app.view}: ${kb(size)} of ${kb(app.eagerBudgetBytes)}`);
-      if (size > app.eagerBudgetBytes) over.push(`${app.view} eager entry is ${kb(size)} (budget ${kb(app.eagerBudgetBytes)})`);
+      const budget = WEBVIEW_APP_EAGER_BUDGET_BYTES[app.view as WebviewAppName];
+      report.push(`${app.view}: ${kb(size)} of ${kb(budget)}`);
+      if (size > budget) over.push(`${app.view} eager entry is ${kb(size)} (budget ${kb(budget)})`);
     }
     expect(over, `${over.join("; ")}\nmeasured: ${report.join(" · ")}`).toEqual([]);
   });

@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { CONTROL_SECTION_NAV } from "@tachyon/webview-ui/webview/sidebar/sectionNav.js";
-import { SAMPLE, type FleetVM } from "@tachyon/shared/sidebar/types.js";
-
+import { type FleetVM } from "@tachyon/shared/sidebar/types.js";
+import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
 const read = (file: string): string => readFileSync(file, "utf8");
 const SIDEBAR_TSX = "packages/webview-ui/src/webview/sidebar/App.tsx";
 
