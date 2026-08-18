@@ -22,10 +22,10 @@ _Generated from `plan.md` on 2026-08-17. Work top-to-bottom. Check boxes as task
 
 **Fatia 2 — a tela.**
 
-- [ ] `packages/webview-ui/src/webview/review/` — diff, régua clicável, notas.
-- [ ] Realce reaproveitando `highlight.js` como Activity faz, com a mesma disciplina de guarda.
-- [ ] Escala herdada do host; nada de valor escolhido nesta tela.
-- [ ] **Nada se revela sozinho.** Nenhuma chamada que abra, revele ou redimensione painel do VS Code.
+- [x] `packages/webview-ui/src/webview/review/` — diff, régua clicável, notas.
+- [x] Realce reaproveitando `highlight.js` como Activity faz, com a mesma disciplina de guarda.
+- [x] Escala herdada do host; nada de valor escolhido nesta tela.
+- [x] **Nada se revela sozinho.** Nenhuma chamada que abra, revele ou redimensione painel do VS Code.
 
 **Fatia 3 — a aba, e a aposentadoria.**
 
@@ -67,9 +67,13 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Visual QA
 
-- [ ] Evidence: a aba em duas larguras, com um diff de arquivo grande e duas notas visíveis — uma
-      migrada e uma `outdated`
-- [ ] Verdict:
+- [x] Evidence: a aba em duas larguras, com um diff de arquivo grande e duas notas visíveis — uma
+      migrada e uma `outdated` — `.vqa/t-832633/review-large-880.png` e `review-large-360.png`
+      (standalone `review-fatia2.html`; catalog route waits for fatia 3)
+- [x] Verdict: pass (advisory). 880 = lista ao lado do diff; 360 = empilha. Banner
+      "realce desativado neste arquivo (grande)" visível nas duas. Nota migrated na linha 1;
+      outdated no bloco "Notas fora do diff visível" acima dos hunks. Sem overflow horizontal.
+      Preocupações menores: paths truncam a 360; o `+` da régua é quieto.
 
 ## Cookbook
 
