@@ -220,8 +220,8 @@ describe("ClientWorkspaceStudioTarget", () => {
       operationId: () => `studio-operation-partial-${++submits}`,
     });
 
-    // Exactly what `tachyon._upsertAgent` is handed by the editor-host suite: a form carrying only
-    // the fields the scenario sets. Before t-8247ec this never left the shell.
+    // Partial terminal/schedule forms — the remaining studio.submit arms. The editor-host probe
+    // (`kind: "agent"`) is a different door and is asserted below; this case is t-8247ec only.
     const partial = { name: "dev", cmd: "npm run dev", kind: "terminal" };
     await expect(target.studioSubmit({ state: partial as never })).resolves.toBeUndefined();
     await expect(target.studioSubmit({ state: { name: "release", kind: "schedule", schedTarget: "claude" } as never })).resolves.toBeUndefined();
@@ -229,6 +229,41 @@ describe("ClientWorkspaceStudioTarget", () => {
       method: "studio.submit",
       input: { state: { name: "dev", kind: "terminal", schedTiming: "every", schedAction: "spawn", catchUp: false } },
     });
+  });
+
+  it("refuses the editor-host legacy agent form as domain, not transport (t-f533f6)", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-studio-legacy-agent-"));
+    roots.push(root);
+    fs.writeFileSync(path.join(root, "tachyon.yml"), config("lint"), "utf8");
+    const identity = projectionIdentity(root);
+    const fake = new FakeWorkspaceClient({
+      identity,
+      snapshot: projectionSnapshot(identity),
+      invoke: async () => {
+        throw new Error("retired agent form must not reach transport");
+      },
+    });
+    const target = new ClientWorkspaceStudioTarget(fake, {
+      extensionUri: {} as StudioDeps["extensionUri"],
+      operationId: () => "studio-operation-legacy-agent",
+    });
+
+    // Exactly what `tachyon._upsertAgent` is handed by the editor-host suite. After SDD 496
+    // slice 5 the wire refuses `kind: "agent"`; canonicalizing it and invoking is how the
+    // real host surfaced `workspace command is invalid` instead of the domain refusal.
+    const probe = {
+      name: "studio-rev",
+      cmd: "claude --permission-mode plan",
+      kind: "agent",
+      instructions: "you are a code reviewer",
+      cwd: "",
+      autostart: false,
+      restartOnCrash: true,
+      attention: true,
+    };
+    await expect(target.studioSubmit({ state: probe as never }))
+      .resolves.toEqual(expect.arrayContaining([expect.stringContaining("inline agent editing is retired")]));
+    expect(fake.invocations).toEqual([]);
   });
 
   it("surfaces an engine command failure as transport failure instead of a validation error", async () => {
