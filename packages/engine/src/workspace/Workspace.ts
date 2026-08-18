@@ -6228,12 +6228,20 @@ export class Workspace {
     const owner = runtime === "claude"
       ? latestOwnerFor(readSessionOwners(sessionOwnersFile(this.workspaceRoot)), agent, rec.cwd)
       : undefined;
+    // t-58fb60 — a Temporary Claude launch initially persists its deterministic custom title in
+    // resume.sessionId (needed by refreshOwnership to resolve the transcript), while SessionStart
+    // records the runtime UUID that keys Claude's task store. Saved rows already persist that UUID.
+    const checklistSessionId = runtime === "claude"
+      && rec.instance?.lifetime === "temporary"
+      && owner?.sessionId
+      ? owner.sessionId
+      : rec.resume?.sessionId || owner?.sessionId;
     return readAgentInternalChecklist({
       runtime: runtime ?? undefined,
       workspaceRoot: this.workspaceRoot,
       agent,
       cwd: rec.cwd,
-      sessionId: rec.resume?.sessionId || owner?.sessionId,
+      sessionId: checklistSessionId,
       configHome: rec.resume?.configHome,
     });
   }
