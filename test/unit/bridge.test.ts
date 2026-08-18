@@ -1631,7 +1631,16 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       expect(JSON.stringify(result.content)).toContain("queued 'queued-sibling' for idle delivery");
       // t-fb1453 — the doorbell is tagged as authored BY the sender, which is what stops the flush
       // from discarding it once that sender is dismissed.
-      expect(deliveredNoticeMetadata).toEqual({ origin: "agent-authored", sourceChild: "claude", sourceIncarnation: 7 });
+      // t-b47fb2 — and it carries the witness position of the row `notify_agent` just appended, so the
+      // moment of delivery can advance the cursor beside the trail. Without it an engine restart
+      // cannot tell an undelivered doorbell from one the recipient already read.
+      expect(deliveredNoticeMetadata).toEqual({
+        origin: "agent-authored",
+        sourceChild: "claude",
+        sourceIncarnation: 7,
+        doorbellAt: readDoorbellEvents(pinsRoot).at(-1)?.at,
+      });
+      expect((deliveredNoticeMetadata as { doorbellAt?: string }).doorbellAt).toBeTypeOf("string");
       expect(sessions.get(`tachyon-${HASH}-queued-sibling`)).toBe("");
     } finally {
       noticeMode = "immediate";
