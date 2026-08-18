@@ -78,6 +78,43 @@ const vm: ReviewVM = {
   },
 };
 
+const LONG_PREFIX = "apps/vscode-extension/media/companion-mobile";
+const LONG_MAP = `${LONG_PREFIX}/app.js.map`;
+
+const longPathsVm: ReviewVM = {
+  ...vm,
+  files: [
+    { status: "M", path: LONG_MAP },
+    { status: "M", path: `${LONG_PREFIX}/app.js` },
+    { status: "A", path: `${LONG_PREFIX}/index.html` },
+    { status: "M", path: PATH },
+  ],
+  selectedPath: LONG_MAP,
+  notes: [],
+  diff: {
+    schemaVersion: 1,
+    format: "unified",
+    worktree: "reviewgrok",
+    path: LONG_MAP,
+    status: "M",
+    baseRef: "abc1234",
+    currentLabel: "worktree",
+    binary: false,
+    hunks: [{
+      oldStart: 1,
+      oldLines: 1,
+      newStart: 1,
+      newLines: 2,
+      header: "",
+      lines: [
+        { kind: "context", text: "{\"version\":3}", oldLine: 1, newLine: 1 },
+        { kind: "add", text: "{\"version\":3,\"file\":\"app.js\"}", oldLine: null, newLine: 2 },
+      ],
+    }],
+  },
+};
+
 export const reviewFixtures: Record<string, Fixture<ReviewVM>> = {
   default: { provenance: "synthetic-edge", vm },
+  "long-paths": { provenance: "synthetic-edge", vm: longPathsVm },
 };
