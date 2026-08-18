@@ -1,7 +1,6 @@
 /**
  * spec 342 dogfood round 2 (#4) / spec 350 T3 — Task Studio fixtures for the dev preview harness, migrated
- * onto the studio shell's protocol (`load`/`error`/`restore` envelopes) the same way pipeline-studio's
- * fixtures were (see fixtures/pipeline-studio.ts). `default`/`new` are the pre-migration scenarios kept
+ * onto the studio shell's protocol (`load`/`error`/`restore` envelopes). `default`/`new` are the pre-migration scenarios kept
  * byte-equivalent; `conflict` is new — the CAS precondition-failed banner (T4's shell-level proof).
  */
 

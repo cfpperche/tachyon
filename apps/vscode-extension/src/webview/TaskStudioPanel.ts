@@ -1,4 +1,4 @@
-import type { StudioPanelState } from "./shared/studio/StudioPanelManagerBase.js";
+import type { StudioPanelState } from "./shared/studio/StudioPanelState.js";
 import type { TaskPatch } from "@tachyon/webview-ui/webview/task-studio/domain";
 
 export const TASK_STUDIO_VIEW_TYPE = "tachyonTaskStudio";

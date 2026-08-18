@@ -38,7 +38,7 @@ export const EXTENSION_QUERY_ACTIONS = [
 ] as const;
 
 export const EXTENSION_COMMAND_ACTIONS = [
-  "pipeline.seed", "agent.spawn", "pin.create", "proposal.create",
+  "agent.spawn", "pin.create", "proposal.create",
   "proposal.approve", "proposal.reject", "approval.resolve", "config.agent.clone",
   "config.notifications.idleAfterMinutes", "config.agent.rename", "config.agent.delete", "config.agent.promote",
   "config.companion.tabTools",
@@ -144,7 +144,6 @@ export const tmuxPaneIdentitySchema = z.object({
 export type TmuxPaneIdentityV1 = z.infer<typeof tmuxPaneIdentitySchema>;
 
 export const extensionCommandSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("pipeline.seed"), name }).strict(),
   z.object({ action: z.literal("agent.spawn"), agent: name, options: spawnOptions.optional() }).strict(),
   z.object({ action: z.literal("pin.create"), text: text(64 * 1024, 1), by: name, done: z.boolean() }).strict(),
   z.object({ action: z.literal("proposal.create"), name, schedule, by: name, reason: text(2_000, 1).optional() }).strict(),

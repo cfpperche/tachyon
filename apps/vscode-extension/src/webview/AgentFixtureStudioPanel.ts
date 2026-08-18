@@ -7,8 +7,7 @@ import type { AgentFixtureVM } from "@tachyon/webview-ui/webview/agent-studio-fi
  * spec 350 T5 — Fake 2 (Agent-entity fixture) host wiring: exists ONLY so this surface is a real, openable
  * preact bundle per the webview convention manifest (surfaces.ts / webviewConvention.test.ts) — it is NEVER
  * instantiated or registered from extension.ts (test + preview route only, no command, per the spec). A
- * static single VM, no adapter, no StudioPanelManagerBase — this fixture proves region composition, not
- * lifecycle (Fake 1 / PipelineStudioPanel.ts already proves the lifecycle).
+ * static single VM, no adapter — this fixture proves region composition, not lifecycle.
  */
 export function openAgentFixtureStudio(extensionUri: vscode.Uri, vm: AgentFixtureVM): vscode.WebviewPanel {
   const root = vscode.Uri.joinPath(extensionUri, "dist", "webview");

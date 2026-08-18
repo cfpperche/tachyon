@@ -53,7 +53,6 @@ import { mintPinId } from "@tachyon/engine/pins/PinStore.js";
 import { AGENT_STUDIO_SHELL_VIEW_TYPE, AgentStudioPanelManager, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
 import { TERMINAL_STUDIO_SHELL_VIEW_TYPE, TerminalStudioPanelManager, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
 import { SCHEDULE_STUDIO_SHELL_VIEW_TYPE, ScheduleStudioPanelManager, type ScheduleStudioPanelState } from "./webview/ScheduleStudioPanel.js";
-import { PipelineStudioPanelManager, PIPELINE_STUDIO_VIEW_TYPE, type PipelineStudioPanelState } from "./webview/PipelineStudioPanel.js";
 import { registerIdeBrowserBridge } from "./webview/ide-browser-bridge/register.js";
 import { registerTachyonChatBridge } from "./webview/chat-bridge/register.js";
 import { normalizeAgentRows } from "./webview/chat-bridge/ops.js";
@@ -1796,8 +1795,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     pluginSurfaces.refreshAll();
     for (const manager of Object.values(studioPanels)) manager.refreshReferenceData();
   };
-  const pipelineStudioPanels = new PipelineStudioPanelManager(context.extensionUri, refreshAll);
-  context.subscriptions.push({ dispose: () => pipelineStudioPanels.dispose() });
   // SDD 485 C4 — Task Detail is a standalone `document` app again: one editor tab per (project, task),
   // so two task details stand side by side and neither is retargeted by a later scope change. Control
   // asks it to open a tab (`deps.taskDetail.openDocument`) and never renders one itself.
@@ -3183,7 +3180,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // than asking Control for a section it no longer renders.
     openBoard(state.wsKey);
   });
-  registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
   // SDD 485 D1 — the tmux app's own restore, and the cleanest revival in the whole spec: the panel VS Code
   // hands back is REUSED. This viewType is the one 410 retired, and its tombstone persisted
   // `{schemaVersion, view}` — exactly what a `window` app writes, since it has no project and no identity.
@@ -3225,7 +3221,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // representable. It was rejected (D2). Each old tab carries the title and icon of a surface that no
   // longer exists, and reviving it as System would leave a human holding a tab that says Overview and
   // draws something else. Disposing says the honest thing; the launcher's one tile is a click away.
-  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonDesignMode", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView", "tachyonFleet", "tachyonOverview", "tachyonEngine"]) {
+  // t-edfe12 — `tachyonPipelineStudio` joins them: the Fake 1 studio was deleted, so a tab left open
+  // before the deletion has no manager to revive into. Dispose-only preserves spec 361 (every panel
+  // still has a serializer) without shipping the in-memory test double.
+  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonPipelineStudio", "tachyonDesignMode", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView", "tachyonFleet", "tachyonOverview", "tachyonEngine"]) {
     registerDisposePanelSerializer(context, viewType);
   }
 
@@ -3366,12 +3365,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon._agents", (hash?: string) => {
       const ws = byHash(hash);
       return ws ? extensionQuery(ws, { action: "agents.list" }) : [];
-    }),
-    vscode.commands.registerCommand("tachyon._seedPipelineRun", async (name: string, hash?: string) => {
-      const ws = byHash(hash);
-      if (!ws) return null;
-      const result = jsonObject(await extensionInvoke(ws, { action: "pipeline.seed", name }), "pipeline.seed");
-      return typeof result.runId === "string" ? result.runId : null;
     }),
     vscode.commands.registerCommand(
       "tachyon._spawn",

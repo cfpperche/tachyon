@@ -1,7 +1,7 @@
 import type * as vscode from "vscode";
 import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
-import type { StudioPanelState } from "./shared/studio/StudioPanelManagerBase.js";
+import type { StudioPanelState } from "./shared/studio/StudioPanelState.js";
 import type { ScheduleStudioPatch } from "@tachyon/webview-ui/webview/schedule-studio-shell/domain";
 import { SingleModeStudioPanelManager } from "./shared/studio/SingleModeStudioPanelManager.js";
 import { STUDIO_REGISTRY } from "./shared/studio/studioRegistry.js";

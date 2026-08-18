@@ -5,7 +5,7 @@
  * entity falls through to "New Agent" / "New Pipeline" and asserts a create-flow the human is not
  * in. What the screen knows is which studio it is; the banner already says the load failed.
  *
- * Pure helper (no JSX) so unit tests and pipeline-studio can share the same formula without
+ * Pure helper (no JSX) so unit tests and studio shells can share the same formula without
  * pulling the Preact surface module.
  */
 export function studioLoadErrorTitle(entityType: string): string {
