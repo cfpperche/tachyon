@@ -333,6 +333,37 @@ everyone who later has to read it. Three rules, each bought by a real mistake:
 Before adding machinery, say out loud which defect it prevents and when that defect last happened.
 If the answer is "it hasn't", write it down where a human reads instead.
 
+## A declared capability needs a deterministic mechanism
+
+The rules above are about OUR conventions, where writing it down is usually the honest answer. This
+one is about the opposite case, and it overrides them: **anything Tachyon offers as a capability —
+a `tachyon.yml` setting, a documented guarantee, a promise in the UI — must be backed by a mechanism
+that produces it deterministically. Never by an instruction, and never by hoping the agent complies.**
+
+The mechanism to reach for is a **native mechanism of the runtime, projected and controlled by
+Tachyon**: a hook, a config flag, a launch argument. Native, so it runs where the agent actually
+runs. Controlled by us, so it works for the person who installed Tachyon and wrote nothing else.
+
+Measure that mechanism per runtime before designing: which native affordance exists, whether it
+reaches a **Temporary** agent, and whether it can refuse rather than only observe. The three runtimes
+disagree, and the disagreement is the design. Measured 2026-08-17/18: Codex takes
+`-c hooks.<Event>=[…]` on the same argv that already carries lifecycle hooks; Claude takes hooks
+through `--settings`; Grok loads `$GROK_HOME/hooks/*.json` from its private home as always-trusted
+Global scope. All three reach a Temporary agent, and refusal is proven — the `secrets-guard`
+PreToolUse hook blocks with `exit 2` and did so against this coordinator's own command.
+
+The incident that bought this rule, 2026-08-18: `settings.checklist.requireIn` is a shipped setting
+that promised agents would be required to write a plan. Someone who installs Tachyon, sets it, and
+writes nothing else gets **nothing** — the requirement was reachable only through an end-of-turn
+reminder whose trigger is a persistence Stop row that only *declared* agents write, and every
+delegated agent is Temporary. The coordinator's first answer was to write the requirement into THIS
+file, which fixed our workspace and left the product broken, because this file does not ship. A
+convention of ours is not a mechanism of the product.
+
+The two rules meet here: if a capability is not worth a mechanism, do not ship the setting that
+promises it. **A configuration field that declares a capability the system does not have is the same
+defect as code that declares state it does not hold** — it is just written in YAML.
+
 ## Hygiene
 
 - Remove a change worktree/branch only when clean, unoccupied, and contained in `main`. Preserve
