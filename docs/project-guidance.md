@@ -36,6 +36,17 @@ is wrong — a stuck agent is a symptom worth reading, not a rule to work around
   (`create_task`, kind `bug`), not a pin.
 - If you have a declared verify gate, run it and confirm it passes before reporting done; going idle
   is not proof that the work is green.
+- **Write an internal checklist before substantive work, and keep its statuses current.** On Codex
+  that is the `update_plan` tool; the other runtimes have their own. This is not paperwork: Tachyon
+  reads the checklist and shows it in the sidebar, so it is how the maintainer watches a delegated
+  turn without opening your pane. Measured on 2026-08-18 (`t-cb684f`,
+  `docs/research/t-cb684f-codex-checklist-reminder.md`): a controlled Codex agent that called
+  `update_plan` once produced a complete plan with per-step status in the ledger, and one that never
+  called it produced nothing — the channel works and distinguishes the two, so silence reads as "no
+  plan" rather than "unknown". Grok writes one unprompted; Codex does not, which is why this is
+  written down instead of assumed. Nothing blocks delivery if you skip it: the end-of-turn reminder
+  that was meant to catch this never fires for a delegated agent, because its trigger is a
+  persistence Stop row that only declared agents write. The instruction is the whole mechanism.
 - These coordination and delivery rules moved here from `bridgeGuidanceTail` on 2026-08-05
   (t-f050af): they are this repository's working convention, while the native-sub-agent visibility
   limitation is a product fact and remains in the delivered guidance.
