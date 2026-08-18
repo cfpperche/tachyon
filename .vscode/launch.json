@@ -13,6 +13,7 @@
       "envFile": "${workspaceFolder}/.tachyon/dev-host/launch.env",
       "env": {
         "TACHYON_DEV_HOST": "1",
+        "TACHYON_TEST_SEAMS": "1",
         "DISABLE_AUTOUPDATER": "1",
         "TACHYON_DEV_HOST_ENGINE_RUNTIME": "${workspaceFolder}/.tachyon/dev-host/runtime",
         "TACHYON_DEV_HOST_PROFILE_HOME": "${workspaceFolder}/.tachyon/dev-host/profile-home",
@@ -42,6 +43,7 @@
       "envFile": "${workspaceFolder}/.tachyon/dev-host/launch.env",
       "env": {
         "TACHYON_DEV_HOST": "1",
+        "TACHYON_TEST_SEAMS": "1",
         "DISABLE_AUTOUPDATER": "1",
         "TACHYON_DEV_HOST_ENGINE_RUNTIME": "${workspaceFolder}/.tachyon/dev-host/runtime",
         "TACHYON_DEV_HOST_PROFILE_HOME": "${workspaceFolder}/.tachyon/dev-host/profile-home",

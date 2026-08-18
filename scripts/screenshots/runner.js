@@ -4,6 +4,12 @@
  * marker files in $SHOTDIR (writes `ready`, waits for `done`) so an outside
  * ffmpeg grabs the frame at the right moment.
  *
+ * t-4486eb — the host process must already carry TACHYON_TEST_SEAMS=1 (see
+ * capture.sh). Setting it here covers a late activate() if the extension has
+ * not started yet; it cannot un-activate a host that booted without the var.
+ */
+process.env.TACHYON_TEST_SEAMS = "1";
+ *
  * Scenes (env SCENE): hero | observability | lineage | studio | multiroot | inspector | pins | schedules | walkthrough | worktree | review
  * Run one per invocation (see capture.sh). Targets the committed examples.
  */

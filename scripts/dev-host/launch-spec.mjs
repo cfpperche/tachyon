@@ -22,6 +22,9 @@ import path from "node:path";
 export function devHostEnv(slotRoot) {
   return {
     TACHYON_DEV_HOST: "1",
+    // t-4486eb — EDH headless dogfood uses tachyon._configHealth / _agents. Same
+    // env on F5 and headless so the two paths cannot disagree.
+    TACHYON_TEST_SEAMS: "1",
     // t-9eb7ef — Claude's native updater honors the redirected XDG_DATA_HOME for its version
     // binary, but still rewrites the owner's global ~/.local/bin/claude launcher. Keep updates off
     // only for runtimes born inside an EDH; the owner's normal shell is deliberately untouched.
