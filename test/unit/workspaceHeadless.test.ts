@@ -14,7 +14,7 @@ import { TmuxService, workspaceHash, sessionName, type ExecResult } from "@tachy
 import { registerTools } from "@tachyon/bridge/tools.js";
 import type { NotifyLevel } from "@tachyon/engine/workspace/EngineHost.js";
 import { ActivityLog, agentLogId } from "@tachyon/engine/activity/logStore.js";
-import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";
+import { appendOwnerRow, readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";
 import { ReloadTransactionStore } from "@tachyon/engine/host-action/index.js";
 import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
 
@@ -428,6 +428,68 @@ async function makeWorkspace(
   const ws = await createWorkspaceForTest(root, { host, onViewsChanged }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
   return { ws, host, tmux, sessions, sessionEnv, dead, sent, panes, calls };
 }
+
+describe("t-58fb60 — Workspace Claude checklist session identity", () => {
+  it("reads a Temporary agent's plan from the runtime UUID owned by its live session", async () => {
+    const { ws } = await makeWorkspace(() => {}, { bRuntime: "claude" });
+    const configHome = mkdir();
+    const runtimeSessionId = "39d750e1-50e4-4cdf-8f48-d75102f91ebe";
+    try {
+      fs.mkdirSync(path.join(configHome, "tasks", runtimeSessionId), { recursive: true });
+      fs.writeFileSync(
+        path.join(configHome, "tasks", runtimeSessionId, "1.json"),
+        JSON.stringify({ id: "1", subject: "Temporary Claude plan", status: "in_progress" }),
+      );
+      ws.ledger.record("b", {
+        cwd: ws.workspaceRoot,
+        updatedAt: "test",
+        instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false },
+        resume: { runtime: "claude", sessionId: "tachyon-tachyon-b", configHome },
+      });
+      appendOwnerRow(sessionOwnersFile(ws.workspaceRoot), {
+        agent: "b",
+        sessionId: runtimeSessionId,
+        transcriptPath: path.join(configHome, "projects", "workspace", `${runtimeSessionId}.jsonl`),
+        cwd: ws.workspaceRoot,
+        source: "startup",
+        ts: "2026-08-18T00:00:00.000Z",
+      });
+
+      expect(ws.internalChecklist("b").snapshot).toEqual({
+        state: "snapshot",
+        items: [{ id: "1", text: "Temporary Claude plan", status: "in-progress" }],
+      });
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("keeps reading a Saved agent's plan from its persisted runtime UUID", async () => {
+    const { ws } = await makeWorkspace(() => {}, { bRuntime: "claude" });
+    const configHome = mkdir();
+    const persistedSessionId = "05dfb028-5b5a-47f2-92dc-7820467f9a83";
+    try {
+      fs.mkdirSync(path.join(configHome, "tasks", persistedSessionId), { recursive: true });
+      fs.writeFileSync(
+        path.join(configHome, "tasks", persistedSessionId, "1.json"),
+        JSON.stringify({ id: "1", subject: "Saved Claude plan", status: "pending" }),
+      );
+      ws.ledger.record("b", {
+        cwd: ws.workspaceRoot,
+        updatedAt: "test",
+        instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true },
+        resume: { runtime: "claude", sessionId: persistedSessionId, configHome },
+      });
+
+      expect(ws.internalChecklist("b").snapshot).toEqual({
+        state: "snapshot",
+        items: [{ id: "1", text: "Saved Claude plan", status: "pending" }],
+      });
+    } finally {
+      ws.dispose();
+    }
+  });
+});
 
 it("t-8168a7 review: durable turn evidence is positive only for the current session", async () => {
   const { ws } = await makeWorkspace();
