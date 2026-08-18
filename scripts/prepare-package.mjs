@@ -17,7 +17,9 @@ function walk(dir) {
 function stageNativeDependency(sourceRoot, targetRoot) {
   const shipped = ["package.json"];
   for (const file of walk(path.join(sourceRoot, "lib"))) {
-    shipped.push(path.relative(sourceRoot, file));
+    const rel = path.relative(sourceRoot, file).split(path.sep).join("/");
+    if (rel.endsWith(".map") || /\.test\.js$/.test(rel) || rel.includes("testUtils.")) continue;
+    shipped.push(rel);
   }
   for (const relative of ["build/Release", "prebuilds"]) {
     const directory = path.join(sourceRoot, relative);
@@ -133,6 +135,7 @@ export function withProductManifest(root, pack, { repositoryRoot = root } = {}) 
     throw new Error(`cannot sanitize package.json: ${manifestBackupName} does not match its source bytes`);
   }
   delete manifest.scripts;
+  delete manifest.devDependencies;
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   const staged = [];
   try {

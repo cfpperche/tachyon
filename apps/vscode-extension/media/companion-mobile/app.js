@@ -1186,4 +1186,3 @@ ${a3.proposedAction}`),
 // src/main.tsx
 var root = document.getElementById("app");
 if (root) R(/* @__PURE__ */ u3(App, {}), root);
-//# sourceMappingURL=app.js.map

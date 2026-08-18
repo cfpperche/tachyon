@@ -472,8 +472,9 @@ const previewShell = {
 };
 
 // spec 342 — the ui-gate webview bundle: an isolated page for the Radix-under-compat compat gate (T3), built
-// with the SAME preact/compat aliases as excalidraw so the gate proves what production actually ships. Never
-// shipped in the vsix (dev/CI-only surface, same as `preview`).
+// with the SAME preact/compat aliases as excalidraw so the gate proves what production actually ships.
+// Dev/CI-only: DEV_ARTIFACTS `/^dist\/webview\/ui-gate(?:\.|\/|$)/` in scripts/ship-boundary.mjs prunes the
+// built output from the vsix (this target stays on disk for the Radix/preact compat gate).
 const uiGate = {
   ...sidebar,
   entryPoints: ["packages/webview-ui/src/webview/ui-gate/main.tsx"],
@@ -504,7 +505,14 @@ function buildTailwind() {
 
 mkdirSync("dist/webview", { recursive: true });
 // SDD 485 E1 — reused build directories must not package the retired Control entry or stylesheet.
-for (const retired of ["cockpit.js", "cockpit.js.map", "cockpit.css"]) {
+for (const retired of ["cockpit.js", "cockpit.js.map", "cockpit.css"].concat([
+  "command-studio-shell.js",
+  "command-studio-shell.js.map",
+  "command-studio-shell.css",
+  "runbook-studio-shell.js",
+  "runbook-studio-shell.js.map",
+  "runbook-studio-shell.css",
+])) {
   rmSync(path.join("dist/webview", retired), { force: true });
 }
 // t-06a542 — wipe the previous content-hashed chunk tree before esbuild writes a new one. Leaving

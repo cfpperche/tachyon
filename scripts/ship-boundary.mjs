@@ -5,6 +5,8 @@ import cryptoDefault from "node:crypto";
 const DEV_ARTIFACTS = [
   /^dist\/webview-preview(?:\/|$)/,
   /^dist\/webview\/agent-studio-fixture(?:\.|\/|$)/,
+  /^dist\/webview\/ui-gate(?:\.|\/|$)/,
+  /^dist\/webview\/section-app-fixture(?:\.|\/|$)/,
   /\.map$/,
 ];
 
