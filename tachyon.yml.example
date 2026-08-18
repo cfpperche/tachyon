@@ -17,6 +17,10 @@ settings:
   auth: true # require a Bearer token on the MCP Bridge (recommended)
   # t-73885b / t-c94207 — require a checklist for listed task kinds. Absent or []
   # is the default (nobody). Quote '*' and '!kind'. Invalid values warn and are ignored.
+  # t-685a0c — this is a GATE, not a reminder: an agent working a covered kind has its
+  # first CHANGE (Edit/Write/shell) refused until it writes the plan, on claude, codex
+  # and grok alike. Reads and the plan tool always pass, the refusal names that runtime's
+  # plan tool, and delivery is never blocked. A kind nobody lists is never gated.
   # checklist:
   #   requireIn: [feature, architecture]
   projectGuidance:

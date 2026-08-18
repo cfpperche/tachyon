@@ -17,6 +17,11 @@
  * never completed, is asserting a state we do not have.
  *
  * Give-up records a journal line and warns. It never blocks delivery.
+ *
+ * t-685a0c — this is the REMINDER half and it stayed exactly as it was. The half that OBLIGES is
+ * `checklistGateHook.ts`: a PreToolUse gate that refuses the session's first CHANGE until the plan
+ * exists. The two read the same `requireIn` and never the same moment — end of turn here, first
+ * mutation there — so a reader who finds one should not assume it is the whole mechanism.
  */
 import { checklistRequiresKind } from "../config/checklistRequireIn.js";
 import type { InternalChecklistTurnJudgment } from "./internalChecklistTurn.js";

@@ -270,6 +270,10 @@ const HOOK_PURPOSE: ReadonlyArray<{ match: string; purpose: string; writes: stri
   { match: "handoff-pointer", purpose: "points the agent at the shared project handoff", writes: "(reads .tachyon/HANDOFF.md)" },
   { match: "persistence-stop-record", purpose: "marks the end of each turn", writes: ".tachyon/activity/persistence-stop.jsonl" },
   { match: "codex-tool-hook-record", purpose: "records Codex update_plan tool hooks", writes: ".tachyon/activity/codex-tool-hooks.jsonl" },
+  // t-685a0c — the one entry here that REFUSES rather than records. Named for the same reason the
+  // secrets-guard gate is: an operator reading "Not injected by Tachyon" on a security surface could
+  // delete the product's own gate believing it was their leftover.
+  { match: "checklist-gate", purpose: "refuses the first change until the required plan is written (settings.checklist.requireIn)", writes: "(reads the runtime's own plan ledger)" },
 ];
 
 /**

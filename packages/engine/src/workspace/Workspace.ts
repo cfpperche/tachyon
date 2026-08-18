@@ -175,6 +175,7 @@ import {
 import {
   InternalChecklistRepromptMonitor,
   parsePersistenceStopRows,
+  type AssignedPlanTask,
   type InternalChecklistRepromptState,
 } from "./InternalChecklistRepromptMonitor.js";
 import { judgeClaudeInternalChecklistTurn } from "../runtime/claudeInternalChecklistTurn.js";
@@ -257,7 +258,8 @@ import { buildProbeView, type ProbeView } from "../probe/probeView.js";
 import { ContinuityStore } from "../continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import { ActivityLog, agentLogId } from "../activity/logStore.js";
-import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, persistenceStopFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile, type OwnershipHookGroup } from "../activity/sessionOwners.js";
+import { codexToolHookFile, compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, persistenceStopFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile, type OwnershipHookGroup } from "../activity/sessionOwners.js";
+import { CHECKLIST_GATE_SCRIPT_SOURCE, checklistGateScriptPath, planChecklistGateHooks, type ChecklistGateSession } from "../runtime/checklistGateHook.js";
 import { planProjectedPluginHooks, readHookProjectionCandidates } from "../plugins/agentHookProjection.js";
 import { forgetAgent as forgetAgentFootprint } from "../agents/forgetAgent.js";
 import {
@@ -1087,7 +1089,10 @@ export class Workspace {
               cwd: opts?.cwd ?? this.workspaceRoot,
               configHome: opts?.configHome,
             }),
-          ...this.projectedSessionHooks("claude", name),
+          // t-685a0c — `configHome` is where THIS spawn's TaskCreate store lives, so the required-plan
+          // gate reads the same `<configHome>/tasks/<sessionId>` the sidebar does. Absent (a claude
+          // agent with no private home) the script falls back to `$CLAUDE_CONFIG_DIR`, then allows.
+          ...this.projectedSessionHooks("claude", name, { ...(opts?.configHome ? { configHome: opts.configHome } : {}) }),
         },
       ), // spec 245/312
       materializeCodexSessionStartHookConfig: (name, opts) => this.harness.materializeCodexSessionStartHookConfig(
@@ -1549,13 +1554,7 @@ export class Workspace {
           return [];
         }
       },
-      assignedTask: (agent) => {
-        const rows = this.taskStore.listRaw().filter((task) => task.assignee === agent);
-        const current = selectAssignedWork(rows, agent).current;
-        if (!current) return undefined;
-        const full = this.taskStore.find(current.id);
-        return { id: current.id, ...(full?.kind ? { kind: full.kind } : {}) };
-      },
+      assignedTask: (agent) => this.assignedPlanTask(agent),
       requireIn: () => this.config?.settings?.checklist?.requireIn,
       judgeTurn: (agent) => this.judgeInternalChecklistTurn(agent),
       loadState: () => this.loadInternalChecklistRepromptState(),
@@ -3985,24 +3984,108 @@ export class Workspace {
    * point for a delegated worktree, and why crash-recovery reproduces the same projection instead of
    * importing whatever settings happen to sit in the directory it woke up in.
    */
-  private projectedSessionHooks(runtime: string, agent: string): { projectedHooks?: Record<string, OwnershipHookGroup[]> } {
+  private projectedSessionHooks(
+    runtime: string,
+    agent: string,
+    session: ChecklistGateSession = {},
+  ): { projectedHooks?: Record<string, OwnershipHookGroup[]> } {
+    const hooks: Record<string, OwnershipHookGroup[]> = {};
     const policy = this.config?.settings.agentHookProjection;
-    if (!policy || Object.keys(policy).length === 0) return {};
-    const plan = planProjectedPluginHooks({
-      plugins: readHookProjectionCandidates(this.workspaceRoot),
-      runtime,
-      policy,
-    });
-    // Only what the human ASKED for and did not get is worth a toast. An unclassified plugin is the
-    // default state, not an incident, and reporting all thirteen of them on every spawn would train the
-    // reader to ignore the line that matters.
-    for (const entry of plan.withheld.filter((withheldEntry) => policy[withheldEntry.plugin] !== undefined)) {
-      this.host.notify(
-        this.t("agent '{0}': plugin '{1}' hooks were not projected into its session — {2}", agent, entry.plugin, entry.reason),
-        "warn",
-      );
+    if (policy && Object.keys(policy).length > 0) {
+      const plan = planProjectedPluginHooks({
+        plugins: readHookProjectionCandidates(this.workspaceRoot),
+        runtime,
+        policy,
+      });
+      // Only what the human ASKED for and did not get is worth a toast. An unclassified plugin is the
+      // default state, not an incident, and reporting all thirteen of them on every spawn would train the
+      // reader to ignore the line that matters.
+      for (const entry of plan.withheld.filter((withheldEntry) => policy[withheldEntry.plugin] !== undefined)) {
+        this.host.notify(
+          this.t("agent '{0}': plugin '{1}' hooks were not projected into its session — {2}", agent, entry.plugin, entry.reason),
+          "warn",
+        );
+      }
+      for (const [event, groups] of Object.entries(plan.hooks)) hooks[event] = [...groups];
     }
-    return Object.keys(plan.hooks).length > 0 ? { projectedHooks: plan.hooks } : {};
+    // t-685a0c — the required-plan gate rides the SAME per-spawn channel, appended rather than merged
+    // into the plugin groups: the two are independent decisions (a classified plugin, and a covered task
+    // kind) and either may be absent. Every runtime channel below unions the groups of one event, so a
+    // workspace with both installs both gates on PreToolUse and each keeps its own matcher.
+    for (const [event, groups] of Object.entries(this.checklistGateHooks(runtime, agent, session))) {
+      hooks[event] = [...(hooks[event] ?? []), ...groups];
+    }
+    return Object.keys(hooks).length > 0 ? { projectedHooks: hooks } : {};
+  }
+
+  /** The board work this agent is on, as the checklist mechanisms see it. One resolution, two callers. */
+  private assignedPlanTask(agent: string): AssignedPlanTask | undefined {
+    const rows = this.taskStore.listRaw().filter((task) => task.assignee === agent);
+    const current = selectAssignedWork(rows, agent).current;
+    if (!current) return undefined;
+    const full = this.taskStore.find(current.id);
+    return { id: current.id, ...(full?.kind ? { kind: full.kind } : {}) };
+  }
+
+  /**
+   * t-685a0c — `settings.checklist.requireIn` as a MECHANISM: the PreToolUse group that refuses this
+   * session's first mutating tool call until its plan ledger holds a plan.
+   *
+   * Lock 2 of the card is this method's shape, not a branch inside the hook: with no `requireIn`, no
+   * assigned task, or a kind the list does not cover, `planChecklistGateHooks` returns nothing and the
+   * session is spawned with no gate at all. The factory default therefore cannot take an agent hostage,
+   * and a negative control can SEE the difference between "no hook" and "a hook that allowed".
+   *
+   * Fail-open extends to materialization: if the script cannot be written, no command is emitted rather
+   * than a command pointing at a file that is not there.
+   */
+  private checklistGateHooks(runtime: string, agent: string, session: ChecklistGateSession): Record<string, OwnershipHookGroup[]> {
+    const requireIn = this.config?.settings?.checklist?.requireIn;
+    if (!requireIn || requireIn.length === 0) return {};
+    const scriptPath = this.ensureChecklistGateScript();
+    if (!scriptPath) return {};
+    return planChecklistGateHooks({
+      runtime,
+      requireIn,
+      taskKind: this.assignedPlanTask(agent)?.kind,
+      scriptPath,
+      planRoot: this.checklistGatePlanRoot(runtime, session),
+      failureFile: persistenceHookFailureFile(this.workspaceRoot),
+    }) ?? {};
+  }
+
+  /**
+   * Where the RUNTIME's own plan ledger lives — the same three the sidebar reads; no ledger of ours.
+   *
+   * Grok is the one that is not baked: its `updates.jsonl` sits under the private `$GROK_HOME` that
+   * HarnessManager materializes per spawn, and which of the four grok home doors applies is not known
+   * here. The script reads `$GROK_HOME` from its own environment instead — grok runs hook commands as
+   * child processes, so they inherit the home Tachyon injected (measured 2026-08-18 on grok 1.0.5). If
+   * that env were ever absent the script answers `unknown`, which allows.
+   */
+  private checklistGatePlanRoot(runtime: string, session: ChecklistGateSession): string | undefined {
+    if (runtime === "claude") return session.configHome ? path.join(session.configHome, "tasks") : undefined;
+    if (runtime === "codex") return codexToolHookFile(this.workspaceRoot);
+    return undefined;
+  }
+
+  /**
+   * Rewritten on EVERY spawn rather than once per Workspace lifetime, for the same reason the lifecycle
+   * recorders are: `.tachyon/activity/` is a directory a human may clean, and a cached "already written"
+   * would then emit a command pointing at a file that is gone. That failure is silent — the missing
+   * script exits 1, which blocks nothing — so the gate would quietly stop existing while still being
+   * reported as installed.
+   */
+  private ensureChecklistGateScript(): string | undefined {
+    const file = checklistGateScriptPath(this.workspaceRoot);
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, CHECKLIST_GATE_SCRIPT_SOURCE);
+      return file;
+    } catch {
+      // Fail OPEN: a gate we could not write is not a gate we may claim.
+      return undefined;
+    }
   }
 
   private silentPersistenceHookStatePath(): string {
