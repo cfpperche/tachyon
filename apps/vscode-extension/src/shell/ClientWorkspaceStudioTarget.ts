@@ -85,6 +85,13 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
   }
 
   studioSubmit = async (submit: StudioSubmit): Promise<string[] | undefined> => {
+    // t-f533f6 — the untyped `tachyon._upsertAgent` seam still hands `kind: "agent"`.
+    // Protocol 8 (SDD 496 slice 5) refuses that arm on the wire, so invoking would
+    // surface INVALID_COMMAND. The product meaning is the domain refusal that
+    // Workspace.studioSubmit returned until t-34cae5 deleted it as dead.
+    if (legacyAgentStudioKind(submit)) {
+      return ["inline agent editing is retired — create or edit the canonical agent in Agent Studio"];
+    }
     const result = await this.client.invoke(this.operationId(), {
       schemaVersion: 1,
       method: "studio.submit",
@@ -376,6 +383,12 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     else if (read.status === "missing") this.lastGoodConfig = undefined;
     return this.lastGoodConfig;
   }
+}
+
+/** Untyped seam payloads can still carry the retired agent arm; FormState no longer does. */
+function legacyAgentStudioKind(submit: StudioSubmit): boolean {
+  const state = submit?.state as { kind?: unknown } | undefined;
+  return state !== undefined && typeof state === "object" && state.kind === "agent";
 }
 
 function readWorkspaceConfig(workspaceRoot: string): WorkspaceConfigReadResult {
