@@ -51,7 +51,8 @@
 /* t-5ea4c7 — toolbar search: HIDES non-matching cards, distinct from the agent-filter dropdown (dims only).
    t-6da5f0 — the box itself now carries the SAME padding token `.ds-input`/the KitSelect trigger use (not a
    split outer/inner padding that drifted from both), so all three header controls compute the same height. */
-.board-search { display: flex; align-items: center; gap: var(--ds-spacing-size80); background: var(--ds-input-bg); border: var(--ds-border-width) solid var(--ds-border); border-radius: 5px; padding: var(--ds-control-pad-y) var(--ds-control-pad-x); color: var(--ds-muted); }
+/* t-10f937 — reserve the populated footprint so conditionally mounting the clear button cannot resize the toolbar. */
+.board-search { display: flex; align-items: center; gap: var(--ds-spacing-size80); width: 243px; background: var(--ds-input-bg); border: var(--ds-border-width) solid var(--ds-border); border-radius: 5px; padding: var(--ds-control-pad-y) var(--ds-control-pad-x); color: var(--ds-muted); }
 .board-search .codicon-search { font-size: var(--ds-operator-body1); }
 .board-search input.ds-input { border: none; background: transparent; padding: 0; width: 160px; }
 .board-search input.ds-input:focus { outline: none; }

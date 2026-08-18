@@ -1,10 +1,20 @@
-import { useMemo, useState } from "preact/hooks";
+import { useMemo, useRef, useState } from "preact/hooks";
+import type { JSX } from "preact";
 import type { ChangedFile } from "@tachyon/engine/worktree/review.js";
 import type { ReviewNote } from "@tachyon/engine/worktree/reviewNotes.js";
 import { Badge, Button, EmptyState, Icon, PageChrome, Select, Textarea } from "../shared/ui";
 import { noteMigrated, notesOnLine, orphanedNotes, visibleNewLinesFrom } from "./notes";
 import { renderReviewDiff, type ReviewRenderLine } from "./render";
 import type { ReviewVM } from "./messages";
+import {
+  REVIEW_FILES_WIDTH_DEFAULT_REM,
+  REVIEW_FILES_WIDTH_MIN_REM,
+  REVIEW_FILES_WIDTH_STEP_REM,
+  clampFilesWidthRem,
+  filesWidthMaxRem,
+  readStoredFilesWidthRem,
+  writeStoredFilesWidthRem,
+} from "./filesWidth";
 
 export interface ReviewDispatch {
   selectFile(path: string): void;
@@ -125,15 +135,110 @@ function Composer({
   );
 }
 
+function rootFontPx(): number {
+  return parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+}
+
+function FilesSplit({
+  widthRem,
+  onWidthRem,
+}: {
+  widthRem: number | undefined;
+  onWidthRem: (rem: number) => void;
+}) {
+  const drag = useRef<{ x: number; width: number } | null>(null);
+  const [maxRem, setMaxRem] = useState(REVIEW_FILES_WIDTH_DEFAULT_REM * 4);
+
+  const measureMax = (): number => {
+    const body = document.querySelector(".review-body");
+    return filesWidthMaxRem(body?.clientWidth ?? 0, rootFontPx());
+  };
+
+  const commitFromPx = (widthPx: number): void => {
+    const max = measureMax();
+    setMaxRem(max);
+    onWidthRem(clampFilesWidthRem(widthPx / rootFontPx(), max));
+  };
+
+  const onPointerDown = (event: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
+    if (event.button !== 0) return;
+    const files = document.querySelector(".review-files");
+    if (!files) return;
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* synthetic pointer events in tests have no capture target */
+    }
+    drag.current = { x: event.clientX, width: files.getBoundingClientRect().width };
+    setMaxRem(measureMax());
+  };
+
+  const onPointerMove = (event: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
+    if (!drag.current) return;
+    commitFromPx(drag.current.width + (event.clientX - drag.current.x));
+  };
+
+  const onPointerUp = (): void => {
+    drag.current = null;
+  };
+
+  const onKeyDown = (event: JSX.TargetedKeyboardEvent<HTMLDivElement>): void => {
+    const now = widthRem ?? REVIEW_FILES_WIDTH_DEFAULT_REM;
+    const max = measureMax();
+    setMaxRem(max);
+    if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+      event.preventDefault();
+      onWidthRem(clampFilesWidthRem(now + REVIEW_FILES_WIDTH_STEP_REM, max));
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+      event.preventDefault();
+      onWidthRem(clampFilesWidthRem(now - REVIEW_FILES_WIDTH_STEP_REM, max));
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      onWidthRem(clampFilesWidthRem(REVIEW_FILES_WIDTH_MIN_REM, max));
+    } else if (event.key === "End") {
+      event.preventDefault();
+      onWidthRem(clampFilesWidthRem(max, max));
+    }
+  };
+
+  const now = widthRem ?? REVIEW_FILES_WIDTH_DEFAULT_REM;
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-controls="review-files"
+      aria-label="Resize file list"
+      aria-valuemin={REVIEW_FILES_WIDTH_MIN_REM}
+      aria-valuemax={maxRem}
+      aria-valuenow={now}
+      aria-valuetext={`${now} rem`}
+      tabIndex={0}
+      class="review-split"
+      data-testid="review-files-split"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onKeyDown={onKeyDown}
+    />
+  );
+}
+
 export function App({ vm, dispatch }: { vm?: ReviewVM; dispatch: ReviewDispatch }) {
   const [draftLine, setDraftLine] = useState<number | null>(null);
   const [agent, setAgent] = useState(vm?.agents[0]?.name ?? "");
+  const [filesWidthRem, setFilesWidthRem] = useState<number | undefined>(readStoredFilesWidthRem);
   const rendered = useMemo(() => (vm?.diff ? renderReviewDiff(vm.diff) : undefined), [vm?.diff]);
   const visibleNew = useMemo(() => visibleNewLinesFrom(rendered?.hunks ?? []), [rendered]);
   const orphans = useMemo(
     () => (vm?.selectedPath ? orphanedNotes(vm.notes, vm.selectedPath, visibleNew) : []),
     [vm, visibleNew],
   );
+
+  const setFilesWidth = (rem: number): void => {
+    setFilesWidthRem(rem);
+    writeStoredFilesWidthRem(rem);
+  };
 
   if (!vm) {
     return (
@@ -161,7 +266,7 @@ export function App({ vm, dispatch }: { vm?: ReviewVM; dispatch: ReviewDispatch 
               onChange={(event) => setAgent((event.currentTarget as HTMLSelectElement).value)}
               disabled={vm.agents.length === 0}
             >
-              {vm.agents.length === 0 ? <option value="">sem agente</option> : null}
+              {vm.agents.length === 0 ? <option value="">No agent available</option> : null}
               {vm.agents.map((row) => (
                 <option key={row.name} value={row.name}>{row.detail ? `${row.name} — ${row.detail}` : row.name}</option>
               ))}
@@ -181,8 +286,15 @@ export function App({ vm, dispatch }: { vm?: ReviewVM; dispatch: ReviewDispatch 
         }
       />
       {vm.error ? <p class="review-error" data-testid="review-error">{vm.error}</p> : null}
-      <div class="review-body">
-        <nav class="review-files" aria-label="Files">
+      <div
+        class="review-body"
+        style={
+          filesWidthRem === undefined
+            ? undefined
+            : ({ "--review-files-width": `${filesWidthRem}rem` } as JSX.CSSProperties)
+        }
+      >
+        <nav id="review-files" class="review-files" aria-label="Files">
           {vm.files.length === 0 ? (
             <p class="review-empty">No files changed.</p>
           ) : vm.files.map((file) => (
@@ -194,6 +306,7 @@ export function App({ vm, dispatch }: { vm?: ReviewVM; dispatch: ReviewDispatch 
             />
           ))}
         </nav>
+        <FilesSplit widthRem={filesWidthRem} onWidthRem={setFilesWidth} />
         <section class="review-pane" aria-label="Diff">
           {!selected ? (
             <EmptyState kind="empty" message="Select a file." />

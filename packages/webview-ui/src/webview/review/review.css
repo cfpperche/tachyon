@@ -48,11 +48,38 @@
 }
 
 .review-files {
-  width: 16rem;
+  /* t-2f7e8c — 16rem is the 0.93.13 default. --review-files-width is set only after a resize. */
+  width: var(--review-files-width, 16rem);
   flex: none;
   overflow: auto;
   border-right: var(--ds-border-width) solid var(--ds-border);
   padding: var(--ds-spacing-size80) 0;
+}
+
+/* Occupies the existing 1px border (negative margin eats the track width) so first paint
+   matches 0.93.13. The ::before hit target is a spacing token, not a new length. */
+.review-split {
+  position: relative;
+  flex: none;
+  width: var(--ds-border-width);
+  margin-left: calc(var(--ds-border-width) * -1);
+  align-self: stretch;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.review-split::before {
+  content: "";
+  position: absolute;
+  inset: 0 calc(var(--ds-spacing-size80) * -1);
+}
+
+.review-body:has(.review-split:active) {
+  user-select: none;
+  cursor: col-resize;
 }
 
 .review-file {
@@ -258,6 +285,9 @@
     max-height: 30%;
     border-right: none;
     border-bottom: var(--ds-border-width) solid var(--ds-border);
+  }
+  .review-split {
+    display: none;
   }
   .review-note,
   .review-composer {
