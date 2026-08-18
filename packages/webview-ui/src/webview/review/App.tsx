@@ -266,7 +266,7 @@ export function App({ vm, dispatch }: { vm?: ReviewVM; dispatch: ReviewDispatch 
               onChange={(event) => setAgent((event.currentTarget as HTMLSelectElement).value)}
               disabled={vm.agents.length === 0}
             >
-              {vm.agents.length === 0 ? <option value="">sem agente</option> : null}
+              {vm.agents.length === 0 ? <option value="">No agent available</option> : null}
               {vm.agents.map((row) => (
                 <option key={row.name} value={row.name}>{row.detail ? `${row.name} — ${row.detail}` : row.name}</option>
               ))}
