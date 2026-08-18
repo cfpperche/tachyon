@@ -6,11 +6,11 @@ _Generated from `plan.md` on 2026-08-17. Work top-to-bottom. Check boxes as task
 
 **Fatia 0 — medir o que a tela vai carregar. A 512 provou que isso poupa.**
 
-- [ ] Tamanho típico e máximo de um diff de worktree neste projeto: arquivos por review, linhas por
+- [x] Tamanho típico e máximo de um diff de worktree neste projeto: arquivos por review, linhas por
       arquivo, linhas totais. Amostra declarada — quais worktrees, quais commits.
-- [ ] Custo do realce com `highlight.js` no maior arquivo real. A guarda em Activity é de 20k por
+- [x] Custo do realce com `highlight.js` no maior arquivo real. A guarda em Activity é de 20k por
       bloco; um arquivo de 4.000 linhas é outra ordem. **Se for caro, degradar explicitamente.**
-- [ ] Unificado ou lado a lado: contra os diffs medidos, qual cabe na largura de uma aba sem cortar.
+- [x] Unificado ou lado a lado: contra os diffs medidos, qual cabe na largura de uma aba sem cortar.
 
 **Fatia 1 — o engine ganha hunk, e só isso.**
 
