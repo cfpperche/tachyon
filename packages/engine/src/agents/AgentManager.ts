@@ -71,6 +71,10 @@ import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } 
 import { sweepSessions } from "../tmux/sessionSweep.js";
 import type { FormationLifecyclePort } from "./formation/lifecycleConsumer.js";
 import { PARENT_CWD_REFUSAL } from "./spawnContract.js";
+// t-a281e7 — the mid-turn guard reuses the repo's ONE definition of "busy", the same predicate
+// write_input and the notice queue refuse on. A second, private notion of busy here is how the two
+// accounts drift apart.
+import { isEvidencedWorking } from "../prompts/injectFlow.js";
 
 /** A remembered pid is only a hint about WHICH process to measure. Pids are reusable, so existence
  *  alone cannot prove that the process still occupies this checkout. `/proc/<pid>/cwd` re-establishes
@@ -200,6 +204,36 @@ export class ResumeUnavailableError extends Error {
 }
 
 /**
+ * t-a281e7 — a lifecycle door tried to replace the process of an agent that is MID-TURN.
+ *
+ * Measured 2026-08-18 (`docs/research/t-83d04e-grok-parada-no-meio-do-turno.md`): the relaunch uses
+ * `-r <sessionId>`, which restores the CONVERSATION and not the TURN. The in-flight turn is
+ * discarded, the replacement comes up on an empty prompt, and the row reads `running: true` /
+ * `attention: idle` with nobody told. The runtime itself records
+ * `turn_ended outcome=cancelled cancellation_category=mid_turn_abort`, and the model's last
+ * utterance is not persisted anywhere — the cut erases its own trace. So the loss is silent AND
+ * unrecoverable, which is why this refuses instead of warning.
+ *
+ * NOT a `ResumeUnavailableError` on purpose: that class means "there is nothing to resume", and its
+ * callers (`Workspace.resumeAgent` / `resumeAllOffered`) answer it by spawning a FRESH session.
+ * Reusing it here would turn "your agent is busy" into "your agent's conversation was thrown away",
+ * which is strictly worse than the defect being fixed.
+ */
+export class AgentMidTurnError extends Error {
+  constructor(
+    readonly agent: string,
+    /** The lifecycle door that was refused — `resume` or `restart`. */
+    readonly door: "resume" | "restart",
+  ) {
+    super(
+      `cannot ${door} '${agent}': it is mid-turn, and replacing the process discards the in-flight turn ` +
+        `(resume restores the conversation, never the turn) — wait for it to go idle, or stop it first if the turn is meant to be lost`,
+    );
+    this.name = "AgentMidTurnError";
+  }
+}
+
+/**
  * Rebind-only view of generic resume readiness.  Unlike the cached sidebar boolean, this result
  * distinguishes a target that may still appear from a structural/authority denial that must never
  * cross the rebind teardown boundary.
@@ -236,6 +270,21 @@ export interface RestartOptions {
   session?: RestartSessionMode;
   /** Graceful wait budget before session-only hard kill. Default STOPPING_FALLBACK_MS. */
   gracefulTimeoutMs?: number;
+  /**
+   * t-a281e7 — WHICH AGENT asked, when an agent asked through the Bridge. Read only by the mid-turn
+   * guard, and only to answer one question: is the turn about to be discarded the caller's OWN?
+   *
+   * An agent restarting ITSELF is mid-turn by construction — the tool call it is making is the turn.
+   * Refusing that would not save work from a surprise; it would delete a governance-declared
+   * operation ("you may restart yourself") that no amount of waiting can ever unblock, because the
+   * caller cannot go idle while it is asking. Every OTHER-initiated replacement still refuses.
+   *
+   * A NAME rather than a "yes, do it" boolean, deliberately. The Bridge resolves it from the
+   * authenticated caller, and the comparison stays inside the guard, so this stays a fact about who
+   * asked rather than a force flag — which is what the next caller would reach for and how the hole
+   * would grow back.
+   */
+  initiatedBy?: string;
 }
 
 export interface RestartResult {
@@ -485,6 +534,20 @@ export interface AgentManagerOptions {
   getConfig: () => TachyonConfig | undefined;
   /** t-8168a7 — tri-state live/durable turn evidence, projected through list() for all consumers. */
   hasStartedTurn?: (name: string) => boolean | undefined;
+  /**
+   * t-a281e7 — the attention snapshot the mid-turn guard reads.
+   *
+   * Deliberately the completion-hint-aware `Workspace.attentionOf` and not the raw monitor: after
+   * `notify_agent` the sender is presented idle for every consumer while raw may still say working,
+   * and a guard that disagreed with `list_agents` would refuse a resume the sidebar shows as
+   * finished. Undefined (untracked — terminals run with attention monitoring off) is safe, matching
+   * every other consumer of `isEvidencedWorking`.
+   *
+   * ONE snapshot carries both halves, as `deliverNotice` reads them. Taking `state` here and
+   * `hasStartedTurn` from the sibling port above would let a poll landing between the two calls
+   * answer for two different instants — and the pair only means "busy" when it describes one.
+   */
+  attentionOf?: (name: string) => { state: string; hasStartedTurn?: boolean } | undefined;
   /**
    * t-0ad300 — agents that ARE declared in tachyon.yml and were refused, name → reason.
    *
@@ -4264,6 +4327,17 @@ export class AgentManager {
    */
   async restart(name: string, opts: RestartOptions = {}): Promise<RestartResult> {
     this.assertProfileLifecycleEnabled(name);
+    // t-a281e7 — the card reads `restart` as covered because it "passes through the same resume".
+    // Measured at the point of use, that holds for exactly ONE of its three modes:
+    //   graceful + resume → stops first, so `resume()` meets a pane that is already dead: too late.
+    //   force + new       → `restartFresh`; `resume()` is never called at all: never reached.
+    //   force + resume    → respawns in place, so `resume()`'s guard IS a real check here.
+    // Two modes out of three discard the turn without `resume()` ever getting a say, which is the
+    // t-e73e54 shape — one actor, another trigger. Row 4 is covered by asserting HERE, ahead of the
+    // stop phase. Still one rule in one function, called at the second door rather than reimplemented
+    // at it. Crash recovery and watch-restart arrive here too and are unaffected: a crashed agent is
+    // not alive, and a watched terminal runs with attention off (untracked → safe).
+    await this.assertNotMidTurn(name, "restart", opts.initiatedBy);
     const stop: RestartStopMode = opts.stop ?? RESTART_DEFAULTS.stop;
     const session: RestartSessionMode = opts.session ?? RESTART_DEFAULTS.session;
     const gracefulTimeoutMs = opts.gracefulTimeoutMs ?? AgentManager.STOPPING_FALLBACK_MS;
@@ -4292,7 +4366,7 @@ export class AgentManager {
           if (await this.opts.tmux.hasSession(this.session(name))) {
             await this.refreshOwnership(name);
           }
-          const attempt = await this.tryResumeAfterStop(name);
+          const attempt = await this.tryResumeAfterStop(name, opts.initiatedBy);
           if (attempt.resumed) {
             return { stop, session, resumed: true, forcedAfterGracefulTimeout };
           }
@@ -4305,7 +4379,7 @@ export class AgentManager {
       // cannot leave a live pane stuck in the graceful-stop UI state.
       this.clearStoppingState(name);
 
-      const attempt = session === "resume" ? await this.tryResumeAfterStop(name) : undefined;
+      const attempt = session === "resume" ? await this.tryResumeAfterStop(name, opts.initiatedBy) : undefined;
       if (attempt?.resumed) {
         return { stop, session, resumed: true, forcedAfterGracefulTimeout };
       }
@@ -4327,6 +4401,34 @@ export class AgentManager {
   private clearStopFailed(name: string): void {
     this.stopFailed.delete(name);
     this.stopFailureDetail.delete(name);
+  }
+
+  /**
+   * t-a281e7 — THE mid-turn guard. One assertion, called from every door that replaces a live
+   * process, because "who else can reach this?" is the question the original `resume()` never asked.
+   *
+   * It refuses only the case the measurement found: the target is LIVE **and** evidenced mid-turn.
+   * An idle agent stays resumable with no friction — that is the door's real use case. A dead pane
+   * has no turn to lose, which is what keeps the recovery paths working: activation auto-resume
+   * (`planResume` already classifies a live session as `reattach`), crash recovery, and the spec-380
+   * client rebind all reach `resume()` only after the process is gone, so they pass here untouched
+   * rather than needing an escape hatch that would grow into the hole this closes.
+   *
+   * `isEvidencedWorking` (not a bare `state === "working"`) is the repo's existing definition of
+   * busy, shared with `write_input` and the notice queue: a synthetic initial `working` snapshot on
+   * a freshly launched pane has no turn behind it, and refusing on it would break resume for an
+   * agent that never started one.
+   */
+  private async assertNotMidTurn(name: string, door: "resume" | "restart", initiatedBy?: string): Promise<void> {
+    // The ACTOR axis of the table, and the one exemption: a turn discarded by the agent living it is
+    // neither silent nor someone else's. See RestartOptions.initiatedBy for why it is a name.
+    if (initiatedBy === name) return;
+    const attention = this.opts.attentionOf?.(name);
+    if (!isEvidencedWorking(attention?.state, attention?.hasStartedTurn)) return;
+    // Ordered last: the tmux/ps probe is the expensive half, and an idle agent — the common case —
+    // never pays for it.
+    if (!(await this.isProcessAlive(name))) return;
+    throw new AgentMidTurnError(name, door);
   }
 
   /** True when the named entry has a live (non-dead) pane process. */
@@ -4373,12 +4475,16 @@ export class AgentManager {
    * the runtime or its transcript is gone), and the caller that has to explain the loss to a human
    * needs which one it was.
    */
-  private async tryResumeAfterStop(name: string): Promise<{ resumed: true } | { resumed: false; reason: string }> {
+  private async tryResumeAfterStop(name: string, initiatedBy?: string): Promise<{ resumed: true } | { resumed: false; reason: string }> {
     const record = this.opts.ledger?.get(name);
     if (!record) return { resumed: false, reason: "no session record for this agent (nothing was captured to resume)" };
     if (!record.resume) return { resumed: false, reason: "session record has no resume block (no prior session was captured)" };
     try {
-      await this.resume(name, record);
+      // t-a281e7 — carry WHO asked across the restart→resume seam. `force + resume` reaches here
+      // with the pane still live (it respawns in place rather than killing first), so resume's own
+      // guard is a second real check on this path — and without the caller it would refuse the
+      // self-restart that restart() just admitted, one line later and for the same agent.
+      await this.resume(name, record, { initiatedBy });
       return { resumed: true };
     } catch (err) {
       if (err instanceof ResumeUnavailableError) return { resumed: false, reason: err.reason };
@@ -4801,8 +4907,12 @@ export class AgentManager {
    * @param opts.deferBridgeStamp — internal spec-380 rebind handoff: the coordinator owns the
    *   healthy stamp after its post-launch liveness proof. Ordinary human resume leaves this false.
    */
-  async resume(name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean }): Promise<void> {
+  async resume(name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean; initiatedBy?: string }): Promise<void> {
     this.assertProfileLifecycleEnabled(name);
+    // t-a281e7 — before ANY validation that could be mistaken for the refusal: the sidebar ↻ and
+    // "Resume all" both land here on an agent that may be working right now. `initiatedBy` is set
+    // only by restart forwarding its own authenticated caller (see RestartOptions).
+    await this.assertNotMidTurn(name, "resume", opts?.initiatedBy);
     if (!record.resume) throw new ResumeUnavailableError(name, "record is not resumable (no resume block)");
     const { runtime } = record.resume;
     const cmd = record.def?.cmd;
