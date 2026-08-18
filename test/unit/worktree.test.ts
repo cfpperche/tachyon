@@ -616,5 +616,8 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
     expect(gitArgs.deleteBranch("tachyon/rev")).toEqual(["branch", "-D", "tachyon/rev"]);
     expect(gitArgs.checkRefFormat("a/b")).toEqual(["check-ref-format", "--branch", "a/b"]);
     expect(gitArgs.branchExists("b")).toEqual(["show-ref", "--verify", "--quiet", "refs/heads/b"]);
+    expect(gitArgs.diffUnified("abc1234", "src/a.ts")).toEqual(["diff", "abc1234", "--", "src/a.ts"]);
+    expect(gitArgs.diffUnified("abc1234", "src/a.ts", "def5678")).toEqual(["diff", "abc1234", "def5678", "--", "src/a.ts"]);
+    expect(gitArgs.lsTracked("src/a.ts")).toEqual(["ls-files", "--error-unmatch", "--", "src/a.ts"]);
   });
 });

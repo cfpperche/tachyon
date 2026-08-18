@@ -44,8 +44,13 @@ import {
   type ReviewMutationInputV1,
 } from "../runtime-api/reviewCommands.js";
 import {
+  isReviewDiffFileV1,
+  isReviewDiffQueryInputV1,
   isReviewNotesViewV1,
+  parseReviewDiffFileV1,
   parseReviewNotesViewV1,
+  type ReviewDiffFileV1,
+  type ReviewDiffQueryInputV1,
   type ReviewNotesViewV1,
 } from "../runtime-api/reviewProjection.js";
 import {
@@ -484,7 +489,7 @@ export type WorkspaceCommandResultV1 =
       message: string;
     };
 
-export type WorkspaceQueryMethodV1 = "activity.context" | "agent.working" | "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio" | "handoff.view" | "sidebar.view" | "runtime-ops.view" | "review.view" | "extension.query";
+export type WorkspaceQueryMethodV1 = "activity.context" | "agent.working" | "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio" | "handoff.view" | "sidebar.view" | "runtime-ops.view" | "review.view" | "review.diff" | "extension.query";
 
 export interface WorkspaceProbeViewRowV1 {
   runId: string;
@@ -577,6 +582,11 @@ export type WorkspaceQueryV1 =
     }
   | {
       schemaVersion: 1;
+      method: "review.diff";
+      input: ReviewDiffQueryInputV1;
+    }
+  | {
+      schemaVersion: 1;
       method: "extension.query";
       input: ExtensionQueryV1;
     };
@@ -650,6 +660,12 @@ export type WorkspaceQueryResultV1 =
     }
   | {
       schemaVersion: 1;
+      method: "review.diff";
+      status: "ok";
+      view: ReviewDiffFileV1;
+    }
+  | {
+      schemaVersion: 1;
       method: "extension.query";
       status: "ok";
       action: ExtensionQueryV1["action"];
@@ -710,6 +726,7 @@ export const HANDOFF_VIEW_RESPONSE_MAX_BYTES = 16 * 1024 * 1024;
 export const SIDEBAR_VIEW_RESPONSE_MAX_BYTES = 16 * 1024 * 1024;
 export const RUNTIME_OPS_VIEW_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 export const REVIEW_NOTES_VIEW_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
+export const REVIEW_DIFF_FILE_RESPONSE_MAX_BYTES = 8 * 1024 * 1024;
 export const EXTENSION_OPERATION_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "agent.start",
@@ -981,6 +998,7 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
   if (value.method === "handoff.view") return hasOnlyKeys(value.input, []);
   if (value.method === "sidebar.view") return hasOnlyKeys(value.input, []);
   if (value.method === "review.view") return isReviewNotesQueryInputV1(value.input);
+  if (value.method === "review.diff") return isReviewDiffQueryInputV1(value.input);
   if (value.method === "runtime-ops.view") {
     const expected = value.input.refreshDetection === undefined ? [] : ["refreshDetection"];
     return hasOnlyKeys(value.input, expected)
@@ -996,7 +1014,7 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
 
 export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQueryResultV1 {
   if (!isRecord(value) || value.schemaVersion !== 1
-    || (value.method !== "activity.context" && value.method !== "agent.working" && value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio" && value.method !== "handoff.view" && value.method !== "sidebar.view" && value.method !== "runtime-ops.view" && value.method !== "review.view" && value.method !== "extension.query")) return false;
+    || (value.method !== "activity.context" && value.method !== "agent.working" && value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio" && value.method !== "handoff.view" && value.method !== "sidebar.view" && value.method !== "runtime-ops.view" && value.method !== "review.view" && value.method !== "review.diff" && value.method !== "extension.query")) return false;
   if (value.status === "ok") {
     if (value.method === "agent.working") {
       return hasOnlyKeys(value, ["schemaVersion", "method", "status", "agents"])
@@ -1029,7 +1047,9 @@ export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQuer
                       ? isSidebarViewV1(value.view)
                       : value.method === "review.view"
                         ? isReviewNotesViewV1(value.view)
-                        : isRuntimeOpsSnapshot(value.view));
+                        : value.method === "review.diff"
+                          ? isReviewDiffFileV1(value.view)
+                          : isRuntimeOpsSnapshot(value.view));
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -1067,6 +1087,12 @@ export function isWorkspaceQueryResultBoundToInput(
   }
   if (query.method === "review.view" && result.method === "review.view") {
     return result.view.worktree === query.input.worktree && result.view.k === query.input.k;
+  }
+  if (query.method === "review.diff" && result.method === "review.diff") {
+    return result.view.worktree === query.input.worktree
+      && result.view.path === query.input.path
+      && result.view.baseRef === query.input.baseRef
+      && result.view.headRef === query.input.headRef;
   }
   return true;
 }
@@ -1379,6 +1405,20 @@ export function workspaceReviewNotesViewSuccessV1(view: ReviewNotesViewV1): Work
   const transportEnvelope = { ok: true as const, op: "query" as const, result };
   if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > REVIEW_NOTES_VIEW_RESPONSE_MAX_BYTES) {
     throw new Error("review notes view exceeds its dedicated response size limit");
+  }
+  return result;
+}
+
+export function workspaceReviewDiffFileSuccessV1(view: ReviewDiffFileV1): WorkspaceQueryResultV1 {
+  const result = {
+    schemaVersion: 1,
+    method: "review.diff",
+    status: "ok",
+    view: parseReviewDiffFileV1(view),
+  } as const;
+  const transportEnvelope = { ok: true as const, op: "query" as const, result };
+  if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > REVIEW_DIFF_FILE_RESPONSE_MAX_BYTES) {
+    throw new Error("review diff file exceeds its dedicated response size limit");
   }
   return result;
 }

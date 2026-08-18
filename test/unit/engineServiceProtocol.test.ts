@@ -30,6 +30,7 @@ import {
   workspaceSidebarViewSuccessV1,
   workspaceReviewMutationSuccessV1,
   workspaceReviewNotesViewSuccessV1,
+  workspaceReviewDiffFileSuccessV1,
   workspaceTaskDetailViewSuccessV1,
   workspaceTaskStudioApplySuccessV1,
   workspaceTaskStudioViewSuccessV1,
@@ -781,6 +782,45 @@ describe("persistent engine protocol", () => {
       result,
     )).toBe(false);
     if (result.status !== "ok" || result.method !== "review.view") throw new Error("expected review result");
+    expect(isWorkspaceQueryResultV1({ ...result, view: { ...result.view, extra: true } })).toBe(false);
+  });
+
+  it("validates review.diff as the one-path hunk door (t-1a76c5)", () => {
+    const query = {
+      schemaVersion: 1,
+      method: "review.diff",
+      input: { worktree: "hunkgrok", path: "src/a.ts", baseRef: "abc1234" },
+    } as const;
+    const withHead = {
+      ...query,
+      input: { ...query.input, headRef: "def5678" },
+    } as const;
+    expect(isWorkspaceQueryV1(query)).toBe(true);
+    expect(isWorkspaceQueryV1(withHead)).toBe(true);
+    expect(isWorkspaceQueryV1({ ...query, input: { ...query.input, extra: true } })).toBe(false);
+    expect(isWorkspaceQueryV1({ ...query, input: { worktree: "hunkgrok", path: "src/a.ts" } })).toBe(false);
+    expect(isWorkspaceQueryV1({ ...query, input: { worktree: "../escape", path: "src/a.ts", baseRef: "abc1234" } })).toBe(false);
+    expect(isWorkspaceQueryV1({ schemaVersion: 1, method: "review.diff", input: { worktree: "hunkgrok", baseRef: "abc1234" } })).toBe(false);
+
+    const result = workspaceReviewDiffFileSuccessV1({
+      schemaVersion: 1,
+      format: "unified",
+      worktree: "hunkgrok",
+      path: "src/a.ts",
+      status: "M",
+      baseRef: "abc1234",
+      currentLabel: "worktree",
+      binary: false,
+      hunks: [],
+    });
+    expect(isWorkspaceQueryResultV1(result)).toBe(true);
+    expect(isWorkspaceQueryResultBoundToInput(query, result)).toBe(true);
+    expect(isWorkspaceQueryResultBoundToInput(
+      { ...query, input: { ...query.input, path: "src/other.ts" } },
+      result,
+    )).toBe(false);
+    expect(isWorkspaceQueryResultBoundToInput(withHead, result)).toBe(false);
+    if (result.status !== "ok" || result.method !== "review.diff") throw new Error("expected review.diff result");
     expect(isWorkspaceQueryResultV1({ ...result, view: { ...result.view, extra: true } })).toBe(false);
   });
 
