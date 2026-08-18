@@ -16,6 +16,18 @@
   min-height: 0;
 }
 
+/* t-abe33b — local opt-out: review is a two-column data surface, not a document.
+   Header keeps the .ds-page inset; the body bleeds to the frame. Do not change .ds-page. */
+.review-root.ds-page {
+  padding-left: 0;
+  padding-right: 0;
+  padding-bottom: 0;
+}
+
+.review-root > .ds-page-chrome {
+  padding-inline: var(--ds-page-pad-x);
+}
+
 .review-send {
   display: flex;
   flex-wrap: wrap;
