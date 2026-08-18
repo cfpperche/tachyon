@@ -1512,6 +1512,18 @@ function registerGlobalSettingsRecovery(context: vscode.ExtensionContext): void 
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  // t-45921f — Development/Test isolation belongs to the extension host, which knows the mode.
+  // Apply the seam before ANY global-settings consumer: the zero-folder recovery command and the
+  // one-time import both run before workspace boot. Production deliberately ignores the test/dev
+  // environment and keeps the store's documented os.homedir() default.
+  const settingsHome = context.extensionMode === vscode.ExtensionMode.Production
+    ? undefined
+    : process.env.TACHYON_GLOBAL_SETTINGS_HOME?.trim() || undefined;
+  if (settingsHome) {
+    const { useGlobalSettingsHome } = await import("@tachyon/engine/config/globalSettings.js");
+    useGlobalSettingsHome(settingsHome);
+  }
+
   initializeVsCodeNotifications(async (message, level) => {
     const clients = activeClientRegistry?.list() ?? [];
     if (clients.length === 0) throw new Error("no workspace engine is attached");
@@ -2808,11 +2820,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       ? SOCKET_NAME
       : (process.env.TACHYON_TMUX_SOCKET?.trim() || SOCKET_NAME);
   if (context.extensionMode !== vscode.ExtensionMode.Production) {
-    const settingsHome = process.env.TACHYON_GLOBAL_SETTINGS_HOME?.trim();
-    if (settingsHome) {
-      const { useGlobalSettingsHome } = await import("@tachyon/engine/config/globalSettings.js");
-      useGlobalSettingsHome(settingsHome);
-    }
     terminals.useSocket(tmuxSocketName);
   }
   const shellReleasePolicy = engineShellReleasePolicy(
