@@ -2,7 +2,7 @@ import { createContext, Fragment } from "preact";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Button, Badge, EmptyState, DenseRow } from "../shared/ui";
 import {
-  SAMPLE, TABS, searchIndex, isAgentRow,
+  TABS, searchIndex, isAgentRow,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
   type SidebarBootVM, type SidebarFolderPhase, type StatusNoticeVM,
 } from "@tachyon/shared/sidebar/types";
@@ -1287,7 +1287,7 @@ function StatusNoticeFooter({ notice }: { notice: StatusNoticeVM }) {
 }
 
 export function App({
-  fleets = [SAMPLE],
+  fleets = [],
   dispatch,
   prefs = {},
   collapsedKeys = [],

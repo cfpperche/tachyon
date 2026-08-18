@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { SAMPLE, TABS, type FleetVM, type NoticeVM, type TabId } from "@tachyon/shared/sidebar/types.js";
+import { TABS, type FleetVM, type NoticeVM, type TabId } from "@tachyon/shared/sidebar/types.js";
+import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
 import { attentionRows } from "@tachyon/webview-ui/sidebar/attentionStack";
 
 /**

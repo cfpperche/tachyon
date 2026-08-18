@@ -7,7 +7,8 @@ import { SidebarPrototypeProvider } from "../../apps/vscode-extension/src/webvie
 import { initializeVsCodeNotifications } from "../../apps/vscode-extension/src/workspace/notify.js";
 import { WEBVIEW_SURFACES } from "../../apps/vscode-extension/src/webview/surfaces.js";
 import { CONTROL_SECTION_NAV } from "@tachyon/webview-ui/webview/sidebar/sectionNav.js";
-import { SAMPLE, TABS, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.js";
+import { TABS, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.js";
+import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 
 /**

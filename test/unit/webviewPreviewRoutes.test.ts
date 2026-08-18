@@ -3,8 +3,7 @@ import { readFileSync } from "node:fs";
 import { transformSync } from "esbuild";
 import { FLEET, READY, fleetMessage, readyMessage } from "@tachyon/webview-ui/webview/sidebar/messages.js";
 import { ROUTES, buildCatalog } from "../../scripts/webview-preview/routes.js";
-import { SAMPLE } from "@tachyon/shared/sidebar/types.js";
-
+import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
 // spec 278 — Lane A: the shared envelope + the route table + the generated catalog. These are the pure,
 // CI-coverable core of the preview harness (the DOM glue in preview.ts is integration). The drift guard
 // itself (a constructor misuse → a typecheck error) is enforced by `tsc -p tsconfig.webview.json`, which

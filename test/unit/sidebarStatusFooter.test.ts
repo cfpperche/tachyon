@@ -8,8 +8,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { SAMPLE, TABS, type FleetVM, type StatusNoticeVM, type TabId } from "@tachyon/shared/sidebar/types.js";
-
+import { TABS, type FleetVM, type StatusNoticeVM, type TabId } from "@tachyon/shared/sidebar/types.js";
+import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
 const APP_TSX = path.resolve(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx");
 const SIDEBAR_CSS = path.resolve(__dirname, "../../packages/webview-ui/src/webview/sidebar/sidebar.css");
 

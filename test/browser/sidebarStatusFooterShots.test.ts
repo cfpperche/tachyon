@@ -5,8 +5,8 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync, statSync } from "node:f
 import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { SAMPLE, type FleetVM, type StatusNoticeVM, type TabId } from "@tachyon/shared/sidebar/types.js";
-
+import { type FleetVM, type StatusNoticeVM, type TabId } from "@tachyon/shared/sidebar/types.js";
+import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
 /**
  * t-bd9fb8 / SDD 512 fatia 2 — headless Visual QA + height cost of the status footer.
  *
