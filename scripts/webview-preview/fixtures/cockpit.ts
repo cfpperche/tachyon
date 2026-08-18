@@ -162,6 +162,11 @@ export const strings: CockpitStrings & WorktreesStrings = {
   globalSettingsCodeThemeAuto: "Follow the editor",
   globalSettingsCodeThemeDark: "Dark",
   globalSettingsCodeThemeLight: "Light",
+  globalSettingsFont: "UI font",
+  globalSettingsFontHelp: "Monospace family for Tachyon screens. Size still follows the editor.",
+  globalSettingsFontTachyon: "Tachyon Mono",
+  globalSettingsFontDeparture: "Departure Mono",
+  globalSettingsFontNeedsReopen: "this page updates now; other surfaces apply the next time they are opened",
   globalSettingsAgentPane: "Agent pane",
   globalSettingsAgentPaneHelp: "The first-party agent pane. The integrated terminal stays available either way.",
   globalSettingsGitPath: "Path to git",
@@ -1071,7 +1076,20 @@ export const cockpitFixtures: Record<string, Fixture<SectionsModel>> = {
   },
   "runtime-config": { provenance: "synthetic-edge", vm: buildSectionsModel(bundles, { section: "runtime-config", nowIso: now }) },
   worktrees: { provenance: "synthetic-edge", vm: buildSectionsModel(bundles, { section: "worktrees", nowIso: now }) },
-  settings: { provenance: "synthetic-edge", vm: buildSectionsModel(bundles, { section: "settings", nowIso: now }) },
+  settings: {
+    provenance: "synthetic-edge",
+    vm: buildSectionsModel(bundles, {
+      section: "settings",
+      nowIso: now,
+      globalSettings: {
+        file: "/home/you/.tachyon/settings.json",
+        activityCodeTheme: "auto",
+        agentPaneEnabled: true,
+        gitPath: "",
+        fontMono: "tachyon",
+      },
+    }),
+  },
   empty: { provenance: "synthetic-edge", vm: buildSectionsModel([], { section: "system", nowIso: now }) },
   // t-d16a39 — the shell workspace selector: visible under "All workspaces" and scoped to one.
   "multi-workspace": {

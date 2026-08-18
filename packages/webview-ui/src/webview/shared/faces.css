@@ -1,6 +1,8 @@
 /*
  * SDD 505 Slice 1 — bundled font faces only.
  * Agent Pane deliberately skips this sheet because Tachyon Mono changes xterm cell metrics.
+ * t-d770ac — Departure Mono is the opt-in second family. Same skip applies: it is wider
+ * (7.636 px/ch vs Tachyon 7.200 at 12px, Chrome 151) and must not reach xterm.
  */
 
 @font-face {
@@ -30,4 +32,21 @@
   font-weight: 700;
   font-style: normal;
   font-display: swap;
+}
+@font-face {
+  font-family: "Departure Mono";
+  src: url("fonts/departure/DepartureMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/*
+ * Lives here, not in tokens.css: Agent Pane loads tokens and skips this sheet.
+ * Putting the override on tokens.css would retarget --tachyon-font-mono on the
+ * pane even without @font-face, and a system-installed Departure would then
+ * change xterm cell metrics.
+ */
+html[data-tachyon-font="departure"] {
+  --tachyon-font-mono: "Departure Mono", ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }

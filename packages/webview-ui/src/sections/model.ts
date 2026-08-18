@@ -386,6 +386,7 @@ export interface GlobalSettingsState {
   activityCodeTheme: "auto" | "dark" | "light";
   agentPaneEnabled: boolean;
   gitPath: string;
+  fontMono: "tachyon" | "departure";
   /** named errors when the document was refused and the last known good is in use */
   refusal?: string[];
 }

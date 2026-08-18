@@ -160,6 +160,11 @@ export interface CockpitStrings {
   globalSettingsCodeThemeAuto: string;
   globalSettingsCodeThemeDark: string;
   globalSettingsCodeThemeLight: string;
+  globalSettingsFont: string;
+  globalSettingsFontHelp: string;
+  globalSettingsFontTachyon: string;
+  globalSettingsFontDeparture: string;
+  globalSettingsFontNeedsReopen: string;
   globalSettingsAgentPane: string;
   globalSettingsAgentPaneHelp: string;
   globalSettingsGitPath: string;
@@ -396,7 +401,12 @@ export const openConfigFileAction = (wsHash?: string): CockpitAction => ({
 export const engineLogClearAction = (wsHash: string): CockpitAction => ({ type: "engineLogClear", wsHash });
 export const engineLogJournalAction = (wsHash: string): CockpitAction => ({ type: "engineLogJournal", wsHash });
 export const setGlobalSettingsAction = (
-  patch: { activityCodeTheme?: "auto" | "dark" | "light"; agentPaneEnabled?: boolean; gitPath?: string },
+  patch: {
+    activityCodeTheme?: "auto" | "dark" | "light";
+    agentPaneEnabled?: boolean;
+    gitPath?: string;
+    fontMono?: "tachyon" | "departure";
+  },
 ): CockpitAction => ({ type: "setGlobalSettings", patch });
 
 export const openGlobalSettingsFileAction = (): CockpitAction => ({ type: "openGlobalSettingsFile" });

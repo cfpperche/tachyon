@@ -283,5 +283,10 @@
   "Review notes were sent, but evidence was not recorded — worktree HEAD is unresolvable.": "Review notes were sent, but evidence was not recorded — worktree HEAD is unresolvable.",
   "Review notes sent to '{0}'.": "Review notes sent to '{0}'.",
   "Review — {0}": "Review — {0}",
-  "Nothing to send — there are no review notes yet.": "Nothing to send — there are no review notes yet."
+  "Nothing to send — there are no review notes yet.": "Nothing to send — there are no review notes yet.",
+  "UI font": "UI font",
+  "Monospace family for Tachyon screens. Size still follows the editor.": "Monospace family for Tachyon screens. Size still follows the editor.",
+  "Tachyon Mono": "Tachyon Mono",
+  "Departure Mono": "Departure Mono",
+  "this page updates now; other surfaces apply the next time they are opened": "this page updates now; other surfaces apply the next time they are opened"
 }

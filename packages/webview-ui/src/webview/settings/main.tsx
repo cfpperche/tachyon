@@ -1,6 +1,7 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { GlobalSettingsState, SectionsModel } from "../../sections/model";
+import { applyTachyonFont } from "../shared/applyTachyonFont";
 import { formatCompanionPairClipboard, openGlobalSettingsFileAction, setGlobalSettingsAction, type CockpitAction, type CockpitStrings, type CompanionPairOffer } from "../shared/control/messages";
 import { Button, PageChrome } from "../shared/ui";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
@@ -121,6 +122,28 @@ function GlobalSettingsBlock({
           <option value="light">{s.globalSettingsCodeThemeLight}</option>
         </select>
         <span class="ck-settings-toggle-help">{s.globalSettingsNeedsReopen}</span>
+      </div>
+
+      <div class="ck-settings-hosts-actions">
+        <label class="ck-settings-hosts-label" for="global-settings-font">
+          <strong>{s.globalSettingsFont}</strong>
+          <span class="ck-settings-toggle-help">{s.globalSettingsFontHelp}</span>
+        </label>
+        <select
+          id="global-settings-font"
+          class="ck-settings-hosts-input"
+          data-testid="global-settings-font"
+          value={settings.fontMono}
+          onChange={(e) => {
+            const fontMono = (e.target as HTMLSelectElement).value as "tachyon" | "departure";
+            applyTachyonFont(fontMono);
+            onPost(setGlobalSettingsAction({ fontMono }));
+          }}
+        >
+          <option value="tachyon">{s.globalSettingsFontTachyon}</option>
+          <option value="departure">{s.globalSettingsFontDeparture}</option>
+        </select>
+        <span class="ck-settings-toggle-help">{s.globalSettingsFontNeedsReopen}</span>
       </div>
 
       <label class="ck-settings-toggle">
@@ -651,5 +674,5 @@ declare function acquireVsCodeApi(): TachyonVsCodeApi;
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
 persistWebviewState(vscode);
 const post = (message: CockpitAction | SettingsAction) => vscode ? vscode.postMessage(message) : window.postMessage(message, "*");
-export function SettingsRoot() { const [model,setModel]=useState<SectionsModel>(); const [pairOffer,setPairOffer]=useState<CompanionPairOffer>(); const strings=(window as any).__TACHYON_STRINGS__ as CockpitStrings; useEffect(()=>{ const onMessage=(e:MessageEvent)=>{if(e.data?.type===MODEL)setModel(e.data.model);if(e.data?.type===pairOfferMessageType)setPairOffer(e.data.offer)}; window.addEventListener("message",onMessage); post(readyMessage()); const timer=setInterval(()=>post(pollSettingsAction()),3000); return()=>{clearInterval(timer);window.removeEventListener("message",onMessage)}},[]); return model?<main class="ds-page"><SettingsApp model={model} strings={strings} pairOffer={pairOffer} post={post}/></main>:null; }
+export function SettingsRoot() { const [model,setModel]=useState<SectionsModel>(); const [pairOffer,setPairOffer]=useState<CompanionPairOffer>(); const strings=(window as any).__TACHYON_STRINGS__ as CockpitStrings; useEffect(()=>{ const onMessage=(e:MessageEvent)=>{if(e.data?.type===MODEL)setModel(e.data.model);if(e.data?.type===pairOfferMessageType)setPairOffer(e.data.offer)}; window.addEventListener("message",onMessage); post(readyMessage()); const timer=setInterval(()=>post(pollSettingsAction()),3000); return()=>{clearInterval(timer);window.removeEventListener("message",onMessage)}},[]); useEffect(()=>{ if(model?.globalSettings) applyTachyonFont(model.globalSettings.fontMono); },[model?.globalSettings?.fontMono]); return model?<main class="ds-page"><SettingsApp model={model} strings={strings} pairOffer={pairOffer} post={post}/></main>:null; }
 const root=document.getElementById("root"); if(root) render(<ErrorBoundary><SettingsRoot/></ErrorBoundary>,root);

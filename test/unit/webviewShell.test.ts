@@ -29,6 +29,12 @@ describe("renderWebviewShell", () => {
     expect(renderWebviewShell({ ...base, bodyClass: "tac-theme-dark" })).toContain('<body class="tac-theme-dark">');
   });
 
+  it("emits data-tachyon-font only for the Departure opt-in — default stays attribute-absent", () => {
+    expect(renderWebviewShell(base)).not.toContain("data-tachyon-font");
+    expect(renderWebviewShell({ ...base, tachyonFont: "tachyon" })).not.toContain("data-tachyon-font");
+    expect(renderWebviewShell({ ...base, tachyonFont: "departure" })).toContain('<html lang="en" data-tachyon-font="departure">');
+  });
+
   it("webviewNonce is 32 url-safe chars", () => {
     expect(webviewNonce()).toMatch(/^[A-Za-z0-9]{32}$/);
   });

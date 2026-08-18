@@ -756,5 +756,10 @@
   "Review notes were sent, but evidence was not recorded — worktree HEAD is unresolvable.": "As notas de revisão foram enviadas, mas a evidência não foi registrada — o HEAD do worktree não pôde ser resolvido.",
   "Review notes sent to '{0}'.": "Notas de revisão enviadas para '{0}'.",
   "Review — {0}": "Revisão — {0}",
-  "Nothing to send — there are no review notes yet.": "Nada para enviar — ainda não há notas de revisão."
+  "Nothing to send — there are no review notes yet.": "Nada para enviar — ainda não há notas de revisão.",
+  "UI font": "Fonte da interface",
+  "Monospace family for Tachyon screens. Size still follows the editor.": "Família monoespaçada das telas do Tachyon. O tamanho continua o do editor.",
+  "Tachyon Mono": "Tachyon Mono",
+  "Departure Mono": "Departure Mono",
+  "this page updates now; other surfaces apply the next time they are opened": "esta página atualiza agora; as outras superfícies aplicam na próxima abertura"
 }

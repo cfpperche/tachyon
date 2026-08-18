@@ -44,4 +44,17 @@ describe("t-7b4bb5 — Settings scope copy", () => {
     expect(css).toMatch(/\.ck-settings-path[\s\S]*overflow-wrap:\s*anywhere/);
     expect(css).toMatch(/\.ck-settings-path[\s\S]*word-break:\s*break-all/);
   });
+
+  it("offers the font choice on the global block and does not send it through VS Code settings", () => {
+    const app = read("packages/webview-ui/src/webview/settings/main.tsx");
+    expect(app).toContain('data-testid="global-settings-font"');
+    expect(app).toContain('value="departure"');
+    expect(app).toContain("applyTachyonFont");
+    const host = read("apps/vscode-extension/src/webview/controlStrings.ts");
+    expect(host).toContain('t("UI font")');
+    expect(host).toContain("this page updates now");
+    const pane = read("apps/vscode-extension/src/webview/AgentPanePanel.ts");
+    expect(pane).not.toContain("shellTachyonFont");
+    expect(pane).not.toContain("tachyonFont");
+  });
 });

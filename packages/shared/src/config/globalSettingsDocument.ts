@@ -24,6 +24,8 @@ export const GLOBAL_SETTINGS_DIRNAME = ".tachyon";
 export const GLOBAL_SETTINGS_FILENAME = "settings.json";
 
 export type ActivityCodeTheme = "auto" | "dark" | "light";
+/** t-d770ac — bundled mono family for Tachyon screens. Default stays Tachyon Mono. */
+export type FontMono = "tachyon" | "departure";
 
 /** Every field resolved — callers never re-apply a default and so cannot disagree about one. */
 export interface GlobalSettings {
@@ -33,12 +35,18 @@ export interface GlobalSettings {
   agentPaneEnabled: boolean;
   /** Path to the git binary Tachyon spawns. Empty = fall back to `git.path`, then probing, then PATH. */
   gitPath: string;
+  /**
+   * Monospace family for Tachyon webviews that load faces.css.
+   * Agent Pane is excluded: bundled faces change xterm cell metrics.
+   */
+  fontMono: FontMono;
 }
 
 export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   activityCodeTheme: "auto",
   agentPaneEnabled: true,
   gitPath: "",
+  fontMono: "tachyon",
 };
 
 /** The document as authored on disk. Only these keys exist; anything else is a refusal. */
@@ -47,6 +55,7 @@ export interface GlobalSettingsDocument {
   activity?: { codeTheme?: ActivityCodeTheme };
   agentPane?: { enabled?: boolean };
   gitPath?: string;
+  font?: { mono?: FontMono };
 }
 
 /** The fields a document can author. Used to tell "unset" apart from "explicitly at the default". */
@@ -91,7 +100,7 @@ export function parseGlobalSettings(raw: unknown, source: string): GlobalSetting
     };
   }
 
-  const known = new Set(["version", "activity", "agentPane", "gitPath"]);
+  const known = new Set(["version", "activity", "agentPane", "gitPath", "font"]);
   // `sidebar` was the card-template override (SDD 479). The spec was abandoned; the key is ignored
   // so an old file does not refuse the whole document.
   for (const key of Object.keys(raw)) {
@@ -147,6 +156,25 @@ export function parseGlobalSettings(raw: unknown, source: string): GlobalSetting
     }
   }
 
+  if (raw.font !== undefined) {
+    if (!isPlainObject(raw.font)) {
+      errors.push(`${source}: 'font' must be a mapping`);
+    } else {
+      for (const key of Object.keys(raw.font)) {
+        if (key !== "mono") errors.push(`${source}: font: unknown key '${key}' (expected mono)`);
+      }
+      const mono = raw.font.mono;
+      if (mono !== undefined) {
+        if (mono !== "tachyon" && mono !== "departure") {
+          errors.push(`${source}: font.mono: must be "tachyon" or "departure"`);
+        } else {
+          settings.fontMono = mono;
+          authored.add("fontMono");
+        }
+      }
+    }
+  }
+
   return errors.length > 0 ? { errors } : { settings, authored: [...authored], errors: [] };
 }
 
@@ -157,6 +185,7 @@ export function toGlobalSettingsDocument(settings: GlobalSettings): GlobalSettin
     activity: { codeTheme: settings.activityCodeTheme },
     agentPane: { enabled: settings.agentPaneEnabled },
     gitPath: settings.gitPath,
+    font: { mono: settings.fontMono },
   };
 }
 

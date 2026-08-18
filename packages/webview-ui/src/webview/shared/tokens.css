@@ -82,7 +82,7 @@
   --ds-z-dialog: 40;
   --ds-z-toast: 50;
 
-  /* locked font families and weights; faces.css only supplies the bundled Tachyon Mono files */
+  /* locked font families and weights; faces.css supplies the files and the opt-in Departure override */
   --tachyon-font-mono: "Tachyon Mono", ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --tachyon-font-reading: var(--vscode-font-family, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   --tachyon-weight-regular: 400;

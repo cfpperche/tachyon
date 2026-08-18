@@ -47,6 +47,12 @@ describe("ensureMonoFontStack", () => {
     expect(stack.toLowerCase()).not.toContain("tachyon mono");
     expect(stack).toContain("DejaVu Sans Mono");
   });
+
+  it("strips Departure Mono the same way — that face also changes xterm cell metrics", () => {
+    const stack = ensureMonoFontStack("Departure Mono, monospace");
+    expect(stack.toLowerCase()).not.toContain("departure mono");
+    expect(stack).toContain("DejaVu Sans Mono");
+  });
 });
 
 describe("resolveAgentPaneFontMetrics", () => {

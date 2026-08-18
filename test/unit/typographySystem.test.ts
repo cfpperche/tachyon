@@ -13,6 +13,9 @@ describe("Tachyon webview typography system", () => {
     expect(css).toContain('url("fonts/tachyon/JetBrainsMono-Medium.woff2")');
     expect(css).toContain('url("fonts/tachyon/JetBrainsMono-SemiBold.woff2")');
     expect(css).toContain('url("fonts/tachyon/JetBrainsMono-Bold.woff2")');
+    expect(css).toContain('font-family: "Departure Mono"');
+    expect(css).toContain('url("fonts/departure/DepartureMono-Regular.woff2")');
+    expect(css).toContain('html[data-tachyon-font="departure"]');
     expect(css).toContain('--tachyon-font-mono: "Tachyon Mono"');
     expect(css).toContain("--tachyon-font-reading: var(--vscode-font-family");
     expect(css).toContain("font-size: var(--ds-body)");
@@ -55,6 +58,7 @@ describe("Tachyon webview typography system", () => {
     const build = read("esbuild.mjs");
     expect(build).toContain('rmSync("dist/webview/fonts/tachyon"');
     expect(build).toContain('cpSync("packages/webview-ui/src/webview/shared/fonts/tachyon", "dist/webview/fonts/tachyon"');
+    expect(build).toContain('cpSync("packages/webview-ui/src/webview/shared/fonts/departure", "dist/webview/fonts/departure"');
 
     for (const file of [
       "JetBrainsMono-Regular.woff2",
@@ -65,6 +69,9 @@ describe("Tachyon webview typography system", () => {
       "README.md",
     ]) {
       expect(existsSync(`packages/webview-ui/src/webview/shared/fonts/tachyon/${file}`), file).toBe(true);
+    }
+    for (const file of ["DepartureMono-Regular.woff2", "OFL.txt", "README.md"]) {
+      expect(existsSync(`packages/webview-ui/src/webview/shared/fonts/departure/${file}`), file).toBe(true);
     }
   });
 });
