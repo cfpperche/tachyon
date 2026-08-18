@@ -281,5 +281,7 @@
   "No agents belong to this worktree.": "No agents belong to this worktree.",
   "Could not record the sent notes as evidence: {0}": "Could not record the sent notes as evidence: {0}",
   "Review notes were sent, but evidence was not recorded — worktree HEAD is unresolvable.": "Review notes were sent, but evidence was not recorded — worktree HEAD is unresolvable.",
-  "Review notes sent to '{0}'.": "Review notes sent to '{0}'."
+  "Review notes sent to '{0}'.": "Review notes sent to '{0}'.",
+  "Review — {0}": "Review — {0}",
+  "Nothing to send — there are no review notes yet.": "Nothing to send — there are no review notes yet."
 }

@@ -342,7 +342,7 @@ const webviewChunkHygienePlugin = {
  *
  * Entry outputs: `dist/webview/<view>.js` (+ `dist/webview/chunks/app-*.js`, shared across ALL entries).
  */
-const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "terminal-studio-shell", "schedule-studio-shell", "agent-studio-shell", "board", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "system", "worktrees", "settings", "activity", "probes"];
+const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "terminal-studio-shell", "schedule-studio-shell", "agent-studio-shell", "board", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "system", "worktrees", "settings", "activity", "probes", "review"];
 const webviewApps = {
   ...sidebar,
   entryPoints: Object.fromEntries(WEBVIEW_APP_VIEWS.map((view) => [view, `packages/webview-ui/src/webview/${view}/main.tsx`])),
@@ -384,14 +384,9 @@ const agentStudioFixture = {
   outfile: "dist/webview/agent-studio-fixture.js",
 };
 
-// SDD 513 fatia 2 / t-832633 — the Tachyon review screen, consumable without a VS Code host.
-// Fatia 3 owns the product panel (BoardPanel mould) and the catalog surface row. This target
-// exists so the screen is buildable and previewable from review-fatia2.html.
-const reviewDiff = {
-  ...sidebar,
-  entryPoints: ["packages/webview-ui/src/webview/review/main.tsx"],
-  outfile: "dist/webview/review.js",
-};
+// SDD 513 fatia 3 — review.js is now an entry of WEBVIEW_APP_VIEWS (the splitting
+// invocation). Fatia 2's standalone IIFE target is retired so the product host and
+// the preview catalog share one ESM bundle. Do not add a second outfile.
 
 // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — the standalone Command/Terminal/Runbook/Schedule/Agent
 // Studio (shell) bundles were retired: they're Control routes now (studio-new/studio-edit, studio:
@@ -604,7 +599,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, pipelineStudio, agentStudioFixture, reviewDiff, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate]
+const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate]
   .map((target) => ({
     ...target,
     ...(target.outfile ? { outfile: outputPath(target.outfile) } : {}),

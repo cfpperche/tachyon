@@ -17,7 +17,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { AgentEntry, TachyonConfig } from "../config/loadConfig.js";
-import { parseNameStatus, mergeChanges, type ChangedFile } from "./review.js";
+import { parseNameStatus, mergeChanges, unifiedDiffFromAddedFile, type ChangedFile } from "./review.js";
 import type { SharedDependencyState } from "./dependencySharing.js";
 import type { WorktreeRecord } from "./worktreeRecord.js";
 import { resolveGitBinary, gitNotFoundError } from "./gitBinary.js";
@@ -44,6 +44,21 @@ export function resolveBase(
   if (configured) return expandHome(configured, homeDir);
   const xdg = env.XDG_CACHE_HOME && env.XDG_CACHE_HOME.trim().length > 0 ? env.XDG_CACHE_HOME : path.join(homeDir, ".cache");
   return path.join(xdg, "tachyon", "worktrees");
+}
+
+function containedWorktreeFile(cwd: string, file: string): string | undefined {
+  if (!file || file.startsWith("/") || file.includes("\0") || file.split("/").some((part) => part === "" || part === "." || part === "..")) {
+    return undefined;
+  }
+  const root = path.resolve(cwd);
+  const full = path.resolve(root, file);
+  const prefix = root.endsWith(path.sep) ? root : root + path.sep;
+  if (full !== root && !full.startsWith(prefix)) return undefined;
+  try {
+    return fs.statSync(full).isFile() ? full : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function expandHome(p: string, homeDir: string): string {
@@ -250,6 +265,10 @@ export const gitArgs = {
   lsOthers: (): string[] => ["ls-files", "-z", "--others", "--exclude-standard"],
   /** C2: a file's content at a ref (the diff's base side) */
   showFile: (ref: string, file: string): string[] => ["show", `${ref}:${file}`],
+  /** SDD 513: one-path unified diff. Working-tree compare omits headRef. */
+  diffUnified: (baseRef: string, file: string, headRef?: string): string[] =>
+    ["diff", baseRef, ...(headRef ? [headRef] : []), "--", file],
+  lsTracked: (file: string): string[] => ["ls-files", "--error-unmatch", "--", file],
 } as const;
 
 // ── Side-effecting git layer ─────────────────────────────────────────────────
@@ -1211,6 +1230,38 @@ export class WorktreeManager {
     try {
       const r = await this.git(gitArgs.showFile(ref, file), cwd);
       return r.code === 0 ? r.stdout : "";
+    } catch {
+      return "";
+    }
+  }
+
+  /**
+   * SDD 513 — one-path unified diff stdout for `review.diff`.
+   *
+   * Git does not emit untracked files. When this is a working-tree compare and
+   * `path` exists on disk but is not tracked, the return is the same stdout
+   * `unifiedDiffFromAddedFile` would produce so the wire stays ReviewDiffFileV1.
+   * Empty stdout is valid (mode-only / identical). Failure returns "".
+   */
+  async unifiedDiff(cwd: string, file: string, baseRef: string, headRef?: string): Promise<string> {
+    try {
+      const diff = await this.git(gitArgs.diffUnified(baseRef, file, headRef), cwd);
+      if (diff.code === 0 && diff.stdout.length > 0) return diff.stdout;
+      if (headRef) return diff.code === 0 ? diff.stdout : "";
+      const full = containedWorktreeFile(cwd, file);
+      if (!full) return diff.code === 0 ? diff.stdout : "";
+      const tracked = await this.git(gitArgs.lsTracked(file), cwd);
+      if (tracked.code === 0) return diff.code === 0 ? diff.stdout : "";
+      const content = fs.readFileSync(full);
+      if (content.includes(0)) {
+        return [
+          `diff --git a/${file} b/${file}`,
+          "new file mode 100644",
+          `Binary files /dev/null and b/${file} differ`,
+          "",
+        ].join("\n");
+      }
+      return unifiedDiffFromAddedFile(file, content.toString("utf8"));
     } catch {
       return "";
     }

@@ -27,6 +27,8 @@ import { projectHandoffView } from "../runtime-api/handoffProjection.js";
 import { projectSidebarView } from "../runtime-api/sidebarProjection.js";
 import { applySidebarMutation } from "../sidebar/sidebarMutationService.js";
 import { applyReviewMutation, projectReviewNotes } from "../worktree/reviewNotesService.js";
+import { parseUnifiedDiff } from "../worktree/review.js";
+import { projectReviewDiffFileV1 } from "../runtime-api/reviewProjection.js";
 import { RuntimeOpsSnapshotService } from "../runtimeOps/snapshotService.js";
 import { CodexAppServerObservationSource } from "../runtimeObservability/codexAppServerSource.js";
 import { GrokUsageObservationSource } from "../runtimeObservability/grokUsageSource.js";
@@ -86,6 +88,7 @@ import {
   workspaceSidebarViewSuccessV1,
   workspaceReviewMutationSuccessV1,
   workspaceReviewNotesViewSuccessV1,
+  workspaceReviewDiffFileSuccessV1,
   workspaceRuntimeOpsViewSuccessV1,
   workspaceExtensionCommandSuccessV1,
   workspaceExtensionQuerySuccessV1,
@@ -590,6 +593,31 @@ async function executeWorkspaceQuery(
       ...(changedFiles ? { changedFiles } : {}),
     }));
   }
+  if (query.method === "review.diff") {
+    const checkout = reviewCheckoutPath(workspace, query.input.worktree);
+    const changedFiles = await workspace.worktrees.changedFiles(
+      checkout,
+      query.input.baseRef,
+      query.input.headRef,
+    );
+    const listed = changedFiles.find((file) => file.path === query.input.path);
+    const raw = await workspace.worktrees.unifiedDiff(
+      checkout,
+      query.input.path,
+      query.input.baseRef,
+      query.input.headRef,
+    );
+    return workspaceReviewDiffFileSuccessV1(projectReviewDiffFileV1({
+      worktree: query.input.worktree,
+      path: query.input.path,
+      baseRef: query.input.baseRef,
+      parsed: parseUnifiedDiff(raw),
+      ...(listed?.status ? { status: listed.status } : {}),
+      ...(listed?.from ? { from: listed.from } : {}),
+      currentLabel: query.input.headRef ? abbreviateReviewRef(query.input.headRef) : "worktree",
+      ...(query.input.headRef !== undefined ? { headRef: query.input.headRef } : {}),
+    }));
+  }
   return workspaceProbeViewSuccessV1(await workspace.probeView(query.input.caller));
 }
 
@@ -1021,4 +1049,8 @@ function reviewCheckoutPath(workspace: Workspace, worktree: string): string {
   const record = reviewWorktreeRecord(workspace, worktree);
   if (record?.path && fs.existsSync(record.path)) return record.path;
   throw new Error(`review notes worktree '${worktree}' has no checkout`);
+}
+
+function abbreviateReviewRef(ref: string): string {
+  return ref.length > 8 ? ref.slice(0, 8) : ref;
 }

@@ -2222,6 +2222,25 @@
     ]
   },
   {
+    "view": "review",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=review&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Review",
+    "aliases": [
+      "review",
+      "diff review",
+      "worktree review",
+      "tachyon review"
+    ]
+  },
+  {
     "view": "section-app-fixture",
     "fixture": "document",
     "url": "/scripts/webview-preview/index.html?view=section-app-fixture&fixture=document",

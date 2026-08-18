@@ -120,6 +120,25 @@ _Where implementation intentionally departed from `plan.md`, and why it was nece
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
 
+- **Fatia 3 protocol arm (`t-1a76c5`).** Fatia 1 wrote that fatia 2 would add
+  `review.diff` to `protocol.ts`. It did not. Fatia 3 closes that gap first:
+  `WorkspaceQueryMethodV1` + handler next to `review.view` + control-client size
+  arm, carrying the existing `ReviewDiffQueryInputV1` / `ReviewDiffFileV1`
+  types unchanged. WorktreeManager gained `unifiedDiff` so untracked adds still
+  travel through `unifiedDiffFromAddedFile` → `parseUnifiedDiff`.
+
+- **Fatia 3 tab host (`t-1a76c5`).** Review is a `document` on SectionPanelManager
+  (`tachyonReview` / `ReviewPanel.ts`). The review command opens that tab; it
+  does not call `vscode.diff`. The fatia 2 standalone IIFE bundle moved into
+  `WEBVIEW_APP_VIEWS` so the product host and the catalog share one ESM entry.
+  The screen is not opened by upsert, reconcile, or inbound notes.
+
+- **Fatia 3 retirement (`t-1a76c5`).** `comments.ts` and the CommentController
+  are gone. Send-batch helpers live in `review/batch.ts` (no `vs.comments`).
+  `tachyon.review.createNote` / `replyNote` and the Comments panel menus left
+  with them. The native `tachyon-worktree` content provider left with the
+  native diff door.
+
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._

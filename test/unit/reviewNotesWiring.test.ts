@@ -155,6 +155,9 @@ describe("t-115091 — review note protocol wiring (SDD 511 fatia 2)", () => {
     expect(queryFn).toContain('query.method === "review.view"');
     expect(queryFn).toContain("projectReviewNotes");
     expect(queryFn).not.toContain("loadReviewNotes");
+    expect(queryFn).toContain('query.method === "review.diff"');
+    expect(queryFn).toContain("projectReviewDiffFileV1");
+    expect(queryFn).toContain("unifiedDiff");
     const commandFn = source.slice(source.indexOf("async function executeWorkspaceCommand"));
     expect(commandFn).toContain('command.method === "review.mutate"');
     expect(commandFn).toContain("applyReviewMutation");

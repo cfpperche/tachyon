@@ -110,6 +110,7 @@ describe("webview convention (spec 279)", () => {
       // SDD 485 C5 — the Board's own viewType, and the first app on `SectionPanelManager` that genuinely
       // revives.
       tachyonBoard: "BOARD_VIEW_TYPE",
+      tachyonReview: "REVIEW_VIEW_TYPE",
       tachyonTaskDetail: "TASK_DETAIL_VIEW_TYPE",
       tachyonTaskStudio: "TASK_STUDIO_VIEW_TYPE",
       tachyonPipelineStudio: "PIPELINE_STUDIO_VIEW_TYPE",

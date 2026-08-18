@@ -80,9 +80,9 @@ export function parseReviewNotesViewV1(value: unknown): ReviewNotesViewV1 {
 }
 
 /**
- * Named query door for one file of hunks. Fatia 2 adds this method to protocol.ts;
- * this slice names it so the screen does not invent a verb. `review.view` stays
- * notes-only and protocol.ts is not touched here (it needed no new field).
+ * Named query door for one file of hunks. Fatia 3 adds this method to protocol.ts;
+ * this slice named it so the screen does not invent a verb. `review.view` stays
+ * notes-only.
  */
 export const REVIEW_DIFF_QUERY_METHOD = "review.diff" as const;
 

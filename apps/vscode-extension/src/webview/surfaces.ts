@@ -173,6 +173,10 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // extension.ts (a revived pre-410 panel disposes itself and opens THIS app for its persisted workspace),
   // which is why the new panel needed a viewType of its own.
   { viewId: "tachyonBoard", view: "board", hostFile: "apps/vscode-extension/src/webview/BoardPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  // SDD 513 fatia 3 — Tachyon worktree review. The screen landed in fatia 2 as a standalone
+  // preview bundle; this row is the product host. `conform`: it mounts through SectionPanelManager,
+  // links design-system.css, and review.css styles no page frame and mints no `--ds-*` values.
+  { viewId: "tachyonReview", view: "review", hostFile: "apps/vscode-extension/src/webview/ReviewPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // SDD 485 C4 (2026-08-03) — Task Detail is a STANDALONE APP again, and this row is the reversal of
   // 410 Phase C.1's retirement (which had made it a Control subroute). It is the `document` kind: one
   // panel per identity, so two task details stand side by side and neither is retargeted by the project

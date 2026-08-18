@@ -397,6 +397,17 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
 
     expect(await m.showFile(rec.path, rec.baseRef, "README.md")).toBe("hi\n"); // base content
     expect(await m.showFile(rec.path, rec.baseRef, "new.txt")).toBe(""); // absent at base → empty
+
+    const modified = await m.unifiedDiff(rec.path, "README.md", rec.baseRef);
+    expect(modified).toContain("diff --git");
+    expect(modified).toContain("-hi");
+    expect(modified).toContain("+changed");
+    const deleted = await m.unifiedDiff(rec.path, "lib.txt", rec.baseRef);
+    expect(deleted).toContain("deleted file mode");
+    const added = await m.unifiedDiff(rec.path, "new.txt", rec.baseRef);
+    expect(added).toContain("new file mode");
+    expect(added).toContain("+new");
+    expect(await m.unifiedDiff(rec.path, "../escape.ts", rec.baseRef)).toBe("");
   });
 
   it("C2: changedFiles is empty when nothing changed, and tolerates a missing worktree", async () => {
