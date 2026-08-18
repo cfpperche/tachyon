@@ -182,11 +182,19 @@ grok --always-approve --no-memory --cwd <repo> \
 | 1 | 0 | 93 | sim | sim | sim | 2 | `end_turn` |
 | 2 | 0 | 137 | sim | sim | sim | 2 | `end_turn` |
 | 3 | 0 | 191 | sim | sim | sim | 2 | `end_turn` |
+| 4 | 0 | 133 | sim | sim | sim | 2 | `end_turn` |
+| 5 | 0 | 226 | sim | sim | sim | 2 | `end_turn` |
+| 6 | 0 | 141 | sim | sim | sim | 2 | `end_turn` |
 
-**3 de 3 entregaram os oito passos e terminaram em `end_turn`.** Nenhum abandonou o trabalho no
-meio. Amostra pequena e declarada como tal; o ponto não é provar que nunca aconteceria fora do
-Tachyon, é que o comportamento **não aparece sem a varredura do Tachyon** e aparece **3 de 3** com
-ela, com o runtime dizendo por escrito que foi cancelamento externo.
+**6 de 6 entregaram os oito passos e terminaram em `end_turn`**, exit code 0, num total de 15 min
+de execução (93+137+191+133+226+141 s). Nenhum abandonou o trabalho no meio. Verifiquei que o
+trabalho é real e não arquivos vazios: o `REPORT.md` do run 1 traz o inventário com os tamanhos
+corretos (`src/inventory.js 245`, `src/parser.js 381`), 4 testes nomeados, e o repositório tem 2
+commits com 88 linhas de código novo.
+
+Amostra pequena e declarada como tal; o ponto não é provar que nunca aconteceria fora do Tachyon,
+é que o comportamento **não aparece sem a varredura do Tachyon em 6 tentativas** e aparece **3 de
+3** com ela, com o runtime dizendo por escrito que foi cancelamento externo.
 
 ### 4.2 O controle negativo do cartão não separa o que se pensava
 
@@ -335,7 +343,8 @@ o turno interrompido** ou deixar um sinal visível. Hoje `-r` restaura a convers
 última fala do modelo (§3), o que apaga a própria pista.
 
 Não implementei nada disso: o contrato desta tarefa é medição, e o conserto mexe em autoridade de
-ciclo de vida — assunto de cartão próprio, com revisão adversarial.
+ciclo de vida — assunto de cartão próprio, com revisão adversarial. **O cartão existe:
+`t-a281e7`** (inbox), com esta mesma lista ator × gatilho como lista de casos de teste.
 
 **Relação com `t-3d3bdd`:** aquele cartão (detectar e cutucar agente parado, qualquer runtime)
 **continua valendo e fica mais barato**, porque agora se sabe que uma das causas produz um estado
