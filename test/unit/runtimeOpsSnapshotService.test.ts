@@ -512,11 +512,11 @@ describe("RuntimeOpsSnapshotService — spec 378 observed model latch", () => {
     expect(tailCalls).toBe(1); // the second read went through forwardFrom (shared cursor), not a fresh tail
   });
 
-  it("projects divergence in snapshot() when the observed model differs from the declared/profile default", async () => {
+  it("does not project divergence in snapshot() when a bare cmd only differs from the profile default", async () => {
     const source = workspace("/workspace", "ws", "app", [["worker", record("codex")]]) as ReturnType<typeof workspace> & Record<string, unknown>;
     source.manager = {
       listAgents: async () => [{ name: "worker", session: "pane", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
-      defOf: () => ({ cmd: "codex" }), // bare codex → declared "Codex default"
+      defOf: () => ({ cmd: "codex" }), // bare codex → profile "Codex default", nothing declared
       resumeReadiness: async () => true,
     };
     const service = new RuntimeOpsSnapshotService(() => [source as never], {
@@ -526,6 +526,24 @@ describe("RuntimeOpsSnapshotService — spec 378 observed model latch", () => {
     const snapshot = await service.snapshot();
     const agent = snapshot.runtimes[0].agents[0];
     expect(agent.model).toMatchObject({ value: "Codex default" }); // declared/profile column stays declared-only
+    expect(agent.modelObserved).toMatchObject({ value: "GPT-5.6 Sol" });
+    expect(agent.modelDivergence).toBe(false);
+  });
+
+  it("projects divergence in snapshot() when an explicit --model disagrees with the observed label", async () => {
+    const source = workspace("/workspace", "ws", "app", [["worker", record("codex")]]) as ReturnType<typeof workspace> & Record<string, unknown>;
+    source.manager = {
+      listAgents: async () => [{ name: "worker", session: "pane", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+      defOf: () => ({ cmd: "codex -c model=gpt-5.1-codex" }),
+      resumeReadiness: async () => true,
+    };
+    const service = new RuntimeOpsSnapshotService(() => [source as never], {
+      detect: async () => [],
+      activityLog: () => staticActivityLog([modelEvent("2026-07-09T19:00:00.000Z", "gpt-5.6-sol")]),
+    });
+    const snapshot = await service.snapshot();
+    const agent = snapshot.runtimes[0].agents[0];
+    expect(agent.model).toMatchObject({ value: "GPT-5.1 Codex" });
     expect(agent.modelObserved).toMatchObject({ value: "GPT-5.6 Sol" });
     expect(agent.modelDivergence).toBe(true);
   });

@@ -277,20 +277,27 @@ describe("agentModel.resolveModelFact (spec 378 — precedence/divergence/label 
 
   it("an observation present → observed wins over declared/profile", () => {
     const fact = resolveModelFact("codex", observed("gpt-5.6-sol"));
-    expect(fact).toMatchObject({ label: "GPT-5.6 Sol", source: "observed", stale: false, divergence: true });
+    expect(fact).toMatchObject({ label: "GPT-5.6 Sol", source: "observed", stale: false, divergence: false });
   });
 
-  it("divergence is true only when normalized observed != normalized declared", () => {
+  // t-1464cf: a bare cmd never declared a model, so differing from the profile
+  // default is the runtime doing its job — not `≠ declared`.
+  it("t-1464cf: bare cmd (no --model) vs a different observed label is not divergence", () => {
+    expect(declaredModelFromCommand("codex").explicit).toBe(false);
+    const fact = resolveModelFact("codex", observed("gpt-5.6-sol"));
+    expect(fact?.label).toBe("GPT-5.6 Sol");
+    expect(fact?.source).toBe("observed");
+    expect(fact?.divergence).toBe(false);
+  });
+
+  // t-1464cf positive control: without this, a fix that deleted the marker would go green.
+  it("t-1464cf: explicit --model that disagrees with the observed label stays divergent", () => {
+    expect(declaredModelFromCommand("claude --model opus").explicit).toBe(true);
     const same = resolveModelFact("claude --model opus", observed("opus"));
     expect(same?.divergence).toBe(false);
     const different = resolveModelFact("claude --model opus", observed("sonnet-5"));
     expect(different?.divergence).toBe(true);
-  });
-
-  it("bare codex declared (\"Codex default\") vs an observed gpt-5.6-sol is the motivating divergence case", () => {
-    const fact = resolveModelFact("codex", observed("gpt-5.6-sol"));
-    expect(fact?.label).toBe("GPT-5.6 Sol");
-    expect(fact?.divergence).toBe(true);
+    expect(different).toMatchObject({ label: "Sonnet 5", source: "observed" });
   });
 
   it("an observed id missing from the alias table renders as a validated raw/title-cased id, never 'Unavailable'", () => {
@@ -321,8 +328,9 @@ describe("agentModel.toAgentVM — model provenance siblings (spec 378)", () => 
       kind: "agent",
       model: { id: "gpt-5.6-sol", observedAt: "2026-07-13T00:00:00Z", stale: false },
     });
-    expect(vm).toMatchObject({ model: "GPT-5.6 Sol", modelSource: "observed", modelObservedAt: "2026-07-13T00:00:00Z", modelDivergence: true });
+    expect(vm).toMatchObject({ model: "GPT-5.6 Sol", modelSource: "observed", modelObservedAt: "2026-07-13T00:00:00Z" });
     expect(vm.modelStale).toBeUndefined();
+    expect(vm.modelDivergence).toBeUndefined();
   });
 
   it("surfaces modelStale:true only when the observation is stale", () => {
