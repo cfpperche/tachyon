@@ -1,8 +1,7 @@
 /**
  * spec 237 — the sidebar view-model (framework-agnostic, no preact/vscode imports).
- * The Preact UI renders ONLY from these types. Today the data is SAMPLE; the real build swaps
- * `SAMPLE` for a model produced by the (extracted) rules layer reading live fleet state — the
- * components don't change. This is the "UI decoupled from rules" contract.
+ * The Preact UI renders ONLY from these types. Preview/test fixtures live next to the
+ * preview entry (`scripts/webview-preview/fixtures/sidebar.ts`); this file is types only.
  */
 import type { ConfigDiscardsVM } from "../config/configDiscards.js";
 import type { EntryKind } from "../config/entry.js";
@@ -372,55 +371,3 @@ export function searchIndex(f: FleetVM): SearchItem[] {
     })),
   ];
 }
-
-/** Representative sample fleet exercising every state/badge/section. (Real data lands later.) */
-export const SAMPLE: FleetVM = {
-  folder: { hash: "demohash", name: "Demo" },
-  handoff: { exists: true, staleness: "needs_distill", pendingCount: 3 },
-  bridge: { port: "42551", connected: true },
-  agents: [
-    { name: "orchestrator", model: "Opus 4.8", status: "running", attention: "working", liveBranch: "main", worktreePath: "/ws", resources: { cpuPct: 12, memMb: 420 }, kind: "agent" },
-    { name: "reviewer", model: "Sonnet 5", status: "running", parent: "orchestrator", harness: true, liveBranch: "main", worktreePath: "/ws", resources: { cpuPct: 8, memMb: 310 }, kind: "agent", adhoc: true },
-    { name: "feature-auth", model: "GPT-5.1 Codex", status: "running", attention: "needs input", worktree: "tachyon/feature-auth", liveBranch: "tachyon/feature-auth", worktreePath: "/cache/feature-auth", resources: { cpuPct: 55, memMb: 920 }, forked: true, forkable: true, kind: "agent" },
-    { name: "researcher", status: "needs", attention: "needs input", harness: true, liveBranch: "main", worktreePath: "/ws", kind: "agent" },
-    { name: "docs-writer", status: "idle", liveBranch: "main", worktreePath: "/ws", kind: "agent" },
-    { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", liveBranch: "feat/billing-wip", branchDrift: true, worktreePath: "/cache/feature-billing", kind: "agent" },
-    { name: "migration", status: "crashed", sub: "exited (1)", liveBranch: "main", worktreePath: "/ws", kind: "agent" },
-    // t-9d76b1 — a stop the HUMAN asked for, on a runtime that acknowledges SIGINT by exiting 130
-    // (grok, hermes). It sits next to `migration` on purpose: these two rows are the pair a person has
-    // to be able to tell apart, and while this state was absent from the sample it was absent from
-    // every preview and every visual check too.
-    { name: "grok-builder", status: "stopped", sub: "stopped (exit 130)", pane: true, resumable: true, liveBranch: "main", worktreePath: "/ws", kind: "agent" },
-    { name: "old-spike", status: "stopped", resumable: true, liveBranch: "main", worktreePath: "/ws", kind: "agent", adhoc: true },
-    { name: "qa", status: "stopped", resumable: true, worktree: "tachyon/qa", liveBranch: "tachyon/qa", worktreePath: "/cache/qa", kind: "agent" },
-  ],
-  terminals: [
-    { name: "dev", kind: "terminal", status: "running", sub: "npm run dev" },
-    { name: "shell", kind: "terminal", status: "idle", sub: "bash" },
-  ],
-  pipelines: [
-    { name: "feature", status: "running", nodes: [
-      { id: "plan", status: "running", label: "done" },
-      { id: "implement", status: "running", label: "running" },
-      { id: "review", status: "stopped", label: "pending" },
-    ] },
-    { name: "gated", status: "failed", nodes: [
-      { id: "build", status: "running", label: "done" },
-      { id: "deploy", status: "crashed", label: "failed", reason: "exit 1" },
-    ] },
-    { name: "nightly", status: "idle", nodes: [] },
-  ],
-  proposals: [
-    { id: "pr1", name: "hourly-lint", by: "claude", when: "every 1h · run lint", reason: "lint drift on long sessions" },
-  ],
-  schedules: [
-    { name: "nightly-audit", when: "every 1d · spawn auditor", next: "next in 6h", paused: false },
-    { name: "weekly-deps", when: "every 1w · spawn deps", next: "paused", paused: true },
-  ],
-  pins: [
-    { text: "Bridge token rotation — confirm 0.26 injection path", done: true, by: "human", tags: ["security"] },
-    { text: "Investigate slow refresh on 100+ agents", done: false, by: "claude", tags: ["perf"] },
-    { text: "Sidebar webview prototype — review in EDH", done: false, by: "human", tags: ["ui", "dogfood"], detail: true, attachmentCount: 2 },
-  ],
-  notices: [],
-};

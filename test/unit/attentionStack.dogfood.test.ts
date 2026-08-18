@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { attentionRows, type AttentionRow } from "@tachyon/webview-ui/sidebar/attentionStack";
-import { SAMPLE, type FleetVM, type NoticeVM } from "@tachyon/shared/sidebar/types.js";
+import { type FleetVM, type NoticeVM } from "@tachyon/shared/sidebar/types.js";
+import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
 import { NOTICE_INBOX_CAP, restoreNoticeInbox } from "@tachyon/engine/workspace/noticeInbox.js";
 
 function notice(index: number, workspace = "a"): NoticeVM {
