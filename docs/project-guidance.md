@@ -352,13 +352,16 @@ through `--settings`; Grok loads `$GROK_HOME/hooks/*.json` from its private home
 Global scope. All three reach a Temporary agent, and refusal is proven — the `secrets-guard`
 PreToolUse hook blocks with `exit 2` and did so against this coordinator's own command.
 
-The incident that bought this rule, 2026-08-18: `settings.checklist.requireIn` is a shipped setting
-that promised agents would be required to write a plan. Someone who installs Tachyon, sets it, and
-writes nothing else gets **nothing** — the requirement was reachable only through an end-of-turn
+The incident that bought this rule, 2026-08-18: `settings.checklist.requireIn` was a shipped setting
+that promised agents would be required to write a plan. Someone who installed Tachyon, set it, and
+wrote nothing else got **nothing** — the requirement was reachable only through an end-of-turn
 reminder whose trigger is a persistence Stop row that only *declared* agents write, and every
 delegated agent is Temporary. The coordinator's first answer was to write the requirement into THIS
 file, which fixed our workspace and left the product broken, because this file does not ship. A
 convention of ours is not a mechanism of the product.
+Closed by `t-685a0c` (`docs/research/t-685a0c-checklist-gate-runtimes.md`): the setting is now a
+`PreToolUse` gate injected into claude, codex and grok, measured refusing a real Temporary agent's
+first change on each. The rule stands; only its example is now past tense.
 
 The two rules meet here: if a capability is not worth a mechanism, do not ship the setting that
 promises it. **A configuration field that declares a capability the system does not have is the same
