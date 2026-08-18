@@ -84,8 +84,8 @@ function Ruler({
       type="button"
       class="review-ruler"
       data-testid={`review-ruler-${line.newLine}`}
-      title={`Comentar na linha ${line.newLine}`}
-      aria-label={`Comentar na linha ${line.newLine}`}
+      title={`Comment on line ${line.newLine}`}
+      aria-label={`Comment on line ${line.newLine}`}
       onClick={() => onAnnotate(line.newLine!)}
     >
       +
@@ -114,12 +114,12 @@ function Composer({
         class="review-composer-input"
         rows={3}
         value={body}
-        placeholder="Nota nesta linha (lado modificado)"
+        placeholder="Note on this line (modified side)"
         onInput={(event) => setBody((event.currentTarget as HTMLTextAreaElement).value)}
       />
       <div class="review-composer-actions">
-        <Button variant="primary" disabled={!body.trim()} onClick={save}>Salvar nota</Button>
-        <Button onClick={onCancel}>Cancelar</Button>
+        <Button variant="primary" disabled={!body.trim()} onClick={save}>Save note</Button>
+        <Button onClick={onCancel}>Cancel</Button>
       </div>
     </div>
   );
@@ -175,16 +175,16 @@ export function App({ vm, dispatch }: { vm?: ReviewVM; dispatch: ReviewDispatch 
                 if (target) dispatch.sendBatch(target);
               }}
             >
-              Enviar lote ({noteCount})
+              Submit batch ({noteCount})
             </Button>
           </div>
         }
       />
       {vm.error ? <p class="review-error" data-testid="review-error">{vm.error}</p> : null}
       <div class="review-body">
-        <nav class="review-files" aria-label="Arquivos">
+        <nav class="review-files" aria-label="Files">
           {vm.files.length === 0 ? (
-            <p class="review-empty">Nenhum arquivo mudou.</p>
+            <p class="review-empty">No files changed.</p>
           ) : vm.files.map((file) => (
             <FileRow
               key={file.path}
@@ -196,14 +196,14 @@ export function App({ vm, dispatch }: { vm?: ReviewVM; dispatch: ReviewDispatch 
         </nav>
         <section class="review-pane" aria-label="Diff">
           {!selected ? (
-            <EmptyState kind="empty" message="Selecione um arquivo." />
+            <EmptyState kind="empty" message="Select a file." />
           ) : vm.diffLoading ? (
-            <EmptyState kind="loading" message="Carregando diff…" />
+            <EmptyState kind="loading" message="Loading diff…" />
           ) : !vm.diff ? (
-            <EmptyState kind="empty" message="Sem diff para este arquivo." />
+            <EmptyState kind="empty" message="No diff for this file." />
           ) : vm.diff.binary ? (
             <div class="review-binary" data-testid="review-binary">
-              <p>Arquivo binário — sem hunks de texto.</p>
+              <p>Binary file — no text hunks.</p>
             </div>
           ) : (
             <>
@@ -217,13 +217,13 @@ export function App({ vm, dispatch }: { vm?: ReviewVM; dispatch: ReviewDispatch 
               ) : null}
               {orphans.length > 0 ? (
                 <aside class="review-orphans" data-testid="review-orphans">
-                  <h2>Notas fora do diff visível</h2>
+                  <h2>Notes outside the visible diff</h2>
                   {orphans.map((note) => <NoteCard key={note.identity.commentId} note={note} />)}
                 </aside>
               ) : null}
               <div class="review-diff" data-testid="review-diff" data-highlight={rendered?.highlight ? "on" : "off"}>
                 {rendered?.hunks.length === 0 ? (
-                  <p class="review-empty">Sem hunks (mode-only ou idêntico).</p>
+                  <p class="review-empty">No hunks (mode-only or identical).</p>
                 ) : rendered?.hunks.map((hunk, hi) => (
                   <div key={`${hunk.oldStart}-${hunk.newStart}-${hi}`} class="review-hunk">
                     <div class="review-hunk-head">{hunk.header}</div>

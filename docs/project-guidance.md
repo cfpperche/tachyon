@@ -391,3 +391,5 @@ defect as code that declares state it does not hold** — it is just written in 
 
 - Human-facing VS Code strings use `vscode.l10n.t(...)` (or the injected equivalent) and update
   bundles. Model/orchestration protocol text remains plain.
+- Product interface text is English even when the task contract is Portuguese; `t-ce1de8` showed the
+  review webview inheriting the contract language when this convention was unstated.

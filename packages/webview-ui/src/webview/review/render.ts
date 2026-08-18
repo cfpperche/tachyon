@@ -10,7 +10,7 @@ import { escapeText, highlight, langFromPath } from "./highlight";
 /** Fatia 0 measurement: above this, highlight.js blocks the webview (78.9 ms median on the largest real file). */
 export const HIGHLIGHT_CHAR_LIMIT = 20_000;
 
-export const HIGHLIGHT_DISABLED_BANNER = "realce desativado neste arquivo (grande)";
+export const HIGHLIGHT_DISABLED_BANNER = "Highlighting disabled for this file (large)";
 
 export type ReviewRenderLine = {
   kind: ReviewDiffLineV1["kind"];
