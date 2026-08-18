@@ -127,6 +127,12 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
   types unchanged. WorktreeManager gained `unifiedDiff` so untracked adds still
   travel through `unifiedDiffFromAddedFile` → `parseUnifiedDiff`.
 
+- **Fatia 3 tab host (`t-1a76c5`).** Review is a `document` on SectionPanelManager
+  (`tachyonReview` / `ReviewPanel.ts`). The review command opens that tab; it
+  does not call `vscode.diff`. The fatia 2 standalone IIFE bundle moved into
+  `WEBVIEW_APP_VIEWS` so the product host and the catalog share one ESM entry.
+  The screen is not opened by upsert, reconcile, or inbound notes.
+
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._

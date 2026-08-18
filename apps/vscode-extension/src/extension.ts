@@ -42,6 +42,7 @@ import { readAgentProfileGrants, workspaceConfigSha256 } from "@tachyon/engine/c
 import { PROBES_VIEW_TYPE, ProbeResultPanelManager, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { BOARD_VIEW_TYPE, BoardPanelManager } from "./webview/BoardPanel.js";
+import { REVIEW_VIEW_TYPE, ReviewPanelManager, type ReviewPanelHost } from "./webview/ReviewPanel.js";
 import { controlWorkspaceScope } from "./webview/shared/ControlWorkspaceScope.js";
 import type { SectionPanelState } from "./webview/shared/SectionPanelManager.js";
 import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
@@ -97,7 +98,7 @@ import {
   settingsImportMarkerPath,
 } from "./config/settingsImport.js";
 import { readLegacyVsCodeSettings } from "./workspace/legacyVsCodeSettings.js";
-import { emptySides, baseSidePath, diffTitle, type ChangedFile } from "@tachyon/engine/worktree/review.js";
+import { type ChangedFile } from "@tachyon/engine/worktree/review.js";
 import { persistEvidenceRecord } from "@tachyon/engine/worktree/evidenceStore.js";
 import {
   collectDiffTabsFromGroups,
@@ -114,6 +115,8 @@ import type { ViewKind } from "@tachyon/engine/workspace/EngineHost.js";
 
 /** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
 const WT_DIFF_SCHEME = "tachyon-worktree";
+/** Assigned in activate(); reviewWorktreeDiff is declared above that and opens this tab. */
+let reviewPanels: ReviewPanelManager;
 import { initializeVsCodeNotifications, notify } from "./workspace/notify.js";
 import { showNotification } from "./workspace/NotificationService.js";
 import { recordShellFailure, recordShellNote } from "./workspace/shellDiagnosticLog.js";
@@ -698,25 +701,20 @@ interface ReviewSides {
   baseRef: string;
   /** SDD 501 — read the current side from this commit rather than from the working tree. */
   headRef?: string;
+  workspaceHash: string;
+  worktree: string;
 }
 
-/** spec 213 / 230 — quick-pick the changed files of a worktree (base ↔ current), each opening VS Code's
- *  native diff. THE one implementation: the agent worktree review, the pipeline run "View changes" and
+/** spec 213 / 230 / SDD 513 — resolve a worktree's changed files and open the Tachyon review tab.
+ *  THE one implementation: the agent worktree review, the pipeline run "View changes" and
  *  (SDD 501) the land door all resolve an identity and arrive here.
- *  `singleDiffReviewImplementation.test.ts` is the guard that keeps that true.
  *
- *  t-ea5425 — `select` is how a caller says WHICH CHROME picks the file, and it is the only thing that
- *  varies between the doors:
- *    · omitted → VS Code's quick pick. The sidebar agent row and the pipeline's "View changes" are tree
- *      items with no surface of their own to draw in, so the native list is the right product for them;
- *    · `"list"` → pick nothing, open nothing, and hand the candidates back. The Worktrees dashboard is a
- *      webview and draws the product QuickPicker (`shared/ui/QuickPicker.tsx`) in the card the human
- *      clicked, instead of a native list floating at the top of the window;
- *    · `{ file }` → that webview already chose; open this one.
- *  The SELECTION moved; the diff pair and the one command that opens it did not, which is precisely
- *  what the guard above is about. (Written without backticks around that command name on purpose: the
- *  guard counts quoted mentions of it, and a comment that names it in quotes reads to the detector as a
- *  second opener.) */
+ *  t-ea5425 — `select` is how a caller says WHICH CHROME picks the file:
+ *    · omitted → open the Tachyon tab with the first file selected. The screen lists the rest.
+ *    · `"list"` → pick nothing, open nothing, and hand the candidates back. The Worktrees dashboard
+ *      draws its own picker in the card the human clicked.
+ *    · `{ file }` → that webview already chose; open the Tachyon tab on this path.
+ *  Native vscode.diff is no longer this door. */
 /** t-ea5425 — the candidate set a caller with its own picker gets back from `"list"`. */
 export interface ReviewCandidates {
   label: string;
@@ -737,41 +735,30 @@ async function reviewWorktreeDiff(
     return;
   }
   // The current side names itself: a diff read out of a commit must not be titled "worktree".
-  const currentLabel = sides.headRef ?? "worktree";
+  const currentLabel = sides.headRef
+    ? (sides.headRef.length > 8 ? sides.headRef.slice(0, 8) : sides.headRef)
+    : "worktree";
   if (select === "list") return { label, base: sides.baseRef, current: currentLabel, files: changes };
-  const glyph: Record<string, string> = { A: "$(diff-added)", M: "$(diff-modified)", D: "$(diff-removed)", R: "$(diff-renamed)", C: "$(diff-renamed)" };
   const chosen = select
     ? changes.find((c) => c.path === select.file)
-    : (await vscode.window.showQuickPick(
-      changes.map((c) => ({ label: `${glyph[c.status] ?? ""} ${c.from && c.from !== c.path ? `${c.from} → ${c.path}` : c.path}`, file: c })),
-      {
-        title: vscode.l10n.t("Review '{0}' — {1} changed file(s)", label, changes.length),
-        placeHolder: vscode.l10n.t("Open a file's diff ({0} ↔ {1})", sides.baseRef, currentLabel),
-      },
-    ))?.file;
+    : changes[0];
   if (!chosen) {
-    // A cancelled quick pick is silence; a file that is no longer in the list is a REFUSAL. The webview
-    // drew its candidates at click time and the human chooses later — a commit landing in between must
-    // say so rather than open nothing and look broken.
+    // A file that is no longer in the list is a REFUSAL. The webview drew its candidates at click
+    // time and the human chooses later — a commit landing in between must say so rather than open
+    // nothing and look broken.
     if (select) notify(vscode.l10n.t("'{0}' is no longer among the changed files of '{1}'.", select.file, label), "warn");
     return;
   }
-  const f = chosen;
-  const { baseEmpty, currentEmpty } = emptySides(f.status);
-  const emptyUri = vscode.Uri.from({ scheme: WT_DIFF_SCHEME, path: "/empty", query: "empty=1" });
-  const atRef = (file: string, ref: string): vscode.Uri => vscode.Uri.from({
-    scheme: WT_DIFF_SCHEME,
-    path: `/${file}`,
-    query: `cwd=${encodeURIComponent(sides.cwd)}&ref=${encodeURIComponent(ref)}`,
+  reviewPanels.open({
+    workspaceHash: sides.workspaceHash,
+    worktree: sides.worktree,
+    cwd: sides.cwd,
+    baseRef: sides.baseRef,
+    currentLabel,
+    files: changes,
+    selectedPath: chosen.path,
+    ...(sides.headRef !== undefined ? { headRef: sides.headRef } : {}),
   });
-  const base = baseEmpty ? emptyUri : atRef(baseSidePath(f), sides.baseRef);
-  const current = currentEmpty
-    ? emptyUri
-    : sides.headRef
-      ? atRef(f.path, sides.headRef)
-      : vscode.Uri.file(path.join(sides.cwd, f.path));
-  await vscode.commands.executeCommand("vscode.diff", base, current, diffTitle(f, sides.baseRef, currentLabel));
-  // Opening a diff answers nothing: only `"list"` has candidates to hand back.
   return undefined;
 }
 
@@ -1058,6 +1045,45 @@ function reviewCommentsHost(): ReviewCommentsHost {
   };
 }
 
+function reviewPanelHost(): ReviewPanelHost {
+  const comments = reviewCommentsHost();
+  return {
+    async loadSession(worktree, workspaceHash) {
+      const ws = byHash(workspaceHash);
+      if (!ws) return undefined;
+      let review = await worktreeReview(ws, { agent: worktree });
+      if (!review.record) review = await worktreeReview(ws, { worktreeId: worktree });
+      if (!review.record) return undefined;
+      const baseRef = review.comparison?.base ?? review.record.baseRef;
+      const headRef = review.comparison?.head;
+      return {
+        workspaceHash,
+        worktree,
+        cwd: review.record.path,
+        baseRef,
+        currentLabel: headRef ? (headRef.length > 8 ? headRef.slice(0, 8) : headRef) : "worktree",
+        files: review.changedFiles,
+        ...(headRef ? { headRef } : {}),
+      };
+    },
+    viewNotes: comments.viewNotes,
+    async viewDiff(input, workspaceHash) {
+      const ws = byHash(workspaceHash);
+      if (!ws) throw new Error("no Tachyon workspace is active");
+      const result = await ws.client.query({ schemaVersion: 1, method: "review.diff", input });
+      if (result.status === "error") throw new Error(result.message);
+      if (result.method !== "review.diff") throw new Error("review.diff returned the wrong view");
+      return result.view;
+    },
+    upsert: comments.upsert,
+    listAgents: comments.listAgentsForWorktree,
+    sendPrompt: comments.sendPrompt,
+    attachEvidence: comments.attachEvidence,
+    resolveHead: comments.resolveHead,
+    notify,
+  };
+}
+
 async function reviewWorktreeFromPalette(): Promise<undefined> {
   const ws = await pickWorkspace();
   if (!ws) return undefined;
@@ -1089,13 +1115,24 @@ async function reviewWorktreeFromPalette(): Promise<undefined> {
   }
   if (review.comparison) {
     await reviewWorktreeDiff(
-      { cwd: review.record.path, baseRef: review.comparison.base, headRef: review.comparison.head },
+      {
+        cwd: review.record.path,
+        baseRef: review.comparison.base,
+        headRef: review.comparison.head,
+        workspaceHash: ws.wsHash,
+        worktree: picked.agent,
+      },
       review.changedFiles,
       review.record.branch,
     );
     return undefined;
   }
-  await reviewWorktreeDiff({ cwd: review.record.path, baseRef: review.record.baseRef }, review.changedFiles, picked.agent);
+  await reviewWorktreeDiff({
+    cwd: review.record.path,
+    baseRef: review.record.baseRef,
+    workspaceHash: ws.wsHash,
+    worktree: picked.agent,
+  }, review.changedFiles, picked.agent);
   return undefined;
 }
 
@@ -1834,6 +1871,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     onTasksChanged: () => onTasksChanged(),
   }, undefined, controlWorkspaceScope);
   context.subscriptions.push({ dispose: () => boardPanels.dispose() });
+  reviewPanels = new ReviewPanelManager(context.extensionUri, reviewPanelHost());
+  context.subscriptions.push({ dispose: () => reviewPanels.dispose() });
   /**
    * Open (or reveal) the Board for a project. `hash` is the caller's preference; with none, the first
    * attached workspace answers — the same fallback Control's own scope resolution uses, and the point at
@@ -3078,6 +3117,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // SDD 485 C5 — the Board app's own restore: the panel VS Code hands back is REUSED, keyed on the project
   // it persisted, so a reload puts the Board back in its tab instead of opening a second one.
   registerTrustedPanelSerializer<SectionPanelState>(context, BOARD_VIEW_TYPE, (panel, state) => boardPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<SectionPanelState>(context, REVIEW_VIEW_TYPE, (panel, state) => reviewPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, SYSTEM_VIEW_TYPE, (panel, state) => systemPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, WORKTREES_VIEW_TYPE, (panel, state) => worktreesPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_CONFIG_VIEW_TYPE, (panel, state) => runtimeConfigPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
@@ -4236,7 +4276,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           ? item.select
           : undefined;
         return await reviewWorktreeDiff(
-          { cwd: review.record.path, baseRef: review.comparison.base, headRef: review.comparison.head },
+          {
+            cwd: review.record.path,
+            baseRef: review.comparison.base,
+            headRef: review.comparison.head,
+            workspaceHash: ws.wsHash,
+            worktree: item.worktreeId,
+          },
           review.changedFiles,
           review.record.branch,
           reviewSelect,
@@ -4248,7 +4294,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return undefined;
       }
       await reviewWorktreeDiff(
-        { cwd: review.record.path, baseRef: review.comparison?.base ?? review.record.baseRef },
+        {
+          cwd: review.record.path,
+          baseRef: review.comparison?.base ?? review.record.baseRef,
+          workspaceHash: ws.wsHash,
+          worktree: item.agentName,
+        },
         review.changedFiles,
         item.agentName,
       );
@@ -4270,7 +4321,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       await reviewWorktreeDiff(
-        { cwd: review.record.path, baseRef: review.comparison?.base ?? review.record.baseRef },
+        {
+          cwd: review.record.path,
+          baseRef: review.comparison?.base ?? review.record.baseRef,
+          workspaceHash: ws.wsHash,
+          worktree: runId,
+        },
         review.changedFiles,
         runId,
       );

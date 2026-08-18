@@ -358,10 +358,11 @@ describe("t-a0d820 — source and contribution guards", () => {
     expect(restore.indexOf("createThreadFromNote")).toBeGreaterThan(restore.indexOf("planThreadRestore"));
   });
 
-  it("leaves reviewWorktreeDiff and the content provider as the only vscode.diff / scheme provider", () => {
-    expect((extensionSrc.match(/executeCommand\(\s*["'`]vscode\.diff["'`]/g) ?? []).length).toBe(1);
+  it("opens the Tachyon review tab instead of the native vscode.diff", () => {
+    expect((extensionSrc.match(/executeCommand\(\s*["'`]vscode\.diff["'`]/g) ?? []).length).toBe(0);
     expect(extensionSrc).toContain("async function reviewWorktreeDiff(");
-    expect(extensionSrc).toContain("registerTextDocumentContentProvider(WT_DIFF_SCHEME");
+    expect(extensionSrc).toContain("reviewPanels.open");
+    expect(extensionSrc).toContain("new ReviewPanelManager");
   });
 
   it("declares the send command, unhides Review Changes, and localizes both nls files", () => {

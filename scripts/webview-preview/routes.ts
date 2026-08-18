@@ -50,6 +50,8 @@ import { agentStudioShellFixtures, agentStudioShellMakeMessage } from "./fixture
 import { terminalStudioShellFixtures, terminalStudioShellMakeMessage } from "./fixtures/terminal-studio-shell";
 import { scheduleStudioShellFixtures, scheduleStudioShellMakeMessage } from "./fixtures/schedule-studio-shell";
 import { sectionAppFixtureFixtures, sectionAppFixtureMakeMessage } from "./fixtures/section-app-fixture";
+import { reviewFixtures } from "./fixtures/review";
+import { reviewMessage } from "@tachyon/webview-ui/webview/review/messages";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -443,6 +445,17 @@ export const ROUTES: Record<string, Route> = {
     module: true,
     makeMessage: (vm) => handoffMessage(vm as never),
   },
+  // SDD 513 fatia 3 — the product review tab. Fatia 2 previewed via review-fatia2.html;
+  // the catalog route waits for the BoardPanel-shaped host, which now exists.
+  review: {
+    bundle: "/dist/webview/review.js",
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/page-frame.css", "/dist/webview/review.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: reviewFixtures as Record<string, Fixture>,
+    module: true,
+    pageFrame: true,
+    makeMessage: (vm) => reviewMessage(vm as never),
+  },
   // SDD 485 C1–C3 — the section-app proof surface: one manager, cardinality as a parameter. Dev-only, same
   // status as the two spec-350 fakes above.
   "section-app-fixture": {
@@ -500,6 +513,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },
   "schedule-studio-shell": { title: "Schedule Studio", aliases: ["schedule studio", "new schedule", "edit schedule"] },
+  review: { title: "Review", aliases: ["review", "diff review", "worktree review", "tachyon review"] },
 };
 
 /** the machine-readable route catalog (spec 278 design #5) — generated from ROUTES, consumed by passo 2 (spec 281). */
