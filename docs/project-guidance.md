@@ -49,9 +49,12 @@ is wrong — a stuck agent is a symptom worth reading, not a rule to work around
   `update_plan` once produced a complete plan with per-step status in the ledger, and one that never
   called it produced nothing — the channel works and distinguishes the two, so silence reads as "no
   plan" rather than "unknown". Codex does not write one unless asked, which is why this is
-  written down instead of assumed. Nothing blocks delivery if you skip it: the end-of-turn reminder
-  that was meant to catch this never fires for a delegated agent, because its trigger is a
-  persistence Stop row that only declared agents write. The instruction is the whole mechanism.
+  written down instead of assumed. Since `t-685a0c` this line is no longer the only thing holding
+  it up: when `settings.checklist.requireIn` covers your task's kind, a `PreToolUse` gate refuses
+  your first CHANGE until the plan exists, on all three runtimes, and the refusal names your
+  runtime's plan tool. Reads and the plan tool always pass, and delivery is never blocked. For a
+  kind nobody listed there is no gate, and then this instruction is all there is — so write the
+  checklist either way.
 - These coordination and delivery rules moved here from `bridgeGuidanceTail` on 2026-08-05
   (t-f050af): they are this repository's working convention, while the native-sub-agent visibility
   limitation is a product fact and remains in the delivered guidance.
