@@ -200,6 +200,16 @@ describe("t-b88106 — a relaunch preserves an agent's visual state", () => {
   });
 
   after(async () => {
-    await goHeadless(AGENT).catch(() => undefined);
+    // This file and extension.test.js run in the SAME Extension Host against the SAME fixture.
+    // The final scenario above deliberately kills the shared declared `prompter`; merely closing
+    // its editor surface left the following lifecycle scenarios with a stopped autostart terminal.
+    // Restore the fixture contract while keeping it headless, so this suite owns the process state
+    // it mutated as well as the visual state it was written to measure.
+    if (!tmuxAlive(session)) {
+      await vscode.commands.executeCommand("tachyon.spawnAgentItem", item());
+      for (let i = 0; i < 60 && !tmuxAlive(session); i++) await sleep(250);
+      assert.ok(tmuxAlive(session), "surface-preservation teardown did not restore the declared prompter");
+    }
+    await goHeadless(AGENT);
   });
 });

@@ -249,7 +249,6 @@ import { VSCODE_RELOAD_WINDOW_POLICY_HASH, VSCODE_RELOAD_WINDOW_POLICY_JSON } fr
 
 import { Scheduler } from "../schedule/Scheduler.js";
 import { ProposalStore, scheduleProposalExpired } from "../schedule/ProposalStore.js";
-import { readAgentProfileGrants } from "../config/agentProfileGrants.js";
 import { PinStore } from "../pins/PinStore.js";
 import { TaskStore } from "../tasks/TaskStore.js";
 import { collectSessionInspection } from "../runtimeOps/collectSessionInspection.js";
@@ -6464,11 +6463,10 @@ export class Workspace {
       this.host.notify(this.t("that schedule proposal expired at {0}", proposal.expiresAt), "warn");
       return false;
     }
-    // Revocation is retroactive: the same durable-authority grant gates creation and commit.
-    if (readAgentProfileGrants(this.workspaceRoot, proposal.by)?.proposeSavedAgent !== true) {
-      this.host.notify(this.t("'{0}' no longer holds grants.proposeSavedAgent", proposal.by), "warn");
-      return false;
-    }
+    // t-ee64af — approval deliberately has no `grants.proposeSavedAgent` gate. That grant authorizes
+    // proposing a Saved Agent, not a schedule; reusing it here was the forgotten commit-time half of
+    // the gate reverted by t-d4f246. Human approval is the authority that makes this inert proposal
+    // active, while expiry and full resulting-config validation remain enforced below.
     const ok = this.mutateConfig(
       (text) => upsertSchedule(text, proposal.name, proposal.schedule as Record<string, unknown>, true),
       () => {},
