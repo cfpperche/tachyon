@@ -262,11 +262,24 @@ function stagedFixture(relativePath) {
   return staged;
 }
 
+/**
+ * t-9dafd3 — the extension manifest lives at `apps/vscode-extension` since the monorepo
+ * relocate (`3fde3b05`). `@vscode/test-cli` defaults `extensionDevelopmentPath` to THIS
+ * file's directory, whose package.json is the workspace (`tachyon-workspace`) and has no
+ * `engines`. Measured 2026-08-18 on a clean worktree: the host printed
+ * `property \`engines\` is mandatory and must be of type \`object\`` and every product
+ * scenario failed `extension not found`. The CommentController probe still passed because
+ * it never loads the product. Pointing at the real manifest is the whole change; the
+ * isolation guards above stay.
+ */
+const EXTENSION_DEVELOPMENT_PATH = path.resolve(import.meta.dirname, "apps/vscode-extension");
+
 export default defineConfig([
   {
     label: "single-root",
     files: "test/integration/**/*.test.js",
     workspaceFolder: SINGLE_ROOT_FIXTURE,
+    extensionDevelopmentPath: EXTENSION_DEVELOPMENT_PATH,
     launchArgs: GATE_LAUNCH_ARGS,
     env: GATE_ENV,
     mocha: {
@@ -281,6 +294,7 @@ export default defineConfig([
     label: "multi-root",
     files: "test/integration-multiroot/**/*.test.js",
     workspaceFolder: "test/fixtures/multiroot/multi.code-workspace",
+    extensionDevelopmentPath: EXTENSION_DEVELOPMENT_PATH,
     launchArgs: GATE_LAUNCH_ARGS,
     env: GATE_ENV,
     mocha: {
@@ -297,6 +311,7 @@ export default defineConfig([
     label: "empty-window",
     files: "test/integration-empty/**/*.test.js",
     // No workspaceFolder → VS Code opens with zero folders (the recovery state under test).
+    extensionDevelopmentPath: EXTENSION_DEVELOPMENT_PATH,
     launchArgs: GATE_LAUNCH_ARGS,
     env: GATE_ENV,
     mocha: {
