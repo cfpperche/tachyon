@@ -21,6 +21,7 @@ import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
  *   npm run build && npx vitest run --config vitest.browser.config.ts test/browser/sidebarStatusFooterShots.test.ts
  */
 const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/t-bd9fb8-sidebar-status-footer");
+const DISMISS_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/t-c820cb-sidebar-status-dismiss");
 const DIST = EXTENSION_WEBVIEW_DIST;
 const shotPage = path.join(DIST, "sidebar-status-footer-shot.html");
 
@@ -51,8 +52,11 @@ function pageHtml(body: string): string {
   const ds = readFileSync(path.join(DIST, "design-system.css"), "utf8");
   const sidebar = readFileSync(path.join(DIST, "sidebar.css"), "utf8");
   const theme = readFileSync(path.resolve(__dirname, "../../scripts/webview-preview/theme-dark.css"), "utf8");
+  // Inlined next to this file so `url("./codicon.ttf")` resolves — the dismiss control is a .act
+  // Icon, and without the font the 22px hit target is an empty square (t-c820cb evidence).
+  const codicon = readFileSync(path.join(DIST, "codicon.css"), "utf8");
   return `<!doctype html><html><head><meta charset="utf-8"/>
-<style>${tokens}${faces}${theme}${ds}${sidebar}
+<style>${codicon}${tokens}${faces}${theme}${ds}${sidebar}
 html,body{margin:0;padding:0;background:var(--vscode-sideBar-background,#1e1e1e);color:var(--vscode-foreground,#ccc);font:12px/1.4 var(--vscode-font-family,system-ui);}
 body{display:flex;flex-direction:column;min-height:100vh}
 #root{display:flex;flex-direction:column;flex:1;min-height:0;height:100vh}
@@ -67,6 +71,7 @@ describe("t-bd9fb8 sidebar status footer — height and two-width shots", () => 
 
   beforeAll(async () => {
     mkdirSync(OUT_DIR, { recursive: true });
+    mkdirSync(DISMISS_DIR, { recursive: true });
     const mod = await loadWebviewModule(path.resolve(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx"));
     App = mod.App as typeof App;
     browser = await puppeteer.launch({
@@ -108,11 +113,16 @@ describe("t-bd9fb8 sidebar status footer — height and two-width shots", () => 
     } : null);
     const footer = document.querySelector("[data-testid='sidebar-status-footer']");
     const message = document.querySelector(".status-footer-message");
+    const dismiss = document.querySelector("[data-testid='sidebar-status-dismiss']");
+    const dismissIcon = dismiss?.querySelector(".codicon");
     return {
       footer: box(footer),
       kbar: box(document.querySelector(".kbar")),
       row: box(document.querySelector(".row")),
       panel: box(document.querySelector("#sidebar-panel")),
+      messageBox: box(message),
+      dismissBox: box(dismiss),
+      dismissGlyph: dismissIcon ? getComputedStyle(dismissIcon, "::before").content : "",
       level: footer?.getAttribute("data-level") ?? null,
       levelText: document.querySelector(".status-footer .notice-level")?.textContent ?? "",
       message: message?.textContent ?? "",
@@ -175,5 +185,54 @@ describe("t-bd9fb8 sidebar status footer — height and two-width shots", () => 
     const g = await geometry();
     expect(g.footer).toBeNull();
     await shoot("absent-360");
+  }, 60_000);
+
+  it("t-c820cb — dismiss control and leftover message width at both widths, short and long", async () => {
+    const leftovers: Array<{
+      case: string;
+      width: number;
+      messageWidth: number;
+      dismissWidth: number;
+      footerWidth: number;
+    }> = [];
+    const writtenDismiss: string[] = [];
+    const shootDismiss = async (name: string) => {
+      const file = path.join(DISMISS_DIR, `${name}.png`);
+      await page.screenshot({ path: file });
+      expect(statSync(file).size, `${file} is empty`).toBeGreaterThan(1000);
+      writtenDismiss.push(path.basename(file));
+    };
+
+    for (const notice of [
+      { id: "short", vm: SHORT },
+      { id: "long", vm: LONG },
+    ] as const) {
+      for (const w of WIDTHS) {
+        await load({ fleets: [withNotice(notice.vm)], initialTab: "Agents" }, w);
+        const g = await geometry();
+        expect(g.footer, `${notice.id}@${w.id}`).not.toBeNull();
+        expect(g.dismissBox, `${notice.id}@${w.id}: no dismiss control`).not.toBeNull();
+        expect(g.messageBox, `${notice.id}@${w.id}: no message box`).not.toBeNull();
+        expect(g.dismissBox!.width, `${notice.id}@${w.id}: dismiss invisible`).toBeGreaterThan(0);
+        expect(g.dismissGlyph, `${notice.id}@${w.id}: close glyph missing`).not.toMatch(/^(|none|""|'')$/)
+        expect(g.messageBox!.width, `${notice.id}@${w.id}: message crushed`).toBeGreaterThan(80);
+        expect(g.docWidth, `${notice.id}@${w.id}: overflow`).toBeLessThanOrEqual(g.viewportWidth);
+        leftovers.push({
+          case: notice.id,
+          width: w.px,
+          messageWidth: Math.round(g.messageBox!.width),
+          dismissWidth: Math.round(g.dismissBox!.width),
+          footerWidth: Math.round(g.footer!.width),
+        });
+        await shootDismiss(`${notice.id}-${w.id}`);
+      }
+    }
+
+    writeFileSync(path.join(DISMISS_DIR, "leftover.json"), `${JSON.stringify(leftovers, null, 2)}\n`);
+    writeFileSync(
+      path.join(DISMISS_DIR, "README.md"),
+      `# t-c820cb — sidebar status footer dismiss\n\nAnchor: the footer shows a dismiss control next to the message at 880 and 360, short and long. The full message stays reachable via details. No timer.\n\nLeftover message widths (px):\n\n${leftovers.map((r) => `- ${r.case} @ ${r.width}: message ${r.messageWidth} after a ${r.dismissWidth} control`).join("\n")}\n\n${writtenDismiss.map((f) => `- \`${f}\``).join("\n")}\n`,
+      "utf8",
+    );
   }, 60_000);
 });

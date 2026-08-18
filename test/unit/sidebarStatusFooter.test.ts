@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
+import { loadWebviewModule, renderStatic, renderStaticWithElements } from "../helpers/staticPreact.js";
 import { TABS, type FleetVM, type StatusNoticeVM, type TabId } from "@tachyon/shared/sidebar/types.js";
 import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
 const APP_TSX = path.resolve(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx");
@@ -41,7 +41,16 @@ function fleetWith(notice?: StatusNoticeVM): FleetVM {
 
 async function loadApp() {
   const mod = await loadWebviewModule(APP_TSX);
-  return mod.App as (props: { fleets?: FleetVM[]; initialTab?: TabId }) => unknown;
+  return mod.App as (props: {
+    fleets?: FleetVM[];
+    initialTab?: TabId;
+    dispatch?: {
+      action: (...args: unknown[]) => void;
+      section: (...args: unknown[]) => void;
+      global: (...args: unknown[]) => void;
+      pipeline: (...args: unknown[]) => void;
+    };
+  }) => unknown;
 }
 
 describe("t-bd9fb8 — sidebar status footer", () => {
@@ -94,6 +103,36 @@ describe("t-bd9fb8 — sidebar status footer", () => {
     expect(html).toContain("<summary");
     expect(html).toContain('data-level="error"');
     expect(html).toMatch(/role="alert"/);
+    expect(html).toContain('data-testid="sidebar-status-dismiss"');
+    expect(html).toMatch(/<\/details>\s*<button[^>]*data-testid="sidebar-status-dismiss"/);
+  });
+
+  it("t-c820cb — dismiss posts the existing section channel with the notice's at, and does not nest a button in summary", async () => {
+    const App = await loadApp();
+    const calls: unknown[][] = [];
+    const { html, elements } = renderStaticWithElements(App({
+      fleets: [fleetWith(SHORT)],
+      initialTab: "Agents",
+      dispatch: {
+        action: () => {},
+        section: (...args: unknown[]) => { calls.push(args); },
+        global: () => {},
+        pipeline: () => {},
+      },
+    }));
+    expect(html).toContain('data-testid="sidebar-status-dismiss"');
+    expect(html).toContain('aria-label="Dismiss"');
+    expect(html).toMatch(/<summary[^>]*>[\s\S]*<\/summary>/);
+    expect(html).not.toMatch(/<summary[^>]*>[\s\S]*<button[\s\S]*<\/summary>/);
+    const dismiss = elements.find((el) =>
+      el.tag === "button" && el.props["data-testid"] === "sidebar-status-dismiss" && typeof el.props.onClick === "function",
+    );
+    expect(dismiss).toBeDefined();
+    (dismiss!.props.onClick as (e: { preventDefault(): void; stopPropagation(): void }) => void)({
+      preventDefault() {},
+      stopPropagation() {},
+    });
+    expect(calls).toEqual([["statusNotice:dismiss", SHORT.at, undefined, "ws"]]);
   });
 
   it("is gone when the selected project has no current notice", async () => {

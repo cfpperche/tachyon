@@ -23,6 +23,11 @@ export interface DomainActionSource {
    * screen and reports whether it still matched, so a stale click hides nothing.
    */
   dismissConfigDiscards?(signature: string): boolean;
+  /**
+   * t-c820cb — the human dismissed the status-footer notice. Takes the `at` that was on screen
+   * and reports whether it still matched. Does not disable later `set`s.
+   */
+  dismissStatusNotice?(at: string): boolean;
 }
 
 export interface DomainActionDeps {
