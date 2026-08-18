@@ -215,6 +215,52 @@ function assertInotifyHeadroom() {
   );
 }
 
+/**
+ * The gate refuses to open a REAL window on somebody's desktop.
+ *
+ * Measured 2026-08-18: a run of the multi-root label opened an `[Extension Development Host]`
+ * window on the maintainer's screen, on top of the editor he was working in. Nothing in this file
+ * asked for headless — it was the CALLER's job to wrap the command in `xvfb-run`, and two agents
+ * remembered while a third did not. A guarantee that depends on remembering is not a guarantee;
+ * this is the same lesson as `settings.checklist.requireIn`, one layer down.
+ *
+ * The check is the mechanism that makes the promise true. `DISPLAY` unset is genuinely headless and
+ * passes. `DISPLAY` set is only allowed when an `Xvfb` process is actually serving that display —
+ * which is exactly what `xvfb-run` creates, and what a human's session does not have.
+ *
+ * It only READS `/proc` and throws. It never kills anything and never touches a running X server:
+ * deciding what may die on a shared desktop is not a test runner's call.
+ */
+function assertHeadlessDisplay() {
+  const display = process.env.DISPLAY?.trim();
+  if (!display) return; // no display at all — nothing can be opened on anyone's screen
+
+  let servedByXvfb = false;
+  for (const entry of fs.readdirSync("/proc")) {
+    if (!/^\d+$/.test(entry)) continue;
+    let argv = "";
+    try {
+      argv = fs.readFileSync(`/proc/${entry}/cmdline`, "utf8");
+    } catch { continue; } // process gone mid-scan, or not ours
+    const parts = argv.split("\0").filter(Boolean);
+    if (parts.length === 0) continue;
+    if (!/(^|\/)Xvfb$/.test(parts[0])) continue;
+    if (parts.includes(display)) { servedByXvfb = true; break; }
+  }
+  if (servedByXvfb) return;
+
+  throw new Error(
+    `Tachyon editor gate refused to start: DISPLAY=${display} is not served by Xvfb, so this run ` +
+    `would open real VS Code windows on somebody's desktop. Wrap the command:\n\n` +
+    `  xvfb-run -a -s "-screen 0 1280x800x24" npm run test:integration\n\n` +
+    `Or unset DISPLAY. Measured 2026-08-18: an unwrapped run opened an Extension Development Host ` +
+    `window over the maintainer's editor. Headless is a property of the gate, not a habit of ` +
+    `whoever types the command.`,
+  );
+}
+
+assertHeadlessDisplay();
+
 assertInotifyHeadroom();
 
 retirePreIsolationResidue();
