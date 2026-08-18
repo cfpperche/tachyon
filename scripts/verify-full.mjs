@@ -3,14 +3,13 @@ import { execFileSync, spawn } from "node:child_process";
 import { cpus, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import hostResourceSizing from "@tachyon/shared/host-resource-sizing.cjs";
+import hostResourceSizing from "./host-resource-sizing.cjs";
 import { UNHANDLED_OUTPUT_ENV } from "./vitest-unhandled-reporter.mjs";
 import { auditTrunk, formatTrunkAudit, recordVerification, reuseDecision, verifiableTree, verifierFingerprint } from "./verify-record.mjs";
 
 /**
- * t-da6b78 — the sizing rules come from `shared/host-resource-sizing.cjs`, the SAME module
- * `packages/engine/src/host/hostResources.ts` re-exports. They used to live twice: here (via a hand-kept ESM twin
- * at `scripts/host-resources.mjs`) and in the TypeScript module, synchronised by human memory.
+ * Test-only sizing stays under scripts/. Product code imports only the shared host-memory reader,
+ * keeping gate policy and its TACHYON_VERIFY_* controls out of the user daemon.
  */
 const { decideHeavyGate } = hostResourceSizing;
 

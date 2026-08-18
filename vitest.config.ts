@@ -2,8 +2,12 @@ import { defineConfig } from "vitest/config";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { decideHeavyGate, readHostMemory } from "./packages/engine/src/host/hostResources";
+import hostMemory from "./packages/shared/host-memory.cjs";
+import hostResourceSizing from "./scripts/host-resource-sizing.cjs";
 import { admitOrFallback } from "./scripts/vitestBudget";
+
+const { readHostMemory } = hostMemory;
+const { decideHeavyGate } = hostResourceSizing;
 
 /**
  * t-019dac: auto-size workers from free RAM (grows if you add memory).

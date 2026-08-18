@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  decideHeavyGate,
   parseMeminfo,
   readHostMemory,
-  recommendVitestMaxWorkers,
   type HostMemorySnapshot,
 } from "@tachyon/engine/host/hostResources.js";
-import hostResourceSizing from "@tachyon/shared/host-resource-sizing.cjs";
+import hostMemory from "@tachyon/shared/host-memory.cjs";
+import hostResourceSizing from "../../scripts/host-resource-sizing.cjs";
 import hostResourceCostInputs from "@tachyon/shared/host-resource-cost-inputs.cjs";
+
+const { decideHeavyGate, recommendVitestMaxWorkers } = hostResourceSizing;
 
 const SAMPLE = `
 MemTotal:       16384000 kB
@@ -46,6 +47,16 @@ describe("hostResources (t-019dac)", () => {
     expect(m.memTotalMb).toBe(16000);
     expect(m.memAvailableMb).toBe(8000);
     expect(m.swapFreeMb).toBe(3072);
+  });
+
+  it("reads host memory through the product door with an explicit pure path", () => {
+    const seen: string[] = [];
+    const memory = readHostMemory((path) => {
+      seen.push(path);
+      return SAMPLE;
+    }, "/fixture/meminfo");
+    expect(seen).toEqual(["/fixture/meminfo"]);
+    expect(memory).toMatchObject({ source: "proc-meminfo", memAvailableMb: 8000 });
   });
 
   it("auto-sizes workers higher when more RAM is free", () => {
@@ -155,22 +166,10 @@ describe("hostResources (t-019dac)", () => {
     }
   });
 
-  /**
-   * t-da6b78 — ONE implementation, asserted by identity rather than by reading source.
-   *
-   * The defect this closes was two copies of the same algorithm kept in step by human memory: this
-   * module and an ESM twin at `scripts/host-resources.mjs`, the latter outside tsconfig's include
-   * and therefore unprotected — which is how t-0b7aa7 shipped. A grep for the symbol names proves
-   * only what the text says today; comparing function IDENTITY proves the extension host and
-   * `scripts/verify-full.mjs` are calling the same closure. Re-declaring any of these locally in
-   * `hostResources.ts` — the exact regression — breaks this, because a copy is never `===` the
-   * original however faithfully it is transcribed.
-   */
-  it("re-exports the shared sizing module rather than re-implementing it", () => {
-    expect(parseMeminfo).toBe(hostResourceSizing.parseMeminfo);
-    expect(readHostMemory).toBe(hostResourceSizing.readHostMemory);
-    expect(recommendVitestMaxWorkers).toBe(hostResourceSizing.recommendVitestMaxWorkers);
-    expect(decideHeavyGate).toBe(hostResourceSizing.decideHeavyGate);
+  /** Product code keeps one typed implementation of memory parsing and reading. */
+  it("re-exports the shared product memory module rather than re-implementing it", () => {
+    expect(parseMeminfo).toBe(hostMemory.parseMeminfo);
+    expect(readHostMemory).toBe(hostMemory.readHostMemory);
   });
 
   /**

@@ -1,21 +1,11 @@
-import hostResourceSizing from "@tachyon/shared/host-resource-sizing.cjs";
+import hostMemory from "@tachyon/shared/host-memory.cjs";
 
 /**
- * t-019dac — host memory awareness for heavy gates (verify:full / verify_task full).
- * Auto-size vitest workers from free RAM; fail-closed under pressure.
- *
- * t-da6b78 — the algorithm itself no longer lives here. It lives in
- * `shared/host-resource-sizing.cjs`, which `scripts/verify-full.mjs` imports directly; this module
- * is the typed door for extension-host source and nothing else. Until now there were two copies of
- * the sizing rules — this file and a hand-kept ESM twin at `scripts/host-resources.mjs` — and the
- * twin got no type protection at all because `scripts/` is outside tsconfig's include. That is how
- * t-0b7aa7 happened. Add nothing here that a script would also need; add it to the shared module.
- *
- * Env overrides are documented on the shared module.
+ * Product-only host memory reading. Test gate sizing lives under scripts/ so none of its policy or
+ * TACHYON_VERIFY_* controls enter the extension daemon bundle. The shared CJS module remains the
+ * single runtime implementation and this file is its typed engine door.
  */
 
-export type HostMemorySnapshot = hostResourceSizing.HostMemorySnapshot;
-export type HeavyGateDecision = hostResourceSizing.HeavyGateDecision;
+export type HostMemorySnapshot = hostMemory.HostMemorySnapshot;
 
-export const { parseMeminfo, readHostMemory, recommendVitestMaxWorkers, decideHeavyGate, formatHeavyGateRefusal } =
-  hostResourceSizing;
+export const { parseMeminfo, readHostMemory } = hostMemory;
