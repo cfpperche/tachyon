@@ -25,4 +25,22 @@ describe("t-7a7ddf development env stays out of the installed product", () => {
     expect(source).toMatch(/const home = devProfileHome \? \{ homeDir: devProfileHome \} : \{\};/);
     expect(source).not.toMatch(/const profileHome = process\.env\.TACHYON_DEV_HOST === "1"/);
   });
+
+  it("points every early global-settings consumer at the isolated home, but never redirects Production", () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "../../apps/vscode-extension/src/extension.ts"),
+      "utf8",
+    );
+    const resolution = source.indexOf("const settingsHome = context.extensionMode");
+    const recovery = source.indexOf("registerGlobalSettingsRecovery(context)");
+    const legacyImport = source.indexOf("\n  importLegacyGlobalSettings();");
+
+    expect(resolution).toBeGreaterThan(-1);
+    expect(resolution).toBeLessThan(recovery);
+    expect(resolution).toBeLessThan(legacyImport);
+    expect(source.match(/TACHYON_GLOBAL_SETTINGS_HOME/g)?.length).toBe(1);
+    expect(source).toMatch(
+      /const settingsHome = context\.extensionMode === vscode\.ExtensionMode\.Production\s*\? undefined\s*:\s*process\.env\.TACHYON_GLOBAL_SETTINGS_HOME\?\.trim\(\) \|\| undefined;/,
+    );
+  });
 });
