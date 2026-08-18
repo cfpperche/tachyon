@@ -405,7 +405,8 @@ describe("SidebarPrototypeProvider", () => {
 
     const fleet = posted.find((m) => (m as { type?: string }).type === "fleet") as { fleets: Array<{ agents: Array<{ name: string; model?: string; modelSource?: string; modelDivergence?: boolean }> }> };
     const agent = fleet.fleets[0].agents.find((a) => a.name === "worker");
-    expect(agent).toMatchObject({ model: "GPT-5.6 Sol", modelSource: "observed", modelDivergence: true });
+    expect(agent).toMatchObject({ model: "GPT-5.6 Sol", modelSource: "observed" });
+    expect(agent?.modelDivergence).toBeUndefined();
   });
 
   it("spec 378: with no observation yet, the row shows the declared/profile label (never a fake observed)", async () => {

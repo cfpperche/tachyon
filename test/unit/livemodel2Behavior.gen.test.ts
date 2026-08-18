@@ -141,7 +141,7 @@ describe("livemodel2Behavior — spec 378 live-model-sidebar acceptance scenario
     expect(resolveModelFact("claude", observed)).toMatchObject({ label: "Opus 4.8", source: "observed", stale: true });
   });
 
-  it("Scenario: divergence is queryable — declared and observed disagree, exposed in the RuntimeOps snapshot and the sidebar row", async () => {
+  it("Scenario: divergence is queryable — explicit declared and observed disagree, exposed in the RuntimeOps snapshot and the sidebar row", async () => {
     const root = freshRoot();
     const adir = path.join(root, "activity");
     const sess = path.join(root, "rollout.jsonl");
@@ -151,7 +151,7 @@ describe("livemodel2Behavior — spec 378 live-model-sidebar acceptance scenario
     const source = fleetSource(root, { worker: "codex" }) as RuntimeOpsWorkspaceSource & Record<string, unknown>;
     source.manager = {
       listAgents: async () => [{ name: "worker", session: "pane", running: true, lifetime: "saved", resumePolicy: "restartable", dead: false, crashed: false, kind: "agent" as const }],
-      defOf: () => ({ cmd: "codex" }), // bare codex → declared "Codex default"
+      defOf: () => ({ cmd: "codex -c model=gpt-5.1-codex" }),
       resumeReadiness: async () => true,
     };
     const service = new RuntimeOpsSnapshotService(() => [source as never], {
@@ -161,14 +161,44 @@ describe("livemodel2Behavior — spec 378 live-model-sidebar acceptance scenario
 
     const snapshot = await service.snapshot();
     const agent = snapshot.runtimes[0].agents[0];
-    expect(agent.model).toMatchObject({ value: "Codex default" }); // declared/profile column unchanged (non-goal)
+    expect(agent.model).toMatchObject({ value: "GPT-5.1 Codex" }); // declared/profile column unchanged (non-goal)
     expect(agent.modelObserved).toMatchObject({ value: "GPT-5.6 Sol", effort: "high" });
     expect(agent.modelDivergence).toBe(true);
 
     // the SAME fact drives the sidebar row.
     const observed = service.observedModelFor(root, "ws", "worker");
-    const vm = toAgentVM(agentRaw("worker", "codex"), { kind: "agent", model: observed });
+    const vm = toAgentVM(agentRaw("worker", "codex -c model=gpt-5.1-codex"), { kind: "agent", model: observed });
     expect(vm).toMatchObject({ model: "GPT-5.6 Sol", modelSource: "observed", modelDivergence: true });
+  });
+
+  it("t-1464cf: a bare cmd vs a different observed label is not queryable divergence", async () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const sess = path.join(root, "rollout.jsonl");
+    fs.writeFileSync(sess, [codexSessionMeta("cx", "0.144.0"), codexTurnContext("t1", "gpt-5.6-sol", "high"), codexAssistantMsg("a1", "hi")].join("\n") + "\n");
+    new ActivityLogWriter(adir, "worker", () => "2026-07-13T00:00:00Z").poll(codexLoc(sess, "cx"));
+
+    const source = fleetSource(root, { worker: "codex" }) as RuntimeOpsWorkspaceSource & Record<string, unknown>;
+    source.manager = {
+      listAgents: async () => [{ name: "worker", session: "pane", running: true, lifetime: "saved", resumePolicy: "restartable", dead: false, crashed: false, kind: "agent" as const }],
+      defOf: () => ({ cmd: "codex" }),
+      resumeReadiness: async () => true,
+    };
+    const service = new RuntimeOpsSnapshotService(() => [source as never], {
+      detect: async () => [],
+      activityLog: (r, agent) => new ActivityLog(path.join(r, "activity"), agent),
+    });
+
+    const snapshot = await service.snapshot();
+    const agent = snapshot.runtimes[0].agents[0];
+    expect(agent.model).toMatchObject({ value: "Codex default" });
+    expect(agent.modelObserved).toMatchObject({ value: "GPT-5.6 Sol", effort: "high" });
+    expect(agent.modelDivergence).toBe(false);
+
+    const observed = service.observedModelFor(root, "ws", "worker");
+    const vm = toAgentVM(agentRaw("worker", "codex"), { kind: "agent", model: observed });
+    expect(vm).toMatchObject({ model: "GPT-5.6 Sol", modelSource: "observed" });
+    expect(vm.modelDivergence).toBeUndefined();
   });
 
   it("Scenario: subagent (isSidechain) records never relabel the primary agent", () => {
@@ -252,7 +282,7 @@ describe("livemodel2Behavior — spec 378 live-model-sidebar acceptance scenario
       modelSource: "observed",
       modelObservedAt: "2026-07-13T00:00:00Z",
       modelStale: true,
-      modelDivergence: true, // declared "Codex default" vs observed "GPT-5.6 Sol"
     });
+    expect(vm.modelDivergence).toBeUndefined(); // t-1464cf — bare cmd, profile is not a declaration
   });
 });

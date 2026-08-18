@@ -206,15 +206,17 @@ export interface ModelFact {
 /**
  * Precedence: observed > declared > profile (spec 378 acceptance). Divergence compares the declared and
  * observed LABELS (both normalized through the same alias table via `labelModel`/`modelLabelForRuntime`) —
- * not the raw ids, so e.g. a bare `codex` (declared: "Codex default") vs an observed `gpt-5.6-sol`
- * ("GPT-5.6 Sol") correctly reads as divergent. Boundary-aware demotion happens upstream (the caller clears
- * `observed.id` on a process-rotating boundary, or sets `stale: true` on a process-preserving one) — this
- * function only applies straightforward precedence to whatever it's given.
+ * not the raw ids — and only when the spawn command pinned an explicit model. A bare `codex` (profile:
+ * "Codex default") vs an observed `gpt-5.6-sol` ("GPT-5.6 Sol") is the runtime default, not a mismatch
+ * (t-1464cf). Boundary-aware demotion happens upstream (the caller clears `observed.id` on a
+ * process-rotating boundary, or sets `stale: true` on a process-preserving one) — this function only
+ * applies straightforward precedence to whatever it's given.
  */
 export function resolveModelFact(cmd: string | undefined, observed?: ObservedModelInput): ModelFact | undefined {
   const declaredLabel = modelFromCommand(cmd);
   if (!declaredLabel || !cmd) return undefined;
-  const declaredSource: ModelSource = declaredModelFromCommand(cmd).explicit ? "declared" : "profile";
+  const declared = declaredModelFromCommand(cmd);
+  const declaredSource: ModelSource = declared.explicit ? "declared" : "profile";
   const runtime = runtimeOf(cmd);
   const validId = runtime ? validatedObservedModelId(observed?.id) : undefined;
   if (!validId) return { label: declaredLabel, source: declaredSource, stale: false, divergence: false };
@@ -224,7 +226,8 @@ export function resolveModelFact(cmd: string | undefined, observed?: ObservedMod
     source: "observed",
     ...(observed?.observedAt ? { observedAt: observed.observedAt } : {}),
     stale: observed?.stale === true,
-    divergence: observedLabel !== declaredLabel,
+    // t-1464cf — profile is a generic label, not a choice. Nothing diverged unless a flag pinned one.
+    divergence: declared.explicit && observedLabel !== declaredLabel,
   };
 }
 export interface AgentExtras {

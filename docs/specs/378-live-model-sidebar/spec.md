@@ -11,7 +11,8 @@ dogfood 2026-07-14: codex-budget flipped "Codex default · profile" → observed
 seconds of a turn. Platform bugs surfaced and filed: t-88ef8c (AF_UNIX socket path kills activation),
 t-19026b (lease salvage), t-1e733d (flaky probe test), t-9f2641 (ownership misses mid-run transcript
 rotation). Follow-ups: sidebar preview fixture lacks the provenance fields; RuntimeOps panel model
-column still declared-only; divergence-on-profile-default kept (informative semantics, maintainer-accepted).
+column still declared-only; divergence-on-profile-default overturned by t-1464cf (profile is a generic
+label, not a choice — `≠ declared` only when the spawn command pinned an explicit model).
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

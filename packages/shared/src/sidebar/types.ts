@@ -54,7 +54,7 @@ export interface AgentVM {
   /** spec 378 — an observed model carried across a process-preserving session boundary (in-TUI `/clear`,
    *  resume) without a fresh observation yet. */
   modelStale?: boolean;
-  /** spec 378 — the observed model differs from the declared/profile model (same alias table both sides). */
+  /** spec 378 / t-1464cf — observed label differs from an explicitly declared `--model` (same alias table both sides). */
   modelDivergence?: boolean;
   /**
    * SDD 479 phase 3 — the runtime this row runs on (`claude`, `codex`, …), derived from its command by

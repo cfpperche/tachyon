@@ -210,6 +210,28 @@ export const sidebarFixtures: Record<string, Fixture<SidebarFixtureVM>> = {
     } as FleetVM,
   },
 
+  /**
+   * t-1464cf — visual pair for the `≠ declared` calculation.
+   *
+   * Anchor (from the card, before the capture): agents without an explicit `--model` must not wear
+   * `≠ declared` even when the observed label differs from the profile default. A real mismatch —
+   * spawn pinned `--model X`, transcript shows Y — still must.
+   */
+  "model-divergence": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...base,
+      agents: [
+        { name: "claude", model: "Sonnet 5", modelSource: "observed", status: "running", kind: "agent" as const },
+        { name: "hunkgrok", model: "Grok 4.6", modelSource: "observed", status: "idle", kind: "agent" as const },
+        { name: "lembretecodex", model: "GPT-5.6 Sol", modelSource: "observed", status: "running", kind: "agent" as const },
+        { name: "cb684f-no-plan", model: "GPT-5.6 Sol", modelSource: "observed", status: "idle", kind: "agent" as const },
+        { name: "cb684f-with-plan", model: "GPT-5.6 Sol", modelSource: "observed", status: "running", kind: "agent" as const },
+        { name: "pinned-wrong", model: "Haiku 4.5", modelSource: "observed", modelDivergence: true, status: "running", kind: "agent" as const },
+      ],
+    },
+  },
+
   // t-fde5b6 — the scroll proof: far more attention than the panel's max-height can show. The panel
   // must stay the same height and scroll internally, never grow or push the rest of the sidebar.
   // Every state a human can see, side by side.
