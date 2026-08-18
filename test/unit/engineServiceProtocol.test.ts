@@ -665,6 +665,14 @@ describe("persistent engine protocol", () => {
     expect(isWorkspaceCommandV1({ ...toggle, input: { ...toggle.input, id: "p-nope00" } })).toBe(false);
     expect(isWorkspaceCommandV1({ ...toggle, input: { ...toggle.input, extra: true } })).toBe(false);
     expect(isWorkspaceCommandV1({ ...toggle, input: { action: "proposal.reject", id: "abcdef123456" } })).toBe(true);
+    expect(isWorkspaceCommandV1({
+      ...toggle,
+      input: { action: "statusNotice.dismiss", id: "2026-08-17T12:00:00.000Z" },
+    })).toBe(true);
+    expect(isWorkspaceCommandV1({
+      ...toggle,
+      input: { action: "statusNotice.dismiss", id: "current" },
+    })).toBe(false);
     expect(() => workspaceCommandSuccessV1(toggle)).toThrow(/exact outcome/i);
 
     const mutation = workspaceSidebarMutationSuccessV1(toggle, {

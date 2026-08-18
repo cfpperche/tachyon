@@ -46,6 +46,13 @@ export async function applySidebarMutation(
     if (changed) onChanged("agents");
     return { action: input.action, id: input.id, changed };
   }
+  if (input.action === "statusNotice.dismiss") {
+    // t-c820cb — same stale-click rule as config discards: `id` is the `at` that was on screen.
+    // `set` still writes after a successful dismiss; this only clears the matching current notice.
+    const changed = source.dismissStatusNotice?.(input.id) ?? false;
+    if (changed) onChanged("agents");
+    return { action: input.action, id: input.id, changed };
+  }
   if (input.action === "agent.markSeen") {
     source.markAgentPaneSeen?.(input.id);
     onChanged("agents");

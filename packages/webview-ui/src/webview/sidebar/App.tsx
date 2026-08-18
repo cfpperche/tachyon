@@ -1265,10 +1265,11 @@ function BootRowNotice({ boot }: { boot?: SidebarBootVM }) {
 /**
  * SDD 512 fatia 2 / t-bd9fb8 — the status-bar replacement. Fixed under the tab panel, outside
  * tab routing. Last write wins; no timer. `level` is painted from the field, never inferred.
- * `<details>` is the path to the rest of a long message (median 135, max 161). Absent notice
- * renders nothing so the list keeps its height.
+ * `<details>` is the path to the rest of a long message (median 135, max 161). t-c820cb — the
+ * sibling dismiss control asks the store to clear; it is not inside `<summary>` (invalid HTML)
+ * and it is not a timer. Absent notice renders nothing so the list keeps its height.
  */
-function StatusNoticeFooter({ notice }: { notice: StatusNoticeVM }) {
+function StatusNoticeFooter({ notice, onDismiss }: { notice: StatusNoticeVM; onDismiss?: () => void }) {
   return (
     <footer
       class={`status-footer level-${notice.level}`}
@@ -1282,6 +1283,16 @@ function StatusNoticeFooter({ notice }: { notice: StatusNoticeVM }) {
           <span class="status-footer-message">{notice.message}</span>
         </summary>
       </details>
+      <button
+        class="act"
+        type="button"
+        title="Dismiss"
+        aria-label="Dismiss"
+        data-testid="sidebar-status-dismiss"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDismiss?.(); }}
+      >
+        <Icon name="close" />
+      </button>
     </footer>
   );
 }
@@ -1754,7 +1765,7 @@ export function App({
           renderSelected(selected)
         ) : null}
       </div>
-      {selected?.statusNotice ? <StatusNoticeFooter notice={selected.statusNotice} /> : null}
+      {selected?.statusNotice ? <StatusNoticeFooter notice={selected.statusNotice} onDismiss={() => dispatch?.section("statusNotice:dismiss", selected.statusNotice!.at, undefined, selected.folder?.hash)} /> : null}
       {open && <CmdK fleets={fleets} selectedHash={selectedHash} onClose={closeK} onPick={pick} />}
       <MoreMenu menu={menu} onClose={() => setMenu(null)} />
       {continuePick && selected ? (

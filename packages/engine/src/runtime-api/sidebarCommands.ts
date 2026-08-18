@@ -5,6 +5,8 @@ const PROPOSAL_ID_RE = /^[a-f0-9]{12}$/;
 const NOTICE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 /** t-7d6013 — the config-discard signature (sha256 prefix), the identity a dismissal is keyed by. */
 const DISCARD_SIGNATURE_RE = /^[a-f0-9]{16}$/;
+/** t-c820cb — `StatusNotice.at` is always `Date.toISOString()` (milliseconds + Z). */
+const STATUS_NOTICE_AT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 export type SidebarMutationInputV1 =
   | { action: "pin.toggle"; id: string; done: boolean }
@@ -18,7 +20,12 @@ export type SidebarMutationInputV1 =
   | { action: "notice.invoke"; id: string; actionId: string }
   | { action: "agent.markSeen"; id: string }
   /** t-7d6013 — `id` is the discard-set SIGNATURE the human was looking at, never a free-form token. */
-  | { action: "config.dismissDiscards"; id: string };
+  | { action: "config.dismissDiscards"; id: string }
+  /**
+   * t-c820cb — `id` is the notice's `at` (ISO timestamp). A stale click that races a replacement
+   * dismisses nothing rather than hiding a message nobody has read.
+   */
+  | { action: "statusNotice.dismiss"; id: string };
 
 export function isSidebarMutationInputV1(value: unknown): value is SidebarMutationInputV1 {
   if (!isRecord(value) || typeof value.action !== "string") return false;
@@ -56,6 +63,9 @@ export function isSidebarMutationInputV1(value: unknown): value is SidebarMutati
   if (value.action === "config.dismissDiscards") {
     return exactKeys(value, ["action", "id"]) && typeof value.id === "string" && DISCARD_SIGNATURE_RE.test(value.id);
   }
+  if (value.action === "statusNotice.dismiss") {
+    return exactKeys(value, ["action", "id"]) && typeof value.id === "string" && STATUS_NOTICE_AT_RE.test(value.id);
+  }
   return false;
 }
 
@@ -74,6 +84,7 @@ export function isSidebarMutationResultIdentityV1(action: unknown, id: unknown):
   if (action === "notice.markRead" || action === "notice.invoke") return NOTICE_ID_RE.test(id);
   if (action === "notice.markAllRead") return id === "all";
   if (action === "config.dismissDiscards") return DISCARD_SIGNATURE_RE.test(id);
+  if (action === "statusNotice.dismiss") return STATUS_NOTICE_AT_RE.test(id);
   return (action === "proposal.approve" || action === "proposal.reject") && PROPOSAL_ID_RE.test(id);
 }
 

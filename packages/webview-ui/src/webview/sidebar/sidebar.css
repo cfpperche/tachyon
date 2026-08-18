@@ -625,10 +625,15 @@
   .ctl-tile.has-err .ds-btn-label { color: var(--vscode-foreground); }
 
   /* SDD 512 fatia 2 / t-bd9fb8 — fixed status footer, outside the scrolling tab panel.
-     Collapsed cost is one operator row (size40 + label2 + size40 + 1px stroke). Absent → not mounted. */
-  .status-footer { flex: 0 0 auto; border-top: 1px solid var(--ds-border); background: var(--vscode-sideBar-background, var(--vscode-editor-background)); }
+     Collapsed cost is one operator row (size40 + label2 + size40 + 1px stroke). Absent → not mounted.
+     t-c820cb — flex row so the dismiss .act sits beside details, not inside summary. */
+  .status-footer { flex: 0 0 auto; display: flex; align-items: center; border-top: 1px solid var(--ds-border); background: var(--vscode-sideBar-background, var(--vscode-editor-background)); }
   .status-footer.level-warn { border-top-color: var(--ds-warn); }
   .status-footer.level-error { border-top-color: var(--ds-err); }
+  .status-footer details { flex: 1 1 auto; min-width: 0; }
+  .status-footer > .act { flex: none; margin-right: var(--ds-spacing-size40); }
+  .status-footer:has(details[open]) { align-items: flex-start; }
+  .status-footer:has(details[open]) > .act { margin-top: var(--ds-spacing-size40); }
   .status-footer-summary {
     display: flex; align-items: center; gap: var(--ds-spacing-size40);
     padding: var(--ds-spacing-size40) var(--ds-spacing-size80);
