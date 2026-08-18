@@ -99,6 +99,7 @@ function fakeTmux() {
 function makeManager(yaml: string) {
   const fake = fakeTmux();
   const manager = new AgentManager({
+    windowMs: 0,
     tmux: fake.tmux,
     wsHash: HASH,
     workspaceRoot: WS,

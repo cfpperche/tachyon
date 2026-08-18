@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import * as vscode from "vscode";
 import type { EntryKind } from "@tachyon/shared/config/entry.js";
-import { SOCKET_NAME, socketPath, utf8LocaleEnv } from "@tachyon/engine/tmux/TmuxService.js";
+import { DEFAULT_SOCKET_NAME, socketPath, utf8LocaleEnv } from "@tachyon/engine/tmux/TmuxService.js";
 import type { SessionViewportRegistry } from "./sessionViewport.js";
 import type {
   TerminalManifestStore,
@@ -33,9 +33,8 @@ function sessionIcon(agent: string, kind: EntryKind): vscode.ThemeIcon {
 /**
  * Absolute tmux socket for editor attach (`-S`), not `-L` + ambient `TMUX_TMPDIR`.
  *
- * Dev Host F5 sets a private `TMUX_TMPDIR` on the Extension Host (launch.json), while the
- * persistent engine systemd unit historically did not receive that var and spawns on `/tmp`.
- * Attach with the EH's private TMPDIR then misses live sessions. Prefer a socket that exists.
+ * Prefer a socket that exists: the engine may have spawned under `TMUX_TMPDIR` or under `/tmp`.
+ * Isolation of the socket NAME is the caller's job (`socketName`); this only chooses the tmpdir.
  */
 export function attachSocketPath(
   env: NodeJS.ProcessEnv = process.env,
@@ -46,18 +45,19 @@ export function attachSocketPath(
       return false;
     }
   },
+  socketName: string = DEFAULT_SOCKET_NAME,
 ): string {
   const bases: string[] = [];
-  for (const candidate of [env.TACHYON_ENGINE_TMUX_TMPDIR, env.TMUX_TMPDIR, "/tmp"]) {
+  for (const candidate of [env.TMUX_TMPDIR, "/tmp"]) {
     if (!candidate) continue;
     const key = candidate.replace(/\/+$/, "");
     if (!bases.includes(key)) bases.push(key);
   }
   for (const base of bases) {
-    const p = socketPath(SOCKET_NAME, { TMUX_TMPDIR: base });
+    const p = socketPath(socketName, { TMUX_TMPDIR: base });
     if (exists(p)) return p;
   }
-  return socketPath(SOCKET_NAME, env);
+  return socketPath(socketName, env);
 }
 
 /**
@@ -83,6 +83,7 @@ export class Terminals implements TerminalPresentation {
      * live Agent Pane mid-redraw (dot fill, then `attach ended`); with it the pane lets go first.
      */
     private readonly viewports?: SessionViewportRegistry,
+    private socketName: string = DEFAULT_SOCKET_NAME,
   ) {
     this.disposables.push(
       vscode.window.onDidCloseTerminal((terminal) => {
@@ -112,7 +113,7 @@ export class Terminals implements TerminalPresentation {
       this.onReveal?.(agent, session);
       return existing;
     }
-    const socket = attachSocketPath();
+    const socket = attachSocketPath(process.env, undefined, this.socketName);
     const terminal = vscode.window.createTerminal({
       name: title ?? agent,
       // A contextual tab ICON (replaces VSCode's default `>_`): robot for an AI agent, terminal for a
@@ -155,6 +156,11 @@ export class Terminals implements TerminalPresentation {
    */
   private releaseSession(session: string): void {
     this.bySession.get(session)?.terminal.dispose();
+  }
+
+  /** The extension host resolves isolation once and hands the name here; production stays on the default. */
+  useSocket(name: string): void {
+    this.socketName = name;
   }
 
   has(agent: string): boolean {

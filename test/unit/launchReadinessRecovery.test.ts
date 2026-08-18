@@ -5,7 +5,7 @@ import {
   describeCodexBridgeHomeRejection,
   matchCodexBootstrapInput,
 } from "@tachyon/engine/runtime/adapters/codexLaunchReadiness.js";
-import { GenericLaunchReadiness, LaunchReadiness, RuntimeLaunchReadinessError } from "@tachyon/engine/runtime/launchReadiness.js";
+import { GenericLaunchReadiness, LaunchReadiness, LAUNCH_READINESS_WINDOW_MS, RuntimeLaunchReadinessError } from "@tachyon/engine/runtime/launchReadiness.js";
 import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 describe("CodexLaunchReadiness", () => {
@@ -38,6 +38,34 @@ describe("CodexLaunchReadiness", () => {
       state: "rejected",
       code: "runtime_auth_rejected",
     });
+  });
+
+  it("defaults to the production window when constructed without windowMs, even under Vitest", async () => {
+    let now = 0;
+    const readiness = new LaunchReadiness({
+      pollMs: 1000,
+      now: () => now,
+      sleep: async (ms) => { now += ms; },
+    });
+    await expect(readiness.wait({
+      capture: async () => "",
+      adapter: { classify: () => undefined },
+    })).resolves.toEqual({ state: "pending" });
+    expect(now).toBe(LAUNCH_READINESS_WINDOW_MS);
+  });
+
+  it("uses the windowMs seam without reading process.env", async () => {
+    let now = 0;
+    const readiness = new LaunchReadiness({
+      windowMs: 0,
+      now: () => now,
+      sleep: async (ms) => { now += ms; },
+    });
+    await expect(readiness.wait({
+      capture: async () => "",
+      adapter: { classify: () => undefined },
+    })).resolves.toEqual({ state: "pending" });
+    expect(now).toBe(0);
   });
 
   it("rejects an unclassified runtime that exits during the bounded window", async () => {
@@ -244,6 +272,7 @@ describe("Codex readiness recovery", () => {
       killSession: async (name: string) => { killed = sessions.delete(name); },
     };
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: tmux as never,
       workspaceRoot: "/workspace",
       wsHash: "test",
@@ -259,6 +288,7 @@ describe("Codex readiness recovery", () => {
     await expect(manager.isReady("codex")).resolves.toBe(true);
     pane = "Authentication failed";
     const restartedManager = new AgentManager({
+      windowMs: 0,
       tmux: tmux as never,
       workspaceRoot: "/workspace",
       wsHash: "test",
@@ -270,6 +300,7 @@ describe("Codex readiness recovery", () => {
 
   it("does not gate unknown, non-Codex, or non-running declared agents", async () => {
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: { hasSession: async () => false } as never,
       workspaceRoot: "/workspace",
       wsHash: "test",

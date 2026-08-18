@@ -701,6 +701,8 @@ export interface AgentManagerOptions {
   launchPreflight?: RuntimeLaunchPreflightPort;
   /** Bounded, non-inference post-launch observation. Injectable for fake-timer tests. */
   launchReadiness?: LaunchReadinessPort;
+  /** Observation window when `launchReadiness` is omitted. Tests pass `0`; production omits it. */
+  windowMs?: number;
 }
 
 /**
@@ -996,7 +998,9 @@ export class AgentManager {
 
   constructor(private readonly opts: AgentManagerOptions) {
     this.launchPreflight = opts.launchPreflight ?? createDefaultLaunchPreflightRegistry();
-    this.launchReadiness = opts.launchReadiness ?? new LaunchReadiness();
+    this.launchReadiness = opts.launchReadiness ?? new LaunchReadiness(
+      opts.windowMs === undefined ? {} : { windowMs: opts.windowMs },
+    );
   }
 
   private notifyDelegatedToolkitCondition(key: string, message: string): void {

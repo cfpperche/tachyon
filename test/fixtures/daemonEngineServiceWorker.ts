@@ -13,6 +13,7 @@ async function main(): Promise<void> {
     controlSocketPath,
     appVersion: "0.57.0-engine-test",
     bundleId: "a".repeat(64),
+    windowMs: 0,
   }, workspaceBridgePort);
   process.stdout.write(`TACHYON_ENGINE_READY ${JSON.stringify(service.identity)}\n`);
 

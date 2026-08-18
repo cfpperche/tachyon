@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import {
-  SOCKET_NAME,
+  DEFAULT_SOCKET_NAME,
   defaultExecutor,
   isolatedArgs,
   utf8LocaleEnv,
@@ -169,7 +169,7 @@ export class ControlModeClient {
   private readonly fallback: TmuxExecutor;
 
   constructor(private readonly opts: ControlModeOptions) {
-    this.socket = opts.socket ?? SOCKET_NAME;
+    this.socket = opts.socket ?? DEFAULT_SOCKET_NAME;
     this.fallback = opts.fallbackExec ?? defaultExecutor;
   }
 

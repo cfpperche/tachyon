@@ -114,6 +114,9 @@ export interface EnsureDaemonEngineOptions {
   /** Test/platform adapter overrides. Production derives private per-user locations. */
   controlSocketPath?: string;
   storageRoot?: string;
+  /** Extension host resolved these; they travel in daemon argv rather than the process environment. */
+  agentProfileHomeDir?: string;
+  tmuxSocket?: string;
   /** Interactive shells gate a destructive upgrade; absent means no human is available, so upgrade proceeds. */
   confirmUpgrade?: (snapshot: EngineUpgradeWorkingSnapshot) => Promise<boolean>;
   /** Deterministic test seam; production queries the still-running engine over control. */
@@ -239,6 +242,8 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
         desiredManifest: manifest,
         runtime: options.runtime,
         settings: options.settings,
+        agentProfileHomeDir: options.agentProfileHomeDir,
+        tmuxSocket: options.tmuxSocket,
         launcher,
         stopper,
         timeoutMs,
@@ -265,6 +270,8 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
     manifest,
     runtime: options.runtime,
     settings: options.settings,
+    agentProfileHomeDir: options.agentProfileHomeDir,
+    tmuxSocket: options.tmuxSocket,
   });
   const outcome = await launcher(launchInput);
   const identity = await waitForCompatibleEngine({
@@ -429,6 +436,8 @@ export function decodeEngineDaemonOptions(encoded: string): EngineDaemonOptionsV
     "bundleId",
     "channel",
     "settings",
+    "agentProfileHomeDir",
+    "tmuxSocket",
   ]);
   if (candidate.schemaVersion !== 1
     || Object.keys(candidate).some((key) => !allowedKeys.has(key))
@@ -439,7 +448,9 @@ export function decodeEngineDaemonOptions(encoded: string): EngineDaemonOptionsV
     || typeof candidate.appVersion !== "string"
     || typeof candidate.bundleId !== "string"
     || (candidate.channel !== undefined && !isEngineReleaseChannel(candidate.channel))
-    || (candidate.settings !== undefined && !isDaemonSettingsSnapshot(candidate.settings))) {
+    || (candidate.settings !== undefined && !isDaemonSettingsSnapshot(candidate.settings))
+    || (candidate.agentProfileHomeDir !== undefined && (typeof candidate.agentProfileHomeDir !== "string" || !path.isAbsolute(candidate.agentProfileHomeDir)))
+    || (candidate.tmuxSocket !== undefined && (typeof candidate.tmuxSocket !== "string" || !candidate.tmuxSocket.trim()))) {
     throw new EngineSupervisorError("INVALID_DAEMON_OPTIONS", "persistent engine startup options are invalid");
   }
   return candidate as EngineDaemonOptionsV1;
@@ -553,6 +564,8 @@ interface UpgradeDaemonEngineInput {
   desiredManifest: EngineBundleManifestV1;
   runtime: StagedEngineRuntime;
   settings?: DaemonSettingsSnapshot;
+  agentProfileHomeDir?: string;
+  tmuxSocket?: string;
   launcher: EngineDaemonLauncher;
   stopper: EngineDaemonStopper;
   timeoutMs: number;
@@ -578,6 +591,8 @@ async function upgradeDaemonEngine(input: UpgradeDaemonEngineInput): Promise<Ens
         manifest: input.desiredManifest,
         runtime: input.runtime,
         settings: input.settings,
+        agentProfileHomeDir: input.agentProfileHomeDir,
+        tmuxSocket: input.tmuxSocket,
       });
       const outcome = await input.launcher(launchInput);
       const identity = await waitForExactEngine({ ...input, manifest: input.desiredManifest, bundle: input.desiredBundle });
@@ -672,6 +687,8 @@ async function upgradeDaemonEngine(input: UpgradeDaemonEngineInput): Promise<Ens
         manifest: verifiedDesiredManifest,
         runtime: input.runtime,
         settings: input.settings,
+        agentProfileHomeDir: input.agentProfileHomeDir,
+        tmuxSocket: input.tmuxSocket,
       });
       await input.launcher(desiredLaunch);
       const upgraded = await waitForExactEngine({ ...input, manifest: verifiedDesiredManifest, bundle: input.desiredBundle });
@@ -719,6 +736,8 @@ async function upgradeDaemonEngine(input: UpgradeDaemonEngineInput): Promise<Ens
           manifest: verifiedRollbackManifest,
           runtime: input.runtime,
           settings: input.settings,
+          agentProfileHomeDir: input.agentProfileHomeDir,
+          tmuxSocket: input.tmuxSocket,
         });
         await input.launcher(rollbackLaunch);
         restored = await waitForExactEngine({ ...input, manifest: verifiedRollbackManifest, bundle: rollbackBundle });
@@ -799,6 +818,8 @@ function buildLaunchInput(input: {
   manifest: EngineBundleManifestV1;
   runtime: StagedEngineRuntime;
   settings?: DaemonSettingsSnapshot;
+  agentProfileHomeDir?: string;
+  tmuxSocket?: string;
 }): EngineDaemonLaunchInput {
   const options: EngineDaemonOptionsV1 = {
     schemaVersion: 1,
@@ -810,6 +831,8 @@ function buildLaunchInput(input: {
     bundleId: input.bundle.bundleId,
     ...(input.manifest.channel === undefined ? {} : { channel: input.manifest.channel }),
     settings: input.settings,
+    ...(input.agentProfileHomeDir ? { agentProfileHomeDir: input.agentProfileHomeDir } : {}),
+    ...(input.tmuxSocket ? { tmuxSocket: input.tmuxSocket } : {}),
   };
   return {
     options,

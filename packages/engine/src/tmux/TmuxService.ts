@@ -27,12 +27,13 @@ export const TMUX_SOCKET_ENV = "TACHYON_TMUX_SOCKET";
 export const DEFAULT_SOCKET_NAME = "tachyon";
 
 /** The socket this process talks to: the env override when set, else the shared default. */
-export function resolveSocketName(env: NodeJS.ProcessEnv = process.env): string {
+export function resolveSocketName(env: NodeJS.ProcessEnv): string {
   const override = env[TMUX_SOCKET_ENV]?.trim();
   return override ? override : DEFAULT_SOCKET_NAME;
 }
 
-export const SOCKET_NAME = resolveSocketName();
+/** Default socket name. Callers that isolate a run pass a resolved name; this is not env-backed. */
+export const SOCKET_NAME = DEFAULT_SOCKET_NAME;
 export const SESSION_PREFIX = "tachyon";
 /** new-session -e (per-session env) requires tmux >= 3.2. */
 export const MIN_TMUX_VERSION = 3.2;
@@ -460,7 +461,7 @@ export type ServerProbe =
 
 /** Where tmux puts the socket for this name: $TMUX_TMPDIR (or /tmp) /tmux-<uid>/<name>. */
 export function socketPath(
-  socket: string = SOCKET_NAME,
+  socket: string = DEFAULT_SOCKET_NAME,
   env: NodeJS.ProcessEnv = process.env,
   uid: number = process.getuid?.() ?? 0,
 ): string {
@@ -486,7 +487,7 @@ export interface ProbeOptions {
 /** Classifies the dedicated server socket: healthy, cleanly down, or wedged (zombie). */
 export async function probeServer(opts: ProbeOptions = {}): Promise<ServerProbe> {
   const exec = opts.exec ?? defaultExecutor;
-  const socket = opts.socket ?? SOCKET_NAME;
+  const socket = opts.socket ?? DEFAULT_SOCKET_NAME;
   const attempts = opts.attempts ?? 3;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const exists = opts.socketExists ?? (() => fs.existsSync(socketPath(socket)));
@@ -516,7 +517,7 @@ export async function probeServer(opts: ProbeOptions = {}): Promise<ServerProbe>
 
 /** PIDs of tmux processes bound to this socket (exact `-L <name>` argv match). */
 export async function findServerPids(
-  socket: string = SOCKET_NAME,
+  socket: string = DEFAULT_SOCKET_NAME,
   runPs: () => Promise<string> = defaultPs,
 ): Promise<number[]> {
   const out = await runPs();
@@ -592,7 +593,7 @@ export async function recoverWedgedServer(opts: RecoverOptions): Promise<void> {
     opts.removeSocket ??
     (() => {
       try {
-        fs.rmSync(socketPath(opts.socket ?? SOCKET_NAME), { force: true });
+        fs.rmSync(socketPath(opts.socket ?? DEFAULT_SOCKET_NAME), { force: true });
       } catch {
         /* fine — tmux unlinks stale sockets itself when it can */
       }
@@ -780,7 +781,7 @@ export class TmuxService {
 
   constructor(
     private exec: TmuxExecutor = defaultExecutor,
-    private readonly socket: string = SOCKET_NAME,
+    private readonly socket: string = DEFAULT_SOCKET_NAME,
     options: TmuxServiceOptions = {},
   ) {
     this.queueWaitTimeoutMs = options.queueWaitTimeoutMs ?? TMUX_QUEUE_WAIT_TIMEOUT_MS;

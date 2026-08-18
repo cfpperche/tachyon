@@ -75,6 +75,7 @@ describe("container-generated delegation behavior", () => {
       const harness = new HarnessManager(ws, ws, process.env, undefined);
       const { config } = parseConfig("agents:\n  parent:\n    cmd: claude\n");
       const manager = new AgentManager({
+        windowMs: 0,
         tmux: new TmuxService(exec),
         wsHash: workspaceHash(ws),
         workspaceRoot: ws,
@@ -132,6 +133,7 @@ describe("container-generated delegation behavior", () => {
       const harness = new HarnessManager(ws, ws, process.env, undefined);
       const { config } = parseConfig("agents:\n  parent:\n    cmd: claude\n");
       const manager = new AgentManager({
+        windowMs: 0,
         tmux: new TmuxService(exec),
         wsHash: workspaceHash(ws),
         workspaceRoot: ws,
@@ -192,6 +194,7 @@ describe("container-generated delegation behavior", () => {
       };
       ledger.record("child", resumeRecord);
       const manager = new AgentManager({
+        windowMs: 0,
         tmux: new TmuxService(exec),
         wsHash: workspaceHash(ws),
         workspaceRoot: ws,

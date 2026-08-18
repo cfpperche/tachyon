@@ -34,6 +34,7 @@ if (!config) throw new Error(errors.join("; "));
 
 const tmux = new TmuxService();
 const manager = new AgentManager({
+  windowMs: 0,
   tmux,
   wsHash: workspaceHash(workspaceRoot),
   workspaceRoot,

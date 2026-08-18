@@ -64,6 +64,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
     const exec = async (): Promise<ExecResult> => ({ stdout: "", stderr: "" });
     const tmux = new TmuxService(exec);
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: "deadbeef",
       workspaceRoot: "/tmp",
@@ -128,6 +129,7 @@ describe("Bridge caller resolution (spec 351 T3)", () => {
     const exec = async (): Promise<ExecResult> => ({ stdout: "", stderr: "" });
     const tmux = new TmuxService(exec);
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: "deadbeef",
       workspaceRoot: "/tmp",
@@ -331,6 +333,7 @@ describe("env injection into spawned sessions", () => {
     };
     const config = parseConfig("agents:\n  a:\n    cmd: x\n    env:\n      TACHYON_BRIDGE_URL: \"custom\"\n").config;
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: new TmuxService(exec),
       wsHash: workspaceHash("/repo"),
       workspaceRoot: "/repo",

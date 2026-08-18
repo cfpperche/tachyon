@@ -60,19 +60,9 @@ import type { NoticeQueueMetadata } from "@tachyon/shared/bridge/noticeQueue.js"
 useDisposableRuntimeAuth(["claude", "codex", "opencode"]);
 
 describe("resolveAgentProfileHomeDir", () => {
-  it("uses an isolated absolute home only inside Dev Host", () => {
-    expect(resolveAgentProfileHomeDir(undefined, {
-      TACHYON_DEV_HOST: "1",
-      TACHYON_DEV_HOST_PROFILE_HOME: "/tmp/dev-host-profile-home",
-    })).toBe("/tmp/dev-host-profile-home");
-    expect(resolveAgentProfileHomeDir(undefined, {
-      TACHYON_DEV_HOST_PROFILE_HOME: "/tmp/dev-host-profile-home",
-    })).toBeUndefined();
-    expect(resolveAgentProfileHomeDir(undefined, {
-      TACHYON_DEV_HOST: "1",
-      TACHYON_DEV_HOST_PROFILE_HOME: "relative/home",
-    })).toBeUndefined();
-    expect(resolveAgentProfileHomeDir("/explicit/test-home", {})).toBe("/explicit/test-home");
+  it("is the seam only — it never reads the environment", () => {
+    expect(resolveAgentProfileHomeDir("/explicit/test-home")).toBe("/explicit/test-home");
+    expect(resolveAgentProfileHomeDir(undefined)).toBeUndefined();
   });
 });
 

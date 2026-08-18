@@ -123,6 +123,12 @@ export interface StartDaemonEngineServiceOptions {
   bundleId: string;
   channel?: EngineReleaseChannel;
   settings?: DaemonSettingsSnapshot;
+  /** Extension host resolved this; the daemon must not read it from the environment. */
+  agentProfileHomeDir?: string;
+  /** Extension host resolved this; the daemon must not read it from the environment. */
+  tmuxSocket?: string;
+  /** Tests pass `0`; production omits it so AgentManager uses the five-second window. */
+  windowMs?: number;
 }
 
 export interface RunningDaemonEngineService {
@@ -394,6 +400,10 @@ export async function startDaemonEngineService(
       },
       claudeStatusLineCapture,
       piBridgeExtensionPath: path.join(__dirname, "pi-bridge-extension.mjs"),
+    }, {
+      ...(options.agentProfileHomeDir ? { agentProfileHomeDir: options.agentProfileHomeDir } : {}),
+      ...(options.tmuxSocket ? { tmuxSocket: options.tmuxSocket } : {}),
+      ...(options.windowMs !== undefined ? { windowMs: options.windowMs } : {}),
     });
     await workspace.start();
     const runningWorkspace = workspace;
