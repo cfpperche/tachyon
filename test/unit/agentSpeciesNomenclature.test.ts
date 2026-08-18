@@ -150,6 +150,7 @@ describe("test/ and scripts/ residue is classified, not merely tolerated", () =>
     {
       why: "subjects the PRESERVED wire: the `mode: \"adhoc\"` distill discriminant, or the row VM's `adhoc` flag",
       files: [
+        "scripts/webview-preview/fixtures/sidebar.ts",
         "test/fixtures/sidebar/agentCardFixtures.ts",
         "test/unit/agentInstanceReaderConvergence.test.ts",
         "test/unit/engineServiceProtocol.test.ts",
