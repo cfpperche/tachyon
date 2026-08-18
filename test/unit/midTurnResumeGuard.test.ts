@@ -240,11 +240,13 @@ describe("t-a281e7 — ACTOR × TRIGGER: who else can replace a live agent's pro
   });
 
   it("Agent × restart via Bridge — REFUSED BEFORE the stop phase, so the turn is still running", async () => {
-    // Row 4, and the row whose stated premise did not hold. The card reads restart as covered
-    // because it "passes through the same resume". It does not: restart STOPS first and only then
-    // calls `tryResumeAfterStop`, so a guard living only in `resume()` would meet a pane that was
-    // already dead and pass. That is the `t-e73e54` shape — one actor, another trigger — and it is
-    // why the assertion is that NOTHING was killed, not merely that restart threw.
+    // Row 4, and the row whose stated premise only half held. The card reads restart as covered
+    // because it "passes through the same resume". Measured at the point of use, that is true of one
+    // mode out of three: `graceful + resume` stops BEFORE resuming, so a guard living only in
+    // `resume()` meets a pane that is already dead; `force + new` never calls resume at all; only
+    // `force + resume` respawns in place. That is the `t-e73e54` shape — one actor, another trigger —
+    // so all three modes are asserted, and the assertion is that NOTHING was killed rather than
+    // merely that restart threw.
     const { ws, calls, sessions } = await makeWorkspace();
     try {
       await ws.manager.spawn("worker");
@@ -252,10 +254,41 @@ describe("t-a281e7 — ACTOR × TRIGGER: who else can replace a live agent's pro
       forceStateOf(ws, "worker", "working");
       const before = [...destructiveCalls(calls)];
 
-      await expect(ws.manager.restart("worker")).rejects.toBeInstanceOf(AgentMidTurnError);
+      for (const mode of [
+        {}, // product default: graceful + resume, what restart_agent sends when told nothing
+        { stop: "force", session: "resume" },
+        { stop: "force", session: "new" },
+      ] as const) {
+        await expect(ws.manager.restart("worker", mode)).rejects.toBeInstanceOf(AgentMidTurnError);
+      }
 
       expect(destructiveCalls(calls)).toEqual(before); // no graceful ^C, no kill, no respawn
       expect(sessions.has(ws.manager.session("worker"))).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("Agent × restart of ITSELF — ALLOWED: the turn being discarded is the caller's own", async () => {
+    // The ACTOR axis of row 4, and the case that keeps the refusal from deleting a declared
+    // operation. An agent restarting itself is mid-turn by construction — the tool call it is making
+    // IS the turn — so a guard that only looked at the target's state would refuse it forever: the
+    // caller can never go idle while it is the one asking. `restart_agent` names "yourself" first in
+    // its governance line, and the Bridge passes the AUTHENTICATED caller, so this cannot be reached
+    // by claiming to be someone else.
+    const { ws, calls } = await makeWorkspace();
+    try {
+      await ws.manager.spawn("worker");
+      seedTranscriptOfLastSession(ws, "worker");
+      forceStateOf(ws, "worker", "working");
+      const before = launchCount(calls);
+
+      await ws.manager.restart("worker", { stop: "force", initiatedBy: "worker" });
+
+      expect(launchCount(calls)).toBeGreaterThan(before);
+      // …and the exemption is keyed on identity, not on the flag merely being present.
+      await expect(ws.manager.restart("worker", { stop: "force", initiatedBy: "someone-else" }))
+        .rejects.toBeInstanceOf(AgentMidTurnError);
     } finally {
       ws.dispose();
     }

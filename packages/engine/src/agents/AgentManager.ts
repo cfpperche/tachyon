@@ -270,6 +270,21 @@ export interface RestartOptions {
   session?: RestartSessionMode;
   /** Graceful wait budget before session-only hard kill. Default STOPPING_FALLBACK_MS. */
   gracefulTimeoutMs?: number;
+  /**
+   * t-a281e7 — WHICH AGENT asked, when an agent asked through the Bridge. Read only by the mid-turn
+   * guard, and only to answer one question: is the turn about to be discarded the caller's OWN?
+   *
+   * An agent restarting ITSELF is mid-turn by construction — the tool call it is making is the turn.
+   * Refusing that would not save work from a surprise; it would delete a governance-declared
+   * operation ("you may restart yourself") that no amount of waiting can ever unblock, because the
+   * caller cannot go idle while it is asking. Every OTHER-initiated replacement still refuses.
+   *
+   * A NAME rather than a "yes, do it" boolean, deliberately. The Bridge resolves it from the
+   * authenticated caller, and the comparison stays inside the guard, so this stays a fact about who
+   * asked rather than a force flag — which is what the next caller would reach for and how the hole
+   * would grow back.
+   */
+  initiatedBy?: string;
 }
 
 export interface RestartResult {
@@ -4313,13 +4328,16 @@ export class AgentManager {
   async restart(name: string, opts: RestartOptions = {}): Promise<RestartResult> {
     this.assertProfileLifecycleEnabled(name);
     // t-a281e7 — the card reads `restart` as covered because it "passes through the same resume".
-    // Measured at the point of use, it does not: restart STOPS first and only then calls
-    // `tryResumeAfterStop`, so by the time `resume()` runs the turn is already gone and its guard
-    // sees a dead pane. Row 4 of the ACTOR × TRIGGER table is only covered by asserting here, ahead
-    // of the stop phase — the same assertion, at the other door, which is the whole point of it
-    // being one function. Crash recovery and watch-restart reach this too and are unaffected: a
-    // crashed agent is not alive, and a watched terminal runs with attention off (untracked → safe).
-    await this.assertNotMidTurn(name, "restart");
+    // Measured at the point of use, that holds for exactly ONE of its three modes:
+    //   graceful + resume → stops first, so `resume()` meets a pane that is already dead: too late.
+    //   force + new       → `restartFresh`; `resume()` is never called at all: never reached.
+    //   force + resume    → respawns in place, so `resume()`'s guard IS a real check here.
+    // Two modes out of three discard the turn without `resume()` ever getting a say, which is the
+    // t-e73e54 shape — one actor, another trigger. Row 4 is covered by asserting HERE, ahead of the
+    // stop phase. Still one rule in one function, called at the second door rather than reimplemented
+    // at it. Crash recovery and watch-restart arrive here too and are unaffected: a crashed agent is
+    // not alive, and a watched terminal runs with attention off (untracked → safe).
+    await this.assertNotMidTurn(name, "restart", opts.initiatedBy);
     const stop: RestartStopMode = opts.stop ?? RESTART_DEFAULTS.stop;
     const session: RestartSessionMode = opts.session ?? RESTART_DEFAULTS.session;
     const gracefulTimeoutMs = opts.gracefulTimeoutMs ?? AgentManager.STOPPING_FALLBACK_MS;
@@ -4348,7 +4366,7 @@ export class AgentManager {
           if (await this.opts.tmux.hasSession(this.session(name))) {
             await this.refreshOwnership(name);
           }
-          const attempt = await this.tryResumeAfterStop(name);
+          const attempt = await this.tryResumeAfterStop(name, opts.initiatedBy);
           if (attempt.resumed) {
             return { stop, session, resumed: true, forcedAfterGracefulTimeout };
           }
@@ -4361,7 +4379,7 @@ export class AgentManager {
       // cannot leave a live pane stuck in the graceful-stop UI state.
       this.clearStoppingState(name);
 
-      const attempt = session === "resume" ? await this.tryResumeAfterStop(name) : undefined;
+      const attempt = session === "resume" ? await this.tryResumeAfterStop(name, opts.initiatedBy) : undefined;
       if (attempt?.resumed) {
         return { stop, session, resumed: true, forcedAfterGracefulTimeout };
       }
@@ -4401,7 +4419,10 @@ export class AgentManager {
    * a freshly launched pane has no turn behind it, and refusing on it would break resume for an
    * agent that never started one.
    */
-  private async assertNotMidTurn(name: string, door: "resume" | "restart"): Promise<void> {
+  private async assertNotMidTurn(name: string, door: "resume" | "restart", initiatedBy?: string): Promise<void> {
+    // The ACTOR axis of the table, and the one exemption: a turn discarded by the agent living it is
+    // neither silent nor someone else's. See RestartOptions.initiatedBy for why it is a name.
+    if (initiatedBy === name) return;
     const attention = this.opts.attentionOf?.(name);
     if (!isEvidencedWorking(attention?.state, attention?.hasStartedTurn)) return;
     // Ordered last: the tmux/ps probe is the expensive half, and an idle agent — the common case —
@@ -4454,12 +4475,16 @@ export class AgentManager {
    * the runtime or its transcript is gone), and the caller that has to explain the loss to a human
    * needs which one it was.
    */
-  private async tryResumeAfterStop(name: string): Promise<{ resumed: true } | { resumed: false; reason: string }> {
+  private async tryResumeAfterStop(name: string, initiatedBy?: string): Promise<{ resumed: true } | { resumed: false; reason: string }> {
     const record = this.opts.ledger?.get(name);
     if (!record) return { resumed: false, reason: "no session record for this agent (nothing was captured to resume)" };
     if (!record.resume) return { resumed: false, reason: "session record has no resume block (no prior session was captured)" };
     try {
-      await this.resume(name, record);
+      // t-a281e7 — carry WHO asked across the restart→resume seam. `force + resume` reaches here
+      // with the pane still live (it respawns in place rather than killing first), so resume's own
+      // guard is a second real check on this path — and without the caller it would refuse the
+      // self-restart that restart() just admitted, one line later and for the same agent.
+      await this.resume(name, record, { initiatedBy });
       return { resumed: true };
     } catch (err) {
       if (err instanceof ResumeUnavailableError) return { resumed: false, reason: err.reason };
@@ -4882,11 +4907,12 @@ export class AgentManager {
    * @param opts.deferBridgeStamp — internal spec-380 rebind handoff: the coordinator owns the
    *   healthy stamp after its post-launch liveness proof. Ordinary human resume leaves this false.
    */
-  async resume(name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean }): Promise<void> {
+  async resume(name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean; initiatedBy?: string }): Promise<void> {
     this.assertProfileLifecycleEnabled(name);
     // t-a281e7 — before ANY validation that could be mistaken for the refusal: the sidebar ↻ and
-    // "Resume all" both land here on an agent that may be working right now.
-    await this.assertNotMidTurn(name, "resume");
+    // "Resume all" both land here on an agent that may be working right now. `initiatedBy` is set
+    // only by restart forwarding its own authenticated caller (see RestartOptions).
+    await this.assertNotMidTurn(name, "resume", opts?.initiatedBy);
     if (!record.resume) throw new ResumeUnavailableError(name, "record is not resumable (no resume block)");
     const { runtime } = record.resume;
     const cmd = record.def?.cmd;

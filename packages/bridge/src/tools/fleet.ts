@@ -623,6 +623,10 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         const result = await deps.manager.restart(name, {
           stop: stop ?? "graceful",
           session: session ?? "resume",
+          // t-a281e7 — the mid-turn guard refuses an OTHER-initiated replacement of a working agent.
+          // Say who is asking, from the authenticated caller the scope guard above already trusts,
+          // so an agent restarting ITSELF is not refused for being in the very turn that asked.
+          ...(deps.caller?.kind === "agent" && deps.caller.name ? { initiatedBy: deps.caller.name } : {}),
         });
         const mode = `${result.stop}+${result.session}`;
         const detail = [
