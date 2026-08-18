@@ -24,11 +24,12 @@ Record the result of each step. A step that could not be run is not a step that 
 
 1. Open **Control → Settings**. The block **"Your Tachyon settings"** shows the file path.
 2. Set **Activity code theme** to `Dark`.
-3. Open the file (button: **Open the file**, or the palette: `Tachyon: Open Global Settings File`).
+3. Set **UI font** to `Departure Mono`. This page should switch immediately; other already-open surfaces keep the old face until they are opened again.
+4. Open the file (button: **Open the file**, or the palette: `Tachyon: Open Global Settings File`).
 
-**Expect:** `"activity": { "codeTheme": "dark" }` is in the file. The document has `"version": 1`.
+**Expect:** `"activity": { "codeTheme": "dark" }` and `"font": { "mono": "departure" }` are in the file. The document has `"version": 1`.
 
-4. Toggle **Agent pane** off, then on. Set **Path to git** to `/usr/bin/git` and press **Save**.
+5. Toggle **Agent pane** off, then on. Set **Path to git** to `/usr/bin/git` and press **Save**.
 
 **Expect:** each lands in the file. No stray `.settings.json.*.tmp` beside it — writes are temp+rename,
 and a leftover temp file means a write path is not transactional.
@@ -42,6 +43,9 @@ Each row says whether it takes effect immediately or waits for Control to be reo
   integrated terminal must still work.
 - **Activity code theme** says *applies the next time Control is opened*. Close and reopen Control; the
   Activity code blocks follow the theme you chose.
+- **UI font** says *this page updates now; other surfaces apply the next time they are opened*. Settings
+  itself must already be in Departure Mono. Reopen the sidebar: it follows. The Agent Pane must **not**
+  change.
 
 **Expect:** the label matches reality in both directions. This is the step most likely to fail quietly:
 with the VS Code settings UI gone, a wrong label is the only thing a person has to go on.

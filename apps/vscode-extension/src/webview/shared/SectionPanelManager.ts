@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { renderWebviewShell, type ShellExtensionPoint } from "./shell.js";
+import { shellTachyonFont } from "./tachyonFont.js";
 import { panelIcon } from "./panelIcon.js";
 import { PanelWorkGate, panelVisibility } from "./panelWorkGate.js";
 import type { TrustedPanelState } from "./panelSerializer.js";
@@ -414,6 +415,7 @@ export class SectionPanelManager<K extends string = string> {
       ...(config.csp?.frameSrc ? { frameSrc: config.csp.frameSrc } : {}),
       ...(config.bootstrapGlobals ? { bootstrapGlobals: config.bootstrapGlobals(target, uri) } : {}),
       persistedState: this.panelStateFor(target),
+      ...shellTachyonFont(),
     });
 
     // The entry is built before `bind` runs so the session can close over it: the gate must exist before

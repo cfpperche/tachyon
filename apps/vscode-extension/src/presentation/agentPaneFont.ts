@@ -28,7 +28,7 @@ export const MONO_FALLBACK_FAMILIES = [
 export const DEFAULT_TERMINAL_FONT_FAMILY = MONO_FALLBACK_FAMILIES.map(quoteFontFamily).join(", ");
 
 /** Product-only faces that must not be used unless we explicitly load woff in this webview. */
-const UNSAFE_WEBVIEW_FACES = /tachyon\s*mono|var\s*\(/i;
+const UNSAFE_WEBVIEW_FACES = /tachyon\s*mono|departure\s*mono|var\s*\(/i;
 
 export interface TerminalFontConfigSource {
   get<T>(section: string, defaultValue: T): T;

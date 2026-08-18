@@ -95,6 +95,6 @@ export function settingsRefreshKind(message: unknown): RefreshKind | undefined {
 function globalSettingsState(): NonNullable<SectionsModel["globalSettings"]> {
   const store = sharedGlobalSettings(); const current = store.current(); const refusal = store.refusal();
   return { file: store.file, activityCodeTheme: current.activityCodeTheme, agentPaneEnabled: current.agentPaneEnabled,
-    gitPath: current.gitPath,
+    gitPath: current.gitPath, fontMono: current.fontMono,
     ...(refusal ? { refusal: refusal.errors } : {}) };
 }

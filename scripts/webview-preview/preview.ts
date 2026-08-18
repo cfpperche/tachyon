@@ -102,6 +102,9 @@ function run(): void {
   // always did — visual QA of a long form needs a taller frame — but it is no longer the ONLY way to
   // reach content below the fold: the surface document scrolls now, where the old `#frame` div clipped.
   for (const href of route.cssLinks) addStylesheet(href);
+  if (params.get("font") === "departure") {
+    document.documentElement.setAttribute("data-tachyon-font", "departure");
+  }
   anchorRootChain(route.pageFrame === true);
   if (params.get("showWidth") === "1") {
     const proof = document.createElement("output");

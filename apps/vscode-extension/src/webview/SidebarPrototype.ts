@@ -3,6 +3,7 @@ import { isAgentRow, type FleetVM, type AgentVM, type SidebarBootVM } from "@tac
 import { fleetMessage } from "@tachyon/webview-ui/webview/sidebar/messages";
 import { isSectionId } from "../sections/resolveSection.js";
 import { renderWebviewShell } from "./shared/shell.js";
+import { shellTachyonFont } from "./shared/tachyonFont.js";
 import type { ActionId } from "@tachyon/webview-ui/sidebar/actions";
 import { agentContextValue } from "../presentation/contextValue.js";
 import { notify } from "../workspace/notify.js";
@@ -134,6 +135,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     view.webview.onDidReceiveMessage((m: SidebarMsg) => void this.handleMessage(m));
     // spec 280 — the sidebar VIEW keeps its bespoke CSP via the shell: img `blob:` + script-src nonce-only (no cspSource).
     view.webview.html = renderWebviewShell({
+      ...shellTachyonFont(),
       cspSource: view.webview.cspSource,
       title: "Tachyon",
       styles: [uri("codicon.css"), uri("tokens.css"), uri("faces.css"), uri("design-system.css"), uri("quick-picker.css"), uri("sidebar.css")],

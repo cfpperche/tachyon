@@ -555,6 +555,8 @@ copyFileSync("packages/webview-ui/src/webview/shared/vscode-theme.css", "dist/we
 // dist/webview/fonts directly without filename collisions or unclear provenance.
 rmSync("dist/webview/fonts/tachyon", { recursive: true, force: true });
 cpSync("packages/webview-ui/src/webview/shared/fonts/tachyon", "dist/webview/fonts/tachyon", { recursive: true });
+rmSync("dist/webview/fonts/departure", { recursive: true, force: true });
+cpSync("packages/webview-ui/src/webview/shared/fonts/departure", "dist/webview/fonts/departure", { recursive: true });
 copyFileSync("packages/webview-ui/src/webview/sidebar/sidebar.css", "dist/webview/sidebar.css"); // spec 274 — sidebar styles (shared by the webview + the dev preview harness)
 copyFileSync("packages/webview-ui/src/webview/handoff/handoff.css", "dist/webview/handoff.css"); // spec 280 — handoff styles (shared by the webview + the dev preview harness)
 copyFileSync("packages/webview-ui/src/webview/approval/approval.css", "dist/webview/approval.css");

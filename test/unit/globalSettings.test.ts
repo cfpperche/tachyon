@@ -87,6 +87,7 @@ describe("global settings document", () => {
       activityCodeTheme: "light",
       agentPaneEnabled: false,
       gitPath: "/usr/local/bin/git",
+      fontMono: "departure",
     });
     const parsed = parseGlobalSettings(document, "settings.json");
     expect(parsed.errors).toEqual([]);
@@ -94,6 +95,7 @@ describe("global settings document", () => {
       activityCodeTheme: "light",
       agentPaneEnabled: false,
       gitPath: "/usr/local/bin/git",
+      fontMono: "departure",
     });
   });
 });
@@ -222,6 +224,22 @@ describe("authored fields — presence, not value", () => {
 
   it("an empty document authored nothing", () => {
     expect(parseGlobalSettings({ version: 1 }, "settings.json").authored).toEqual([]);
+  });
+
+  it("accepts font.mono departure and defaults to tachyon when omitted", () => {
+    const omitted = parseGlobalSettings({ version: 1 }, "settings.json");
+    expect(omitted.errors).toEqual([]);
+    expect(omitted.settings?.fontMono).toBe("tachyon");
+    const parsed = parseGlobalSettings({ version: 1, font: { mono: "departure" } }, "settings.json");
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.settings?.fontMono).toBe("departure");
+    expect(parsed.authored).toEqual(["fontMono"]);
+  });
+
+  it("refuses an unknown font.mono instead of silently defaulting", () => {
+    const parsed = parseGlobalSettings({ version: 1, font: { mono: "comic" } }, "settings.json");
+    expect(parsed.settings).toBeUndefined();
+    expect(parsed.errors.join("\n")).toMatch(/font\.mono: must be "tachyon" or "departure"/);
   });
 
   it("a REFUSED document authors nothing, so the import cannot mistake a last-known-good for a choice", () => {

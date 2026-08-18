@@ -111,6 +111,11 @@ export interface WebviewShellOptions {
    *  When present it must match the surface's manifest `extensionPoints` exactly (webviewConvention.test.ts
    *  checks that); it never grants anything the manifest has not already declared. */
   extend?: readonly ShellExtensionPoint[];
+  /**
+   * t-d770ac — opt-in bundled mono family. Only `"departure"` is emitted as an attribute;
+   * the default (Tachyon Mono) is the absence of `data-tachyon-font`. Agent Pane must omit this.
+   */
+  tachyonFont?: "tachyon" | "departure";
 }
 
 /** Assemble the standard webview page for a converted surface. The only sanctioned `<!DOCTYPE>` site. */
@@ -144,7 +149,8 @@ export function renderWebviewShell(o: WebviewShellOptions): string {
     : "";
   // spec 485 A2 — the posture declaration rides on the root element, so a rendered page carries its own
   // conformance claim (attribute-only: no layout, no style, nothing a human sees).
-  const shellAttrs = `${o.surface ? ` data-shell-surface="${o.surface}"` : ""}${o.extend?.length ? ` data-shell-extends="${[...o.extend].join(" ")}"` : ""}`;
+  const fontAttr = o.tachyonFont === "departure" ? ` data-tachyon-font="departure"` : "";
+  const shellAttrs = `${o.surface ? ` data-shell-surface="${o.surface}"` : ""}${o.extend?.length ? ` data-shell-extends="${[...o.extend].join(" ")}"` : ""}${fontAttr}`;
   return `<!DOCTYPE html>
 <html lang="en"${shellAttrs}>
 <head>

@@ -162,7 +162,7 @@ export class AgentPanePanelManager {
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
       title,
-      // Shared tokens + components are safe; only faces.css is omitted because Tachyon Mono changes xterm metrics.
+      // Shared tokens + components are safe; only faces.css is omitted because bundled mono faces change xterm metrics.
       styles: [uri("codicon.css"), uri("xterm.css"), uri("tokens.css"), uri("design-system.css"), uri("quick-picker.css"), uri("agent-pane.css")],
       bundle: uri("agent-pane.js"),
       mode: "live",
