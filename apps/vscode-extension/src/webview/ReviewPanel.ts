@@ -36,7 +36,7 @@ import {
   mintEvidenceId,
   promptNotesFromView,
   reviewNotesEvidenceRecord,
-} from "../review/comments.js";
+} from "../review/batch.js";
 
 export const REVIEW_VIEW_TYPE = "tachyonReview";
 

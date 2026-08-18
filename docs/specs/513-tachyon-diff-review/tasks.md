@@ -30,7 +30,7 @@ _Generated from `plan.md` on 2026-08-17. Work top-to-bottom. Check boxes as task
 **Fatia 3 — a aba, e a aposentadoria.**
 
 - [x] O painel host no molde de `BoardPanel.ts`; o comando de review passa a abrir a aba.
-- [ ] `apps/vscode-extension/src/review/comments.ts` **removido**, com o `CommentController`.
+- [x] `apps/vscode-extension/src/review/comments.ts` **removido**, com o `CommentController`.
 - [ ] **ORDEM:** a tela nova funciona ANTES de `comments.ts` sair. Nunca deixar o dono sem review.
 
 ## Verification

@@ -86,7 +86,7 @@ import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.
 import type { WorktreeStatus } from "@tachyon/engine/worktree/WorktreeManager.js";
 import type { WorktreeRecord } from "@tachyon/engine/worktree/worktreeRecord.js";
 import { previewBody } from "@tachyon/engine/prompts/injectFlow.js";
-import { createGitExec, worktreeShowFile, resolveBase } from "@tachyon/engine/worktree/WorktreeManager.js";
+import { createGitExec, resolveBase } from "@tachyon/engine/worktree/WorktreeManager.js";
 import { resolveGitBinary } from "@tachyon/engine/worktree/gitBinary.js";
 import { sharedGlobalSettings } from "@tachyon/engine/config/globalSettings.js";
 import {
@@ -101,20 +101,15 @@ import { readLegacyVsCodeSettings } from "./workspace/legacyVsCodeSettings.js";
 import { type ChangedFile } from "@tachyon/engine/worktree/review.js";
 import { persistEvidenceRecord } from "@tachyon/engine/worktree/evidenceStore.js";
 import {
-  collectDiffTabsFromGroups,
-  registerReviewComments,
   sendReviewNotesBatch,
-  uniqueLocationsFromTabs,
   type ReviewCommentsHost,
   type ReviewDocumentLocation,
   type ReviewWorktreeRow,
-} from "./review/comments.js";
+} from "./review/batch.js";
 import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "@tachyon/engine/worktree/pr.js";
 import { computeWorkspaceFolderOps, revealableWorktrees, shouldActivateFolder, type WorkspaceWorktrees } from "./workspace/workspaceFolderOps.js";
 import type { ViewKind } from "@tachyon/engine/workspace/EngineHost.js";
 
-/** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
-const WT_DIFF_SCHEME = "tachyon-worktree";
 /** Assigned in activate(); reviewWorktreeDiff is declared above that and opens this tab. */
 let reviewPanels: ReviewPanelManager;
 import { initializeVsCodeNotifications, notify } from "./workspace/notify.js";
@@ -1174,21 +1169,7 @@ async function sendReviewNotesCommand(item?: AgentItem | WorktreeRowItem): Promi
     location = await locationFromReviewItem(item);
   } else {
     const rows = await host.listWorktrees();
-    const fromTabs = uniqueLocationsFromTabs(
-      collectDiffTabsFromGroups(
-        vscode.window.tabGroups.all,
-        (input): input is vscode.TabInputTextDiff => input instanceof vscode.TabInputTextDiff,
-      ),
-      rows,
-    );
-    if (fromTabs.length === 1) {
-      location = fromTabs[0];
-    } else if (fromTabs.length > 1) {
-      location = (await vscode.window.showQuickPick(
-        fromTabs.map((candidate) => ({ label: candidate.worktree, description: candidate.baseRef, candidate })),
-        { title: vscode.l10n.t("Send review notes to…"), placeHolder: vscode.l10n.t("Which worktree?") },
-      ))?.candidate;
-    } else if (rows.length === 1) {
+    if (rows.length === 1) {
       location = {
         worktree: rows[0].agent,
         cwd: rows[0].path,
@@ -3351,24 +3332,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   );
 
-  // spec 213 / C2 — serves the BASE side of a worktree diff (git show <ref>:<file>); the
-  // current side is the on-disk file. `empty=1` yields "" (added base / deleted current).
-  context.subscriptions.push(
-    vscode.workspace.registerTextDocumentContentProvider(WT_DIFF_SCHEME, {
-      async provideTextDocumentContent(uri) {
-        const q = new URLSearchParams(uri.query);
-        if (q.get("empty")) return "";
-        const cwd = q.get("cwd");
-        const ref = q.get("ref");
-        const git = createGitExec(() => resolveGitBinary({
-          configuredPath: sharedGlobalSettings().current().gitPath,
-          gitExtensionPath: vscode.workspace.getConfiguration("git").get<string | string[]>("path"),
-        }));
-        return cwd && ref ? worktreeShowFile(cwd, ref, uri.path.replace(/^\//, ""), git) : "";
-      },
-    }),
-  );
-
   context.subscriptions.push(
     folderWatcher,
     {
@@ -4252,7 +4215,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await extensionInvoke(ws, { action: "config.agent.delete", agent: item.agentName, removeWorktree: false });
       refreshAll();
     }),
-    registerReviewComments(vscode, reviewCommentsHost()),
     vscode.commands.registerCommand("tachyon.reviewWorktreeItem", async (item?: AgentItem | WorktreeRowItem) => {
       // spec 213 / C2 — review the agent's work: a quick-pick of changed files (base ↔ current).
       // SDD 501 — the SAME command, reached from the land block by the managed-registry row id. Which

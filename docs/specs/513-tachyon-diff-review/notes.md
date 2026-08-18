@@ -133,6 +133,12 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
   `WEBVIEW_APP_VIEWS` so the product host and the catalog share one ESM entry.
   The screen is not opened by upsert, reconcile, or inbound notes.
 
+- **Fatia 3 retirement (`t-1a76c5`).** `comments.ts` and the CommentController
+  are gone. Send-batch helpers live in `review/batch.ts` (no `vs.comments`).
+  `tachyon.review.createNote` / `replyNote` and the Comments panel menus left
+  with them. The native `tachyon-worktree` content provider left with the
+  native diff door.
+
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
