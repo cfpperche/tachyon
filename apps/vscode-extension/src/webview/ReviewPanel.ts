@@ -13,7 +13,6 @@ import {
   type SectionAppConfig,
   type SectionPanelSession,
   type SectionPanelState,
-  type SectionPanelTarget,
 } from "./shared/SectionPanelManager.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
 import {
@@ -156,7 +155,7 @@ export class ReviewPanelManager {
     return {
       replay: send,
       resync: send,
-      onMessage: (raw) => { void this.handleAction(session, state, raw as Partial<ReviewAction>); },
+      onMessage: (raw: unknown) => { void this.handleAction(session, state, raw as Partial<ReviewAction>); },
       dispose: () => {
         if (this.live.get(key)?.session === session) this.live.delete(key);
         this.pending.delete(key);
