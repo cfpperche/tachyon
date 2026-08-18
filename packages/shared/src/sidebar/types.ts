@@ -31,7 +31,7 @@ export interface AgentFocus {
  * step, or a discrete `absent` mark. `no-channel` is absence (omit the field).
  */
 export type AgentChecklistLine =
-  | { kind: "step"; text: string }
+  | { kind: "step"; text: string; position: number; total: number }
   | { kind: "absent" };
 export type PersistenceHookBadge = "active" | "skipped" | "failed" | "unknown";
 /** spec 273 — a compact, mechanical evidence indicator for a worktree agent (advisory; never a gate). */

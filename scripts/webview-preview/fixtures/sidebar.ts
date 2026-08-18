@@ -428,12 +428,12 @@ export const sidebarFixtures: Record<string, Fixture<SidebarFixtureVM>> = {
         {
           name: "claude", model: "Opus 4.8", modelSource: "declared", status: "running", kind: "agent", runtime: "claude",
           focus: { source: "task", taskId: "t-281339", taskStatus: "active", text: "sidebar plan line", full: "sidebar plan line" },
-          checklist: { kind: "step", text: "write the current checklist step on the sidebar card without growing the row" },
+          checklist: { kind: "step", text: "write the current checklist step on the sidebar card without growing the row", position: 12, total: 15 },
         },
         {
           name: "grok", model: "grok-4", modelSource: "declared", status: "running", kind: "agent", runtime: "grok",
           focus: { source: "task", taskId: "t-904de5", taskStatus: "active", text: "grok reader", full: "grok reader" },
-          checklist: { kind: "step", text: "Steep the tea" },
+          checklist: { kind: "step", text: "Steep the tea", position: 2, total: 3 },
         },
         {
           name: "cartagrok", model: "grok-4", modelSource: "declared", status: "idle", kind: "agent", runtime: "grok",

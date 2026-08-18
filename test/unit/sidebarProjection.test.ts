@@ -125,12 +125,28 @@ describe("parseSidebarViewV1 agent status enum", () => {
     const withStep = minimalFleet("running");
     (withStep.fleet.agents as Array<Record<string, unknown>>)[0] = {
       ...withStep.fleet.agents[0],
-      checklist: { kind: "step", text: "write the sidebar line" },
+      checklist: { kind: "step", text: "write the sidebar line", position: 2, total: 3 },
     };
     expect(parseSidebarViewV1(withStep).fleet.agents[0]?.checklist).toEqual({
       kind: "step",
       text: "write the sidebar line",
+      position: 2,
+      total: 3,
     });
+
+    const impossiblePosition = minimalFleet("running");
+    (impossiblePosition.fleet.agents as Array<Record<string, unknown>>)[0] = {
+      ...impossiblePosition.fleet.agents[0],
+      checklist: { kind: "step", text: "impossible", position: 4, total: 3 },
+    };
+    expect(isSidebarViewV1(impossiblePosition)).toBe(false);
+
+    const missingPosition = minimalFleet("running");
+    (missingPosition.fleet.agents as Array<Record<string, unknown>>)[0] = {
+      ...missingPosition.fleet.agents[0],
+      checklist: { kind: "step", text: "missing truth", total: 3 },
+    };
+    expect(isSidebarViewV1(missingPosition)).toBe(false);
 
     const marked = minimalFleet("running");
     (marked.fleet.agents as Array<Record<string, unknown>>)[0] = {

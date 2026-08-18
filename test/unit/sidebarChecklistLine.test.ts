@@ -29,11 +29,12 @@ describe("t-281339 — sidebar card plan line", () => {
 
   it("shows the current step text", () => {
     const html = renderStatic(AgentRow({
-      a: agent({ name: "claude", checklist: { kind: "step", text: "write the sidebar line" } }),
+      a: agent({ name: "claude", checklist: { kind: "step", text: "write the sidebar line", position: 2, total: 5 } }),
       flash: false,
     }));
     expect(html).toContain('data-testid="agent-checklist-line"');
     expect(html).toContain('data-checklist="step"');
+    expect(html).toContain('<span class="checklist-position">(2/5)</span>');
     expect(html).toContain("write the sidebar line");
     expect(html).not.toContain("absent");
     expect(html).not.toContain("no-channel");

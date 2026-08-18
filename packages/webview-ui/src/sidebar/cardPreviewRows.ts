@@ -36,7 +36,7 @@ export const CARD_PREVIEW_ROWS: readonly CardPreviewRow[] = [
       worktreePath: "/ws",
       resources: { cpuPct: 12, memMb: 420 },
       focus: { text: "landing the card template", source: "task", taskId: "t-e494e1", full: "landing the card template" },
-      checklist: { kind: "step", text: "land the current checklist step on the card" },
+      checklist: { kind: "step", text: "land the current checklist step on the card", position: 2, total: 4 },
     },
   },
   {

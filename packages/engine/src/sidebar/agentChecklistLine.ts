@@ -17,12 +17,24 @@ import type { InternalChecklistItem, InternalChecklistRead } from "../runtime/in
 import type { InternalChecklistTurnJudgment } from "../runtime/internalChecklistTurn.js";
 import type { AgentChecklistLine } from "@tachyon/shared/sidebar/types.js";
 
-export function currentChecklistStepText(snapshot: InternalChecklistRead): string | undefined {
+export function currentChecklistStep(snapshot: InternalChecklistRead):
+  | { text: string; position: number; total: number }
+  | undefined {
   if (snapshot.state !== "snapshot") return undefined;
-  const inProgress = snapshot.items.find((item) => item.status === "in-progress");
-  if (inProgress) return inProgress.text;
-  const pending = snapshot.items.find((item) => item.status === "pending");
-  return pending?.text;
+  const index = snapshot.items.findIndex((item) => item.status === "in-progress");
+  const currentIndex = index >= 0
+    ? index
+    : snapshot.items.findIndex((item) => item.status === "pending");
+  if (currentIndex < 0) return undefined;
+  return {
+    text: snapshot.items[currentIndex]!.text,
+    position: currentIndex + 1,
+    total: snapshot.items.length,
+  };
+}
+
+export function currentChecklistStepText(snapshot: InternalChecklistRead): string | undefined {
+  return currentChecklistStep(snapshot)?.text;
 }
 
 export function projectAgentChecklistLine(
@@ -31,14 +43,14 @@ export function projectAgentChecklistLine(
 ): AgentChecklistLine | undefined {
   if (judgment.state === "verdict" && judgment.verdict === "no-channel") return undefined;
 
-  const step = currentChecklistStepText(snapshot);
+  const step = currentChecklistStep(snapshot);
 
   if (judgment.state === "pending") {
-    return step ? { kind: "step", text: step } : undefined;
+    return step ? { kind: "step", ...step } : undefined;
   }
 
   if (judgment.verdict === "absent") return { kind: "absent" };
-  return step ? { kind: "step", text: step } : undefined;
+  return step ? { kind: "step", ...step } : undefined;
 }
 
 /** Test helper: a snapshot of the given items. */

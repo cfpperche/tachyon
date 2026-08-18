@@ -359,6 +359,9 @@
   .row.child .row-checklist {
     padding-left: 13px;
   }
+  .row-checklist .checklist-position {
+    flex: none; color: var(--ds-muted);
+  }
   .row-checklist .checklist-text {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: var(--ds-fg);
