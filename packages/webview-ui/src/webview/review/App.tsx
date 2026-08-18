@@ -1,7 +1,7 @@
 import { useMemo, useState } from "preact/hooks";
 import type { ChangedFile } from "@tachyon/engine/worktree/review.js";
 import type { ReviewNote } from "@tachyon/engine/worktree/reviewNotes.js";
-import { Badge, Button, EmptyState, PageChrome, Select, Textarea } from "../shared/ui";
+import { Badge, Button, EmptyState, Icon, PageChrome, Select, Textarea } from "../shared/ui";
 import { noteMigrated, notesOnLine, orphanedNotes, visibleNewLinesFrom } from "./notes";
 import { renderReviewDiff, type ReviewRenderLine } from "./render";
 import type { ReviewVM } from "./messages";
@@ -88,7 +88,7 @@ function Ruler({
       aria-label={`Comment on line ${line.newLine}`}
       onClick={() => onAnnotate(line.newLine!)}
     >
-      +
+      <Icon name="comment" />
     </button>
   );
 }

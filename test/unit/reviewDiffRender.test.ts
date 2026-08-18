@@ -292,4 +292,28 @@ describe("t-832633 — review screen render", () => {
     expect(posted).toContainEqual({ type: "review.sendBatch", agent: "claude" });
     expect(JSON.stringify(posted)).not.toContain("\"files\"");
   });
+
+  it("t-bd1e5a — added-line ruler is a comment mark, not a second + (title/aria stay)", () => {
+    const parsed = parseUnifiedDiff([
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1 +1,2 @@",
+      " keep",
+      "+added",
+      "",
+    ].join("\n"));
+    const { html, elements } = paint(vmOver({
+      files: [{ status: "M", path: "src/a.ts" }],
+      diff: fileView(parsed, { path: "src/a.ts", status: "M" }),
+    }));
+    const ruler = elements.find((el) => el.props["data-testid"] === "review-ruler-2");
+    expect(ruler).toBeTruthy();
+    expect(ruler!.props.title).toBe("Comment on line 2");
+    expect(ruler!.props["aria-label"]).toBe("Comment on line 2");
+    expect(typeof ruler!.props.onClick).toBe("function");
+    expect(ruler!.html).toContain("codicon-comment");
+    expect(ruler!.html).not.toMatch(/>\s*\+\s*</);
+    expect(html).toMatch(/class="review-sign">\+/);
+  });
 });
