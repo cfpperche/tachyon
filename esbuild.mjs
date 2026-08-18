@@ -384,6 +384,15 @@ const agentStudioFixture = {
   outfile: "dist/webview/agent-studio-fixture.js",
 };
 
+// SDD 513 fatia 2 / t-832633 — the Tachyon review screen, consumable without a VS Code host.
+// Fatia 3 owns the product panel (BoardPanel mould) and the catalog surface row. This target
+// exists so the screen is buildable and previewable from review-fatia2.html.
+const reviewDiff = {
+  ...sidebar,
+  entryPoints: ["packages/webview-ui/src/webview/review/main.tsx"],
+  outfile: "dist/webview/review.js",
+};
+
 // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — the standalone Command/Terminal/Runbook/Schedule/Agent
 // Studio (shell) bundles were retired: they're Control routes now (studio-new/studio-edit, studio:
 // "command"/"terminal"/"runbook"/"schedule"/"agent" — studios-routes-design.md; cockpit.js
@@ -563,6 +572,7 @@ copyFileSync("node_modules/@xterm/xterm/css/xterm.css", "dist/webview/xterm.css"
 copyFileSync("packages/webview-ui/src/webview/shared/studio/studio-frame.css", "dist/webview/studio-frame.css"); // spec 350 — the studio shell's chrome (shared by any studio built on it + the dev preview harness)
 copyFileSync("packages/webview-ui/src/webview/pipeline-studio/pipeline-studio.css", "dist/webview/pipeline-studio.css"); // spec 350 T4 — Pipeline Studio (Fake 1) domain-region styles
 copyFileSync("packages/webview-ui/src/webview/agent-studio-fixture/agent-studio-fixture.css", "dist/webview/agent-studio-fixture.css"); // spec 350 T5 — Agent-entity fixture (Fake 2) domain-region styles
+copyFileSync("packages/webview-ui/src/webview/review/review.css", "dist/webview/review.css"); // SDD 513 fatia 2 — Tachyon diff-review screen
 copyFileSync("packages/webview-ui/src/webview/section-app-fixture/section-app-fixture.css", "dist/webview/section-app-fixture.css"); // SDD 485 C2 — per-app CSS for the section-app proof surface
 copyFileSync("packages/webview-ui/src/webview/agent-studio-shell/agent-studio-shell.css", "dist/webview/agent-studio-shell.css"); // spec 350 Phase 3 T3 — Agent Studio (shell) domain-region styles
 // t-610705 (Phase D, D0/D1a) — these four studio-shell stylesheets are co-loaded by Control now
@@ -594,7 +604,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate]
+const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, pipelineStudio, agentStudioFixture, reviewDiff, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate]
   .map((target) => ({
     ...target,
     ...(target.outfile ? { outfile: outputPath(target.outfile) } : {}),

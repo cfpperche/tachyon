@@ -110,6 +110,12 @@ line git emitted.
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
 
+- **Fatia 2 preview is a standalone page, not a catalog route (`t-832633`).** `scripts/webview-preview/ROUTES`
+  requires a `WEBVIEW_SURFACES` row, and that row requires a host file plus a reload-serializer policy in
+  `extension.ts`. Those are fatia 3 (the BoardPanel-shaped host). The screen is still previewable:
+  `scripts/webview-preview/review-fatia2.html` loads the same `dist/webview/review.js` bundle. Do not
+  add a catalog key until the product host exists.
+
 ## Tradeoffs
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._

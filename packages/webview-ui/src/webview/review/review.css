@@ -1,0 +1,248 @@
+/*
+ * SDD 513 fatia 2 — Tachyon diff-review screen.
+ *
+ * Scale is inherited from the host (body / --ds-* tokens). This sheet does not
+ * choose a font-size value. Diff colours follow Activity's add/del roles.
+ */
+
+#root {
+  height: 100%;
+}
+
+.review-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.review-send {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-spacing-size80);
+}
+
+.review-error {
+  margin: 0 var(--ds-page-pad-x) var(--ds-spacing-size80);
+  color: var(--ds-err);
+}
+
+.review-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  border-top: var(--ds-border-width) solid var(--ds-border);
+}
+
+.review-files {
+  width: 16rem;
+  flex: none;
+  overflow: auto;
+  border-right: var(--ds-border-width) solid var(--ds-border);
+  padding: var(--ds-spacing-size80) 0;
+}
+
+.review-file {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ds-spacing-size80);
+  width: 100%;
+  padding: var(--ds-spacing-size60) var(--ds-spacing-size120);
+  text-align: left;
+}
+
+.review-file:hover {
+  background: var(--ds-hover-row);
+}
+
+.review-file.is-selected {
+  background: var(--ds-selection-inactive-bg);
+  color: var(--ds-fg);
+}
+
+.review-file-status {
+  flex: none;
+  min-width: 1.2em;
+  font-family: var(--ds-mono);
+  color: var(--ds-muted);
+}
+
+.review-file-status.st-A { color: var(--vscode-gitDecoration-addedResourceForeground, var(--ds-ok)); }
+.review-file-status.st-D { color: var(--vscode-gitDecoration-deletedResourceForeground, var(--ds-err)); }
+.review-file-status.st-M { color: var(--ds-info); }
+.review-file-status.st-R,
+.review-file-status.st-C { color: var(--ds-warn); }
+
+.review-file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.review-pane {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.review-file-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ds-spacing-size80);
+  padding: var(--ds-spacing-size80) var(--ds-spacing-size120);
+  border-bottom: var(--ds-border-width) solid var(--ds-border);
+  background: var(--ds-card);
+}
+
+.review-format {
+  margin-left: auto;
+  color: var(--ds-muted);
+}
+
+.review-banner {
+  margin: 0;
+  padding: var(--ds-spacing-size80) var(--ds-spacing-size120);
+  background: var(--ds-warn);
+  color: var(--ds-editor-bg);
+}
+
+.review-diff {
+  font-family: var(--tachyon-font-mono);
+}
+
+.review-hunk-head {
+  padding: var(--ds-spacing-size60) var(--ds-spacing-size120);
+  color: var(--ds-muted);
+  background: var(--ds-code-bg);
+}
+
+.review-line {
+  display: grid;
+  grid-template-columns: 3.2em 3.2em 1.4em 1.1em 1fr;
+  align-items: baseline;
+  padding: 0 var(--ds-spacing-size80);
+}
+
+.review-line.kind-add { background: rgba(78, 201, 126, .13); }
+.review-line.kind-del { background: rgba(240, 128, 128, .13); }
+
+.review-no {
+  color: var(--ds-muted);
+  opacity: .7;
+  text-align: right;
+  padding-right: var(--ds-spacing-size60);
+  user-select: none;
+}
+
+.review-ruler {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ds-muted);
+  border-radius: 3px;
+}
+
+.review-ruler:hover,
+.review-ruler:focus-visible {
+  color: var(--ds-fg);
+  background: var(--ds-hover);
+}
+
+.review-ruler.is-inert {
+  pointer-events: none;
+}
+
+.review-sign {
+  user-select: none;
+  opacity: .8;
+}
+
+.review-line.kind-add .review-sign { color: var(--vscode-gitDecoration-addedResourceForeground); }
+.review-line.kind-del .review-sign { color: var(--vscode-gitDecoration-deletedResourceForeground); }
+
+.review-code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: none;
+  padding: 0;
+}
+
+.review-nonewline {
+  padding: 0 var(--ds-spacing-size120);
+  color: var(--ds-muted);
+}
+
+.review-note {
+  margin: var(--ds-spacing-size40) var(--ds-spacing-size120) var(--ds-spacing-size80) 8.9em;
+  padding: var(--ds-spacing-size80);
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: 6px;
+  background: var(--ds-card);
+}
+
+.review-note-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-spacing-size80);
+  margin-bottom: var(--ds-spacing-size40);
+}
+
+.review-note-loc {
+  color: var(--ds-muted);
+}
+
+.review-note-body {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.review-composer {
+  margin: var(--ds-spacing-size40) var(--ds-spacing-size120) var(--ds-spacing-size80) 8.9em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-spacing-size80);
+}
+
+.review-composer-actions {
+  display: flex;
+  gap: var(--ds-spacing-size80);
+}
+
+.review-orphans {
+  padding: var(--ds-spacing-size120);
+  border-top: var(--ds-border-width) solid var(--ds-border);
+}
+
+.review-orphans h2 {
+  margin: 0 0 var(--ds-spacing-size80);
+  font: inherit;
+  color: var(--ds-muted);
+}
+
+.review-binary,
+.review-empty {
+  padding: var(--ds-spacing-size160);
+  color: var(--ds-muted);
+}
+
+.review-code.hljs { color: var(--vscode-editor-foreground); }
+
+@media (max-width: 720px) {
+  .review-body {
+    flex-direction: column;
+  }
+  .review-files {
+    width: auto;
+    max-height: 30%;
+    border-right: none;
+    border-bottom: var(--ds-border-width) solid var(--ds-border);
+  }
+  .review-note,
+  .review-composer {
+    margin-left: var(--ds-spacing-size120);
+  }
+}

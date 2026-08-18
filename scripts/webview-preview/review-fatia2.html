@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Tachyon review (SDD 513 fatia 2 preview)</title>
+  <link rel="stylesheet" href="/scripts/webview-preview/theme-dark.css">
+  <link rel="stylesheet" href="/dist/webview/codicon.css">
+  <link rel="stylesheet" href="/dist/webview/tokens.css">
+  <link rel="stylesheet" href="/dist/webview/faces.css">
+  <link rel="stylesheet" href="/dist/webview/design-system.css">
+  <link rel="stylesheet" href="/dist/webview/quick-picker.css">
+  <link rel="stylesheet" href="/dist/webview/page-frame.css">
+  <link rel="stylesheet" href="/dist/webview/review.css">
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #root { height: 100%; }
+  </style>
+</head>
+<body class="vscode-dark">
+  <div id="root"></div>
+  <script src="./fixtures/review-large.js"></script>
+  <script>
+    window.addEventListener("message", function (event) {
+      if (event.data && event.data.type === "ready") {
+        window.postMessage({ type: "review", vm: window.__REVIEW_FATIA2_VM__ }, "*");
+      }
+    });
+  </script>
+  <script src="/dist/webview/review.js"></script>
+</body>
+</html>
