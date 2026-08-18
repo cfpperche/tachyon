@@ -7,6 +7,14 @@ import type { StudioSubmit } from "./webview/studioSubmit.js";
  * t-4486eb — test-only `tachyon._*` commands. Built as a sibling of `dist/extension.js` and
  * loaded from `activate()` only when `TACHYON_TEST_SEAMS=1`, so the names never enter the
  * product bundle closure.
+ *
+ * This sibling DOES ship in the vsix, and that is deliberate rather than an oversight: the
+ * screenshot runner and the editor-host suite drive an INSTALLED build, so the file has to be
+ * present for them to load it. 5.9 KB against `extension.js`'s 2.7 MB — and in an installed build
+ * without the variable nothing loads and nothing registers, so no other extension can invoke
+ * `tachyon._spawn`: the command does not exist. Do not add a `DEV_ARTIFACTS` rule for it in
+ * `scripts/ship-boundary.mjs` — pruning the bytes would break both consumers, and the surface was
+ * already closed by the load gate rather than by the packager.
  */
 export interface InternalSeamWorkspace {
   folderName: string;
