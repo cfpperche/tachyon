@@ -112,7 +112,6 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
       ["packages/webview-ui/src/webview/activity/App.tsx", ["PageChrome", "EmptyState"]],
       ["packages/webview-ui/src/webview/plugins/App.tsx", ["PageChrome", "Badge"]],
       ["packages/webview-ui/src/webview/task-detail/App.tsx", ["PageChrome", "Chip"]],
-      ["packages/webview-ui/src/webview/pipeline-studio/App.tsx", ["IconButton"]],
       ["packages/webview-ui/src/webview/runtime-ops/App.tsx", ["Button"]],
     ] as const) {
       const src = readFileSync(file, "utf8");

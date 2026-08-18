@@ -367,15 +367,6 @@ const agentPane = {
 // cockpit/App.tsx via CSS co-load, same as command/terminal/runbook/schedule/agent/task before it).
 // pin-studio.css is still emitted below — Cockpit.ts co-loads it.
 
-// spec 350 T4 — the Preact Pipeline Studio webview bundle (Phase 1 shell proof, Fake 1). Dev-flag-hidden: no
-// command contribution anywhere ships this surface to a real user; it's reachable only via the dev preview
-// harness and its own host-side tests.
-const pipelineStudio = {
-  ...sidebar,
-  entryPoints: ["packages/webview-ui/src/webview/pipeline-studio/main.tsx"],
-  outfile: "dist/webview/pipeline-studio.js",
-};
-
 // spec 350 T5 — the Preact Agent-entity fixture webview bundle (Fake 2, region-composition proof). Test +
 // preview route only — no command contribution anywhere ships this surface to a real user.
 const agentStudioFixture = {
@@ -573,7 +564,6 @@ copyFileSync("packages/webview-ui/src/webview/pin-preview/pin-preview.css", "dis
 copyFileSync("packages/webview-ui/src/webview/agent-pane/agent-pane.css", "dist/webview/agent-pane.css"); // t-610355 — layer-2 agent pane chrome
 copyFileSync("node_modules/@xterm/xterm/css/xterm.css", "dist/webview/xterm.css"); // t-610355 — xterm.js styles
 copyFileSync("packages/webview-ui/src/webview/shared/studio/studio-frame.css", "dist/webview/studio-frame.css"); // spec 350 — the studio shell's chrome (shared by any studio built on it + the dev preview harness)
-copyFileSync("packages/webview-ui/src/webview/pipeline-studio/pipeline-studio.css", "dist/webview/pipeline-studio.css"); // spec 350 T4 — Pipeline Studio (Fake 1) domain-region styles
 copyFileSync("packages/webview-ui/src/webview/agent-studio-fixture/agent-studio-fixture.css", "dist/webview/agent-studio-fixture.css"); // spec 350 T5 — Agent-entity fixture (Fake 2) domain-region styles
 copyFileSync("packages/webview-ui/src/webview/review/review.css", "dist/webview/review.css"); // SDD 513 fatia 2 — Tachyon diff-review screen
 copyFileSync("packages/webview-ui/src/webview/section-app-fixture/section-app-fixture.css", "dist/webview/section-app-fixture.css"); // SDD 485 C2 — per-app CSS for the section-app proof surface
@@ -607,7 +597,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate]
+const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate]
   .map((target) => ({
     ...target,
     ...(target.outfile ? { outfile: outputPath(target.outfile) } : {}),

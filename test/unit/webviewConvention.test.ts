@@ -113,7 +113,6 @@ describe("webview convention (spec 279)", () => {
       tachyonReview: "REVIEW_VIEW_TYPE",
       tachyonTaskDetail: "TASK_DETAIL_VIEW_TYPE",
       tachyonTaskStudio: "TASK_STUDIO_VIEW_TYPE",
-      tachyonPipelineStudio: "PIPELINE_STUDIO_VIEW_TYPE",
       tachyonAgentStudioShell: "AGENT_STUDIO_SHELL_VIEW_TYPE",
       tachyonTerminalStudioShell: "TERMINAL_STUDIO_SHELL_VIEW_TYPE",
       tachyonScheduleStudioShell: "SCHEDULE_STUDIO_SHELL_VIEW_TYPE",
@@ -122,6 +121,8 @@ describe("webview convention (spec 279)", () => {
       tachyonSettings: "SETTINGS_VIEW_TYPE",
     };
     const disposeOnly = new Set(["tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonDesignMode", "tachyonControlInspector", "tachyonPluginSurface", "tachyonPluginSurfaces"]);
+    // t-edfe12 — tachyonPipelineStudio left the manifest (no panel is created) and is registered
+    // only in extension.ts's dispose-only loop, same as tachyonFleet / tachyonOverview.
     const violations: string[] = [];
     for (const s of WEBVIEW_SURFACES) {
       // Statically contributed WebviewViews are recreated by VS Code through their provider; serializers apply
@@ -268,15 +269,24 @@ function linkedStylesheets(s: WebviewSurface): string[] {
   return [];
 }
 
-/** host files under `packages/webview-ui/src/webview/shared/` that assemble a page — a surface may reach the shared shell through
- *  one of these (PipelineStudioPanel delegates to StudioPanelManagerBase) instead of calling it directly. */
+/** Host files under `apps/vscode-extension/src/webview/shared/` that assemble a page — a surface may
+ *  reach the shared shell through one of these (SectionPanelManager, or SingleModeStudioPanelManager
+ *  which delegates to it) instead of calling renderWebviewShell directly. */
 function sharedMountModules(): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir)) {
       const p = join(dir, entry);
       if (statSync(p).isDirectory()) walk(p);
-      else if (entry.endsWith(".ts") && readFileSync(p, "utf8").includes("renderWebviewShell(")) out.push(entry.replace(/\.ts$/, ""));
+      else if (entry.endsWith(".ts")) {
+        const src = readFileSync(p, "utf8");
+        if (
+          src.includes("renderWebviewShell(")
+          || /from\s+["'][^"']*SectionPanelManager\.js["']/.test(src)
+        ) {
+          out.push(entry.replace(/\.ts$/, ""));
+        }
+      }
     }
   };
   walk("apps/vscode-extension/src/webview/shared");

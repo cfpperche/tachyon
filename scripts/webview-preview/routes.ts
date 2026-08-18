@@ -44,7 +44,6 @@ import { boardFixtures } from "./fixtures/board";
 import { snapshotMessage as boardSnapshotMessage } from "@tachyon/webview-ui/webview/board/messages";
 import { runtimeOpsFixtures, type RuntimeOpsPreviewState } from "./fixtures/runtime-ops";
 import { humanInboxFixtures, type HumanInboxPreviewState } from "./fixtures/human-inbox";
-import { pipelineStudioFixtures, pipelineStudioMakeMessage } from "./fixtures/pipeline-studio";
 import { agentStudioFixtureFixtures, agentStudioFixtureMakeMessage } from "./fixtures/agent-studio-fixture";
 import { agentStudioShellFixtures, agentStudioShellMakeMessage } from "./fixtures/agent-studio-shell";
 import { terminalStudioShellFixtures, terminalStudioShellMakeMessage } from "./fixtures/terminal-studio-shell";
@@ -184,17 +183,8 @@ export const ROUTES: Record<string, Route> = {
   // Detail panel; Task Detail is a cockpit-only subroute now — use
   // ?view=cockpit&fixture=task-detail (same App.tsx, same fixture VM, via the cockpit route's
   // activeRoute injection above).
-  // spec 350 T4 — Pipeline Studio (Fake 1): the studio-shell's Phase 1 proof surface. Dev-flag-hidden (no
-  // command contribution) — reachable only through this route and its own host-side tests.
-  "pipeline-studio": {
-    bundle: "/dist/webview/pipeline-studio.js",
-    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/studio-frame.css", "/dist/webview/pipeline-studio.css"],
-    frame: { w: 900, h: 760 },
-    fixtures: pipelineStudioFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => pipelineStudioMakeMessage(vm as never),
-  },
   // spec 350 T5 — Agent-entity fixture (Fake 2): region-composition proof (quick-add chips, role select,
-  // instructions, worktree section). Dev-flag-hidden, same status as pipeline-studio above.
+  // instructions, worktree section). Dev-flag-hidden (preview + host-side tests only).
   "agent-studio-fixture": {
     bundle: "/dist/webview/agent-studio-fixture.js",
     cssLinks: [...BASE_STYLESHEETS, "/dist/webview/studio-frame.css", "/dist/webview/agent-studio-fixture.css"],
@@ -497,7 +487,6 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   probes: { title: "Probes", aliases: ["probes", "probe inspector"] },
   "pin-preview": { title: "Pin Preview", aliases: ["pin preview", "pin readonly", "pin studio", "pin editor", "sketch"] },
   handoff: { title: "Project Handoff", aliases: ["handoff", "project handoff"] },
-  "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },
   "agent-studio-fixture": { title: "Agent fixture (shell fake)", aliases: ["agent fixture", "agent shell fixture", "spec 350"] },
   "section-app-fixture": { title: "Section app (mechanism proof)", aliases: ["section app", "section panel", "standalone app", "spec 485"] },
   "board": { title: "Board", aliases: ["board", "board view", "task board", "kanban"] },

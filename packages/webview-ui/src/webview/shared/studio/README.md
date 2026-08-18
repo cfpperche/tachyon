@@ -1,11 +1,9 @@
 # studio shell (spec 350, Phase 1)
 
 The shared infrastructure every studio dialect (Pin, Task, and — post-dismemberment — the five Agent-entity
-studios) is meant to become thin configuration over. Phase 1 proves the shell against two fakes that cannot
-become casualties: **Pipeline Studio** (`../../pipeline-studio/`, a behaviorally-complete fake with in-memory
-persistence) and the **Agent-entity fixture** (`../../agent-studio-fixture/`, a region-composition proof).
-Neither ships a command; both are dev-tooling/test/preview-only surfaces. No existing studio is touched by
-this delivery — Task Studio's migration is Phase 2, gated on this doc + both fakes' tests passing.
+studios) is meant to become thin configuration over. The Phase 1 in-memory Pipeline Studio fake was retired
+in t-edfe12; the **Agent-entity fixture** (`../../agent-studio-fixture/`) remains as the region-composition
+proof. It ships no command — preview + host-side tests only.
 
 ## Files
 
@@ -16,7 +14,6 @@ this delivery — Task Studio's migration is Phase 2, gated on this doc + both f
 | `dirtyGating.ts` | shared, DOM-free | `canSave`, `requiresDiscardConfirmation` — pure save/discard gate decisions |
 | `restoreDecisions.ts` | shared, DOM-free | `decideRestore` — fail-closed-on-load-failure panel restore decision |
 | `adapter.ts` | shared, DOM-free | `StudioHostAdapter<TEntity,TFields,TPatch>` — the type contract an adapter implements |
-| `StudioPanelManagerBase.ts` | host (vscode) | panel lifecycle (open/reveal/dispose/refreshAll), protocol dispatch, restore capture/replay |
 | `StudioFrame.tsx` | webview (Preact) | header, Cancel/Save (shell-owned gating), error/stale/load-error banners, the four content regions |
 | `studio-frame.css` | webview | the frame's own chrome — NOT a reuse of `rich-doc.css`'s entity-neutral editor styles |
 
@@ -54,24 +51,18 @@ Phase 1 exits — Fake 1 and the Agent fixture don't need it.
 ## Import matrix (who may import what)
 
 ```
-shared/studio/*.ts (pure)         <- StudioPanelManagerBase.ts (host)
 shared/studio/*.ts (pure)         <- StudioFrame.tsx (webview)
-shared/studio/StudioFrame.tsx     <- <surface>/App.tsx (webview)   e.g. pipeline-studio/App.tsx
-shared/studio/StudioPanelManagerBase.ts <- apps/vscode-extension/src/webview/<Surface>Panel.ts (host)  e.g. PipelineStudioPanel.ts
-<surface>/domain.ts (vscode-free) <- both <surface>/App.tsx (webview) AND apps/vscode-extension/src/webview/<surface>AdapterOrPanel (host)
+shared/studio/StudioFrame.tsx     <- <surface>/App.tsx (webview)
+<surface>/domain.ts (vscode-free) <- both <surface>/App.tsx (webview) AND the host adapter
 ```
 
 The shell composes `shared/ui` (kit); it is never composed BY kit. A surface's webview code never imports
 its own host `*Panel.ts` (and vice versa isn't an import — the host owns wiring, the protocol is the only
-channel). See `pipeline-studio/` for the reference shape: `domain.ts` (dual-compilable pure logic) +
-`types.ts`/`messages.ts` (webview-side protocol types) + `App.tsx`/`main.tsx` (webview) on one side,
-`pipelineStudioAdapter.ts` (host, in-memory store) + `PipelineStudioPanel.ts` (host, vscode wiring) on the
-other.
+channel). See `agent-studio-shell/` for the reference shape.
 
 ## Phase 1 exit criteria (this doc's job)
 
-Shell lifecycle + protocol tests green against BOTH fakes (`test/unit/studioShell.test.ts`,
-`test/unit/studioPanelBase.test.ts`, `test/unit/pipelineStudioPanel.test.ts`,
+Shell lifecycle + protocol tests green (`test/unit/studioShell.test.ts`,
 `test/unit/agentStudioFixture.test.ts`); this budget documented and reviewed BEFORE any real migration;
 restore proven across a simulated reload; error taxonomy save-gating proven; the AgentForm spike recorded
 (`notes.md`). Phase 2 (Task Studio migration) and the Agent dismemberment are follow-up tasks gated on all

@@ -40,15 +40,13 @@ function appMains(): string[] {
 }
 
 /**
- * Measured 2026-08-04 (SDD 485 E1), reduced by t-cd01bb. These five exclusions are deliberate:
+ * Measured 2026-08-04 (SDD 485 E1), reduced by t-cd01bb. These exclusions are deliberate:
  * each reason stays beside the ratchet entry so a future reader can distinguish a decision from an
  * overlooked product surface.
  */
 const UNPROTECTED = [
   // Dev-only spec 350 fixture: failures should stay raw and conspicuous to fixture authors.
   "packages/webview-ui/src/webview/agent-studio-fixture/main.tsx",
-  // Dev-only preview: masking a broken development surface with product recovery has no user benefit.
-  "packages/webview-ui/src/webview/pipeline-studio/main.tsx",
   // Imperative sandbox host with no Preact tree: plugin faults belong to isolation/relay handling, not this boundary.
   "packages/webview-ui/src/webview/plugin-host/main.tsx",
   // This is the whole navigation app, not an editor panel; replacing it needs a sidebar-wide recovery design.

@@ -77,7 +77,6 @@ exports.run = async function run() {
       const ln = ed ? ed.document.getText().split("\n").findIndex((l) => l.startsWith("name:")) : -1;
       if (ed && ln >= 0) ed.revealRange(new vscode.Range(ln, 0, ln, 0), vscode.TextEditorRevealType.AtTop);
     } catch {}
-    try { await vscode.commands.executeCommand("tachyon._seedPipelineRun", "feature-issue", hash); } catch {}
     await sleep(1500);
     await vscode.commands.executeCommand("workbench.view.extension.tachyon");
     await tidy(); await sleep(1500);

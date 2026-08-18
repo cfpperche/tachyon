@@ -7,7 +7,6 @@ import { openPreview } from "./support/preview";
 import { agentStudioShellFixtures } from "../../scripts/webview-preview/fixtures/agent-studio-shell";
 import { scheduleStudioShellFixtures } from "../../scripts/webview-preview/fixtures/schedule-studio-shell";
 import { terminalStudioShellFixtures } from "../../scripts/webview-preview/fixtures/terminal-studio-shell";
-import { pipelineStudioFixtures } from "../../scripts/webview-preview/fixtures/pipeline-studio";
 import { studioLoadErrorTitle } from "@tachyon/webview-ui/webview/shared/studio/studioLoadErrorTitle";
 
 /**
@@ -24,11 +23,6 @@ import { studioLoadErrorTitle } from "@tachyon/webview-ui/webview/shared/studio/
  * Both were watched FAIL on the pre-fix tree for all five single-mode studios: the shells return their
  * loading screen from `if (!ready || !entity)`, and an `error` sets `ready` without ever setting
  * `entity`, so the spinner is the terminal state and the error has no path to the screen.
- *
- * `pipeline-studio` is in the list as the CONTROL, and it was green before the fix as well as after:
- * its guard is `if (!ready)` alone, so the same envelope already reached StudioFrame's `loadFailed`
- * banner. It is the measurement that says the fix restores an existing contract rather than inventing
- * one — and it fails here if that contract is ever lost.
  *
  * Task Studio and Pin Studio hold the identical guard (TaskDetailPanel.ts / PinDetailPanel.ts post the
  * same bare `error`), and take the same fix; they are absent here only because the preview catalog has
@@ -65,7 +59,6 @@ const SHELLS: ShellUnderTest[] = [
   { view: "agent-studio-shell", entityType: "agent", message: loadErrorMessage(agentStudioShellFixtures, "agent-studio-shell") },
   { view: "schedule-studio-shell", entityType: "schedule", message: loadErrorMessage(scheduleStudioShellFixtures, "schedule-studio-shell") },
   { view: "terminal-studio-shell", entityType: "terminal", message: loadErrorMessage(terminalStudioShellFixtures, "terminal-studio-shell") },
-  { view: "pipeline-studio", entityType: "pipeline", message: loadErrorMessage(pipelineStudioFixtures, "pipeline-studio") },
 ];
 
 let browser: Browser;

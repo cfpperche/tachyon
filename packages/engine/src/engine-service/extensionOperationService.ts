@@ -264,8 +264,6 @@ export async function executeExtensionCommand(
     approvalResolutionChannel,
   } = context;
   switch (command.action) {
-    case "pipeline.seed":
-      return json({ runId: workspace.seedPipelineRun(command.name) });
     case "agent.spawn":
       await workspace.manager.spawn(command.agent, command.options);
       return json({ spawned: true });

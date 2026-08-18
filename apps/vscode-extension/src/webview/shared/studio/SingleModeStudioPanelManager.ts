@@ -9,7 +9,7 @@ import type { WebviewAppEntry } from "../../webviewApps.js";
 import type { ControlWorkspaceScope } from "../ControlWorkspaceScope.js";
 import type { WorkspaceStudioTarget } from "../../../shell/WorkspacePresentation.js";
 import type { StudioHostAdapter } from "@tachyon/engine/webview/shared/studio/adapter.js";
-import type { StudioPanelState } from "./StudioPanelManagerBase.js";
+import type { StudioPanelState } from "./StudioPanelState.js";
 import { decodeStudioMessage, envelope } from "@tachyon/webview-ui/webview/shared/studio/protocol";
 import { mapUnknownError } from "./errorTaxonomy";
 import { acceptsWhileVanished, isTombstone } from "@tachyon/webview-ui/webview/shared/studio/tombstone";

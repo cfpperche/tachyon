@@ -30,7 +30,6 @@ const MIGRATED_VIEWS = [
   "runtime-ops",
   "board",
   "task-detail",
-  "pipeline-studio",
 ];
 
 /** a class TOKEN the kit owns — banned in a migrated view's authoring code (`chips`/`ds-tabs` containers are fine). */

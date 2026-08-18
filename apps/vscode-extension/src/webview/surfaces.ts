@@ -244,15 +244,11 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // frame, mints no `--ds-*` values and gives `#root` no height — a page-scrolling document, so no
   // `page-frame.css` either.
   { viewId: "tachyonSystem", view: "system", hostFile: "apps/vscode-extension/src/webview/SystemPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
-  // spec 350 T4 — Pipeline Studio (Fake 1), the studio-shell's Phase 1 proof surface. Dev-flag-hidden: this
-  // manifest entry is a dev-tooling/catalog-completeness concern (preview harness + convention guard), NOT a
-  // user-facing activation — extension.ts never instantiates PipelineStudioPanelManager or registers a command.
-  // spec 485 A1 — a dev-only spec-350 fake, carried forward EXPLICITLY rather than implicitly. It mounts
-  // through StudioPanelManagerBase → renderWebviewShell and layers only kit sheets (studio-frame.css is part
-  // of the shared kit, not a departure from it), so dev-only status buys it no exemption: it `conform`s.
-  { viewId: "tachyonPipelineStudio", view: "pipeline-studio", hostFile: "apps/vscode-extension/src/webview/PipelineStudioPanel.ts", mode: "live", converted: true, hostKind: "dev-only", posture: "conform" },
-  // spec 350 T5 — Agent-entity fixture (Fake 2), region-composition proof. Same dev-tooling-only status as
-  // Pipeline Studio above: never instantiated or registered from extension.ts.
+  // t-edfe12 retired Pipeline Studio (Fake 1). The viewType stays in extension.ts's dispose-only
+  // serializer loop so a leftover tab is disposed instead of handed back to nobody — same answer as
+  // tachyonFleet. No manifest row: a row here means the surface still creates a panel.
+  // spec 350 T5 — Agent-entity fixture (Fake 2), region-composition proof. Dev-tooling-only:
+  // never instantiated or registered from extension.ts.
   // spec 485 A1 — the other dev-only spec-350 fake, EXPLICIT for the same reason. Its region composition is
   // StudioFrame's four CONTENT regions (client-side, spec 350 T5), which is kit usage, not a page-frame
   // departure — so it `conform`s too.

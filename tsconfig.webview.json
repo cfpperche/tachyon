@@ -53,8 +53,6 @@
     "packages/webview-ui/src/webview/shared/studio/restoreDecisions.ts",
     "packages/webview-ui/src/webview/shared/studio/adapter.ts",
     "packages/webview-ui/src/webview/shared/studio/StudioFrame.tsx",
-    "packages/webview-ui/src/webview/pipeline-studio/**/*.ts",
-    "packages/webview-ui/src/webview/pipeline-studio/**/*.tsx",
     "packages/webview-ui/src/webview/agent-studio-fixture/**/*.ts",
     "packages/webview-ui/src/webview/agent-studio-fixture/**/*.tsx",
     "packages/webview-ui/src/webview/section-app-fixture/**/*.ts",

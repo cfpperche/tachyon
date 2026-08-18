@@ -138,7 +138,7 @@ import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.
 import { RunLedger } from "../pipeline/RunLedger.js";
 import { loadPipeline, nodeSpawnName } from "../pipeline/loadPipeline.js";
 import { assembleNodePrompt } from "../pipeline/nodePrompt.js";
-import { initRun, type PipelineRun } from "../pipeline/runState.js";
+import { type PipelineRun } from "../pipeline/runState.js";
 import { randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, defaultRealOpencodeDataHome, measureDirUsage, realConfigHome, realRuntimeAuthHomeEnv, seedPrivateHomeGitIdentity } from "../harness/HarnessManager.js";
@@ -2770,30 +2770,6 @@ export class Workspace {
     this.host.notify(this.t("▶ pipeline '{0}' started (run {1})", name, runId));
     this.refreshAgentsViews();
     return runId;
-  }
-
-  /** Rig/demo hook (the screenshot scene): seed a synthetic mid-run state for `name` so the Pipelines
-   *  tree renders a representative run — early nodes `done`, the next `running`, and a `gate: approve`
-   *  node parked at `awaiting-approval`. No agents/worktree are spawned. Returns the run id or null. */
-  seedPipelineRun(name: string): string | null {
-    const { pipeline } = this.loadPipelineByName(name);
-    if (!pipeline) return null;
-    const ids = Object.keys(pipeline.nodes);
-    const run = initRun("demo01", pipeline, "run-demo01", pipeline.input === "required" ? "Add a dark-mode toggle to Settings, persist the choice." : undefined);
-    const gateIdx = ids.findIndex((id) => pipeline.nodes[id].gate === "approve");
-    // upstream of the gate (or all-but-last when there's no gate) → done; the gate → awaiting-approval;
-    // with no gate, the last node is shown `running`. Nodes after the gate stay `pending` (initRun default).
-    ids.forEach((id, i) => {
-      if (gateIdx >= 0) {
-        if (i < gateIdx) run.nodes[id] = { status: "done" };
-        else if (i === gateIdx) run.nodes[id] = { status: "awaiting-approval" };
-      } else {
-        run.nodes[id] = { status: i === ids.length - 1 ? "running" : "done" };
-      }
-    });
-    this.pipelines.seedRun(run);
-    this.refreshAgentsViews();
-    return run.id;
   }
 
   /** spec 231 — re-read the per-run input file into the ledger snapshot (the "Edit input" action; only
