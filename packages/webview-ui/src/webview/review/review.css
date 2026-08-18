@@ -146,6 +146,12 @@
   border-radius: 3px;
 }
 
+/* Default .codicon is 16px; this track is 1.4em. Size the glyph, not the column. */
+.review-ruler .codicon {
+  font-size: var(--ds-small);
+  line-height: 1;
+}
+
 .review-ruler:hover,
 .review-ruler:focus-visible {
   color: var(--ds-fg);
