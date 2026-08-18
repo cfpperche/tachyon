@@ -226,7 +226,7 @@ describe("t-832633 — review screen render", () => {
       }),
     })).html;
     expect(binary).toContain("review-binary");
-    expect(binary).toContain("Arquivo binário");
+    expect(binary).toContain("Binary file");
 
     const source = gitShow(LARGE_COMMIT, LARGE_PATH);
     const large = fileView(parseUnifiedDiff(unifiedDiffFromAddedFile(LARGE_PATH, source)), { path: LARGE_PATH, status: "A" });
