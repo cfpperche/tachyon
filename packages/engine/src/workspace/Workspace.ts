@@ -3297,6 +3297,18 @@ export class Workspace {
     this.statusNoticeStore.set(input);
   }
 
+  /**
+   * t-c820cb — clear the footer notice the human was looking at. Keyed by `at` so a click that
+   * races a replacement dismisses nothing. `setStatusNotice` after this still shows; dismiss is
+   * not a channel switch.
+   */
+  dismissStatusNotice(at: string): boolean {
+    const current = this.statusNoticeStore.get();
+    if (!current || current.at !== at) return false;
+    this.statusNoticeStore.dismiss();
+    return true;
+  }
+
   markNoticeRead(id: string): boolean {
     const host = this.host as EngineHost & { markNoticeRead?: (id: string) => boolean };
     return host.markNoticeRead?.(id) ?? false;
