@@ -50,6 +50,7 @@ import {
   SESSION_OWNER_RECORDER_SOURCE,
   type OwnershipHookGroup,
 } from "../activity/sessionOwners.js";
+import { NOTICE_DRAIN_CODEX_AGENT_ARG, NOTICE_DRAIN_SCRIPT_SOURCE, noticeDrainAgentArg, noticeDrainScriptPath, planNoticeDrainHook } from "../runtime/noticeDrainHook.js";
 import { renderCodexMcpBlock } from "../plugins/adapters/codex.js";
 import { setCodexMcpServer, setOpencodeMcpServer, expectedAgentOpencodeEntry } from "../registration/adapters.js";
 import { materializePiAgentHome, materializePiSessionDir, PI_AGENT_DIR_ENV, PI_SESSION_DIR_ENV } from "../agents/piSession.js";
@@ -2926,6 +2927,32 @@ export class HarnessManager {
     return [];
   }
 
+  /**
+   * t-b47fb2 — materialize the end-of-turn notice drain and build the Stop group for one runtime.
+   *
+   * Rewritten on EVERY spawn, for the same reason the lifecycle recorders are: `.tachyon/activity/` is
+   * a directory a human may clean, and a cached "already written" would leave a hook command pointing
+   * at a file that is gone. That failure is silent — a missing script makes `node` exit 1, which no
+   * runtime reads as a refusal — so the drain would quietly stop existing while still looking installed.
+   *
+   * Fail OPEN: a script we could not write yields no group at all, never a command pointing at nothing.
+   */
+  private noticeDrainStopHook(runtime: string, agentArg: string): OwnershipHookGroup | undefined {
+    const file = noticeDrainScriptPath(this.workspaceRoot);
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      atomicWrite(file, NOTICE_DRAIN_SCRIPT_SOURCE);
+    } catch {
+      return undefined;
+    }
+    return planNoticeDrainHook(runtime, {
+      scriptPath: file,
+      workspaceRoot: this.workspaceRoot,
+      failureFile: persistenceHookFailureFile(this.workspaceRoot),
+      agentArg,
+    });
+  }
+
   private grokHome(home: string): string {
     return path.join(home, ".grok");
   }
@@ -2984,10 +3011,12 @@ export class HarnessManager {
         failureFile: persistenceHookFailureFile(this.workspaceRoot),
       };
     }
+    const grokNoticeDrain = this.noticeDrainStopHook("grok", noticeDrainAgentArg(agent));
     const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot), pointer, persistence, {
       // t-9547a8 — failure visibility belongs to every installed lifecycle hook, not to the optional
       // continuity/Stop persistence pair. Grok had three live hooks whose fail-open errors vanished.
       failureFile: persistenceHookFailureFile(this.workspaceRoot),
+      ...(grokNoticeDrain ? { noticeDrain: grokNoticeDrain } : {}),
     }, { publisherPath: runtimeStatusPublisher, runtime: "grok" });
     const hooksRoot = path.join(grokHome, "hooks");
     fs.mkdirSync(hooksRoot, { recursive: true });
@@ -3663,10 +3692,12 @@ export class HarnessManager {
         failureFile: persistenceHookFailureFile(this.workspaceRoot),
       };
     }
+    const claudeNoticeDrain = this.noticeDrainStopHook("claude", noticeDrainAgentArg(agent));
     const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot), pointer, persistence, {
       skipDangerousModePermissionPrompt: opts.skipDangerousModePermissionPrompt,
       statusLine: opts.statusLine,
       ...(opts.projectedHooks ? { projectedHooks: opts.projectedHooks } : {}),
+      ...(claudeNoticeDrain ? { noticeDrain: claudeNoticeDrain } : {}),
     }, { publisherPath: runtimeStatusPublisher, runtime: "claude" });
     const file = spawnSettingsPath(this.workspaceRoot, agent);
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -3716,7 +3747,9 @@ export class HarnessManager {
       file: codexToolHookFile(this.workspaceRoot),
       failureFile: persistenceHookFailureFile(this.workspaceRoot),
     };
-    return buildCodexSessionStartHookConfig(recorder, sessionOwnersFile(this.workspaceRoot), pointer, persistence, opts.projectedHooks, runtimeStatusPublisher, toolHooks);
+    // Codex keeps ONE command string for every agent in the workspace, so the drain reads the name from
+    // the same `$TACHYON_AGENT_NAME` the ownership recorder already uses rather than baking it in.
+    return buildCodexSessionStartHookConfig(recorder, sessionOwnersFile(this.workspaceRoot), pointer, persistence, opts.projectedHooks, runtimeStatusPublisher, toolHooks, this.noticeDrainStopHook("codex", NOTICE_DRAIN_CODEX_AGENT_ARG));
   }
 
   /** Agent names with a materialized Bridge `--mcp-config` file (`<name>.json`), for the GC sweep. */

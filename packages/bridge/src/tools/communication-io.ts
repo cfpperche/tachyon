@@ -7,7 +7,7 @@ import { isEvidencedWorking } from "@tachyon/engine/prompts/injectFlow.js";
 import { agentSummaryRefusal, composeBoundedAgentNotice, prepareAgentSummary } from "../notifyAgent.js";
 import { appendDoorbellEvent, findDoorbellDelivery, readDoorbellEventsFor, READ_NOTICES_MAX } from "@tachyon/engine/workspace/doorbell.js";
 import { redactSecrets } from "@tachyon/engine/utils/redactSecrets.js";
-import { type BridgeDeps, AGENT_NAME, deliverNoticeFallback, fail, lifecycleScopeGuard, limitText, managedEntry, ok, resolveDeclaredActor } from "./shared.js";
+import { type BridgeDeps, type NoticeSourceMetadata, AGENT_NAME, deliverNoticeFallback, fail, lifecycleScopeGuard, limitText, managedEntry, ok, resolveDeclaredActor } from "./shared.js";
 
 export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): void {
 
@@ -298,7 +298,11 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
         // spec 493 — carry the content, not just from/to/at: this witness record is now also the
         // durable read door (`read_notices`), so a recipient that never opens the one drain window
         // (the working→idle attention edge) can still read what rang for it afterward.
-        appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString(), summary, pointer, deliveryId });
+        // t-b47fb2 — mint the witness position ONCE and carry it into delivery. The queue item keeps
+        // it so the moment of hand-over can advance `.tachyon/notice-cursors.json` to this exact row;
+        // a second `new Date()` inside the delivery path would name a position the trail does not have.
+        const doorbellAt = new Date().toISOString();
+        appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: doorbellAt, summary, pointer, deliveryId });
         if (!prepareAgentSummary(summary)) {
           return fail(new Error("summary must not be empty after sanitizing"));
         }
@@ -311,7 +315,7 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
         deps.markCompletionHint?.(agent);
         const line = composeBoundedAgentNotice(agent, to, summary, pointer);
         const result = deps.deliverNotice
-          ? await deps.deliverNotice(to, line, deps.authoredNoticeMetadata?.(agent))
+          ? await deps.deliverNotice(to, line, { ...deps.authoredNoticeMetadata?.(agent), doorbellAt } as NoticeSourceMetadata)
           : await deliverNoticeFallback(deps, session, line, to);
         const suffix = result.dropped ? ` (${result.dropped} older notice${result.dropped === 1 ? "" : "s"} dropped)` : "";
         // t-44ae02 — depth + oldest age are the only numbers a still-working sender can see.

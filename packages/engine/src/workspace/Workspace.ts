@@ -190,7 +190,11 @@ import { readAgentInternalChecklist } from "../sidebar/readAgentInternalChecklis
 import { StatusNoticeStore, type StatusNoticeSetInputV1 } from "../sidebar/statusNotice.js";
 import { isVerifiedSince } from "./verifyRecordReader.js";
 import { defaultGitExec } from "../worktree/WorktreeManager.js";
-import { appendDoorbellOverflowEvent, hasDoorbellRung } from "./doorbell.js";
+import { appendDoorbellOverflowEvent, hasDoorbellRung, readDoorbellEvents, type DoorbellEvent } from "./doorbell.js";
+// t-b47fb2 — the queue lives in memory and an engine restart destroyed it (fatia 1). These three
+// modules are the durable half: the cursor beside the witness, and the boot-time plan that reads it.
+import { advanceNoticeCursor, ensureNoticeCursorFile, noticeCursorFor, readNoticeCursorFile } from "./noticeCursor.js";
+import { doorbellTrailTail, planNoticeReconstitution } from "./noticeReconstitution.js";
 import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "@tachyon/shared/attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
@@ -4274,7 +4278,84 @@ export class Workspace {
     if (receipt.status === "submit-unconfirmed") {
       return { status: "submit-unconfirmed", submitReason: receipt.reason };
     }
+    // t-b47fb2 — a notice delivered straight into an idle pane never enters the queue, so this is the
+    // only place its hand-over can be recorded. Without it a restart would reconstitute every doorbell
+    // that was delivered immediately, which is precisely the flood the card refuses.
+    advanceNoticeCursor(this.workspaceRoot, agent, metadata.doorbellAt);
     return { status: "notified" };
+  }
+
+  /**
+   * t-b47fb2 — has this doorbell already been handed to this agent by EITHER door?
+   *
+   * Reads the cursor file rather than caching it: the other writer is a separate `node` process (the
+   * Stop-hook drain), so an in-memory copy would be stale exactly when it matters. The file is small
+   * and this is only reached when a queue item exists, which is not a hot path.
+   */
+  private noticeAlreadyHandedOver(agent: string, doorbellAt: string): boolean {
+    const cursor = noticeCursorFor(readNoticeCursorFile(this.workspaceRoot), agent);
+    return cursor !== undefined && doorbellAt <= cursor;
+  }
+
+  /**
+   * t-b47fb2 — put back what the previous engine instance was still holding when it died.
+   *
+   * Called once from `start()`, right after every live session has been given an incarnation: the
+   * restored items name their original sender, and `flushQueuedNotice` compares that name against
+   * `agentIncarnations` to decide whether the sender was dismissed. Running before that loop would
+   * make every restored notice look like it came from a dismissed sender.
+   *
+   * Fail open in every direction. An unreadable trail, a cursor file we cannot write, or a corrupt
+   * cursor all end with nothing restored — which is exactly today's behaviour — never with a boot that
+   * refuses to proceed and never with the whole trail replayed.
+   */
+  private reconstituteNoticeQueue(liveAgents: readonly string[]): void {
+    // No early return on an empty fleet. The cursor file must be ESTABLISHED on every boot, including
+    // the boots with nothing running: a workspace that only ever started empty would otherwise get its
+    // baseline seeded at some later boot, after doorbells had already rung — and every one of those
+    // would then sit before the baseline and read as already handed over. Establishing it first makes
+    // the baseline mean "when Tachyon started keeping this record", which is the only reading under
+    // which a row after it is genuinely pending.
+    let events: DoorbellEvent[];
+    try {
+      events = readDoorbellEvents(this.workspaceRoot);
+    } catch {
+      return;
+    }
+    const cursors = ensureNoticeCursorFile(this.workspaceRoot, doorbellTrailTail(events));
+    const plan = planNoticeReconstitution({
+      events,
+      agents: liveAgents,
+      cursors,
+      maxPerTarget: this.noticeQueue.boundPerTarget,
+    });
+    for (const notice of plan.restore) {
+      this.noticeQueue.restore({
+        target: notice.target,
+        line: notice.line,
+        createdAt: notice.createdAt,
+        origin: "agent-authored",
+        sourceChild: notice.from,
+        // Undefined when the sender is not live in THIS process, which `flushQueuedNotice` reads as
+        // "a name this process never recorded" and delivers plainly — the safe direction. A live
+        // sender gets its current incarnation so it is not reported as dismissed.
+        ...(this.agentIncarnations.has(notice.from) ? { sourceIncarnation: this.agentIncarnations.get(notice.from) } : {}),
+        doorbellAt: notice.at,
+      });
+    }
+    if (plan.restore.length > 0) {
+      this.host.notify(
+        this.t("restored {0} undelivered notice(s) from the durable doorbell log after the engine restarted", plan.restore.length),
+        "info",
+      );
+    }
+    if (plan.contentless > 0) {
+      // Never silent: this is the one thing reconstitution knows is pending and cannot reproduce.
+      this.host.notify(
+        this.t("{0} pending doorbell(s) carry no recorded summary and could not be restored — read them with read_notices", plan.contentless),
+        "warn",
+      );
+    }
   }
 
   private enqueueNotice(
@@ -4386,6 +4467,15 @@ export class Workspace {
     // t-fb1453 — peek, submit, THEN drop. Removing first meant an unobserved submit took the notice
     // with it (t-b4a799's unknown-flattened-into-known); now only a KNOWN fate consumes the item.
     let item = this.noticeQueue.peek(agent);
+    // t-b47fb2 — the end-of-turn drain hook writes into the SAME session through a different door, and
+    // the cursor beside the witness is the single hand-over record both doors keep. Whichever reaches
+    // the agent first wins; the other stands down here rather than delivering the same doorbell twice.
+    // Done before the composer guard on purpose: a line already handed over must not be able to hold
+    // this flush open as a "staged retry" of something the agent has already read.
+    while (item?.doorbellAt && this.noticeAlreadyHandedOver(agent, item.doorbellAt)) {
+      this.noticeQueue.dropFront(agent);
+      item = this.noticeQueue.peek(agent);
+    }
     if (!item) return false;
     const composerOccupied = await this.humanDraftPresent(agent)
       || (this.queuedReloadSummaries.has(agent) && await this.reloadNoticeDraftPresent(agent));
@@ -4446,6 +4536,9 @@ export class Workspace {
         // report true — the caller's question is "did I touch the pane this pass", not "did it land".
         if (receipt.status !== "submit-unconfirmed") {
           this.noticeQueue.dropFront(agent);
+          // t-b47fb2 — record the hand-over in the cursor beside the witness, so a later engine boot
+          // does not reconstitute a notice this pane already received.
+          advanceNoticeCursor(this.workspaceRoot, agent, item.doorbellAt);
           this.completeQueuedReloadSummary(agent, item.line);
         }
         return true;
@@ -6562,6 +6655,11 @@ export class Workspace {
     for (const name of liveSessions) {
       this.recordSpawnIncarnation(name);
     }
+    // t-b47fb2 — the same sentence one line up, for the other half of what a reload destroys. A
+    // survivor keeps its session and loses its QUEUE, because the queue was only ever a Map in the
+    // dead process: measured on 2026-08-17 (three doorbells, none delivered) and again on 2026-08-18
+    // at 11:37:07. Restart stops being a silent discard here.
+    this.reconstituteNoticeQueue([...liveSessions]);
     // Spec 211: rebuild Temporary defs + lineage from the ledger BEFORE planning resume,
     // so a re-discovered Temporary instance is restartable and re-nests under its parent.
     // t-8354ae — also run when config is invalid so the sidebar can list ledger agents.

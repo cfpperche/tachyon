@@ -28,6 +28,12 @@ export interface NoticeQueueItem {
   origin?: NoticeOrigin;
   sourceChild?: string;
   sourceIncarnation?: number;
+  /**
+   * t-b47fb2 — the durable witness position this notice came from (`doorbells.jsonl`'s `at`), when it
+   * has one. Delivery advances `.tachyon/notice-cursors.json` to it, which is what lets a boot after an
+   * engine restart tell an undelivered doorbell from one that already landed.
+   */
+  doorbellAt?: string;
 }
 
 export interface NoticeQueueOptions {
@@ -88,6 +94,40 @@ export class NoticeQueue {
     if (queue.length > 0) this.queues.set(target, queue);
     else this.queues.delete(target);
     return { queued: queue.length, dropped, oldestCreatedAt: queue[0]?.createdAt ?? this.now() };
+  }
+
+  /** t-b47fb2 — the per-target bound, so reconstitution cannot plan deeper than a live queue may go. */
+  get boundPerTarget(): number {
+    return this.maxPerTarget;
+  }
+
+  /**
+   * t-b47fb2 — put a doorbell that a previous engine instance never delivered back into the queue,
+   * with its ORIGINAL `createdAt`.
+   *
+   * Deliberately not `enqueue`: `enqueue` stamps `this.now()`, which would present a report that rang
+   * twenty minutes ago as fresh news and defeat `delayedSenderMarker`'s whole purpose. It shares
+   * `enqueue`'s collision rule (same line, same sender, same origin is one notice, not two) and its
+   * per-target bound; what it does not share is the clock, the overflow WITNESS row, or the human
+   * toast — an `overflow-drop` line recording history that was never live would be a false measurement
+   * in the same durable log this feature exists to trust.
+   */
+  restore(item: NoticeQueueItem): void {
+    const queue = this.queues.get(item.target) ?? [];
+    const existing = queue.find(
+      (queued) => queued.line === item.line && queued.sourceChild === item.sourceChild && queued.origin === item.origin,
+    );
+    if (existing) {
+      // Two witness rows collapsing into one queue slot: the cursor must end up naming the NEWER of
+      // them once this slot is delivered, or the newer row stays pending forever.
+      if (item.doorbellAt && (!existing.doorbellAt || item.doorbellAt > existing.doorbellAt)) {
+        existing.doorbellAt = item.doorbellAt;
+      }
+      return;
+    }
+    queue.push({ ...item });
+    while (queue.length > this.maxPerTarget) queue.shift();
+    this.queues.set(item.target, queue);
   }
 
   /**
