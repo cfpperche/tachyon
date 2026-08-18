@@ -14,11 +14,11 @@ _Generated from `plan.md` on 2026-08-17. Work top-to-bottom. Check boxes as task
 
 **Fatia 1 — o engine ganha hunk, e só isso.**
 
-- [ ] `worktree/review.ts` — hunk linha a linha. O git entrega; a pergunta é o formato que atravessa.
-- [ ] `runtime-api/reviewProjection.ts` — os hunks no contrato versionado.
-- [ ] **A âncora NÃO é tocada.** `reviewNotes.ts`, `reviewNotesStore.ts` e `reviewNotesService.ts`
+- [x] `worktree/review.ts` — hunk linha a linha. O git entrega; a pergunta é o formato que atravessa.
+- [x] `runtime-api/reviewProjection.ts` — os hunks no contrato versionado.
+- [x] **A âncora NÃO é tocada.** `reviewNotes.ts`, `reviewNotesStore.ts` e `reviewNotesService.ts`
       ficam byte-idênticos. Se precisar mexer, PARAR e dizer por quê.
-- [ ] `bash scripts/check-engine-boundary.sh` verde.
+- [x] `bash scripts/check-engine-boundary.sh` verde.
 
 **Fatia 2 — a tela.**
 
