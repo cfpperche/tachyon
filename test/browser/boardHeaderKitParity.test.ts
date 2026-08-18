@@ -87,4 +87,27 @@ describe("Board header: Kit vs legacy box-model parity on the real bundle (t-6da
 
     await page.close();
   });
+
+  it("keeps the search box width stable when the clear button appears and clears through that button", async () => {
+    const page = await browser.newPage();
+    const surface = await loadBoard(page, server.origin);
+
+    const widthOfSearch = () =>
+      surface.$eval(".board-search", (el) => Math.round(el.getBoundingClientRect().width));
+
+    const emptyWidth = await widthOfSearch();
+    await surface.type('.board-search input[aria-label="Search tasks"]', "task");
+    const populatedWidth = await widthOfSearch();
+
+    expect(populatedWidth).toBe(emptyWidth);
+
+    await surface.click('.board-search button[title="Clear search"]');
+    await expect
+      .poll(() => surface.$eval('.board-search input[aria-label="Search tasks"]', (el) => (el as HTMLInputElement).value))
+      .toBe("");
+    expect(await surface.$('.board-search button[title="Clear search"]')).toBeNull();
+    expect(await widthOfSearch()).toBe(emptyWidth);
+
+    await page.close();
+  });
 });
