@@ -148,6 +148,21 @@ const extension = {
   logLevel: "info",
 };
 
+// t-4486eb — test-only `tachyon._*` commands. Separate outfile so a static import cannot close
+// the names into dist/extension.js. activate() loads this file only when TACHYON_TEST_SEAMS=1.
+const internalSeams = {
+  entryPoints: [appSource("internalSeams.ts")],
+  bundle: true,
+  outfile: "dist/internalSeams.js",
+  platform: "node",
+  format: "cjs",
+  target: "node20",
+  external: ["vscode", "node-pty"],
+  define: nodeDefines,
+  sourcemap: true,
+  logLevel: "info",
+};
+
 // spec 265 — the standalone tool LAUNCHER bundle (Node; NO vscode). Copied to .tachyon/bin/_tachyon-tool.js
 // and exec'd by a git pre-commit hook with no VS Code running, so it must be self-contained.
 const toolLauncher = {
@@ -597,7 +612,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate]
+const targets = [extension, internalSeams, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate]
   .map((target) => ({
     ...target,
     ...(target.outfile ? { outfile: outputPath(target.outfile) } : {}),

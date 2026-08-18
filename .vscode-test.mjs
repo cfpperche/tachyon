@@ -78,7 +78,14 @@ const GLOBAL_SETTINGS_ISOLATION_ENV = {
   TACHYON_GLOBAL_SETTINGS_HOME: GLOBAL_SETTINGS_HOME,
 };
 
-const GATE_ENV = { ...ENGINE_RUNTIME_ENV, ...TMUX_ISOLATION_ENV, ...GLOBAL_SETTINGS_ISOLATION_ENV };
+const GATE_ENV = {
+  ...ENGINE_RUNTIME_ENV,
+  ...TMUX_ISOLATION_ENV,
+  ...GLOBAL_SETTINGS_ISOLATION_ENV,
+  // t-4486eb — load the sibling `tachyon._*` table. The editor-host suite is the
+  // consumer; without this, activate() never registers the seams.
+  TACHYON_TEST_SEAMS: "1",
+};
 
 /**
  * t-dab79c — a disposable editor-host run has no useful crash-reporting lifecycle. Electron starts

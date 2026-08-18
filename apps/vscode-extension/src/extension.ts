@@ -4,14 +4,14 @@ import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import os from "node:os";
+import { createRequire } from "node:module";
 import { performance } from "node:perf_hooks";
 import { doctor, probeServer, TmuxService, workspaceHash, SOCKET_NAME, type PaneSnapshot } from "@tachyon/engine/tmux/TmuxService.js";
 import { subtreeCpuTicks } from "@tachyon/engine/attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import type { TmuxServerSnapshot } from "@tachyon/webview-ui/inspector/model";
-import { asAgent, CONFIG_FILENAMES, loadConfigFile, type ScheduleDef } from "@tachyon/engine/config/loadConfig.js";
+import { asAgent, CONFIG_FILENAMES, loadConfigFile } from "@tachyon/engine/config/loadConfig.js";
 import { scheduleEntryLine, setSettingsValue } from "@tachyon/engine/config/YamlConfigEditor.js";
-import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { type InspectorDeps } from "./webview/ServerInspector.js";
 import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
 import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/RuntimeOpsPanel.js";
@@ -1474,15 +1474,6 @@ function daemonSettingsSnapshot(workspaceRoot: string): DaemonSettingsSnapshot {
 function viewKind(value: unknown): ViewKind | undefined {
   return value === "agents" || value === "pins" || value === "tasks" || value === "commands"
     || value === "schedules" || value === "handoff" || value === "probes" ? value : undefined;
-}
-
-function proposalSchedule(schedule: ScheduleDef): Extract<ExtensionCommandV1, { action: "proposal.create" }>["schedule"] {
-  const catchUp = schedule.catchUp === undefined ? {} : { catchUp: schedule.catchUp };
-  if (schedule.every && schedule.run) return { every: schedule.every, run: schedule.run, ...catchUp };
-  if (schedule.at && schedule.run) return { at: schedule.at, run: schedule.run, ...catchUp };
-  if (schedule.every && schedule.spawn) return { every: schedule.every, spawn: schedule.spawn, ...(schedule.instructions ? { instructions: schedule.instructions } : {}), ...catchUp };
-  if (schedule.at && schedule.spawn) return { at: schedule.at, spawn: schedule.spawn, ...(schedule.instructions ? { instructions: schedule.instructions } : {}), ...catchUp };
-  throw new Error("schedule proposal is incomplete");
 }
 
 /** t-af3eef — control-flow marker for "this view did not ask for that slice". Never surfaced. */
@@ -3350,6 +3341,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   );
 
+  // t-4486eb — test-only `tachyon._*` table. Sibling bundle + runtime env, never
+  // `context.extensionMode`: screenshot/integration hosts are an installed VSIX.
+  if (process.env.TACHYON_TEST_SEAMS === "1") {
+    const { registerInternalSeams } = createRequire(__filename)(
+      path.join(__dirname, "internalSeams.js"),
+    ) as typeof import("./internalSeams.js");
+    registerInternalSeams(context, { byHash, workspaces, extensionQuery, extensionInvoke, refreshAll, jsonObject });
+  }
+
   context.subscriptions.push(
     folderWatcher,
     {
@@ -3361,60 +3361,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (activeClientRegistry === clientRegistry) activeClientRegistry = undefined;
       },
     },
-    // ---- internal seams (integration tests; default to the single workspace) ----
-    vscode.commands.registerCommand("tachyon._agents", (hash?: string) => {
-      const ws = byHash(hash);
-      return ws ? extensionQuery(ws, { action: "agents.list" }) : [];
-    }),
-    vscode.commands.registerCommand(
-      "tachyon._spawn",
-      (name: string, opts?: { cmd?: string; cwd?: string; instructions?: string; parent?: string }, hash?: string) => {
-        const ws = byHash(hash);
-        return ws ? extensionInvoke(ws, { action: "agent.spawn", agent: name, options: opts }) : undefined;
-      },
-    ),
-    vscode.commands.registerCommand("tachyon._wait", (name: string, until: "idle" | "needs-input" | "dead", timeoutSec: number, hash?: string) => {
-      const ws = byHash(hash);
-      if (!ws) return { met: false, state: "gone" };
-      return extensionQuery(ws, { action: "agent.wait", agent: name, until, timeoutSec });
-    }),
-    vscode.commands.registerCommand("tachyon._attention", (hash?: string) => {
-      const ws = byHash(hash);
-      return ws ? extensionQuery(ws, { action: "attention.list" }) : {};
-    }),
-    vscode.commands.registerCommand("tachyon._pins", (hash?: string) => {
-      const ws = byHash(hash);
-      return ws ? extensionQuery(ws, { action: "pins.list" }) : [];
-    }),
-    vscode.commands.registerCommand("tachyon._pin", async (text: string, by?: string, done?: boolean, hash?: string) => {
-      const ws = byHash(hash);
-      if (!ws) return;
-      await extensionInvoke(ws, { action: "pin.create", text, by: by ?? "claude", done: done ?? false });
-      refreshAll();
-    }),
-    vscode.commands.registerCommand("tachyon._upsertAgent", (submit: StudioSubmit, hash?: string) => byHash(hash)?.studioSubmit(submit)),
-    vscode.commands.registerCommand("tachyon._schedules", (hash?: string) => {
-      const ws = byHash(hash);
-      return ws ? extensionQuery(ws, { action: "schedules.list" }) : [];
-    }),
-    vscode.commands.registerCommand("tachyon._proposals", (hash?: string) => {
-      const ws = byHash(hash);
-      return ws ? extensionQuery(ws, { action: "proposals.list" }) : [];
-    }),
-    vscode.commands.registerCommand("tachyon._propose", async (name: string, schedule: ScheduleDef, reason?: string, hash?: string) => {
-      const ws = byHash(hash);
-      if (!ws) return;
-      await extensionInvoke(ws, { action: "proposal.create", name, schedule: proposalSchedule(schedule), by: "agent", ...(reason ? { reason } : {}) });
-      refreshAll();
-    }),
-    vscode.commands.registerCommand("tachyon._approveProposal", (id: string, hash?: string) => {
-      const ws = byHash(hash);
-      return ws ? extensionInvoke(ws, { action: "proposal.approve", id }) : undefined;
-    }),
-    vscode.commands.registerCommand("tachyon._rejectProposal", (id: string, hash?: string) => {
-      const ws = byHash(hash);
-      return ws ? extensionInvoke(ws, { action: "proposal.reject", id }) : undefined;
-    }),
     // ---- schedules (F23) ----
     vscode.commands.registerCommand("tachyon.approveProposalItem", async (item: ProposalItem) => {
       const ws = wsOf(item);
@@ -3435,7 +3381,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (ws) await ws.sidebar.mutateSidebar({ action: "schedule.toggle-pause", id: item.scheduleName });
     }),
-    vscode.commands.registerCommand("tachyon._togglePause", (name: string, hash?: string) => byHash(hash)?.sidebar.mutateSidebar({ action: "schedule.toggle-pause", id: name })),
     vscode.commands.registerCommand("tachyon.deleteScheduleItem", async (item: ScheduleItem) => {
       const ws = wsOf(item);
       if (!ws) return;
@@ -3463,17 +3408,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         editor.selection = new vscode.Selection(pos, pos);
         editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
       }
-    }),
-    vscode.commands.registerCommand("tachyon._workspaces", () => workspaces().map((ws) => ({ folder: ws.folderName, root: ws.workspaceRoot, hash: ws.wsHash, bridge: ws.bridgeUrl }))),
-    /**
-     * t-8354ae / EDH palliative — read-only health probe for headless dogfood.
-     * Reloads config from disk, returns failure surface + degraded roster extras + LKG-spawn check.
-     * Not a user-facing command (underscore); not contributed in package.json.
-     */
-    vscode.commands.registerCommand("tachyon._configHealth", async (hash?: string) => {
-      const ws = hash ? byHash(hash) : workspaces()[0];
-      if (!ws) return { ok: false as const, error: "no-workspace" };
-      return extensionInvoke(ws, { action: "config.health" });
     }),
     // ---- views ----
     vscode.commands.registerCommand("tachyon.refreshViews", refreshAll),

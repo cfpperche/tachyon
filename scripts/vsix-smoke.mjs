@@ -329,6 +329,9 @@ function childEnv(work) {
   env.TMUX_TMPDIR = tmux;
   env.TACHYON_TMUX_SOCKET = TMUX_SOCKET;
   env.TACHYON_GLOBAL_SETTINGS_HOME = settings;
+  // t-4486eb — the engine door still queries tachyon._agents. The sibling
+  // bundle ships in the VSIX; this env is what registers it.
+  env.TACHYON_TEST_SEAMS = "1";
   return env;
 }
 

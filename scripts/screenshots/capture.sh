@@ -91,6 +91,7 @@ Xvfb "$DISP" -screen 0 1600x1000x24 >/dev/null 2>&1 & XVFB=$!
 trap 'kill ${HOST:-} ${XVFB:-} 2>/dev/null || true' EXIT
 sleep 2
 SHOTDIR="$SHOTDIR" SCENE="$SCENE" CAST_SECS="$SECS" DISPLAY="$DISP" \
+  TACHYON_TEST_SEAMS=1 \
   "$CODE" --extensionDevelopmentPath="$REPO" --extensionTestsPath="$REPO/scripts/screenshots/runner.js" \
   --user-data-dir "$UDD" --skip-welcome --skip-release-notes --disable-workspace-trust --disable-gpu \
   "$WS" >"$SHOTDIR/host.log" 2>&1 & HOST=$!
