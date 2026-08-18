@@ -37,21 +37,6 @@ export function globalSettingsPath(homeDir: string = os.homedir()): string {
 }
 
 /**
- * Redirect the file to a disposable home, the way `TACHYON_DEV_HOST_PROFILE_HOME` already redirects a
- * runtime home.
- *
- * This is isolation, not a preference: without it a dev-host session and the test suite both read the
- * REAL `~/.tachyon/settings.json`, so a person who has set a card template on their own machine gets
- * different test results from CI — a flake whose cause is invisible from the failure.
- */
-export const GLOBAL_SETTINGS_HOME_ENV_VAR = "TACHYON_GLOBAL_SETTINGS_HOME";
-
-function defaultHomeDir(): string {
-  const override = process.env[GLOBAL_SETTINGS_HOME_ENV_VAR];
-  return override && override.trim().length > 0 ? override : os.homedir();
-}
-
-/**
  * The process-wide reader/writer for the global file.
  *
  * Deliberately synchronous: every consumer (webview render, sidebar push, git spawn) is on a
@@ -65,7 +50,7 @@ export class GlobalSettingsStore {
   private stamp: string | null = null;
   readonly file: string;
 
-  constructor(homeDir: string = defaultHomeDir()) {
+  constructor(homeDir: string = os.homedir()) {
     this.file = globalSettingsPath(homeDir);
     this.reload();
   }

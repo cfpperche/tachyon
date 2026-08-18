@@ -13,7 +13,7 @@ import {
 import fs from "node:fs";
 import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
-import { TmuxService, workspaceHash, SESSION_PREFIX, type SubmitReceipt } from "../tmux/TmuxService.js";
+import { DEFAULT_SOCKET_NAME, TmuxService, workspaceHash, SESSION_PREFIX, type SubmitReceipt } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { agentsOf, asAgent, CONFIG_FILENAMES, suggestKindForCommand, terminalsOf, type TachyonConfig } from "../config/loadConfig.js";
 import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
@@ -371,8 +371,12 @@ export interface WorkspaceSeams {
   startBridge?: boolean;
   /** test-only presentation override; production obtains the adapter from EngineHost. */
   terminals?: TerminalPresentation;
-  /** test-only native-profile inspection home; production inspects the real runtime home. */
+  /** Native-profile inspection home. Production omits it (real home); Dev Host / tests pass the resolved path. */
   agentProfileHomeDir?: string;
+  /** Dedicated tmux socket name. Production omits it (`tachyon`); the extension host resolves isolation. */
+  tmuxSocket?: string;
+  /** Post-launch observation window. Tests pass `0`; production omits it (five seconds). */
+  windowMs?: number;
   /**
    * t-35c998 — the launch preflight registry the AgentManager checks before every spawn. Production
    * omits it and gets the real one, where the opencode adapter EXECUTES `opencode providers list`
@@ -384,15 +388,9 @@ export interface WorkspaceSeams {
   launchPreflight?: RuntimeLaunchPreflightPort;
 }
 
-/** Dev Host may inspect a disposable runtime home; normal installed workspaces always use os.homedir(). */
-export function resolveAgentProfileHomeDir(
-  seam: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): string | undefined {
-  if (seam) return seam;
-  if (env.TACHYON_DEV_HOST !== "1") return undefined;
-  const candidate = env.TACHYON_DEV_HOST_PROFILE_HOME;
-  return typeof candidate === "string" && path.isAbsolute(candidate) ? candidate : undefined;
+/** Dev Host may inspect a disposable runtime home; the extension host resolves that and passes it here. */
+export function resolveAgentProfileHomeDir(seam: string | undefined): string | undefined {
+  return seam;
 }
 
 export interface BridgeStartFailureInfo {
@@ -671,11 +669,13 @@ export class Workspace {
       this.tmux = seams.tmux;
       this.engine = seams.engine ?? NOOP_ENGINE;
     } else {
-      this.tmux = new TmuxService();
+      const socket = seams.tmuxSocket ?? DEFAULT_SOCKET_NAME;
+      this.tmux = new TmuxService(undefined, socket);
       // F20 engine: persistent control-mode client — command channel (zero
       // subprocess churn) + event-driven lifecycle; subprocess fallback when down.
       const engine = new ControlModeClient({
         wsHash: this.wsHash,
+        socket,
         // Dead-map changes are lifecycle signals; handle them immediately instead of waiting for
         // the subprocess polling fallback.
         onDeadMapChanged: () => this.triggerLifecycle(),
@@ -810,6 +810,7 @@ export class Workspace {
       workspaceRoot,
       // t-35c998 — test-only; absent in production, where AgentManager builds the real registry.
       ...(seams.launchPreflight ? { launchPreflight: seams.launchPreflight } : {}),
+      ...(seams.windowMs !== undefined ? { windowMs: seams.windowMs } : {}),
       // t-8168a7 — list() carries Attention's real-turn latch. The manager is constructed before the
       // monitor, but this thunk is first read after construction, when the monitor exists.
       hasStartedTurn: (name) => this.monitor?.hasStartedTurn(name),
@@ -2808,14 +2809,14 @@ export class Workspace {
   }
 
   /** Persistent-engine entry: the daemon owns the public Bridge listener directly. */
-  static async createDaemon(workspaceRoot: string, deps: WorkspaceDeps): Promise<Workspace> {
-    return Workspace._create(workspaceRoot, deps);
+  static async createDaemon(workspaceRoot: string, deps: WorkspaceDeps, seams: WorkspaceSeams = {}): Promise<Workspace> {
+    return Workspace._create(workspaceRoot, deps, seams);
   }
 
   /** spec 235 — headless test entry: inject a fake-exec tmux + no-op engine + `startBridge:false` to drive
    *  the Workspace with no Electron / real tmux / bound port. */
   static async createForTest(workspaceRoot: string, deps: WorkspaceDeps, seams: WorkspaceSeams): Promise<Workspace> {
-    return Workspace._create(workspaceRoot, deps, seams);
+    return Workspace._create(workspaceRoot, deps, { windowMs: 0, ...seams });
   }
 
   private static async _create(workspaceRoot: string, deps: WorkspaceDeps, seams: WorkspaceSeams = {}): Promise<Workspace> {

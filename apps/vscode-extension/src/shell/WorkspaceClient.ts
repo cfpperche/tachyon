@@ -110,6 +110,9 @@ export interface ConnectRemoteWorkspaceClientOptions {
   supervisor?: Omit<EnsureDaemonEngineOptions, "workspaceRoot" | "bundle" | "runtime" | "settings" | "migrationProvider">;
   /** Deterministic test/platform seam; production uses ensureDaemonEngine. */
   ensure?: EnsureEngine;
+  /** Extension host resolved these; they travel through the daemon options seam. */
+  agentProfileHomeDir?: string;
+  tmuxSocket?: string;
 }
 
 export interface ConnectPackagedWorkspaceClientOptions extends Omit<ConnectRemoteWorkspaceClientOptions, "bundle" | "runtime"> {
@@ -247,6 +250,8 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
       settings,
       migrationProvider: options.migrationProvider,
       confirmUpgrade: options.confirmEngineUpgrade,
+      ...(options.agentProfileHomeDir ? { agentProfileHomeDir: options.agentProfileHomeDir } : {}),
+      ...(options.tmuxSocket ? { tmuxSocket: options.tmuxSocket } : {}),
     };
   }
 

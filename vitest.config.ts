@@ -108,6 +108,7 @@ const PROJECT_TEST_BASE = {
   testTimeout: 30_000,
   hookTimeout: 30_000,
   env: { TACHYON_GLOBAL_SETTINGS_HOME: path.join(os.tmpdir(), "tachyon-vitest-no-global-settings") },
+  setupFiles: ["test/setup/globalSettingsHome.ts"],
 };
 
 export default defineConfig({
@@ -156,7 +157,9 @@ export default defineConfig({
     // t-aaad95 — never let the suite read the DEVELOPER's real ~/.tachyon/settings.json. A machine
     // where somebody has set a card template would otherwise disagree with CI, and the failure gives
     // no hint that a file outside the repo caused it. Tests that want a document write one into their
-    // own temp home via `useGlobalSettingsHome`.
+    // own temp home via `useGlobalSettingsHome`. The env is the harness's input; the product no
+    // longer reads it (t-7a7ddf) — setupFiles applies it through the seam.
     env: { TACHYON_GLOBAL_SETTINGS_HOME: path.join(os.tmpdir(), "tachyon-vitest-no-global-settings") },
+    setupFiles: ["test/setup/globalSettingsHome.ts"],
   },
 });

@@ -42,7 +42,7 @@ import {
   SESSION_PREFIX,
   snapshotServerPids,
   socketPath,
-  SOCKET_NAME,
+  DEFAULT_SOCKET_NAME,
   type PaneSnapshot,
 } from "../tmux/TmuxService.js";
 import { recoverTmuxServer } from "./tmuxAuthority.js";
@@ -179,11 +179,11 @@ export async function executeExtensionQuery(
       const pids = probe.state === "wedged"
         ? probe.pids
         : probe.state === "healthy"
-          ? await findServerPids(SOCKET_NAME).catch(() => [])
+          ? await findServerPids(DEFAULT_SOCKET_NAME).catch(() => [])
           : [];
       return json({
-        socketName: SOCKET_NAME,
-        socketPath: socketPath(SOCKET_NAME),
+        socketName: DEFAULT_SOCKET_NAME,
+        socketPath: socketPath(DEFAULT_SOCKET_NAME),
         state: probe.state,
         ...(requirement.ok ? { tmuxVersion: requirement.version } : {}),
         pids,

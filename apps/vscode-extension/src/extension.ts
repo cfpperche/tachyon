@@ -2330,13 +2330,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     buildSnapshot: (wsHash) => {
       const ws = byHash(wsHash);
         if (!ws?.config) return undefined;
-        const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
+        const home = devProfileHome ? { homeDir: devProfileHome } : {};
         const pendingAgents = ws.client.presentation.agents.items.filter((agent) => agent.configurationPending).map((agent) => agent.name);
         const common = {
           workspaceRoot: ws.workspaceRoot,
           agents: ws.config.agents,
           pendingAgents,
-          ...(profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {}),
+          ...home,
         };
         try {
           return {
@@ -2363,8 +2363,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     saveChanges: async ({ wsHash, runtime, documentId, expectedRevision, changes }) => {
         const ws = byHash(wsHash);
         if (!ws?.config) throw new Error("The selected workspace is unavailable.");
-        const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
-        const home = profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {};
+        const home = devProfileHome ? { homeDir: devProfileHome } : {};
         let scope: "global" | "workspace";
         let revision: string;
         if (runtime === "codex") {
@@ -2801,6 +2800,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const versionValue = (context.extension.packageJSON as { version?: unknown }).version;
   const shellVersion = typeof versionValue === "string" && versionValue.trim() ? versionValue : "development";
+  const devProfileHome =
+    context.extensionMode === vscode.ExtensionMode.Development
+    && process.env.TACHYON_DEV_HOST === "1"
+    && process.env.TACHYON_DEV_HOST_PROFILE_HOME
+    && path.isAbsolute(process.env.TACHYON_DEV_HOST_PROFILE_HOME)
+      ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
+  const tmuxSocketName =
+    context.extensionMode === vscode.ExtensionMode.Production
+      ? SOCKET_NAME
+      : (process.env.TACHYON_TMUX_SOCKET?.trim() || SOCKET_NAME);
+  if (context.extensionMode !== vscode.ExtensionMode.Production) {
+    const settingsHome = process.env.TACHYON_GLOBAL_SETTINGS_HOME?.trim();
+    if (settingsHome) {
+      const { useGlobalSettingsHome } = await import("@tachyon/engine/config/globalSettings.js");
+      useGlobalSettingsHome(settingsHome);
+    }
+    terminals.useSocket(tmuxSocketName);
+  }
   const shellReleasePolicy = engineShellReleasePolicy(
     context.extensionMode === vscode.ExtensionMode.Production
       ? "production"
@@ -2827,6 +2844,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         shell: { version: shellVersion, locale: vscode.env.language },
         capabilities: [ENGINE_UI_CAPABILITY, "vscode.diff", "vscode.editor", "vscode.terminal"],
         settings: daemonSettingsSnapshot(workspaceRoot),
+        ...(devProfileHome ? { agentProfileHomeDir: devProfileHome } : {}),
+        ...(context.extensionMode === vscode.ExtensionMode.Production ? {} : { tmuxSocket: tmuxSocketName }),
         migrationProvider: {
           storage: bridgeStateMigrationStorage,
           provide: () => collectLegacyEngineStateMigration(workspaceHash(workspaceRoot), {

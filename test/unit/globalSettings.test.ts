@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { makeTempDir } from "../helpers/tempDir.js";
+import os from "node:os";
 import {
   DEFAULT_GLOBAL_SETTINGS,
   GLOBAL_SETTINGS_SCHEMA_VERSION,
@@ -9,7 +10,9 @@ import {
   globalSettingsPath,
   parseGlobalSettings,
   resolveGlobalSettings,
+  sharedGlobalSettings,
   toGlobalSettingsDocument,
+  useGlobalSettingsHome,
   writeGlobalSettingsFile,
 } from "@tachyon/engine/config/globalSettings.js";
 
@@ -124,6 +127,23 @@ describe("agentPane.enabled fails toward enabled", () => {
 });
 
 describe("global settings store", () => {
+  it("the constructor home is the seam — omitted means os.homedir(), never an env var", () => {
+    const home = tempHome();
+    expect(new GlobalSettingsStore(home).file).toBe(globalSettingsPath(home));
+    expect(new GlobalSettingsStore().file).toBe(globalSettingsPath(os.homedir()));
+  });
+
+  it("useGlobalSettingsHome is the process-wide seam", () => {
+    const previous = sharedGlobalSettings();
+    const home = tempHome();
+    try {
+      expect(useGlobalSettingsHome(home)?.file).toBe(globalSettingsPath(home));
+      expect(sharedGlobalSettings().file).toBe(globalSettingsPath(home));
+    } finally {
+      useGlobalSettingsHome(path.dirname(path.dirname(previous.file)));
+    }
+  });
+
   it("an absent file is the defaults with no refusal", () => {
     const store = new GlobalSettingsStore(tempHome());
     expect(store.current()).toEqual(DEFAULT_GLOBAL_SETTINGS);

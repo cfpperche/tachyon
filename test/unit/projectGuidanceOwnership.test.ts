@@ -58,6 +58,7 @@ async function spawnedCommand(root: string, yaml: string, name = "consumer"): Pr
     return { stdout: "", stderr: "" };
   };
   const manager = new AgentManager({
+    windowMs: 0,
     tmux: new TmuxService(exec),
     wsHash: workspaceHash(root),
     workspaceRoot: root,

@@ -71,6 +71,7 @@ terminals:
     const ledger = new SessionLedger(workspace);
     tmux = new TmuxService(defaultExecutor);
     manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash,
       workspaceRoot: workspace,

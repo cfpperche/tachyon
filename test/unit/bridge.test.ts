@@ -204,6 +204,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   const tmux = new TmuxService(exec);
   const sessionLedger = new SessionLedger(WS);
   const manager = new AgentManager({
+    windowMs: 0,
     tmux,
     wsHash: HASH,
     workspaceRoot: WS,
@@ -1795,6 +1796,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
   it("agent_touched_files refuses cleanly when the Bridge has no worktree-diff port", async () => {
     const bareManager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: HASH,
       workspaceRoot: WS,

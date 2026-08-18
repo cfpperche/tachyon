@@ -96,7 +96,7 @@ describe("container-generated delegation behavior", () => {
 
       // Fresh AgentManager instance sharing the ledger, in-memory lineage empty — simulates the
       // state right after an extension-host reload.
-      const reloaded = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: ws, getConfig: () => config, ledger });
+      const reloaded = new AgentManager({ windowMs: 0, tmux, wsHash: HASH, workspaceRoot: ws, getConfig: () => config, ledger });
       // `child` is currently declared in config, so rehydrateFromLedger's loop skips it (declared
       // names are config's to own) — this is the exact regression: rehydrate never touches it, so
       // only the parentOf ledger-union fix (not rehydrate) can recover the link.

@@ -63,6 +63,7 @@ describe("container-generated delegation behavior", () => {
     const notifications: { message: string; level: "warn" }[] = [];
     const { newSessionArgs, tmux } = fakeTmux();
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: workspaceHash(ws),
       workspaceRoot: ws,

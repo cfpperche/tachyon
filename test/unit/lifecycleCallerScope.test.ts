@@ -81,7 +81,7 @@ describe("lifecycle caller scope (t-bec361)", () => {
     "    cmd: claude\n",
   ).config;
   const tmux = new TmuxService(exec);
-  const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config });
+  const manager = new AgentManager({ windowMs: 0, tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config });
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-lifecycle-scope-"));
   const registry = new CallerIdentityRegistry(Buffer.from("a".repeat(64), "hex"));
   const bossToken = registry.mint("boss", SCOPE);

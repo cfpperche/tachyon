@@ -34,6 +34,7 @@ describe("container-generated delegation behavior", () => {
       return { stdout: "", stderr: "" };
     };
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: new TmuxService(exec),
       wsHash: workspaceHash(ws),
       workspaceRoot: ws,

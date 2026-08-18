@@ -27,6 +27,7 @@ async function spawnAndCapture(
     return { stdout: "", stderr: "" } satisfies ExecResult;
   });
   const manager = new AgentManager({
+    windowMs: 0,
     tmux,
     wsHash: workspaceHash(workspaceRoot),
     workspaceRoot,

@@ -12,12 +12,18 @@ describe("attachSocketPath", () => {
     expect(path).toMatch(/^\/tmp\/tmux-\d+\/tachyon$/);
   });
 
-  it("uses TACHYON_ENGINE_TMUX_TMPDIR when that socket exists", () => {
+  it("ignores TACHYON_ENGINE_TMUX_TMPDIR and uses the TMUX_TMPDIR /tmp pair", () => {
     const path = attachSocketPath(
       { TMUX_TMPDIR: "/private/dev-host/tmux", TACHYON_ENGINE_TMUX_TMPDIR: "/engine/tmp" },
-      (p) => p.includes("/engine/tmp/"),
+      (p) => p.includes("/engine/tmp/") || p.includes("/private/dev-host/tmux/"),
     );
-    expect(path).toMatch(/\/engine\/tmp\/tmux-\d+\/tachyon$/);
+    expect(path).toMatch(/\/private\/dev-host\/tmux\/tmux-\d+\/tachyon$/);
+    expect(path).not.toMatch(/\/engine\/tmp\//);
+  });
+
+  it("uses the socket name passed through the seam, not an env-backed default", () => {
+    const path = attachSocketPath({ TMUX_TMPDIR: "/tmp" }, () => true, "given-socket");
+    expect(path).toMatch(/\/tmp\/tmux-\d+\/given-socket$/);
   });
 });
 

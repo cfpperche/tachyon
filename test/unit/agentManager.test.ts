@@ -303,6 +303,7 @@ function makeManager(yaml: string, tmuxOpts: { failRespawn?: boolean; failShowEn
   const killed: string[] = [];
   const restarted: string[] = [];
   const manager = new AgentManager({
+    windowMs: 0,
     tmux,
     wsHash: HASH,
     workspaceRoot: WS,
@@ -539,6 +540,7 @@ describe("AgentManager", () => {
         const ledger = new SessionLedger(root);
         const config = configOf("agents:\n  worker:\n    cmd: codex\n");
         const manager = new AgentManager({
+          windowMs: 0,
           tmux,
           wsHash: HASH,
           workspaceRoot: root,
@@ -615,6 +617,7 @@ describe("AgentManager", () => {
         });
         const config = configOf("agents:\n  claude:\n    cmd: claude\n");
         const manager = new AgentManager({
+          windowMs: 0,
           tmux,
           wsHash: HASH,
           workspaceRoot: root,
@@ -671,6 +674,7 @@ describe("AgentManager", () => {
       const fake = fakeTmux();
       const ledger = new SessionLedger(root);
       const manager = new AgentManager({
+        windowMs: 0,
         tmux: fake.tmux,
         wsHash: workspaceHash(root),
         workspaceRoot: root,
@@ -1309,6 +1313,7 @@ describe("AgentManager", () => {
     const { sessions, tmux } = fakeTmux();
     sessions.add(`tachyon-${HASH}-orphan`); // survived a previous extension host
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: HASH,
       workspaceRoot: WS,
@@ -1409,6 +1414,7 @@ describe("AgentManager", () => {
       return { stdout: "", stderr: "" };
     });
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: recording,
       wsHash: workspaceHash(workspaceRoot),
       workspaceRoot,
@@ -1525,6 +1531,7 @@ describe("AgentManager", () => {
     const fake = fakeTmux();
     const ledger = new SessionLedger(root);
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: fake.tmux,
       wsHash: workspaceHash(root),
       workspaceRoot: root,
@@ -1558,6 +1565,7 @@ describe("AgentManager", () => {
     const fake = fakeTmux();
     const ledger = new SessionLedger(root);
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: fake.tmux,
       wsHash: workspaceHash(root),
       workspaceRoot: root,
@@ -1603,6 +1611,7 @@ describe("AgentManager", () => {
     const config = configOf(yaml);
     const fake = fakeTmux();
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: fake.tmux,
       wsHash: workspaceHash(root),
       workspaceRoot: root,
@@ -1630,6 +1639,7 @@ describe("AgentManager", () => {
     );
     const fake = fakeTmux();
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: fake.tmux,
       wsHash: workspaceHash(root),
       workspaceRoot: root,
@@ -1651,6 +1661,7 @@ describe("AgentManager", () => {
     );
     const fake = fakeTmux();
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: fake.tmux,
       wsHash: workspaceHash(root),
       workspaceRoot: root,
@@ -1676,6 +1687,7 @@ describe("AgentManager", () => {
     );
     const fake = fakeTmux();
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: fake.tmux,
       wsHash: workspaceHash(root),
       workspaceRoot: root,
@@ -1699,6 +1711,7 @@ describe("AgentManager", () => {
     );
     const fake = fakeTmux();
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: fake.tmux,
       wsHash: workspaceHash(root),
       workspaceRoot: root,
@@ -1720,6 +1733,7 @@ describe("AgentManager", () => {
     );
     const fake = fakeTmux();
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: fake.tmux,
       wsHash: workspaceHash(root),
       workspaceRoot: root,
@@ -1743,6 +1757,7 @@ describe("AgentManager", () => {
     );
     const fake = fakeTmux();
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: fake.tmux,
       wsHash: workspaceHash(root),
       workspaceRoot: root,
@@ -1764,6 +1779,7 @@ describe("AgentManager", () => {
     );
     const fake = fakeTmux();
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: fake.tmux,
       wsHash: workspaceHash(root),
       workspaceRoot: root,
@@ -1795,6 +1811,7 @@ describe("AgentManager", () => {
     );
     const fake = fakeTmux();
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: fake.tmux,
       wsHash: workspaceHash(root),
       workspaceRoot: root,
@@ -1816,6 +1833,7 @@ describe("AgentManager", () => {
       );
       const fake = fakeTmux();
       const manager = new AgentManager({
+        windowMs: 0,
         tmux: fake.tmux,
         wsHash: workspaceHash(root),
         workspaceRoot: root,
@@ -1842,6 +1860,7 @@ describe("AgentManager", () => {
     const { tmux } = fakeTmux();
     const reveals: Array<[string, SpawnReveal]> = [];
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: HASH,
       workspaceRoot: WS,
@@ -1867,6 +1886,7 @@ describe("AgentManager", () => {
     const { tmux } = fakeTmux();
     const reveals: Array<[string, SpawnReveal]> = [];
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: HASH,
       workspaceRoot: WS,
@@ -2081,6 +2101,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const ledger = new SessionLedger(ws);
     const tmux = new TmuxService(exec);
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: hash,
       workspaceRoot: ws,
@@ -6716,6 +6737,7 @@ describe("AgentManager — restart terminal lifecycle (t-4d2630 respawn keeps cl
     const { tmux } = fakeTmux();
     const events: string[] = [];
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: HASH,
       workspaceRoot: WS,
@@ -6735,6 +6757,7 @@ describe("AgentManager — restart terminal lifecycle (t-4d2630 respawn keeps cl
     const { tmux } = fakeTmux({ failRespawn: true });
     const events: string[] = [];
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: HASH,
       workspaceRoot: WS,
@@ -6763,6 +6786,7 @@ describe("live rename (agent/terminal, running or not)", () => {
       fs.mkdirSync(activityDir, { recursive: true });
       fs.writeFileSync(path.join(activityDir, `${agentLogId("reviewer")}.jsonl`), "event\n");
       const manager = new AgentManager({
+        windowMs: 0,
         tmux: fake.tmux,
         wsHash: hash,
         workspaceRoot: dir,
@@ -6845,6 +6869,7 @@ describe("live rename (agent/terminal, running or not)", () => {
       const ledger = new SessionLedger(dir);
       const { tmux } = fakeTmux();
       const manager = new AgentManager({
+        windowMs: 0,
         tmux, wsHash: HASH, workspaceRoot: dir, ledger,
         getConfig: () => configOf("agents:\n  keeper:\n    cmd: claude\n"),
         launchPreflight: HERMETIC_PREFLIGHT,
@@ -6869,6 +6894,7 @@ describe("live rename (agent/terminal, running or not)", () => {
       const ledger = new SessionLedger(dir);
       const { tmux, sessions } = fakeTmux();
       const manager = new AgentManager({
+        windowMs: 0,
         tmux, wsHash: HASH, workspaceRoot: dir, ledger,
         getConfig: () => configOf("agents:\n  keeper:\n    cmd: claude\n"),
         launchPreflight: HERMETIC_PREFLIGHT,
@@ -6896,6 +6922,7 @@ describe("live rename (agent/terminal, running or not)", () => {
       const ledger = new SessionLedger(dir);
       const { tmux, sessions } = fakeTmux();
       const manager = new AgentManager({
+        windowMs: 0,
         tmux,
         wsHash: HASH,
         workspaceRoot: dir,
@@ -6917,6 +6944,7 @@ describe("live rename (agent/terminal, running or not)", () => {
       ledger.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "abc" }, cwd: dir, instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true } });
       const { tmux } = fakeTmux();
       const manager = new AgentManager({
+        windowMs: 0,
         tmux,
         wsHash: HASH,
         workspaceRoot: dir,
@@ -6961,6 +6989,7 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     };
     const tmux = extra.tmux ?? new TmuxService(exec);
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: workspaceHash(ws),
       workspaceRoot: ws,
@@ -7000,6 +7029,7 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     // A new manager has no in-memory delegator map. The durable ledger is the only input that can
     // put the reviewer back beneath its delegator in the sidebar and in later primer rendering.
     const reloaded = new AgentManager({
+      windowMs: 0,
       tmux: h.tmux,
       wsHash: workspaceHash(h.ws),
       workspaceRoot: h.ws,
@@ -7991,6 +8021,7 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     const { sessions, dead, panes, tmux } = fakeTmux();
     const config = configOf("agents:\n  clean:\n    cmd: x\n");
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: HASH,
       workspaceRoot: WS,
@@ -8023,7 +8054,7 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     dead.set(boomSession, 137);
     panes.set(reviewSession, "durable postmortem");
     const opts = { tmux, wsHash: hash, workspaceRoot: ws, getConfig: () => configOf("agents:\n  decoy:\n    cmd: x\n"), ledger };
-    const manager = new AgentManager(opts);
+    const manager = new AgentManager({ ...opts, windowMs: 0 });
     await manager.rehydrateFromLedger();
     await expect(manager.dismissCleanExitPane("review")).resolves.toBe(true);
     expect(ledger.get("review")?.lifecycle).toMatchObject({ state: "clean-exited" });
@@ -8032,7 +8063,7 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     expect(ledger.get("review")?.worktree).toEqual(ownedWorktree);
     expect(ledger.get("boom")).toBeDefined();
 
-    const reloaded = new AgentManager(opts);
+    const reloaded = new AgentManager({ ...opts, windowMs: 0 });
     await reloaded.rehydrateFromLedger();
     expect((await reloaded.list()).find((a) => a.name === "review")).toMatchObject({
       cleanExited: true,
@@ -8099,6 +8130,7 @@ describe("AgentManager — spec 230 pipeline-node spawn", () => {
       const { tmux } = fakeTmux();
       const ledger = new SessionLedger(ws);
       const manager = new AgentManager({
+        windowMs: 0,
         tmux,
         wsHash: HASH,
         workspaceRoot: ws,
@@ -8127,6 +8159,7 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
     const { tmux } = fakeTmux();
     const config = configOf(yaml);
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: HASH,
       workspaceRoot: WS,
@@ -8165,6 +8198,7 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
     const { tmux } = fakeTmux();
     const config = configOf("agents:\n  a:\n    cmd: x\n");
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: HASH,
       workspaceRoot: WS,
@@ -8196,6 +8230,7 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
         return { stdout: "", stderr: "" };
       };
       const manager = new AgentManager({
+        windowMs: 0,
         tmux: new TmuxService(exec),
         wsHash: HASH,
         workspaceRoot: dir,
@@ -8221,6 +8256,7 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
       return { stdout: "", stderr: "" };
     };
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: new TmuxService(exec),
       wsHash: HASH,
       workspaceRoot: WS,
@@ -8245,7 +8281,7 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
       .spyOn(tmux, "sessionStates")
       .mockImplementationOnce(() => older)
       .mockImplementationOnce(() => newer);
-    const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config });
+    const manager = new AgentManager({ windowMs: 0, tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config });
 
     // Dispatch order: agentStates() (older) then runningAgentsStrict() (newer) — e.g. a
     // LifecycleMonitor poll racing the rebind coordinator's boot scan.
@@ -8288,6 +8324,7 @@ describe("AgentManager — Bridge wiring fail-closed (t-d42565)", () => {
       }
     };
     const manager = new AgentManager({
+      windowMs: 0,
       tmux: new TmuxService(exec),
       wsHash: workspaceHash(ws),
       workspaceRoot: ws,
@@ -8356,6 +8393,7 @@ describe("AgentManager — durable pane transcripts (t-6a6a00)", () => {
     const config = configOf(yaml);
     const ledger = new SessionLedger(ws);
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: hash,
       workspaceRoot: ws,
@@ -8452,6 +8490,7 @@ describe("AgentManager — durable pane transcripts (t-6a6a00)", () => {
       const { tmux } = fakeTmux();
       const config = configOf("terminals:\n  healthy:\n    cmd: sh\n");
       return new AgentManager({
+        windowMs: 0,
         tmux,
         wsHash: HASH,
         workspaceRoot: WS,
@@ -8523,6 +8562,7 @@ describe("AgentManager — a requested stop is not a crash (t-9d76b1)", () => {
     const config = configOf(yaml);
     const ledger = new SessionLedger(ws);
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: hash,
       workspaceRoot: ws,
@@ -8612,6 +8652,7 @@ describe("AgentManager — a requested stop is not a crash (t-9d76b1)", () => {
     // A window reload: a brand-new manager with no memory of the request, and the dead pane still
     // there (remain-on-exit keeps it until dismiss/restart). This is where the row used to lie again.
     const reloaded = new AgentManager({
+      windowMs: 0,
       tmux: h.tmux,
       wsHash: h.hash,
       workspaceRoot: h.ws,

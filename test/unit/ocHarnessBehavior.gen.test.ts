@@ -82,6 +82,7 @@ describe("container-generated delegation behavior", () => {
     const { newSessionArgs, newSessionEnvs, tmux } = fakeCapture();
     const { config } = parseConfig("agents:\n  oc:\n    cmd: opencode\n    harness: {}\n");
     const manager = new AgentManager({
+      windowMs: 0,
       tmux,
       wsHash: workspaceHash(ws),
       workspaceRoot: ws,
