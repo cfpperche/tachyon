@@ -103,17 +103,13 @@ function Composer({
   onCancel: () => void;
 }) {
   const [body, setBody] = useState("");
+  const save = (): void => {
+    const next = body.trim();
+    if (!next) return;
+    onSubmit(next);
+  };
   return (
-    <form
-      class="review-composer"
-      data-testid={`review-composer-${line}`}
-      onSubmit={(event) => {
-        event.preventDefault();
-        const next = body.trim();
-        if (!next) return;
-        onSubmit(next);
-      }}
-    >
+    <div class="review-composer" data-testid={`review-composer-${line}`}>
       <Textarea
         class="review-composer-input"
         rows={3}
@@ -122,10 +118,10 @@ function Composer({
         onInput={(event) => setBody((event.currentTarget as HTMLTextAreaElement).value)}
       />
       <div class="review-composer-actions">
-        <Button type="submit" variant="primary" disabled={!body.trim()}>Salvar nota</Button>
-        <Button type="button" onClick={onCancel}>Cancelar</Button>
+        <Button variant="primary" disabled={!body.trim()} onClick={save}>Salvar nota</Button>
+        <Button onClick={onCancel}>Cancelar</Button>
       </div>
-    </form>
+    </div>
   );
 }
 
