@@ -816,6 +816,11 @@ export class Workspace {
       // t-8168a7 — list() carries Attention's real-turn latch. The manager is constructed before the
       // monitor, but this thunk is first read after construction, when the monitor exists.
       hasStartedTurn: (name) => this.monitor?.hasStartedTurn(name),
+      // t-a281e7 — same lazy-thunk reason as above (read from resume/restart, long after
+      // construction). `attentionOf` (completion-hint aware), never `monitor.stateOf`: the mid-turn
+      // guard must agree with what list_agents and the sidebar say, or it refuses a resume the human
+      // is being shown as finished.
+      attentionOf: (name) => this.attentionOf(name),
       // t-50bbd4 — resolved lazily: the port is built later, when the host key arrives from
       // SecretStorage, and AgentManager is constructed before that. A getter keeps the wiring honest
       // instead of capturing an undefined that would never fill in.
