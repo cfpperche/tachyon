@@ -316,4 +316,30 @@ describe("t-832633 — review screen render", () => {
     expect(ruler!.html).not.toMatch(/>\s*\+\s*</);
     expect(html).toMatch(/class="review-sign">\+/);
   });
+
+  it("t-2f7e8c — paints a keyboard-reachable vertical separator without setting a width override", () => {
+    const parsed = parseUnifiedDiff([
+      "diff --git a/src/a.ts b/src/a.ts",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1 +1,2 @@",
+      " keep",
+      "+added",
+      "",
+    ].join("\n"));
+    const { html, elements } = paint(vmOver({
+      files: [{ status: "M", path: "src/a.ts" }],
+      diff: fileView(parsed, { path: "src/a.ts", status: "M" }),
+    }));
+    const split = elements.find((el) => el.props["data-testid"] === "review-files-split");
+    expect(split).toBeTruthy();
+    expect(split!.props.role).toBe("separator");
+    expect(split!.props["aria-orientation"]).toBe("vertical");
+    expect(split!.props.tabIndex).toBe(0);
+    expect(split!.props["aria-label"]).toBe("Resize file list");
+    expect(split!.props["aria-valuenow"]).toBe(16);
+    expect(html).not.toContain("--review-files-width");
+    expect(typeof split!.props.onKeyDown).toBe("function");
+    expect(typeof split!.props.onPointerDown).toBe("function");
+  });
 });

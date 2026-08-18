@@ -82,4 +82,16 @@ describe("t-abe33b — review body full-bleed is a local opt-out", () => {
     const body = joined(css, ".review-body");
     expect(declaration(body, "border-top")).toBe("var(--ds-border-width) solid var(--ds-border)");
   });
+
+  it("t-2f7e8c — file-list default width stays today's 16rem", () => {
+    const css = read(REVIEW_CSS);
+    const files = joined(css, ".review-files");
+    expect(declaration(files, "width")).toBe("var(--review-files-width, 16rem)");
+    expect(declaration(files, "border-right")).toBe("var(--ds-border-width) solid var(--ds-border)");
+  });
+
+  it("t-2f7e8c — stacked layout hides the splitter", () => {
+    const css = read(REVIEW_CSS);
+    expect(css).toMatch(/@media\s*\(max-width:\s*720px\)[\s\S]*\.review-split\s*\{[\s\S]*display:\s*none/);
+  });
 });
