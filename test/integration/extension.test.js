@@ -185,9 +185,12 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     const fs = require("node:fs");
     const path = require("node:path");
     const session = `tachyon-${wsHash}-echoer`;
-    const createdOf = () => {
+    const incarnationOf = () => {
       try {
-        return execFileSync("tmux", ["-L", TMUX_SOCKET, "display-message", "-p", "-t", `=${session}:`, "#{session_created}"], {
+        // Watch restart is force+new at the PROCESS level, implemented with tmux respawn-pane when
+        // the session is healthy. The session object deliberately survives that replacement, so
+        // session_created is not an incarnation marker; pane_pid is.
+        return execFileSync("tmux", ["-L", TMUX_SOCKET, "display-message", "-p", "-t", `=${session}:`, "#{pane_pid}"], {
           encoding: "utf8",
           stdio: ["pipe", "pipe", "pipe"],
         }).trim();
@@ -195,18 +198,18 @@ describe("Tachyon extension (VSCode host smoke)", () => {
         return null;
       }
     };
-    const before = createdOf();
+    const before = incarnationOf();
     assert.ok(before, "echoer should be running before the watch test");
-    await sleep(1100); // session_created has 1s resolution — ensure a restart is observable
+    await sleep(1100); // keep the trigger comfortably after startup before measuring replacement
     const trigger = path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "trigger.txt");
     fs.writeFileSync(trigger, `poke ${Date.now()}\n`);
     let after = before;
     for (let i = 0; i < 60 && after === before; i++) {
       await sleep(250);
-      after = createdOf();
+      after = incarnationOf();
     }
     fs.rmSync(trigger, { force: true });
-    assert.notStrictEqual(after, before, "session_created unchanged — watch restart never fired");
+    assert.notStrictEqual(after, before, "pane_pid unchanged — watch restart never replaced the process");
     assert.ok(after, "echoer not running after watch restart");
   });
 
@@ -243,6 +246,11 @@ describe("Tachyon extension (VSCode host smoke)", () => {
 
     // Answering resets the episode back to working.
     execFileSync("tmux", ["-L", TMUX_SOCKET, "send-keys", "-t", `=${session}:`, "-l", "--", "y"], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", TMUX_SOCKET, "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
+    // This fixture printed a prompt; it did not run a program that owns and erases one after input.
+    // Clear the visible pane after the answer so the monitor can observe the prompt disappearing,
+    // matching what a real interactive runtime does when it accepts a response.
+    execFileSync("tmux", ["-L", TMUX_SOCKET, "send-keys", "-t", `=${session}:`, "-l", "--", "clear"], { stdio: "pipe" });
     execFileSync("tmux", ["-L", TMUX_SOCKET, "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
     let reset = false;
     for (let i = 0; i < 30 && !reset; i++) {
