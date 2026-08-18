@@ -754,5 +754,7 @@
   "No agents belong to this worktree.": "Nenhum agente pertence a este worktree.",
   "Could not record the sent notes as evidence: {0}": "Não foi possível registrar as notas enviadas como evidência: {0}",
   "Review notes were sent, but evidence was not recorded — worktree HEAD is unresolvable.": "As notas de revisão foram enviadas, mas a evidência não foi registrada — o HEAD do worktree não pôde ser resolvido.",
-  "Review notes sent to '{0}'.": "Notas de revisão enviadas para '{0}'."
+  "Review notes sent to '{0}'.": "Notas de revisão enviadas para '{0}'.",
+  "Review — {0}": "Revisão — {0}",
+  "Nothing to send — there are no review notes yet.": "Nada para enviar — ainda não há notas de revisão."
 }
