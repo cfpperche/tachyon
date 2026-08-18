@@ -475,6 +475,12 @@ export function buildOwnershipSettings(
      * door — including a delegated worktree whose cwd has no `.claude/` tree at all.
      */
     projectedHooks?: Record<string, OwnershipHookGroup[]>;
+    /**
+     * t-b47fb2 — the end-of-turn notice drain, on the SAME lifecycle Stop channel as the persistence
+     * recorder and the runtime-status publisher. It cannot ride `projectedHooks`: that channel skips
+     * Stop by design, precisely so a policy change cannot displace the hooks below.
+     */
+    noticeDrain?: OwnershipHookGroup;
   } = {},
   runtimeStatus?: { publisherPath: string; runtime: "claude" | "grok" },
 ): {
@@ -505,6 +511,13 @@ export function buildOwnershipSettings(
   }
   if (stopHooks.length > 0) {
     settings.hooks.Stop = [{ hooks: stopHooks }];
+  }
+  // t-b47fb2 — its OWN group rather than another command in the one above, because the two have
+  // opposite contracts: everything in `stopHooks` is bookkeeping that must never block, and this one
+  // refuses (exit 2) whenever a notice is pending. Keeping them apart means a drain that exits 2 can
+  // never be read as the recorder having failed.
+  if (opts.noticeDrain) {
+    settings.hooks.Stop = [...(settings.hooks.Stop ?? []), opts.noticeDrain];
   }
   // t-09edf2 — projected gate hooks land on their OWN events; SessionStart/Stop are Tachyon's lifecycle
   // channel and are never merged into, so a policy change can neither displace nor duplicate ownership.
@@ -538,6 +551,8 @@ export function buildCodexSessionStartHookConfig(
    * replace secrets-guard (or vice versa).
    */
   toolHooks?: { recorderPath: string; file: string; failureFile: string },
+  /** t-b47fb2 — the end-of-turn notice drain group, on codex's own `-c hooks.Stop=` lifecycle key. */
+  noticeDrain?: OwnershipHookGroup,
 ): string | string[] {
   const ownershipHooks = [
     `{type="command",command=${tomlString(`node ${q(recorderPath)} "$TACHYON_AGENT_NAME" ${q(ownersFile)}${persistence ? ` ${q(persistence.failureFile)}` : ""}`)},statusMessage="Recording Tachyon session ownership"}`,
@@ -559,8 +574,18 @@ export function buildCodexSessionStartHookConfig(
   const stopHooks: string[] = [];
   if (persistence) stopHooks.push(`{type="command",command=${tomlString(`node ${q(persistence.stopRecorderPath)} "$TACHYON_AGENT_NAME" ${q(persistence.stopFile)} ${q(persistence.failureFile)}`)},statusMessage="Recording Tachyon persistence stop"}`);
   if (runtimeStatusPublisher) stopHooks.push(`{type="command",command=${tomlString(`node ${q(runtimeStatusPublisher)} codex`)},statusMessage="Publishing Tachyon runtime status"}`);
-  if (stopHooks.length === 0) return projected.length > 0 ? [start, ...projected] : start;
-  const stop = `hooks.Stop=[{hooks=[${stopHooks.join(",")}]}]`;
+  const drainEntry = noticeDrain
+    ? `{hooks=[${noticeDrain.hooks.map((hook) =>
+      `{type=${tomlString(hook.type)},command=${tomlString(hook.command)}${hook.statusMessage === undefined ? "" : `,statusMessage=${tomlString(hook.statusMessage)}`}}`).join(",")}]}`
+    : undefined;
+  if (stopHooks.length === 0 && !drainEntry) return projected.length > 0 ? [start, ...projected] : start;
+  // ONE `-c hooks.Stop=` override carries both groups: a second `-c` for the same key REPLACES the
+  // first, which is how installing one Stop hook would silently turn the other one off.
+  const stopEntries = [
+    ...(stopHooks.length > 0 ? [`{hooks=[${stopHooks.join(",")}]}`] : []),
+    ...(drainEntry ? [drainEntry] : []),
+  ];
+  const stop = `hooks.Stop=[${stopEntries.join(",")}]`;
   return [start, stop, ...projected];
 }
 
