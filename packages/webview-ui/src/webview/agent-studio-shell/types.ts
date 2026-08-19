@@ -3,7 +3,6 @@ import type {
   AgentStudioEntity,
   AgentStudioPatch,
 } from "./domain";
-import type { SecretInventoryView } from "./domain";
 import type { AuthorizableCapabilities } from "@tachyon/engine/config/agentCapabilityCandidates.js";
 import type { AgentOwnershipViewV1, AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio";
 import type { AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1 } from "@tachyon/shared/config/agentProfileStudio";
@@ -19,9 +18,6 @@ export type {
 export type AgentStudioHostMessage =
   | StudioHostCoreMessage<AgentStudioEntity, string, AgentStudioPatch>
   | StudioDomainMessage<{ type: "cwd"; value: string }>
-  | StudioDomainMessage<{ type: "secretInventory"; inventory: SecretInventoryView }>
-  | StudioDomainMessage<{ type: "secretOperationResult"; operation: "save" | "replace" | "remove"; provider: string; id: string }>
-  | StudioDomainMessage<{ type: "secretOperationError"; operation: "save" | "replace" | "remove"; message: string }>
   | StudioDomainMessage<{ type: "agentProfileSnapshot"; action: "refresh" | "set-enabled" | "rename" | "set-subagents" | "set-propose-saved-agent-grant"; snapshot: AgentProfileStudioSnapshotV1 }>
   | StudioDomainMessage<{ type: "agentProfileOwnership"; agent: string; ownership: AgentOwnershipViewV1 }>
   /** t-e722ce — the read-only plan (or the refusal that stopped it being computed). */
@@ -46,10 +42,6 @@ export type AgentStudioHostMessage =
 export type AgentStudioWebviewMessage =
   | StudioWebviewCoreMessage<AgentStudioPatch>
   | StudioDomainMessage<{ type: "browse" }>
-  | StudioDomainMessage<{ type: "refreshSecretInventory" }>
-  | StudioDomainMessage<{ type: "saveProfileSecret"; provider: string; id: string; value: string }>
-  | StudioDomainMessage<{ type: "replaceProfileSecret"; provider: string; id: string; value: string }>
-  | StudioDomainMessage<{ type: "removeProfileSecret"; provider: string; id: string }>
   | StudioDomainMessage<{ type: "authorizeSkill"; agent: string; skillName: string }>
   | StudioDomainMessage<{ type: "authorizePlugin"; agent: string; pluginName: string }>
   | StudioDomainMessage<{ type: "refreshAuthorizableCapabilities"; agent: string }>

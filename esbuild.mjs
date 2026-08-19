@@ -357,7 +357,7 @@ const webviewChunkHygienePlugin = {
  *
  * Entry outputs: `dist/webview/<view>.js` (+ `dist/webview/chunks/app-*.js`, shared across ALL entries).
  */
-const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "terminal-studio-shell", "schedule-studio-shell", "agent-studio-shell", "board", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "system", "worktrees", "settings", "activity", "probes", "review"];
+const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "terminal-studio-shell", "schedule-studio-shell", "agent-studio-shell", "board", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "system", "worktrees", "keys", "settings", "activity", "probes", "review"];
 const webviewApps = {
   ...sidebar,
   entryPoints: Object.fromEntries(WEBVIEW_APP_VIEWS.map((view) => [view, `packages/webview-ui/src/webview/${view}/main.tsx`])),

@@ -119,6 +119,7 @@ describe("webview convention (spec 279)", () => {
       tachyonAgentPane: "AGENT_PANE_VIEW_TYPE",
       tachyonRuntimeConfig: "RUNTIME_CONFIG_VIEW_TYPE",
       tachyonSettings: "SETTINGS_VIEW_TYPE",
+      tachyonKeys: "KEYS_VIEW_TYPE",
     };
     const disposeOnly = new Set(["tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonDesignMode", "tachyonControlInspector", "tachyonPluginSurface", "tachyonPluginSurfaces"]);
     // t-edfe12 — tachyonPipelineStudio left the manifest (no panel is created) and is registered

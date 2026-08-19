@@ -50,10 +50,6 @@ import { ATTESTED_RUNTIMES, isAttestedRuntime } from "@tachyon/shared/runtime/at
  */
 export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   "browse",
-  "refreshSecretInventory",
-  "saveProfileSecret",
-  "replaceProfileSecret",
-  "removeProfileSecret",
   // t-5498a6 — authorize a workspace skill so this profile MAY select it. Selecting stays the
   // separate gesture on the Runtime tooling checkboxes.
   "authorizeSkill",
@@ -74,9 +70,6 @@ export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
 
 export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
   "cwd",
-  "secretInventory",
-  "secretOperationResult",
-  "secretOperationError",
   "agentProfileSnapshot",
   "agentProfileForgetPlan",
   "agentProfileForgotten",
@@ -98,17 +91,13 @@ export const AGENT_STUDIO_DOMAIN_MESSAGE_NAMES = [
 export type AgentStudioDomainMessageName = (typeof AGENT_STUDIO_DOMAIN_MESSAGE_NAMES)[number];
 
 const AGENT_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
+const SECRET_PROVIDER_RE = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
+const SECRET_ID_RE = /^[^\0\r\n]{1,512}$/u;
 const SHA256_RE = /^[0-9a-f]{64}$/;
 /** t-5498a6 — same shape the profile schema enforces for a reference id. */
 const SKILL_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const PROFILE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-const SECRET_PROVIDER_RE = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
-const SECRET_ID_RE = /^[^\0\r\n]{1,512}$/u;
-export interface SecretInventoryView {
-  stored: Array<{ provider: string; id: string }>;
-  required: Array<{ agent: string; name: string; provider: string; id: string; purpose: string; present: boolean }>;
-}
 export type AgentStudioLifecycleActionMessage =
   | { type: "refreshAgentProfile"; agent: string }
   | { type: "setAgentProfileEnabled"; agent: string; expectedRevision: string; enabled: boolean }
@@ -138,10 +127,6 @@ export type AgentStudioRefreshCandidatesMessage = { type: "refreshAuthorizableCa
 
 export type AgentStudioInboundDomainMessage =
   | { type: "browse" }
-  | { type: "refreshSecretInventory" }
-  | { type: "saveProfileSecret"; provider: string; id: string; value: string }
-  | { type: "replaceProfileSecret"; provider: string; id: string; value: string }
-  | { type: "removeProfileSecret"; provider: string; id: string }
   | AgentStudioAuthorizeSkillMessage
   | AgentStudioAuthorizePluginMessage
   | AgentStudioRefreshCandidatesMessage
@@ -160,20 +145,6 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
   if (!raw || typeof raw !== "object") return undefined;
   const value = raw as Record<string, unknown>;
   if (value.type === "browse") return exactKeys(value, ["type"]) ? { type: "browse" } : undefined;
-  if (value.type === "refreshSecretInventory") return exactKeys(value, ["type"]) ? { type: "refreshSecretInventory" } : undefined;
-  if (value.type === "saveProfileSecret" || value.type === "replaceProfileSecret") {
-    if (!exactKeys(value, ["type", "provider", "id", "value"])
-      || typeof value.provider !== "string" || !SECRET_PROVIDER_RE.test(value.provider)
-      || typeof value.id !== "string" || !SECRET_ID_RE.test(value.id)
-      || typeof value.value !== "string" || value.value.length === 0 || value.value.length > 64 * 1024) return undefined;
-    return { type: value.type, provider: value.provider, id: value.id, value: value.value };
-  }
-  if (value.type === "removeProfileSecret") {
-    return exactKeys(value, ["type", "provider", "id"])
-      && typeof value.provider === "string" && SECRET_PROVIDER_RE.test(value.provider)
-      && typeof value.id === "string" && SECRET_ID_RE.test(value.id)
-      ? { type: "removeProfileSecret", provider: value.provider, id: value.id } : undefined;
-  }
   if (value.type === "refreshAgentProfile") {
     return exactKeys(value, ["type", "agent"]) && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       ? { type: "refreshAgentProfile", agent: value.agent }
@@ -282,6 +253,7 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
 export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
   if (!raw || typeof raw !== "object") return false;
   const value = raw as Record<string, unknown>;
+  /* Machine credentials are projected by the standalone Keys app. */
   if (value.type === "secretInventory") {
     if (!exactKeys(value, ["type", "inventory"]) || !value.inventory || typeof value.inventory !== "object") return false;
     const inventory = value.inventory as Record<string, unknown>;
