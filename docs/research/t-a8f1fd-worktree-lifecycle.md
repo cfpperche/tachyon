@@ -1,8 +1,8 @@
 # t-a8f1fd — lifecycle de worktree: o que o Tachyon já tem (2026-08-19)
 
-Medição contra a árvore desta worktree (`694eb16c`, tree `0d6dfdf2`), não contra o retrato de 2026-07-06.
+Medição contra a árvore desta worktree (análise em `0a6a726b`; este adendo lê o clone de referência no commit `057db5b287` que o cartão cita). Sem desenho, sem fatias, sem código.
 
-`/tmp/orca-re` **não existe**. Nada abaixo afirma o que aquele produto faz: os onze nomes vêm só do corpo do cartão. Sem desenho, sem fatias, sem código.
+`/tmp/orca-re` continua ausente. O clone de referência está fora da árvore do Tachyon. A forma dos onze itens foi lida lá; nenhum nome de comando, caminho ou estrutura daquele projeto entra abaixo — só o vocabulário do cartão e o que o Tachyon faz.
 
 Decisões fechadas lidas e não reabertas: `t-349678` (done) — recusa de ocupação nomeia o retry, sem force e sem espera interna; `t-8f48da` (done) — dismiss não mata processo; `t-71b18d` (dropped) — reabrir os dois foi o erro. Evidência de campo de hoje (19 processos com cwd em worktree já apagada) entra só como fato, não como pedido de matar no dismiss.
 
@@ -21,6 +21,24 @@ Decisões fechadas lidas e não reabertas: `t-349678` (done) — recusa de ocupa
 | 9 | pin/multi-select | **PARCIAL** | Multi-select de higiene: `App.tsx:276-311,333-347,519-523,538-575` (`wtSelectAll`, checkboxes, `worktreeBatchCleanup`). Só `ready-to-remove` e `record-only`. Pin de worktree: nenhum `worktreePin` no painel; `create_pin` é checklist do projeto, outro objeto | Pin de uma worktree não existe. Multi-select não cobre occupied / needs-review / locked. |
 | 10 | project groups | **AUSENTE** | Os grupos do painel são estados de higiene (`App.tsx:21-22,314-320`): `locked`, `ready-to-remove`, `needs-review`, `occupied`, `record-only`. Namespace de disco é `<base>/<wsHash>/…` (`managedWorktree.ts:52-54,78-85`) | Não há agrupamento por projeto. `wsHash` isola workspaces; não é grupo. |
 | 11 | import de worktrees externos | **PARCIAL** | `register_worktree` (`worktrees.ts:125-166`) + `register` (`ManagedWorktreeService.ts:394-499`). Exige path sob `<base>/<wsHash>/`, mesmo `git-common-dir` deste repo, branch viva. Fora disso recusa (`:423-425,454-462`) | Adota checkout **já** plantado no root gerenciado deste repositório. Não importa path arbitrário, outro clone, nem worktree de outro repo. |
+
+Os vereditos não mudaram depois de ler a referência. O que mudou é o significado medido de cada rótulo — a coluna “o que falta” acima já era isso; a seção seguinte só confirma a forma, sem trazer material.
+
+## Forma dos onze, medida na referência (057db5b287)
+
+Lida, não copiada. Cada parágrafo diz o que o rótulo *é* como operação. O Tachyon é o da tabela.
+
+1. **create em background.** O operador confirma e a superfície de criação fecha. Uma identidade provisória (só de sessão, some no reload) entra na lista enquanto o git ainda corre. Dá para repetir o mesmo pedido se falhar. Fases nomeadas no local (preparar, buscar o ref, adicionar o checkout); alvo remoto fica sem fase, só “ainda vai”. No Tachyon o `await` do add segura a tool/o spawn até o fim.
+2. **start-from picker.** Origem é uma escolha numa lista pesquisável de refs, não um campo livre. O fetch do ref é uma das fases do create. No Tachyon change aceita string; agente ramifica do HEAD do primário; não há lista.
+3. **branch naming.** Nome de exibição e nome da branch são campos distintos; a origem (item 2) é um terceiro. O Tachyon já separa isso (Studio + templates + mint Temporary).
+4. **issue link.** O registro da worktree carrega o vínculo (issue / PR / tracker) no create e a linha o mostra. No Tachyon `taskId` cabe no registry de change e some na projeção; o `claim_task` liga o agente, não a worktree.
+5. **progress row.** A identidade provisória *é* uma linha da mesma lista das worktrees vivas, com fase e erro. Sem isso o item 1 não tem onde aparecer. O Tachyon não tem a linha.
+6. **review.** Superfície da worktree, não só da decisão de land. O Tachyon tem as duas portas (aba + bloco de land).
+7. **ship.** Saída da worktree para o mundo (proposta + integração). O Tachyon faz land humano `--ff-only` no trunk e PR; a autoridade do land é mais estreita de propósito (`t-7cb971`).
+8. **archive/delete.** Archive é estado + gancho *antes* de apagar, para o script ainda ver o diretório. Delete não-forçado mede árvore suja **antes** de derrubar processos; só então encerra e remove. Force pula a medida. O Tachyon classifica e recusa, mas não tem archive como escolha, e a remoção não sonda descendentes em `/proc` antes do `rm` — o relatório vem depois (`worktree_processes`). A decisão fechada de não matar no dismiss permanece.
+9. **pin/multi-select.** Pin é propriedade da worktree e vira seção no topo da lista. Multi-select age sobre worktrees vivas, não só sobre as duas classes “seguras de limpar”. O Tachyon seleciona só higiene pronta / registro órfão.
+10. **project groups.** Grupos nomeados pelo operador (repos dentro, worktrees dentro), além de agrupamento por linhagem. Não é classificador de higiene. O Tachyon agrupa por estado de remoção.
+11. **import de worktrees externos.** Varredura das worktrees que o git já lista naquele repositório; as que o produto não gerencia aparecem para adotar ou esconder. Não exige que o path já esteja sob o root gerenciado. O Tachyon só registra o que já nasceu no endereço canônico.
 
 ## Board — cada PARCIAL / AUSENTE
 
@@ -59,8 +77,9 @@ Olhar só para falta esconde o que o produto já opera. Isto existe hoje e o car
 
 ## O que não deu para medir
 
-- **Orca.** `/tmp/orca-re` commit `057db5b` não está na máquina. Os onze nomes são rótulos do cartão, não comportamento conferido.
-- **Nenhum `git worktree add` / land / remove foi executado nesta sessão.** Vereditos são leitura do fonte + testes que o nomeiam, não um ciclo vivo.
+- **HEAD do clone de referência** (`200d8a57`) não foi o alvo. Só o commit citado no cartão. Deriva posterior daquele produto não foi lida.
+- **Nenhum ciclo vivo** na referência nem no Tachyon: create / land / remove / import não foram executados. Forma lida no fonte; comportamento em runtime não cronometrado.
+- **Nenhum `git worktree add` / land / remove foi executado nesta sessão.** Vereditos Tachyon são leitura do fonte + testes que o nomeiam, não um ciclo vivo.
 - **`worktree_processes` não foi re-rodado.** Os 19 pids são a varredura do coordenador às 21:40 de 18/08; o número de agora não foi medido aqui.
 - **Uso real de `create_worktree`.** A porta existe e os testes a exercitam. Não medi se alguém na frota a chama fora de teste.
 - **Se o campo `branch` do Studio chega intacto ao `ensure` em todo restart/resume/fork.** A resolução (`branchFor`) honra `agentDef.branch`; os quatro gatilhos não foram executados.
@@ -69,4 +88,4 @@ Olhar só para falta esconde o que o produto já opera. Isto existe hoje e o car
 
 ## Método
 
-Pontos de partida do brief, mais `packages/engine/src/worktree/*`, `packages/bridge/src/tools/worktrees.ts`, `packages/bridge/src/tools/fleet.ts`, `packages/webview-ui/src/webview/worktrees/*`, `packages/webview-ui/src/webview/agent-studio-shell/App.tsx`, `packages/engine/src/agents/agentRemovalCascade.ts`. Board: `list_tasks` + grep em `.tachyon/tasks` do checkout primário (esta worktree não monta esse diretório).
+Pontos de partida do brief, mais `packages/engine/src/worktree/*`, `packages/bridge/src/tools/worktrees.ts`, `packages/bridge/src/tools/fleet.ts`, `packages/webview-ui/src/webview/worktrees/*`, `packages/webview-ui/src/webview/agent-studio-shell/App.tsx`, `packages/engine/src/agents/agentRemovalCascade.ts`. Board: `list_tasks` + grep em `.tachyon/tasks` do checkout primário (esta worktree não monta esse diretório). Referência: commit `057db5b287` no clone fora da árvore, depois de `LEIA-ME.md`; nada desse clone foi copiado para cá.
