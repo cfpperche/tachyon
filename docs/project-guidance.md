@@ -392,6 +392,24 @@ The configuration was right in content and wrong in address. A dead surface the 
 recommends is not clutter — it is an active instruction to do the wrong thing, and the editor's
 autocomplete delivers it. Closed by `t-e050fd`; the sweep for others is `t-ee3d5d`.
 
+## The editor is a client, not the door
+
+Tachyon runs as a VS Code extension today. It must not be shaped as if that were permanent. **A VS
+Code command, view, or menu is a VIEW over an operation that lives in the engine — never the
+operation itself, and never its only entrance.**
+
+The test is one question: if a second app existed tomorrow, would it call something, or would it
+reimplement something? If the answer is reimplement, the operation is in the wrong place.
+
+Naming carries this too. A layer called after its consumer invites everything in that layer to
+assume the consumer. Name it after what it does.
+
+Measured 2026-08-19 on the machine vault: the operations `secret.set` and `secrets.inventory` were
+put in the engine with their own schema, which is right — a second app would call them. But the only
+importers of that layer live under `apps/vscode-extension`, there is no CLI, and the Bridge does not
+expose them, so the command palette is in practice the only live entrance. Half right is the common
+shape here: the logic lands in the engine and the only door stays in the editor.
+
 ## Hygiene
 
 - Remove a change worktree/branch only when clean, unoccupied, and contained in `main`. Preserve
