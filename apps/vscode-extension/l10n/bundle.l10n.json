@@ -298,5 +298,9 @@
   "Monospace family for Tachyon screens. Size still follows the editor.": "Monospace family for Tachyon screens. Size still follows the editor.",
   "Tachyon Mono": "Tachyon Mono",
   "Departure Mono": "Departure Mono",
-  "this page updates now; other surfaces apply the next time they are opened": "this page updates now; other surfaces apply the next time they are opened"
+  "this page updates now; other surfaces apply the next time they are opened": "this page updates now; other surfaces apply the next time they are opened",
+  "Secret provider (for example, zai)": "Secret provider (for example, zai)",
+  "Secret id": "Secret id",
+  "Secret value": "Secret value",
+  "Secret stored in the machine vault.": "Secret stored in the machine vault."
 }

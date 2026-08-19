@@ -35,6 +35,7 @@ export const EXTENSION_QUERY_ACTIONS = [
   "agent-profile.studio-inspect", "agent-profile.studio-bundle-export", "agent-profile.studio-ownership",
   "agent-profile.forget-plan",
   "agent-profile.authorizable-capabilities",
+  "secrets.inventory",
   "tmux.snapshot", "tmux.health", "tmux.capture",
 ] as const;
 
@@ -71,6 +72,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   // refuses it by name instead of silently decoding it as something else.
   "agent-profile.authorize-skill",
   "agent-profile.authorize-plugin",
+  "secret.set",
   // t-ea8f78 — host-only wake through Workspace.deliverNotice. Not a Bridge tool: an agent that
   // could reach this would be ringing anyone's pane. The Saved Agent commit lives in the editor
   // and needs this one door onto the same queue approval.resolve already uses.
@@ -100,6 +102,7 @@ export const extensionQuerySchema = z.union([
    */
   z.object({ action: z.literal("agent-profile.forget-plan"), agent: name, expectedRevision: sha256 }).strict(),
   z.object({ action: z.literal("agent-profile.authorizable-capabilities"), agent: name }).strict(),
+  z.object({ action: z.literal("secrets.inventory") }).strict(),
   z.object({ action: z.literal("bridge.token") }).strict(),
   z.object({ action: z.literal("companion.pair-code") }).strict(),
   z.object({ action: z.literal("companion.status") }).strict(),
@@ -192,6 +195,12 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     agentName: name,
     skillName: text(128, 1),
     reauthorize: z.boolean().optional(),
+  }).strict(),
+  z.object({
+    action: z.literal("secret.set"),
+    provider: name,
+    id: text(512, 1),
+    value: text(64 * 1024, 1),
   }).strict(),
   z.object({ action: z.literal("config.companion.tabTools"), enabled: z.boolean() }).strict(),
   z.object({

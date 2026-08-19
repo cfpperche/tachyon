@@ -64,6 +64,7 @@ export interface LoadProfileAwareConfigInput {
   authorities: ReadonlyMap<string, AgentProfileAuthorityRecord>;
   workspaceDefaults?: WorkspaceProfileDefaults;
   homeDir?: string;
+  hasSecret?: (key: string) => boolean;
 }
 
 /**
@@ -163,6 +164,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
       authority,
       workspaceDefaults: input.workspaceDefaults,
       homeDir: input.homeDir,
+      hasSecret: input.hasSecret,
     });
     if (!result.ok) {
       for (const error of result.errors) refuse(agentName, home, `.profile: ${error}`);

@@ -771,5 +771,9 @@
   "Monospace family for Tachyon screens. Size still follows the editor.": "Família monoespaçada das telas do Tachyon. O tamanho continua o do editor.",
   "Tachyon Mono": "Tachyon Mono",
   "Departure Mono": "Departure Mono",
-  "this page updates now; other surfaces apply the next time they are opened": "esta página atualiza agora; as outras superfícies aplicam na próxima abertura"
+  "this page updates now; other surfaces apply the next time they are opened": "esta página atualiza agora; as outras superfícies aplicam na próxima abertura",
+  "Secret provider (for example, zai)": "Provedor do segredo (por exemplo, zai)",
+  "Secret id": "ID do segredo",
+  "Secret value": "Valor do segredo",
+  "Secret stored in the machine vault.": "Segredo armazenado no cofre da máquina."
 }

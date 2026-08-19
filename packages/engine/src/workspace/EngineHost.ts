@@ -100,6 +100,9 @@ export interface EngineHost {
   // or syncable file.
   getSecret(key: string): Promise<string | undefined>;
   setSecret(key: string, value: string): Promise<void>;
+  /** Synchronous presence check used while projecting the synchronous profile config loader. */
+  hasSecret?(key: string): boolean;
+  listSecretKeys?(): string[];
   /** absolute path to a file the engine ships under its media dir (e.g. the clipboard helper). */
   mediaPath(...segments: string[]): string;
   /** opaque extension root handle the shell needs for webviews; the engine only passes it through. */
