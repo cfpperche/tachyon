@@ -17,7 +17,7 @@ export function App({ model, post }: { model?: KeysModel; post: (action: KeysAct
     post({ type: replace ? "replaceKey" : "storeKey", provider, id, value });
     setValue(""); setAdding(false); setMenu(undefined);
   };
-  return <main class="keys-root">
+  return <main class="ds-page keys-root">
     <PageChrome title="Keys" hint="Credentials for this machine. Never leave it." />
     <header class="keys-toolbar"><span>{stored.length} stored · {missing.length} missing</span><Button variant="primary" onClick={() => setAdding(true)}>Add key</Button></header>
     {adding && <section class="keys-form" aria-label="Add machine key">

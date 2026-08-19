@@ -38,6 +38,20 @@ describe("SDD 485 C8 — every launcher tile has a live destination", () => {
     approvals: "human-inbox",
     validations: "human-inbox",
   };
+  // SectionPanelManager hosts both launcher apps and document apps. The latter have a direct
+  // command/action door instead of a launcher tile; keep that inventory explicit so a new section
+  // app cannot silently omit both kinds of door. The fixture is the sole dev-only exception.
+  const DIRECT_DOOR_APPS = new Set([
+    "task-detail",
+    "pin-preview",
+    "terminal-studio-shell",
+    "schedule-studio-shell",
+    "agent-studio-shell",
+    "handoff",
+    "activity",
+    "review",
+    "probes",
+  ]);
 
   it("each tile is rendered by Control or backed by a standalone app — never neither", () => {
     const rendered = new Set<string>(COCKPIT_SECTION_ORDER);
@@ -73,14 +87,40 @@ describe("SDD 485 C8 — every launcher tile has a live destination", () => {
     const routed = [...open.matchAll(/resolved === "([a-z-]+)"/g)].map((m) => m[1]);
     expect(routed.length, "no section is routed to an app — either the branch shape changed or C5's wiring is gone").toBeGreaterThan(0);
 
-    const unbacked = routed.filter((id) => !appSections.has(COMPATIBILITY_VIEW[id] ?? SECTION_TO_APP_VIEW[id] ?? id));
+    // A section app's `view` is not its launcher door: the explicit `section` declaration is the
+    // inventory that ties the app to the tile and lets the host route the id. Falling back to the
+    // view name here would let an app (such as Keys) be present in the bundle while remaining
+    // unreachable.
+    const unbacked = routed.filter((id) => !appSections.has(COMPATIBILITY_VIEW[id] ?? SECTION_TO_APP_VIEW[id] ?? ""));
     expect(unbacked, `tachyon.openControl routes these ids to an app, but WEBVIEW_APPS declares no such app: ${unbacked.join(", ")}`).toEqual([]);
 
     // and the other direction: an id moved to an app but never routed still opens Control, silently.
     const appBacked = CONTROL_SECTION_NAV
       .map((tile) => tile.id)
-      .filter((id) => appSections.has(SECTION_TO_APP_VIEW[id] ?? id));
+      .filter((id) => SECTION_TO_APP_VIEW[id] !== undefined);
     const unrouted = appBacked.filter((id) => !routed.includes(id));
     expect(unrouted, `these tiles are backed by an app but tachyon.openControl still falls through to Control for them: ${unrouted.join(", ")}`).toEqual([]);
+  });
+
+  it("gives every section-hosted app an explicit launcher or direct-command port", () => {
+    const extension = readFileSync("apps/vscode-extension/src/extension.ts", "utf8");
+    const open = /registerCommand\("tachyon\.openControl",[\s\S]*?\n    \}\)/.exec(extension)?.[0] ?? "";
+    const sectionApps = WEBVIEW_APPS.filter((app) => app.host === "section");
+    const missingPort = sectionApps.filter((app) =>
+      app.view !== "section-app-fixture" && app.section === undefined && !DIRECT_DOOR_APPS.has(app.view),
+    );
+    expect(missingPort.map((app) => app.view), "every section app must have a launcher or direct-command door").toEqual([]);
+
+    const routedApps = sectionApps.filter((app) => app.section !== undefined);
+    const missingLauncherPort = routedApps.filter((app) => !CONTROL_SECTION_NAV.some((tile) => tile.id === app.section));
+    expect(missingLauncherPort.map((app) => app.view), "launcher-backed section apps must point at a launcher tile").toEqual([]);
+
+    const routedSectionIds = new Set(
+      [...open.matchAll(/resolved === "([a-z-]+)"/g)].map((match) => match[1]),
+    );
+    const missingRoute = routedApps
+      .filter((app) => app.section !== undefined && !routedSectionIds.has(app.section))
+      .map((app) => `${app.view} (${app.section})`);
+    expect(missingRoute, "every launcher-backed section app must be reachable through tachyon.openControl").toEqual([]);
   });
 });

@@ -48,6 +48,7 @@ export type SectionId =
   // route.ts) opened from the sidebar's `handoff · N` entry, with its breadcrumb back to Overview.
   // It never was a dashboard tab's worth of navigation — one document per workspace.
   | "worktrees"
+  | "keys"
   | "runtime"
   | "runtime-config"
   | "tmux"
@@ -101,6 +102,7 @@ export const COCKPIT_SECTION_IDS: SectionId[] = [
   "settings",
   "tmux",
   "worktrees",
+  "keys",
   "validations",
 ];
 
