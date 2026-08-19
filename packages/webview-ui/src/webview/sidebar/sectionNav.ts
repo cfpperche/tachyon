@@ -36,7 +36,7 @@ const NAV_BY_ID: ReadonlyMap<SectionId, Omit<ControlSectionNav, "id">> = new Map
   ["inbox", { icon: "inbox", label: "Inbox" }],
   ["mission", { icon: "checklist", label: "Board" }],
   ["worktrees", { icon: "folder-library", label: "Worktrees" }],
-  ["keys", { icon: "pinned", label: "Keys" }],
+  ["keys", { icon: "key", label: "Keys" }],
   ["runtime", { icon: "graph", label: "Runtime Ops" }],
   ["runtime-config", { icon: "settings", label: "Runtime Config" }],
   ["tmux", { icon: "terminal-tmux", label: "tmux" }],
