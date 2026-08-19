@@ -834,6 +834,24 @@
   },
   {
     "view": "agent-studio-shell",
+    "fixture": "withheld-document",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=withheld-document",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent"
+    ]
+  },
+  {
+    "view": "agent-studio-shell",
     "fixture": "foreign-workspace-commands",
     "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=foreign-workspace-commands",
     "frame": {

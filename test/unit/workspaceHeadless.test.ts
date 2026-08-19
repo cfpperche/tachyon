@@ -38,6 +38,7 @@ import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "@tac
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml, type SavedAgentSpec } from "../helpers/savedAgentFixture.js";
 import { asAgent, composeCommand } from "@tachyon/engine/config/loadConfig.js";
 import { composeAgentPrompt } from "@tachyon/engine/agents/promptLayers.js";
+import { withheldCapabilityNotice } from "@tachyon/engine/config/withheldCapability.js";
 import { executeExtensionCommand } from "@tachyon/engine/engine-service/extensionOperationService.js";
 import { parseExtensionCommandV1, type ExtensionCommandV1 } from "@tachyon/engine/runtime-api/extensionOperations.js";
 import type { NoticeQueueMetadata } from "@tachyon/shared/bridge/noticeQueue.js";
@@ -994,6 +995,80 @@ it("t-d48775: the Saved Agent creation door refuses instructions it cannot publi
       },
     })).rejects.toThrow(/Saved Agent creation door/);
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "reviewer"))).toBe(false);
+  } finally {
+    ws.dispose();
+  }
+});
+
+it("t-204313: a changed declared document is withheld, reloads live, and remains repairable in Studio", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "settings:\n  auth: false\n");
+  const host = new SharedSecretHost(mkdir(), new Map());
+  const ws = await createWorkspaceForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fakeTmux().tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
+  );
+  try {
+    await ws.commitAgentProfileStudio({
+      schemaVersion: 1,
+      kind: "agent-instance",
+      agentName: "reviewer",
+      editable: {
+        displayName: "Reviewer",
+        runtime: { adapter: "codex", executable: "codex" },
+        cwd: "",
+        lifecycle: { autostart: false, restart: "never", attention: true },
+        worktree: { enabled: false, branch: "", setup: [] },
+        instructions: "approved instructions",
+        isolation: "",
+      },
+    });
+    const documentPath = path.join(root, ".tachyon", "agents", "reviewer", "instructions.md");
+    const approved = fs.readFileSync(documentPath, "utf8");
+    const documentWatch = () => host.watches.find((watch) => !watch.disposed
+      && watch.glob === ".tachyon/agents/reviewer/instructions.md");
+    expect(documentWatch()).toBeTruthy();
+
+    fs.writeFileSync(documentPath, "unapproved instructions\n");
+    documentWatch()!.onEvent();
+    expect(ws.configFailure).toBeUndefined();
+    const entry = asAgent(ws.config?.agents.reviewer)!;
+    expect(entry).toBeDefined();
+    expect(entry.instructions).toBeUndefined();
+    expect(entry.profileWithheldCapabilities).toHaveLength(1);
+    expect(host.notices.at(-1)?.message).toBe(withheldCapabilityNotice("reviewer", entry.profileWithheldCapabilities![0]!));
+
+    const studio = await ws.inspectAgentProfileStudio("reviewer");
+    expect(studio.bindings.withheldDocuments).toMatchObject([{
+      referenceId: "persistent-instructions",
+      name: "instructions.md",
+      kind: "instructions",
+      code: "profile/digest-mismatch",
+    }]);
+
+    fs.writeFileSync(documentPath, approved);
+    documentWatch()!.onEvent();
+    expect(asAgent(ws.config?.agents.reviewer)?.profileWithheldCapabilities).toBeUndefined();
+    expect((await ws.inspectAgentProfileStudio("reviewer")).bindings.withheldDocuments ?? []).toEqual([]);
+
+    fs.writeFileSync(documentPath, "human-approved replacement\n");
+    documentWatch()!.onEvent();
+    const withheld = await ws.inspectAgentProfileStudio("reviewer");
+    const repaired = await ws.commitAgentProfileStudioLifecycle({
+      schemaVersion: 1,
+      operation: "reauthorize-document",
+      agentName: "reviewer",
+      expectedRevision: withheld.revision,
+      referenceId: "persistent-instructions",
+    });
+    expect(repaired).toMatchObject({ kind: "snapshot", snapshot: { editable: { instructions: "human-approved replacement" } } });
+    expect(repaired.kind === "snapshot" ? repaired.snapshot.bindings.withheldDocuments ?? [] : ["refused"]).toEqual([]);
+
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "settings: [invalid\n");
+    host.watches.find((watch) => watch.glob === "tachyon.{yml,yaml}")!.onEvent();
+    expect(ws.configFailure).toMatchObject({ file: "tachyon.yml" });
   } finally {
     ws.dispose();
   }

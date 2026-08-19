@@ -22,13 +22,21 @@ export type AgentProfileReadErrorCode =
   | "profile/io";
 
 export class AgentProfileReadError extends Error {
+  readonly expectedSha256?: string;
+  readonly consumedSha256?: string;
+
   constructor(
     readonly code: AgentProfileReadErrorCode,
     readonly source: string,
     detail: string,
+    digests?: { expected: string; consumed: string },
   ) {
     super(`${code}: ${source}: ${detail}`);
     this.name = "AgentProfileReadError";
+    if (digests) {
+      this.expectedSha256 = digests.expected;
+      this.consumedSha256 = digests.consumed;
+    }
   }
 }
 
@@ -48,8 +56,8 @@ export interface CanonicalAgentProfileSource extends BoundAgentProfileFile {
   profileDirectoryFd: number;
 }
 
-function fail(code: AgentProfileReadErrorCode, source: string, detail: string): never {
-  throw new AgentProfileReadError(code, source, detail);
+function fail(code: AgentProfileReadErrorCode, source: string, detail: string, digests?: { expected: string; consumed: string }): never {
+  throw new AgentProfileReadError(code, source, detail, digests);
 }
 
 function errorText(error: unknown): string {
@@ -441,10 +449,10 @@ export function replaceCanonicalAgentProfileEntry(input: {
 }
 
 /** Read one pinned profile-local reference under the retained profile descriptor. */
-export function readAgentProfileReference(
+function readAgentProfileReferenceBound(
   source: CanonicalAgentProfileSource,
   referencePath: string,
-  expectedSha256: string,
+  expectedSha256?: string,
 ): BoundAgentProfileFile {
   const reason = agentProfileRelativePathError(referencePath);
   if (reason) fail("profile/invalid-path", referencePath, reason);
@@ -460,11 +468,31 @@ export function readAgentProfileReference(
       closeQuietly(parentFd);
     }
     const file = readBoundFileAt(currentFd, leaf, referencePath, path.join(source.profileRoot, ...referencePath.split("/")), AGENT_PROFILE_REFERENCE_MAX_BYTES, false)!;
-    if (file.sha256 !== expectedSha256) {
-      fail("profile/digest-mismatch", referencePath, `expected ${expectedSha256}, consumed ${file.sha256}`);
+    if (expectedSha256 !== undefined && file.sha256 !== expectedSha256) {
+      fail("profile/digest-mismatch", referencePath, `expected ${expectedSha256}, consumed ${file.sha256}`, {
+        expected: expectedSha256,
+        consumed: file.sha256,
+      });
     }
     return file;
   } finally {
     closeQuietly(currentFd);
   }
+}
+
+/** Read one pinned profile-local reference and enforce its approved digest. */
+export function readAgentProfileReference(
+  source: CanonicalAgentProfileSource,
+  referencePath: string,
+  expectedSha256: string,
+): BoundAgentProfileFile {
+  return readAgentProfileReferenceBound(source, referencePath, expectedSha256);
+}
+
+/** Read current bytes under the same custody boundary for an explicit human reauthorization. */
+export function readCurrentAgentProfileReference(
+  source: CanonicalAgentProfileSource,
+  referencePath: string,
+): BoundAgentProfileFile {
+  return readAgentProfileReferenceBound(source, referencePath);
 }

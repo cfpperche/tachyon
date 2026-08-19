@@ -244,6 +244,13 @@ export const agentProfileStudioLifecycleMutationSchemaV1 = z.discriminatedUnion(
     expectedRevision: z.string().regex(REVISION),
     granted: z.boolean(),
   }).strict(),
+  z.object({
+    schemaVersion: z.literal(1),
+    operation: z.literal("reauthorize-document"),
+    agentName: studioAgentName,
+    expectedRevision: z.string().regex(REVISION),
+    referenceId: z.string().regex(ID),
+  }).strict(),
 ]);
 
 export type AgentProfileStudioLifecycleMutationV1 = z.infer<typeof agentProfileStudioLifecycleMutationSchemaV1>;
@@ -351,6 +358,16 @@ export const agentProfileStudioSnapshotSchemaV1 = z.object({
      * rendering blank over a value the human cannot see and the next save would erase.
      */
     foreignPersistentInstructions: z.boolean(),
+    withheldDocuments: z.array(z.object({
+      referenceId: z.string().regex(ID),
+      name: z.string().min(1).max(1024),
+      kind: z.string().regex(ID),
+      path: z.string().min(1).max(4096),
+      code: z.literal("profile/digest-mismatch"),
+      expectedSha256: z.string().regex(REVISION),
+      consumedSha256: z.string().regex(REVISION),
+      detail: z.string().min(1).max(4096),
+    }).strict()).max(128).optional(),
     /**
      * t-3bde32 — the profile's own `grants`, surfaced so Studio can show and change them.
      *
@@ -458,6 +475,7 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
         setup: profile.workspace?.worktree?.setup,
       }).setup,
       foreignPersistentInstructions: !studioOwnsPersistentInstructions(profile.prompt),
+      withheldDocuments: structuredClone(snapshot.withheldDocuments ?? []),
     },
     provenance: {
       canonical: { ...snapshot.provenance.canonical },

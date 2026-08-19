@@ -39,6 +39,7 @@ import {
   readyMessage,
   refreshAgentProfileMessage,
   setAgentProfileEnabledMessage,
+  reauthorizeProfileDocumentMessage,
   renameAgentProfileMessage,
   forgetAgentProfileMessage,
   planAgentProfileForgetMessage,
@@ -499,7 +500,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   // a form that accepts what the transaction refuses is a Save button that fails.
   const persistentInstructionsProblem = persistentInstructionsRefusal(fields.instructions);
   const savedAgent = entity.name;
-  const mutationDisabled = !savedAgent || frozen;
+  const withheldDocuments = canonicalSnapshot?.bindings.withheldDocuments ?? [];
+  const mutationDisabled = !savedAgent || frozen || withheldDocuments.length > 0;
   const canonicalLifecycleDisabled = !canonicalSnapshot || !!profileBusy || dirty || frozen || profileRetired;
   // Declared + still-declarable, so a checked row can always be UNCHECKED even after the target
   // stopped qualifying as a candidate (it stops qualifying precisely BECAUSE this agent owns it).
@@ -529,7 +531,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       dirty={dirty}
       saveInFlight={saveInFlight}
       loadFailed={loadFailed}
-      canSave={canSave}
+      canSave={canSave && withheldDocuments.length === 0}
       frozen={frozen}
       onSave={onSave}
       onCancel={() => post(cancelMessage())}
@@ -578,6 +580,19 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                   <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("clone"); setBundleDestination(""); setBundleImportBase64(undefined); }}>{profileLabels.clone}</Button>
                   <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("import"); setBundleDestination(""); setBundleImportBase64(undefined); }}>{profileLabels.import}</Button>
                 </div>
+                {withheldDocuments.map((document) => (
+                  <div class="ash-native-config-row ash-profile-withheld-document" key={`document:${document.referenceId}`}>
+                    <code>{document.name}</code>
+                    <span class="hint">{document.kind} · {document.path} · {profileLabels.withheldDocumentChanged}</span>
+                    <Button
+                      disabled={canonicalLifecycleDisabled}
+                      onClick={() => canonicalSnapshot && runCanonicalLifecycle(
+                        `Reauthorizing ${document.name}`,
+                        reauthorizeProfileDocumentMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, document.referenceId),
+                      )}
+                    >{profileLabels.reauthorize}</Button>
+                  </div>
+                ))}
                 {canonicalSnapshot && (
                   <div class="ash-runtime-readiness" aria-labelledby="ash-runtime-readiness-title">
                     <div class="ash-runtime-readiness-heading">

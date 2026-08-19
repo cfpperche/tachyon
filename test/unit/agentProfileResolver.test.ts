@@ -729,7 +729,17 @@ describe("resolveAgentProfile", () => {
     fs.writeFileSync(file, "version two");
 
     const result = resolve(root);
-    expect(result).toMatchObject({ ok: false, errors: [{ code: "profile/digest-mismatch", field: "references.instructions" }] });
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        withheldCapabilities: [{
+          referenceId: "instructions",
+          name: "instructions.md",
+          kind: "instructions",
+          code: "profile/digest-mismatch",
+        }],
+      },
+    });
   });
 
   it("rejects symbolic links in both the canonical path and local references", () => {

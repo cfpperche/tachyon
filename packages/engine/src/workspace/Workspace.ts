@@ -11,6 +11,7 @@ import {
   isIdeBrowserEnabled,
 } from "../ide-browser/settings.js";
 import fs from "node:fs";
+import { parseDocument } from "yaml";
 import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { DEFAULT_SOCKET_NAME, TmuxService, workspaceHash, SESSION_PREFIX, type SubmitReceipt } from "../tmux/TmuxService.js";
@@ -125,7 +126,9 @@ import { durableBoundGeneration } from "../resume/sessionRecord.js";
 import { createFormationLifecycleHost } from "../agents/formation/lifecycleHost.js";
 import { createFormationAdoptionHost, type FormationAdoptionHost } from "../agents/formation/adoptionHost.js";
 import type { FormationAdoptionRecord, FormationAdoptionState } from "../agents/formation/bootstrapTransaction.js";
-import { readCanonicalAgentProfile, readCanonicalAgentProfileEntry, closeCanonicalAgentProfile } from "../config/agentProfileReader.js";
+import { readCanonicalAgentProfile, readCanonicalAgentProfileEntry, readCurrentAgentProfileReference, closeCanonicalAgentProfile } from "../config/agentProfileReader.js";
+import { agentProfileSchemaV1 } from "../config/agentProfileSchema.js";
+import { withheldCapabilityNotice } from "../config/withheldCapability.js";
 import type { FormationLifecyclePort } from "../agents/formation/lifecycleConsumer.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor } from "../worktree/WorktreeManager.js";
 import type { WorktreeRecord } from "../worktree/worktreeRecord.js";
@@ -640,6 +643,8 @@ export class Workspace {
   private readonly engine: WorkspaceEngine;
   private watches: WatchController;
   private readonly disposables: HostDisposable[] = [];
+  private profileDocumentWatches: HostDisposable[] = [];
+  private profileDocumentReload: (() => void) | undefined;
   private lifecycleTrigger: NodeJS.Timeout | undefined;
   private taskFileRefreshTimer: NodeJS.Timeout | undefined;
   private ticker: NodeJS.Timeout | undefined;
@@ -2957,6 +2962,7 @@ export class Workspace {
       const portBefore = ws.config?.settings.bridgePort;
       const agentsBefore = new Set(Object.keys(ws.config?.agents ?? {}));
       ws.reloadConfig();
+      ws.rebuildProfileDocumentWatches();
       ws.rebuildWatches();
       ws.refreshAgentsViews();
       // dogfood p-5a2a83 follow-up: an autostart agent ADDED by a live tachyon.yml edit starts
@@ -2969,6 +2975,7 @@ export class Workspace {
         ws.host.notify(ws.t("settings.auth changed — reload the window to apply it"), "warn");
       }
     };
+    ws.profileDocumentReload = onConfigChange;
     ws.disposables.push(ws.host.watch(workspaceRoot, "tachyon.{yml,yaml}", { change: true, create: true }, onConfigChange));
     ws.disposables.push(ws.host.watch(
       workspaceRoot,
@@ -2976,6 +2983,7 @@ export class Workspace {
       { change: true, create: true, delete: true },
       onConfigChange,
     ));
+    ws.rebuildProfileDocumentWatches();
 
     // Manual edits to .tachyon/* (or agent writes through another window) reflect live.
     const refreshTachyonDir = () => {
@@ -4973,7 +4981,12 @@ export class Workspace {
       this.host.notify(this.t("invalid {0} — {1}{2}", path.basename(file), errors[0], errors.length > 1 ? this.t(" (+{0} more)", errors.length - 1) : ""), "error");
       return false;
     }
-    for (const warning of warnings) this.host.notify(this.t("{0}: {1}", path.basename(file), warning), "warn");
+    const withheldNotices = new Set(Object.entries(config?.agents ?? {}).flatMap(([agentName, entry]) =>
+      asAgent(entry)?.profileWithheldCapabilities?.map((withheld) => withheldCapabilityNotice(agentName, withheld)) ?? [],
+    ));
+    for (const warning of warnings) {
+      this.host.notify(withheldNotices.has(warning) ? warning : this.t("{0}: {1}", path.basename(file), warning), "warn");
+    }
     // t-7d6013 — the toast above still fires (it is the "right now" signal), and everything it names
     // that was actually DROPPED also lands in a slot that outlives it. Set on the successful-load path
     // only: the fatal path above keeps the previously loaded config running, so it keeps that config's
@@ -5035,6 +5048,46 @@ export class Workspace {
     // agents without restarting one. Best-effort: a no-op when no server runs, never blocks apply.
     void this.tmux.applyLiveOptions().catch(() => {});
     return true;
+  }
+
+  /**
+   * Profile documents are part of the live configuration even though they are declared outside
+   * tachyon.yml. Build this set from each canonical profile's references so a newly declared
+   * document is observed without teaching the watcher its filename.
+   */
+  private rebuildProfileDocumentWatches(): void {
+    for (const watcher of this.profileDocumentWatches) watcher.dispose();
+    this.profileDocumentWatches = [];
+    const onChange = this.profileDocumentReload;
+    if (!onChange) return;
+    for (const agentName of scanAgentRosterDirectory(this.workspaceRoot).members) {
+      const source = readCanonicalAgentProfile(this.workspaceRoot, agentName);
+      if (!source) continue;
+      try {
+        const doc = parseDocument(source.text, { uniqueKeys: true });
+        if (doc.errors.length > 0) continue;
+        const parsed = agentProfileSchemaV1.safeParse(doc.toJS());
+        if (!parsed.success) continue;
+        for (const reference of parsed.data.references ?? []) {
+          if (reference.scope !== "profile") continue;
+          const declared = path.posix.join(".tachyon", "agents", agentName, reference.path);
+          this.profileDocumentWatches.push(this.host.watch(
+            this.workspaceRoot,
+            declared,
+            { change: true, create: true, delete: true },
+            onChange,
+          ));
+          this.profileDocumentWatches.push(this.host.watch(
+            this.workspaceRoot,
+            `${declared}/**`,
+            { change: true, create: true, delete: true },
+            onChange,
+          ));
+        }
+      } finally {
+        closeCanonicalAgentProfile(source);
+      }
+    }
   }
 
   /**
@@ -5373,6 +5426,39 @@ export class Workspace {
       });
       return { schemaVersion: 1, kind: "snapshot", snapshot: projectAgentProfileStudioSnapshot(result.snapshot) };
     }
+    if (mutation.operation === "reauthorize-document") {
+      const current = await this.inspectAgentProfileLifecycle(mutation.agentName);
+      if (current.revision !== mutation.expectedRevision) {
+        throw new AgentProfileRefusal("agent-profile/revision-conflict", `agent '${mutation.agentName}' profile revision conflict`);
+      }
+      const withheld = current.withheldDocuments?.find((entry) => entry.referenceId === mutation.referenceId);
+      if (!withheld) throw new AgentProfileRefusal("agent-profile/document-not-withheld", `document '${mutation.referenceId}' is not withheld`);
+      const reference = current.profile.references?.find((entry) => entry.id === mutation.referenceId);
+      if (!reference || reference.scope !== "profile" || reference.mode !== "pinned") {
+        throw new AgentProfileRefusal("agent-profile/document-not-reauthorizable", `document '${mutation.referenceId}' is not a pinned profile document`);
+      }
+      const source = readCanonicalAgentProfile(this.workspaceRoot, mutation.agentName);
+      if (!source) throw new Error(`canonical profile for '${mutation.agentName}' is missing`);
+      let consumedSha256: string;
+      try {
+        consumedSha256 = readCurrentAgentProfileReference(source, reference.path).sha256;
+      } finally {
+        closeCanonicalAgentProfile(source);
+      }
+      if (consumedSha256 !== withheld.consumedSha256) {
+        throw new AgentProfileRefusal("agent-profile/revision-conflict", `document '${mutation.referenceId}' changed after Studio loaded it`);
+      }
+      const references = current.profile.references!.map((entry) =>
+        entry.id === mutation.referenceId ? { ...entry, sha256: consumedSha256 } : entry,
+      );
+      const result = await this.runAgentProfileLifecycleCommit({
+        agentName: mutation.agentName,
+        operation: "edit",
+        expectedRevision: mutation.expectedRevision,
+        patch: { references },
+      });
+      return { schemaVersion: 1, kind: "snapshot", snapshot: projectAgentProfileStudioSnapshot(result.snapshot) };
+    }
     if (mutation.operation === "forget") {
       if (mutation.confirmation !== mutation.agentName) throw new Error("canonical profile forget confirmation mismatch");
       // t-e722ce — the CASCADE, not the bare canonical forget.
@@ -5496,6 +5582,7 @@ export class Workspace {
       authority: this.profileAuthorityPort(),
       activateState: (state) => this.activateAgentProfileLifecycleState(input.agentName, state),
     });
+    this.rebuildProfileDocumentWatches();
     this.rebuildWatches();
     this.refreshAgentsViews();
     return result;
@@ -7406,6 +7493,8 @@ export class Workspace {
     this.clientRebind?.dispose();
     this.clientRebind = undefined;
     for (const d of this.disposables) d.dispose();
+    for (const d of this.profileDocumentWatches) d.dispose();
+    this.profileDocumentWatches = [];
     this.watches.dispose();
     this.terminals.dispose();
     this.waiters.dispose();

@@ -220,7 +220,7 @@ describe("agent-config-blast-radius fixture (t-588644)", () => {
 
     const after = loadProfileAwareConfig(input);
     const alert = after.warnings.find((warning) => warning.includes("demo-drifty"));
-    expect(alert).toContain("agents.pinned.profile");
+    expect(alert).not.toContain("tachyon.yml");
     expect(alert).toContain("Reauthorize");
     // Nothing is said about the agent that did not drift.
     expect(after.warnings.join("\n")).not.toContain("bystander");

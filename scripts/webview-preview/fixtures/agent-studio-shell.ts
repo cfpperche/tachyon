@@ -237,6 +237,31 @@ const canonicalEntity: AgentStudioEntity = {
   fields: canonicalAgentFields(canonicalSnapshot),
 };
 
+const withheldDocumentSnapshot: AgentProfileStudioSnapshotV1 = {
+  ...canonicalSnapshot,
+  editable: { ...canonicalSnapshot.editable, instructions: "" },
+  bindings: {
+    ...canonicalSnapshot.bindings,
+    withheldDocuments: [{
+      referenceId: "persistent-instructions",
+      name: "instructions.md",
+      kind: "instructions",
+      path: "instructions.md",
+      code: "profile/digest-mismatch",
+      expectedSha256: "c".repeat(64),
+      consumedSha256: "d".repeat(64),
+      detail: "profile/digest-mismatch: instructions.md: pinned content differs from disk",
+    }],
+  },
+};
+
+const withheldDocumentEntity: AgentStudioEntity = {
+  ...denseEntity,
+  storage: "canonical",
+  profile: withheldDocumentSnapshot,
+  fields: canonicalAgentFields(withheldDocumentSnapshot),
+};
+
 /**
  * An agent whose setup commands were published by the WORKSPACE rather than by this profile.
  *
@@ -384,6 +409,7 @@ export const agentStudioShellFixtures: Record<string, Fixture<AgentStudioShellFi
   "new-unattested-runtime": { provenance: "synthetic-edge", vm: { entity: unattestedRuntimeEntity } },
   "dense-edit": { provenance: "synthetic-edge", vm: { entity: denseEntity } },
   "canonical-disabled": { provenance: "synthetic-edge", vm: { entity: canonicalEntity } },
+  "withheld-document": { provenance: "synthetic-edge", vm: { entity: withheldDocumentEntity } },
   "foreign-workspace-commands": { provenance: "synthetic-edge", vm: { entity: foreignWorkspaceCommandsEntity } },
   "foreign-persistent-instructions": { provenance: "synthetic-edge", vm: { entity: foreignPersistentInstructionsEntity } },
   "canonical-claude-bypass-off": { provenance: "synthetic-edge", vm: { entity: claudeCanonicalEntity() } },
