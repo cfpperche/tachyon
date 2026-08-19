@@ -155,7 +155,10 @@ describe("spec 392 ManagedWorktreeService (real git)", () => {
     return d;
   }
 
-  function service(occupancy: () => Promise<undefined | { state: "live"; agent: string; cwd: string }> = async () => undefined) {
+  function service(
+    occupancy: () => Promise<undefined | { state: "live"; agent: string; cwd: string }> = async () => undefined,
+    notify?: (message: string, level?: "info" | "warn" | "error") => void,
+  ) {
     const settings: TachyonConfig["settings"] = { worktree: { base } };
     const manager = new WorktreeManager({
       workspaceRoot: repo,
@@ -170,6 +173,7 @@ describe("spec 392 ManagedWorktreeService (real git)", () => {
       manager,
       occupancy,
       now: () => "2026-07-16T12:00:00.000Z",
+      notify,
     });
   }
 
@@ -192,6 +196,42 @@ describe("spec 392 ManagedWorktreeService (real git)", () => {
     expect(git(["rev-parse", "--abbrev-ref", "HEAD"], entry.path).trim()).toBe("tachyon/change/t-hello");
     expect(svc.list({ kind: "change" })).toHaveLength(1);
     expect(svc.get(entry.id)?.path).toBe(entry.path);
+  });
+
+  it("createChange uses a valid declared base ref", async () => {
+    git(["branch", "declared-base"], repo);
+    fs.writeFileSync(path.join(repo, "README.md"), "later\n");
+    git(["commit", "-am", "later"], repo);
+    const declaredSha = git(["rev-parse", "declared-base"], repo).trim();
+
+    const entry = await service().createChange({ slug: "declared", baseRef: "declared-base", createdBy: "alice" });
+
+    expect(entry.baseRef).toBe(declaredSha);
+    expect(git(["rev-parse", "HEAD"], entry.path).trim()).toBe(declaredSha);
+  });
+
+  it("createChange warns and falls back to HEAD when the declared base ref cannot be resolved", async () => {
+    const notices: Array<{ message: string; level?: "info" | "warn" | "error" }> = [];
+    const headSha = git(["rev-parse", "HEAD"], repo).trim();
+
+    const entry = await service(async () => undefined, (message, level) => notices.push({ message, level }))
+      .createChange({ slug: "fallback", baseRef: "no-such-ref", createdBy: "alice" });
+
+    expect(entry.baseRef).toBe(headSha);
+    expect(git(["rev-parse", "HEAD"], entry.path).trim()).toBe(headSha);
+    expect(notices).toContainEqual({
+      message: "'fallback' declares worktree baseRef 'no-such-ref', but it cannot be resolved — using HEAD instead",
+      level: "warn",
+    });
+  });
+
+  it("createChange still refuses an invalid branch name", async () => {
+    await expect(service().createChange({
+      slug: "bad-branch",
+      branch: "invalid branch",
+      baseRef: "no-such-ref",
+      createdBy: "alice",
+    })).rejects.toThrow("invalid branch name 'invalid branch'");
   });
 
   /**
