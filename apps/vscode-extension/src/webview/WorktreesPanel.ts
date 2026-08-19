@@ -350,5 +350,14 @@ function worktreesStrings(): Record<string, string> {
     wtSelectAll: t("Select all"),
     wtSelected: t("selected"),
     wtShowAll: t("Show all"),
+    wtCreatingTitle: t("Creating"),
+    wtCreatingDesc: t("Not registered yet. This row is session-only — a reload drops it."),
+    wtCreateFailed: t("Create failed"),
+    wtPhaseValidate: t("Checking branch"),
+    wtPhaseResolveBase: t("Resolving base"),
+    wtPhaseAdd: t("Adding checkout"),
+    wtPhaseRegister: t("Registering"),
+    wtPhaseShareDependencies: t("Sharing dependencies"),
+    wtPhaseSetup: t("Running setup"),
   };
 }

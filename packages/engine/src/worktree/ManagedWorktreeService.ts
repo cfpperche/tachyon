@@ -53,6 +53,12 @@ import {
   upsertManagedEntry,
 } from "./managedWorktree.js";
 import { scanOrphanedWorktreeProcesses, type OrphanProcessHygieneReport } from "./orphanProcessHygiene.js";
+import {
+  mergeCreateSessions,
+  type WorktreeCreatePhase,
+  type WorktreeCreateProgress,
+  type WorktreeCreateSession,
+} from "./worktreeCreateSession.js";
 
 export interface ManagedWorktreeServiceOpts {
   workspaceRoot: string;
@@ -124,6 +130,12 @@ export interface HygieneReconcileReport {
 }
 
 export class ManagedWorktreeService {
+  /**
+   * t-0ab150 — in-memory create rows. Never written by `save()`. A process restart loses them,
+   * which is the accepted reload behavior: no worse than today.
+   */
+  private readonly creating = new Map<string, WorktreeCreateSession>();
+
   constructor(private readonly opts: ManagedWorktreeServiceOpts) {}
 
   private get git(): GitExec {
@@ -150,6 +162,42 @@ export class ManagedWorktreeService {
 
   private save(store: ReturnType<typeof loadManagedWorktreeStore>): void {
     saveManagedWorktreeStore(this.storePath(), store);
+    this.opts.onRegistryChanged?.();
+  }
+
+  /** Upsert a session create row and refresh listeners. Does not touch the disk registry. */
+  noteCreate(input: {
+    id: string;
+    kind: ManagedWorktreeKind;
+    path: string;
+    branch: string;
+    phase: WorktreeCreatePhase;
+    slug?: string;
+    agent?: string;
+  }): void {
+    const prior = this.creating.get(input.id);
+    this.creating.set(input.id, {
+      id: input.id,
+      kind: input.kind,
+      path: input.path,
+      branch: input.branch,
+      createdAt: prior?.createdAt ?? this.nowIso(),
+      phase: input.phase,
+      ...(input.slug ? { slug: input.slug } : prior?.slug ? { slug: prior.slug } : {}),
+      ...(input.agent ? { agent: input.agent } : prior?.agent ? { agent: prior.agent } : {}),
+    });
+    this.opts.onRegistryChanged?.();
+  }
+
+  failCreate(id: string, error: string): void {
+    const prior = this.creating.get(id);
+    if (!prior) return;
+    this.creating.set(id, { ...prior, error });
+    this.opts.onRegistryChanged?.();
+  }
+
+  finishCreate(id: string): void {
+    if (!this.creating.delete(id)) return;
     this.opts.onRegistryChanged?.();
   }
 
@@ -183,6 +231,7 @@ export class ManagedWorktreeService {
     classification: WorktreeClassification;
     ownerPresence: OwnerPresence;
     land?: LandSuggestion;
+    create?: WorktreeCreateProgress;
   }>> {
     const entries = this.list(filter);
     // t-24e28d — the trunk is a property of the REPOSITORY, so it is discovered once per sweep against
@@ -202,7 +251,7 @@ export class ManagedWorktreeService {
     let primaryProbe: Promise<PrimaryCheckoutState> | undefined;
     const primaryOnce = (): Promise<PrimaryCheckoutState> =>
       (primaryProbe ??= probePrimaryCheckout(this.git, this.opts.workspaceRoot));
-    return Promise.all(
+    const classified = await Promise.all(
       entries.map(async (entry) => {
         // t-621613 — carried on every row because a reader deciding what to DO with an agent entry
         // needs it: the surfaces that offer a removal gate on `kind === "agent"`, and without this
@@ -255,6 +304,51 @@ export class ManagedWorktreeService {
         }
       }),
     );
+    // Session rows are not persisted and have no checkout to classify. A status filter is a
+    // registry query (`active` | `abandoned`) — creating is neither, so it stays out.
+    const sessionRows = filter?.status
+      ? []
+      : mergeCreateSessions(classified, this.creating.values())
+        .filter((session) => !filter?.kind || session.kind === filter.kind)
+        .map((session) => this.projectCreateSession(session));
+    return [...sessionRows, ...classified];
+  }
+
+  private projectCreateSession(session: WorktreeCreateSession): ManagedWorktreeEntry & {
+    classification: WorktreeClassification;
+    ownerPresence: OwnerPresence;
+    create: WorktreeCreateProgress;
+  } {
+    return {
+      id: session.id,
+      kind: session.kind,
+      path: session.path,
+      branch: session.branch,
+      // Not resolved until `resolve-base` finishes; empty is "we do not have it", not HEAD.
+      baseRef: "",
+      tachyonCreatedBranch: true,
+      createdAt: session.createdAt,
+      status: "active",
+      ...(session.slug ? { slug: session.slug } : {}),
+      ...(session.agent ? { agent: session.agent } : {}),
+      ownerPresence: "unknown",
+      // Fail-closed and unnamed as a live checkout: we did not run the classifier. The `create`
+      // field is the truth; this object only exists so a typed list cannot treat absence as "safe".
+      classification: {
+        state: "needs-review",
+        reasons: [session.error ?? `create in progress (${session.phase})`],
+        pathExists: false,
+        dirty: true,
+        aheadOfBase: 0,
+        containedInBase: false,
+        containedInTrunk: false,
+        trunkRef: "main",
+      },
+      create: {
+        phase: session.phase,
+        ...(session.error ? { error: session.error } : {}),
+      },
+    };
   }
 
   /**
@@ -601,47 +695,61 @@ export class ManagedWorktreeService {
     const base = resolveBase(this.opts.getSettings());
     const wtPath = pathForChange(base, this.opts.wsHash, slug);
     const branch = input.branch ?? defaultChangeBranch(slug);
+    const id = newManagedId("change", slug);
 
     return this.opts.manager.withPathLock(wtPath, async () => {
-      if (fs.existsSync(wtPath)) throw new Error(`change worktree path already exists: ${wtPath}`);
-
-      const fmt = await this.git(gitArgs.checkRefFormat(branch), this.opts.workspaceRoot);
-      if (fmt.code !== 0) throw new Error(`invalid branch name '${branch}'`);
-
-      await this.git(gitArgs.prune(), this.opts.workspaceRoot);
-      if ((await this.git(gitArgs.branchExists(branch), this.opts.workspaceRoot)).code === 0) {
-        throw new Error(`branch '${branch}' already exists`);
-      }
-
-      const startRef = input.baseRef ?? "HEAD";
-      const baseRefProbe = await this.git(["rev-parse", startRef], this.opts.workspaceRoot);
-      if (baseRefProbe.code !== 0 || !baseRefProbe.stdout.trim()) {
-        throw new Error(`cannot resolve base ref '${startRef}'`);
-      }
-      const baseRef = baseRefProbe.stdout.trim();
-      const add = await this.git(gitArgs.addNewBranch(wtPath, branch, startRef), this.opts.workspaceRoot);
-      if (add.code !== 0) {
-        throw new Error(`git worktree add failed: ${add.stderr.trim() || add.stdout.trim()}`);
-      }
-
+      const note = (phase: WorktreeCreatePhase) =>
+        this.noteCreate({ id, kind: "change", path: wtPath, branch, slug, phase });
       try {
-        return await this.register({
-          kind: "change",
-          path: wtPath,
-          branch,
-          baseRef,
-          tachyonCreatedBranch: true,
-          slug,
-          taskId: input.taskId,
-          createdBy: input.createdBy,
-          trustedInternal: true,
-        });
-      } catch (regErr) {
-        // Leave the checkout for recovery; surface both outcomes.
-        throw new Error(
-          `worktree created at ${wtPath} but registry failed: ${regErr instanceof Error ? regErr.message : String(regErr)}; ` +
-            `adopt with register_worktree or remove with git worktree remove`,
-        );
+        note("validate");
+        if (fs.existsSync(wtPath)) throw new Error(`change worktree path already exists: ${wtPath}`);
+
+        const fmt = await this.git(gitArgs.checkRefFormat(branch), this.opts.workspaceRoot);
+        if (fmt.code !== 0) throw new Error(`invalid branch name '${branch}'`);
+
+        await this.git(gitArgs.prune(), this.opts.workspaceRoot);
+        if ((await this.git(gitArgs.branchExists(branch), this.opts.workspaceRoot)).code === 0) {
+          throw new Error(`branch '${branch}' already exists`);
+        }
+
+        note("resolve-base");
+        const startRef = input.baseRef ?? "HEAD";
+        const baseRefProbe = await this.git(["rev-parse", startRef], this.opts.workspaceRoot);
+        if (baseRefProbe.code !== 0 || !baseRefProbe.stdout.trim()) {
+          throw new Error(`cannot resolve base ref '${startRef}'`);
+        }
+        const baseRef = baseRefProbe.stdout.trim();
+        note("add");
+        const add = await this.git(gitArgs.addNewBranch(wtPath, branch, startRef), this.opts.workspaceRoot);
+        if (add.code !== 0) {
+          throw new Error(`git worktree add failed: ${add.stderr.trim() || add.stdout.trim()}`);
+        }
+
+        note("register");
+        try {
+          const entry = await this.register({
+            kind: "change",
+            path: wtPath,
+            branch,
+            baseRef,
+            tachyonCreatedBranch: true,
+            slug,
+            taskId: input.taskId,
+            createdBy: input.createdBy,
+            trustedInternal: true,
+          });
+          this.finishCreate(id);
+          return entry;
+        } catch (regErr) {
+          // Leave the checkout for recovery; surface both outcomes.
+          throw new Error(
+            `worktree created at ${wtPath} but registry failed: ${regErr instanceof Error ? regErr.message : String(regErr)}; ` +
+              `adopt with register_worktree or remove with git worktree remove`,
+          );
+        }
+      } catch (err) {
+        this.failCreate(id, err instanceof Error ? err.message : String(err));
+        throw err;
       }
     });
   }

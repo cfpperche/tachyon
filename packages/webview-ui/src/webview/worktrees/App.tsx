@@ -1,6 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import type { SectionsModel, WorktreeRow } from "../../sections/model";
+import { worktreeRowIsCreateSession } from "../../sections/model";
 import { Badge, Button, ConfirmForm, EmptyState, ListRow, PageChrome, QuickPicker, type QuickPickerItem } from "../shared/ui";
 import type {
   WorktreeLandResult,
@@ -21,6 +22,21 @@ import type {
 const WT_GROUPS = ["locked", "ready-to-remove", "needs-review", "occupied", "record-only"] as const;
 type WtGroup = (typeof WT_GROUPS)[number];
 const WT_RECORD_COLLAPSE_AT = 4;
+
+/** Labels for phases the create path actually crosses. Unknown phase text is shown raw. */
+const CREATE_PHASE_LABEL: Record<string, keyof Strings> = {
+  validate: "wtPhaseValidate",
+  "resolve-base": "wtPhaseResolveBase",
+  add: "wtPhaseAdd",
+  register: "wtPhaseRegister",
+  "share-dependencies": "wtPhaseShareDependencies",
+  setup: "wtPhaseSetup",
+};
+
+function createPhaseLabel(s: Strings, phase: string): string {
+  const key = CREATE_PHASE_LABEL[phase];
+  return key ? s[key] : phase;
+}
 
 /** Fail-closed: a row the engine did not classify is NEVER treated as safe. */
 function wtGroupOf(row: WorktreeRow): WtGroup {
@@ -239,7 +255,7 @@ function reviewPickerItems(review: WorktreeReviewFiles): QuickPickerItem[] {
   }));
 }
 
-function WtGroupHead({ group, title, count, action }: { group: WtGroup; title: string; count: number; action?: ComponentChildren }) {
+function WtGroupHead({ group, title, count, action }: { group: WtGroup | "creating"; title: string; count: number; action?: ComponentChildren }) {
   return (
     <div class="ck-wt-group-head">
       <span class={`ck-wt-dot ck-wt-dot-${group}`} aria-hidden="true" />
@@ -278,8 +294,10 @@ export function WorktreesHygiene({
   const [showAllRecords, setShowAllRecords] = useState(false);
   const [branchConsent, setBranchConsent] = useState<Record<string, boolean>>({});
 
+  const creating = rows.filter(worktreeRowIsCreateSession);
+  const live = rows.filter((row) => !worktreeRowIsCreateSession(row));
   const byGroup = new Map<WtGroup, WorktreeRow[]>(WT_GROUPS.map((g) => [g, []]));
-  for (const row of rows) byGroup.get(wtGroupOf(row))!.push(row);
+  for (const row of live) byGroup.get(wtGroupOf(row))!.push(row);
   // Selection survives model refreshes only while the row is still in its safe group.
   const stillSafe = (id: string, op: "remove" | "forget"): boolean => {
     const row = rows.find((r) => r.id === id);
@@ -330,7 +348,9 @@ export function WorktreesHygiene({
     // `unknown` keeps the row read-only, exactly as the engine's own authority decision does.
     const orphaned = row.kind === "agent" && row.ownerPresence === "absent";
     const studioOwned = row.kind === "agent" && !orphaned;
-    const selectable = !studioOwned && (group === "ready-to-remove" || group === "record-only");
+    const selectable = !worktreeRowIsCreateSession(row)
+      && !studioOwned
+      && (group === "ready-to-remove" || group === "record-only");
     const op: "remove" | "forget" = group === "ready-to-remove" ? "remove" : "forget";
     const occupant = row.classification?.occupant;
     return (
@@ -505,6 +525,51 @@ export function WorktreesHygiene({
       {rows.length === 0 && (!unavailable || unavailable.length === 0) ? (
         <EmptyState kind="empty" message={s.noneListed} />
       ) : null}
+      {creating.length > 0 ? (
+        <section class="ck-wt-group" data-testid="worktree-creating">
+          <WtGroupHead
+            group="creating"
+            title={creating.every((row) => row.create?.error) ? s.wtCreateFailed : s.wtCreatingTitle}
+            count={creating.length}
+          />
+          <p class="ck-wt-group-desc">{s.wtCreatingDesc}</p>
+          <div class="ck-card-list">
+            {creating.map((row) => {
+              const phase = row.create?.phase ?? "";
+              const error = row.create?.error;
+              return (
+                <ListRow
+                  key={row.id}
+                  title={
+                    <>
+                      <span class="name">{row.slug || row.agent || row.id}</span>
+                      <Badge tone={error ? "default" : "ok"}>{createPhaseLabel(s, phase)}</Badge>
+                      {error ? <Badge>{s.wtCreateFailed}</Badge> : null}
+                      <Badge>{row.kind === "agent" ? s.agent : row.kind === "change" ? s.change : row.kind}</Badge>
+                    </>
+                  }
+                  meta={
+                    <>
+                      {row.branch ? (
+                        <span>
+                          {s.branch}: <span class="ck-mono">{row.branch}</span>
+                        </span>
+                      ) : null}
+                      {row.folder ? <span>{row.folder}</span> : null}
+                      {error ? (
+                        <span class="ck-wt-create-error" role="alert" data-testid="worktree-create-error">
+                          {error}
+                        </span>
+                      ) : null}
+                    </>
+                  }
+                  detail={row.path ? <span class="ck-mono">{row.path}</span> : undefined}
+                />
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
       {WT_GROUPS.map((group) => {
         const groupRows = group === "record-only" ? visibleRecords : byGroup.get(group)!;
         const total = byGroup.get(group)!.length;
@@ -653,6 +718,15 @@ export const defaultStrings: Strings = {
   wtSelectAll: "Select all",
   wtSelected: "selected",
   wtShowAll: "Show all",
+  wtCreatingTitle: "Creating",
+  wtCreatingDesc: "Not registered yet. This row is session-only — a reload drops it.",
+  wtCreateFailed: "Create failed",
+  wtPhaseValidate: "Checking branch",
+  wtPhaseResolveBase: "Resolving base",
+  wtPhaseAdd: "Adding checkout",
+  wtPhaseRegister: "Registering",
+  wtPhaseShareDependencies: "Sharing dependencies",
+  wtPhaseSetup: "Running setup",
 };
 /**
  * t-ea5425 — `reviewFiles` is a host PUSH, and it is the picker's open signal rather than a seed for

@@ -203,6 +203,16 @@ export interface WorktreesStrings {
   wtSelectAll: string;
   wtSelected: string;
   wtShowAll: string;
+  /** t-0ab150 — session create row. Named phases, not a percent. */
+  wtCreatingTitle: string;
+  wtCreatingDesc: string;
+  wtCreateFailed: string;
+  wtPhaseValidate: string;
+  wtPhaseResolveBase: string;
+  wtPhaseAdd: string;
+  wtPhaseRegister: string;
+  wtPhaseShareDependencies: string;
+  wtPhaseSetup: string;
 }
 
 export type WorktreesAction =
