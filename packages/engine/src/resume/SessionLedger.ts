@@ -314,6 +314,7 @@ function parseDef(d: unknown): SessionDef | undefined {
     ...(typeof o.parent === "string" ? { parent: o.parent } : {}),
     ...(typeof o.delegator === "string" ? { delegator: o.delegator } : {}),
     ...(isStringMap(o.env) ? { env: o.env as Record<string, string> } : {}),
+    ...(parseEnvironment(o.environment) ? { environment: parseEnvironment(o.environment) } : {}),
     ...(o.fork === true ? { fork: true } : {}), // spec 225 — persistent forked sibling
     ...(typeof o.forkOf === "string" ? { forkOf: o.forkOf } : {}), // t-53e485 — the source whose grant this fork holds
     ...(isPipelineRef(o.pipeline) ? { pipeline: o.pipeline as { runId: string; nodeId: string } } : {}), // spec 230
@@ -353,6 +354,26 @@ function isPipelineRef(v: unknown): boolean {
 function isStringMap(v: unknown): boolean {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
   return Object.values(v as Record<string, unknown>).every((x) => typeof x === "string");
+}
+
+function parseEnvironment(v: unknown): SessionDef["environment"] | undefined {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const values = isStringMap(o.values) ? o.values as Record<string, string> : undefined;
+  const secrets: Record<string, { provider: string; id: string; purpose: string }> = {};
+  if (typeof o.secrets === "object" && o.secrets !== null && !Array.isArray(o.secrets)) {
+    for (const [name, raw] of Object.entries(o.secrets as Record<string, unknown>)) {
+      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
+      const ref = raw as Record<string, unknown>;
+      if (typeof ref.provider !== "string" || typeof ref.id !== "string" || typeof ref.purpose !== "string") return undefined;
+      secrets[name] = { provider: ref.provider, id: ref.id, purpose: ref.purpose };
+    }
+  } else if (o.secrets !== undefined) return undefined;
+  if (!values && Object.keys(secrets).length === 0) return undefined;
+  return {
+    ...(values ? { values } : {}),
+    ...(Object.keys(secrets).length > 0 ? { secrets } : {}),
+  };
 }
 
 function parseWorktree(w: unknown): WorktreeRecord | undefined {
