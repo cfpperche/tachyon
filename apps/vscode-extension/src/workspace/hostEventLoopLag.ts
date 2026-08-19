@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { withoutHostSyncIoAttribution } from "./hostSyncIoProbe.js";
 
 /**
  * t-0bf709 — classify a late host timer tick.
@@ -117,7 +118,9 @@ export function formatHostLagLog(
 /** Best-effort; undefined on non-Linux or if /proc is unreadable. */
 export function readLinuxRunDelayMs(): number | undefined {
   try {
-    const raw = fs.readFileSync("/proc/self/schedstat", "utf8").trim().split(/\s+/);
+    const raw = withoutHostSyncIoAttribution(() =>
+      fs.readFileSync("/proc/self/schedstat", "utf8").trim().split(/\s+/),
+    );
     const delayNs = Number(raw[1]);
     return Number.isFinite(delayNs) ? delayNs / 1e6 : undefined;
   } catch {

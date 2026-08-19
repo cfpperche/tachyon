@@ -32,6 +32,9 @@ let longestOp = "";
 let longestPath: string | undefined;
 let totalMs = 0;
 let calls = 0;
+let attributableCalls = 0;
+let attributionSuppressionDepth = 0;
+let recording = false;
 const bySite = new Map<string, { ms: number; op: string; path?: string }>();
 const originals = {
   readFileSync: fs.readFileSync,
@@ -52,23 +55,31 @@ function siteFromStack(): string | undefined {
 }
 
 function record(op: string, started: number, target?: unknown): void {
-  const ms = performance.now() - started;
-  if (ms <= 0) return;
-  totalMs += ms;
-  calls += 1;
-  const pathArg = typeof target === "string" ? target : undefined;
-  if (ms > longestMs) {
-    longestMs = ms;
-    longestOp = op;
-    longestPath = pathArg;
-  }
-  const site = siteFromStack();
-  if (!site) return;
-  const prev = bySite.get(site);
-  if (!prev) bySite.set(site, { ms, op, path: pathArg });
-  else {
-    prev.ms += ms;
-    if (pathArg) prev.path = pathArg;
+  if (recording) return;
+  recording = true;
+  try {
+    const ms = performance.now() - started;
+    if (ms <= 0) return;
+    totalMs += ms;
+    calls += 1;
+    if (attributionSuppressionDepth > 0) return;
+    attributableCalls += 1;
+    const pathArg = typeof target === "string" ? target : undefined;
+    if (ms > longestMs) {
+      longestMs = ms;
+      longestOp = op;
+      longestPath = pathArg;
+    }
+    const site = siteFromStack();
+    if (!site) return;
+    const prev = bySite.get(site);
+    if (!prev) bySite.set(site, { ms, op, path: pathArg });
+    else {
+      prev.ms += ms;
+      if (pathArg) prev.path = pathArg;
+    }
+  } finally {
+    recording = false;
   }
 }
 
@@ -96,18 +107,39 @@ export function startHostSyncIoProbe(): void {
   fs.readSync = wrap("readSync", originals.readSync);
 }
 
+/**
+ * Measure synchronous I/O performed by the lag detector without attributing it as
+ * the cause of that same lag. Origin scoping survives bundling, unlike stack-file
+ * filters, and avoids teaching the probe one special path such as schedstat.
+ */
+export function withoutHostSyncIoAttribution<T>(operation: () => T): T {
+  attributionSuppressionDepth += 1;
+  try {
+    return operation();
+  } finally {
+    attributionSuppressionDepth -= 1;
+  }
+}
+
 function reset(): void {
   longestMs = 0;
   longestOp = "";
   longestPath = undefined;
   totalMs = 0;
   calls = 0;
+  attributableCalls = 0;
   bySite.clear();
 }
 
 /** Hottest site (by cumulative ms) since the previous take, then reset. */
 export function takeHostSyncIoHit(): HostSyncIoHit | undefined {
   if (calls === 0) return undefined;
+  // A detector-only window has measured I/O but no honest attribution. Returning
+  // no hit makes an empty syncSite intentional instead of accusing the detector.
+  if (attributableCalls === 0) {
+    reset();
+    return undefined;
+  }
   let site: string | undefined;
   let siteMs = 0;
   let siteOp = longestOp;
