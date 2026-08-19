@@ -434,6 +434,8 @@ export interface AgentProfileLabels {
   runtimeServiceTier: string;
   runtimeDefault: string;
   canonicalTrustHelp: string;
+  worktreeBaseRefLabel: string;
+  worktreeBaseRefPlaceholder: string;
   supported: string;
   unsupported: string;
 }
@@ -517,6 +519,8 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     runtimeServiceTier: t("Service tier"),
     runtimeDefault: t("Runtime default"),
     canonicalTrustHelp: t("Enabling or starting this canonical agent authorizes native folder trust only for the current workspace and effective working directory. General approvals, sandbox policy, and arbitrary hook trust stay unchanged."),
+    worktreeBaseRefLabel: t("Start from (blank = primary HEAD)"),
+    worktreeBaseRefPlaceholder: t("main or release/next"),
     supported: t("Supported"),
     unsupported: t("Unsupported"),
   };
@@ -550,6 +554,7 @@ export function blankAgentFields(): AgentFormState {
     attention: true,
     worktree: false,
     branch: "",
+    baseRef: "",
     worktreeSetup: "",
     isolate: false,
     schedTiming: "every",
@@ -577,6 +582,7 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
   // agent's real posture.
   fields.worktree = snapshot?.editable.worktree.enabled ?? DEFAULT_NEW_AGENT_WORKTREE_ENABLED;
   fields.branch = snapshot?.editable.worktree.branch ?? "";
+  fields.baseRef = snapshot?.editable.worktree.baseRef ?? "";
   // t-afc86e — read the workspace commands BACK into the form. This line is the whole reason the
   // snapshot carries the artifact bytes: without it the field renders blank for an agent that has a
   // gate, and the next save writes that blank over the real one.
@@ -858,6 +864,7 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
       worktree: {
         enabled: fields.worktree,
         branch: fields.branch.trim(),
+        baseRef: fields.baseRef?.trim() ?? "",
         setup: fields.worktreeSetup.split("\n").map((line) => line.trim()).filter(Boolean),
       },
       // t-d48775 — the instructions travel as TEXT, on every save. The webview never learns that the

@@ -69,6 +69,75 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
     expect(fs.existsSync(path.join(repo, "only-here.txt"))).toBe(false);
   });
 
+  it("agent declared baseRef creates its branch from that ref", async () => {
+    fs.writeFileSync(path.join(repo, "from-base.txt"), "declared\n");
+    git(["add", "from-base.txt"], repo);
+    git(["commit", "-m", "declared base"], repo);
+    git(["branch", "declared-base"], repo);
+    git(["reset", "--hard", "HEAD~1"], repo);
+
+    const notices: string[] = [];
+    const rec = await resolveWorktreeCwd(
+      { name: "declared", worktree: true, branch: "tachyon/declared", baseRef: "declared-base", isRestart: false },
+      {
+        manager: mgr(), settings: { worktree: { base } }, resolveParent: async () => ({ known: false }),
+        runSetup: async () => {}, notify: (message) => notices.push(message),
+      },
+    );
+
+    expect(git(["rev-parse", "HEAD"], rec!.cwd).trim()).toBe(git(["rev-parse", "declared-base"], repo).trim());
+    expect(rec!.worktree!.baseRef).toBe(git(["rev-parse", "declared-base"], repo).trim());
+    expect(notices).toEqual([]);
+  });
+
+  it("agent without declared baseRef still creates from primary HEAD", async () => {
+    const primaryHead = git(["rev-parse", "HEAD"], repo).trim();
+    const rec = await resolveWorktreeCwd(
+      { name: "defaulted", worktree: true, branch: "tachyon/defaulted", isRestart: false },
+      {
+        manager: mgr(), settings: { worktree: { base } }, resolveParent: async () => ({ known: false }),
+        runSetup: async () => {}, notify: () => {},
+      },
+    );
+    expect(git(["rev-parse", "HEAD"], rec!.cwd).trim()).toBe(primaryHead);
+  });
+
+  it("restart with declared baseRef reuses the checkout without reramifying", async () => {
+    git(["branch", "declared-base"], repo);
+    const m = mgr();
+    const deps = { manager: m, settings: { worktree: { base } }, resolveParent: async () => ({ known: false }), runSetup: async () => {}, notify: () => {} };
+    const first = await resolveWorktreeCwd(
+      { name: "stable", worktree: true, branch: "tachyon/stable", baseRef: "declared-base", isRestart: false }, deps,
+    );
+    await complete(m, first!.worktree!);
+    fs.writeFileSync(path.join(first!.cwd, "agent.txt"), "work\n");
+    git(["add", "agent.txt"], first!.cwd);
+    git(["commit", "-m", "agent work"], first!.cwd);
+    const agentHead = git(["rev-parse", "HEAD"], first!.cwd).trim();
+
+    const restarted = await resolveWorktreeCwd(
+      { name: "stable", worktree: true, branch: "tachyon/stable", baseRef: "main", isRestart: true },
+      { ...deps, priorRecord: first!.worktree },
+    );
+    expect(git(["rev-parse", "HEAD"], restarted!.cwd).trim()).toBe(agentHead);
+    expect(restarted!.created).toBe(false);
+  });
+
+  it("invalid declared baseRef warns and falls back to primary HEAD", async () => {
+    const primaryHead = git(["rev-parse", "HEAD"], repo).trim();
+    const notices: string[] = [];
+    const rec = await resolveWorktreeCwd(
+      { name: "fallback", worktree: true, branch: "tachyon/fallback", baseRef: "missing/ref", isRestart: false },
+      {
+        manager: mgr(), settings: { worktree: { base } }, resolveParent: async () => ({ known: false }),
+        runSetup: async () => {}, notify: (message) => notices.push(message),
+      },
+    );
+    expect(git(["rev-parse", "HEAD"], rec!.cwd).trim()).toBe(primaryHead);
+    expect(notices.join("\n")).toContain("missing/ref");
+    expect(notices.join("\n")).toContain("HEAD");
+  });
+
   it("preserves even an unchanged clean worktree when setup fails so a late ignored write cannot be lost", async () => {
     const m = mgr();
     await expect(m.ensure({

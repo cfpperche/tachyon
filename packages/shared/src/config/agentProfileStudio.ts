@@ -99,6 +99,7 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
   worktree: z.object({
     enabled: z.boolean(),
     branch: text(1024),
+    baseRef: text(1024).optional(),
     setup: z.array(text(4096).min(1)).max(64),
   }).strict(),
   /**
@@ -410,6 +411,7 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
       worktree: {
         enabled: profile.workspace?.worktree?.enabled ?? false,
         branch: profile.workspace?.worktree?.branch ?? "",
+        baseRef: profile.workspace?.worktree?.baseRef ?? "",
         setup: [...(snapshot.workspaceCommands?.setup ?? [])],
       },
       // t-d48775 — the instructions come back as TEXT, read from the pinned document by
@@ -545,14 +547,15 @@ export function createProfileFromStudioMutation(
     // because a new agent's id is minted inside the transaction and a reference is owned by it.
     // Declaring an id here with no entry to match is caught by `agentProfileSchemaV1`'s own
     // `requireKind` refinement, so the two halves cannot silently disagree.
-    ...((parsed.editable.cwd || parsed.editable.worktree.enabled || parsed.editable.worktree.branch
+    ...((parsed.editable.cwd || parsed.editable.worktree.enabled || parsed.editable.worktree.branch || parsed.editable.worktree.baseRef
       || createIds.setup.length > 0) ? {
       workspace: {
         ...(parsed.editable.cwd ? { cwd: parsed.editable.cwd } : {}),
-        ...((parsed.editable.worktree.enabled || parsed.editable.worktree.branch || createIds.setup.length > 0) ? {
+        ...((parsed.editable.worktree.enabled || parsed.editable.worktree.branch || parsed.editable.worktree.baseRef || createIds.setup.length > 0) ? {
           worktree: {
             ...(parsed.editable.worktree.enabled ? { enabled: true } : {}),
             ...(parsed.editable.worktree.branch ? { branch: parsed.editable.worktree.branch } : {}),
+            ...(parsed.editable.worktree.baseRef ? { baseRef: parsed.editable.worktree.baseRef } : {}),
             ...(createIds.setup.length > 0 ? { setup: createIds.setup } : {}),
           },
         } : {}),
@@ -611,6 +614,7 @@ export function patchProfileFromStudioMutation(
     ...(current.profile.workspace?.worktree ?? {}),
     enabled: parsed.editable.worktree.enabled,
     branch: parsed.editable.worktree.branch || undefined,
+    baseRef: parsed.editable.worktree.baseRef || undefined,
     setup: commandIds.setup.length > 0 ? commandIds.setup : undefined,
   };
   // t-da80ed — an isolated agent's working directory IS its worktree. `AgentManager` already

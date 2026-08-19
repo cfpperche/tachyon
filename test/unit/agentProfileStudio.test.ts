@@ -35,7 +35,7 @@ function lifecycleSnapshot(): AgentProfileLifecycleSnapshot {
         enabled: false, autostart: true, restart: "on-crash",
         attention: { enabled: false, silenceSec: 12 }, watch: ["src/**"],
       },
-      workspace: { cwd: "apps/reviewer", worktree: { enabled: true, branch: "feature/reviewer" } },
+      workspace: { cwd: "apps/reviewer", worktree: { enabled: true, branch: "feature/reviewer", baseRef: "release/next" } },
       isolation: "transcript",
       references: [
       ],
@@ -85,7 +85,7 @@ describe("canonical Agent Studio projection", () => {
       // t-afc86e — `setup` comes back EMPTY here because this fixture's profile declares no
       // workspace-command reference, so the snapshot carries no artifact bytes. The populated case
       // is the round trip in `agentWorkspaceCommands.test.ts`, which is what proves the read-back.
-      worktree: { enabled: true, branch: "feature/reviewer", setup: [] },
+      worktree: { enabled: true, branch: "feature/reviewer", baseRef: "release/next", setup: [] },
       // t-d48775 — empty for the same reason `setup` is: this fixture's profile carries no
       // instructions document, so the snapshot has no bytes to hand back. The populated case is the
       // round trip in `workspaceHeadless.test.ts`, which is what proves the read-back.

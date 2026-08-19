@@ -130,6 +130,8 @@ interface SharedFormState {
   worktree: boolean;
   /** per-agent literal branch (blank = global template / tachyon/<name>) */
   branch: string;
+  /** git ref a fresh agent worktree branches from (blank = primary HEAD) */
+  baseRef?: string;
   /** newline-separated setup commands run once on worktree create */
   worktreeSetup: string;
   /** Deprecated read-compat field; Agent Studio no longer writes isolate: transcript. */
@@ -260,6 +262,7 @@ export function fromScheduleDef(name: string, def: ScheduleDef): FormState {
     kind: "schedule",
     worktree: false,
     branch: "",
+    baseRef: "",
     worktreeSetup: "",
     instructions: def.instructions ?? "",
     watch: "",
@@ -293,6 +296,7 @@ export function fromTerminalDef(name: string, entry: AgentDef): FormState {
     attention: entry.attention.enabled,
     worktree: false,
     branch: "",
+    baseRef: "",
     worktreeSetup: "",
     ...SCHED_DEFAULTS,
     isolate: false,
@@ -315,6 +319,7 @@ export function fromAgentDef(name: string, entry: AgentDef): AgentFormState {
     attention: entry.attention.enabled,
     worktree: def?.worktree ?? false,
     branch: def?.branch ?? "",
+    baseRef: def?.baseRef ?? "",
     worktreeSetup: (def?.worktreeSetup ?? []).join("\n"),
     ...SCHED_DEFAULTS,
     isolate: false,

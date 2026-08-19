@@ -147,6 +147,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
             + "child): it opts out of running where its parent runs and is born in its own checkout. "
             + "Dismissing the child removes that checkout with it; a branch holding unmerged commits is kept.",
           ),
+        baseRef: z.string().min(1).optional().describe("git ref a fresh agent worktree branches from; invalid refs warn and fall back to HEAD"),
         // spec 246 — the delegation contract (required for a Temporary AI agent unless skip_contract_reason is given).
         task: z.string().optional().describe("what the child must do — one substantive directive"),
         context: z.string().optional().describe("the situation/files/background the child needs to start"),
@@ -166,7 +167,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         ),
       },
     },
-    async ({ name, cmd, cwd, instructions, parent, worktree, task, context, constraints, deliverable, done_when, skip_contract_reason, claim_task }) => {
+    async ({ name, cmd, cwd, instructions, parent, worktree, baseRef, task, context, constraints, deliverable, done_when, skip_contract_reason, claim_task }) => {
       try {
         const isTemporaryAiAgent = !!cmd;
         // t-c861e5 — starting a declared Saved Agent is an activation, not a delegation. The
@@ -367,6 +368,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
               : undefined,
             parent,
             worktree,
+            baseRef,
             reveal: false,
             contract,
             contractSkipReason: skip_contract_reason,

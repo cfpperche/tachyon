@@ -174,6 +174,8 @@ export interface AgentEntry extends ManagedEntryBase {
   worktree?: boolean;
   /** per-agent literal branch name (overrides the global template); authoritatively validated via git check-ref-format at worktree-create */
   branch?: string;
+  /** optional git ref a fresh agent worktree branches from; invalid refs warn and fall back to HEAD */
+  baseRef?: string;
   /** commands run ONCE in the fresh worktree before the agent starts (sequential, stop-on-failure); normalized to a list */
   worktreeSetup?: string[];
   /** spec 226 — isolated harness: agent-scoped MCP/config materialized into a private config home. */
@@ -646,7 +648,7 @@ export const KNOWN_SETTINGS_KEYS = [
  */
 export const KNOWN_AGENT_ENTRY_KEYS = [
   "cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions",
-  "worktree", "branch", "worktreeSetup", "harness", "isolate", "subagents",
+  "worktree", "branch", "baseRef", "worktreeSetup", "harness", "isolate", "subagents",
 ] as const;
 
 /** Parses an `every:` interval ("30m"/"1h"/"90m"/"2h") to ms; null if malformed. */
@@ -1099,6 +1101,11 @@ function parseAgentProjection(name: string, def: Record<string, unknown>, discar
       if (bad) discarded.push(`agents.${name}.branch: ${bad}`);
       else entry.branch = def.branch;
     }
+  }
+  if (def.baseRef !== undefined) {
+    if (typeof def.baseRef !== "string" || def.baseRef.trim().length === 0) {
+      discarded.push(`agents.${name}.baseRef: must be a non-empty string`);
+    } else entry.baseRef = def.baseRef;
   }
   if (def.worktreeSetup !== undefined) {
     const list = typeof def.worktreeSetup === "string" ? [def.worktreeSetup] : def.worktreeSetup;

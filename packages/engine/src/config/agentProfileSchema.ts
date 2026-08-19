@@ -154,6 +154,7 @@ const workspaceSchema = z.object({
     enabled: z.boolean().optional(),
     base: boundedText("worktree base", 4096).optional(),
     branch: boundedText("worktree branch", 1024).optional(),
+    baseRef: boundedText("worktree base ref", 1024).optional(),
     setup: z.array(z.string().regex(ID_RE)).max(64).optional(),
   }).strict().optional(),
 }).strict();

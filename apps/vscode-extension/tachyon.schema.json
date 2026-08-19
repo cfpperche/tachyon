@@ -115,6 +115,11 @@
             "description": "Literal branch name for this agent's worktree (overrides the global settings.worktree.branch template). Validated via git check-ref-format at creation.",
             "type": "string"
           },
+          "baseRef": {
+            "description": "Git ref a fresh agent worktree branches from. Invalid refs warn and fall back to the primary checkout's HEAD.",
+            "type": "string",
+            "minLength": 1
+          },
           "worktreeSetup": {
             "description": "Command(s) run ONCE in the fresh worktree before the agent starts (sequential, stop-on-failure). $TACHYON_WORKSPACE_ROOT and $TACHYON_WORKTREE_ROOT are set.",
             "oneOf": [

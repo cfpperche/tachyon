@@ -20,6 +20,7 @@ const spawnOptions = z.object({
   instructions: text(64 * 1024).optional(),
   parent: name.optional(),
   worktree: z.boolean().optional(),
+  baseRef: text(1_024, 1).optional(),
 }).strict();
 
 const schedule = z.union([

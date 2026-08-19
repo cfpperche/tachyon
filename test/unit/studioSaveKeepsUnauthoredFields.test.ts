@@ -132,6 +132,7 @@ const TERMINAL_PROBE_VALUES: Record<string, unknown> = {
   instructions: "you are a reviewer",
   worktree: true,
   branch: "feature/x",
+  baseRef: "release/next",
   worktreeSetup: "npm ci",
   harness: { mcp: {} },
   isolate: "transcript",

@@ -810,6 +810,7 @@ function projectDefinition(
   if (definition.environment?.values) projected.environment = { values: { ...definition.environment.values } };
   if (definition.workspace?.worktree?.enabled !== undefined) projected.worktree = definition.workspace.worktree.enabled;
   if (definition.workspace?.worktree?.branch) projected.branch = definition.workspace.worktree.branch;
+  if (definition.workspace?.worktree?.baseRef) projected.baseRef = definition.workspace.worktree.baseRef;
   // t-afc86e — the setup field this projection used to refuse. `errors.length > 0` returned above, so
   // reaching here means `materializeWorkspaceCommands` succeeded; the non-array narrowing is what
   // says so to the compiler.
