@@ -70,6 +70,14 @@ describe("vscode-theme.css token bridge", () => {
     expect(dangling).toEqual([]);
   });
 
+  it("bridges --destructive from --ds-err, not --vscode-errorForeground (t-480d59)", () => {
+    // Same class of guard as --radius → --ds-radius: without a source assertion the next
+    // theme-bridge edit re-points --destructive at the vscode token and the two error colours
+    // drift again. The chain must start at --ds-err; the hex is last-resort only.
+    expect(css).toMatch(/--destructive:\s*var\(--ds-err/);
+    expect(css).not.toMatch(/--destructive:\s*var\(--vscode-errorForeground/);
+  });
+
   it("has no unbridged variable reference in vendored/kit source", () => {
     const files = nonEmpty([
       ...walk(path.join(ROOT, "packages/webview-ui/src/webview/shared/ui/vendor"), [".css", ".ts", ".tsx"]),

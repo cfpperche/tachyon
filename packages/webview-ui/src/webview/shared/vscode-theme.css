@@ -37,8 +37,9 @@
   --accent:                   var(--vscode-list-hoverBackground, color-mix(in srgb, var(--foreground) 10%, transparent));
   --accent-foreground:        var(--vscode-list-hoverForeground, var(--foreground));
 
-  --destructive:              var(--vscode-errorForeground, #f14c4c);
-  --destructive-foreground:   #ffffff;
+  /* MUST derive from --ds-err so kit/shadcn and legacy share one error colour; hex is last resort. */
+  --destructive:              var(--ds-err, #f14c4c);
+  --destructive-foreground:   var(--ds-on-err, #ffffff);
 
   --border:                   var(--vscode-widget-border, var(--vscode-editorWidget-border, color-mix(in srgb, var(--foreground) 22%, transparent)));
   --input:                    var(--vscode-input-border, var(--border));
