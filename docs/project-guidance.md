@@ -52,7 +52,8 @@ is wrong — a stuck agent is a symptom worth reading, not a rule to work around
   written down instead of assumed. Since `t-685a0c` this line is no longer the only thing holding
   it up: when `settings.checklist.requireIn` covers your task's kind, a `PreToolUse` gate refuses
   your first CHANGE until the plan exists, on all three runtimes, and the refusal names your
-  runtime's plan tool. Reads and the plan tool always pass, and delivery is never blocked. For a
+  runtime's plan tool. Shell commands count as changes, reads included, and the gate applies
+  whenever the required plan is absent — a completed plan is an absent plan. For a
   kind nobody listed there is no gate, and then this instruction is all there is — so write the
   checklist either way.
 - These coordination and delivery rules moved here from `bridgeGuidanceTail` on 2026-08-05
