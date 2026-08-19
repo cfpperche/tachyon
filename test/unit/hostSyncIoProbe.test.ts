@@ -2,7 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { formatHostLagLog, classifyHostLag } from "../../apps/vscode-extension/src/workspace/hostEventLoopLag.js";
+import {
+  formatHostLagLog,
+  classifyHostLag,
+  readLinuxRunDelayMs,
+} from "../../apps/vscode-extension/src/workspace/hostEventLoopLag.js";
 import {
   startHostSyncIoProbe,
   stopHostSyncIoProbe,
@@ -28,6 +32,9 @@ describe("t-17674a host sync I/O probe", () => {
       expect(FS_OPS.has(hit!.op)).toBe(true);
       expect(hit!.calls).toBeGreaterThanOrEqual(1);
       expect(hit!.totalMs).toBeGreaterThan(0);
+      expect(hit!.site).toBeDefined();
+      expect(hit!.site).not.toMatch(/^hostEventLoopLag\.ts:/);
+      expect(hit!.path).toBe(file);
       const sample = classifyHostLag({
         wallLagMs: 5001,
         hrLagMs: 5001,
@@ -47,6 +54,15 @@ describe("t-17674a host sync I/O probe", () => {
     } finally {
       fs.rmSync(file, { force: true });
     }
+  });
+
+  it("does not attribute the detector's own synchronous schedstat read", () => {
+    startHostSyncIoProbe();
+    takeHostSyncIoHit();
+
+    readLinuxRunDelayMs();
+
+    expect(takeHostSyncIoHit()).toBeUndefined();
   });
 
 });
