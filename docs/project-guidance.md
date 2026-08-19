@@ -371,6 +371,27 @@ The two rules meet here: if a capability is not worth a mechanism, do not ship t
 promises it. **A configuration field that declares a capability the system does not have is the same
 defect as code that declares state it does not hold** — it is just written in YAML.
 
+## A path that died is removed, not deprecated
+
+We do not keep legacy code. When a path is replaced, **remove it and document the correct one** in
+the same change. Keeping it needs the owner's explicit instruction or a stated reason, and either
+way it needs a **deadline** — a legacy path with no date is a permanent one.
+
+Do not leave a deprecation warning behind instead. We are still the only users; there is no
+installed base to warn. A warning nobody acts on is the thing this project already rules out, and
+it costs real code to protect a hypothetical reader.
+
+Removing without documenting the replacement trades one error for another, so the documentation is
+part of the removal, not a follow-up.
+
+The incident that bought this rule, 2026-08-19: agents had long since moved to profiles under
+`.tachyon/agents/<name>/agent.yml`, but `loadConfig` still parsed `agents:` from `tachyon.yml` and
+the JSON schema still documented `agents.<name>.env`, `cmd`, `cwd` and `autostart`. The coordinator
+proposed a new agent using that shape, **read the schema to check itself, and the schema agreed**.
+The configuration was right in content and wrong in address. A dead surface the product still
+recommends is not clutter — it is an active instruction to do the wrong thing, and the editor's
+autocomplete delivers it. Closed by `t-e050fd`; the sweep for others is `t-ee3d5d`.
+
 ## Hygiene
 
 - Remove a change worktree/branch only when clean, unoccupied, and contained in `main`. Preserve
