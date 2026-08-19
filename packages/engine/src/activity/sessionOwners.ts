@@ -660,12 +660,22 @@ process.stdin.on("end", () => {
   try {
     if (!agent || !out) return;
     const p = JSON.parse(raw || "{}");
-    if (!p.session_id) return;
+    // Claude and Codex use snake_case hook fields. Grok's native hook contract uses camelCase
+    // (sessionId, cwd) and does not provide a transcript path. Keep one ledger shape while
+    // deriving Grok's deterministic Activity path from its private GROK_HOME.
+    const sessionId = p.session_id || p.sessionId || "";
+    if (!sessionId) return;
+    const cwd = p.cwd || "";
+    const transcriptPath = p.transcript_path || p.transcriptPath || (
+      process.env.GROK_HOME && cwd
+        ? path.join(process.env.GROK_HOME, "sessions", encodeURIComponent(cwd), sessionId, "chat_history.jsonl")
+        : ""
+    );
     const row = JSON.stringify({
       agent: agent,
-      sessionId: p.session_id,
-      transcriptPath: p.transcript_path || "",
-      cwd: p.cwd || "",
+      sessionId: sessionId,
+      transcriptPath: transcriptPath,
+      cwd: cwd,
       source: p.source || "",
       ts: new Date().toISOString(),
     });
