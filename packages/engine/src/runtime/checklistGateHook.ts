@@ -156,9 +156,12 @@ export function planChecklistGateHooks(input: ChecklistGatePlanInput): Record<st
   if (!checklistRequiresKind(input.requireIn, input.taskKind)) return undefined;
   if (!input.scriptPath) return undefined;
   const runtime: ChecklistGateRuntime = input.runtime;
-  const command =
-    `node ${q(input.scriptPath)} ${q(runtime)} ${q(input.planRoot ?? "")} ${q(input.failureFile ?? "")} ` +
-    q(checklistGateRefusal(runtime));
+  const command = `node ${q(input.scriptPath)} ${q(JSON.stringify({
+    runtime,
+    planRoot: input.planRoot ?? "",
+    failureFile: input.failureFile ?? "",
+    reason: checklistGateRefusal(runtime),
+  }))}`;
   return {
     PreToolUse: [
       {
@@ -179,7 +182,7 @@ export function planChecklistGateHooks(input: ChecklistGatePlanInput): Record<st
 
 /**
  * The materialized gate. Self-contained CommonJS (no Tachyon imports) so it runs as
- * `node <this> <runtime> <planRoot> <failureFile> <reason>` from a hook, with the PreToolUse payload on
+ * `node <this> '<json config>'` from a hook, with the PreToolUse payload on
  * stdin. The refusal text is an ARGUMENT rather than a copy inside the script, so `checklistGateRefusal`
  * stays the single place it is written and a test can assert the exact sentence the agent will read.
  *
@@ -193,13 +196,15 @@ export function planChecklistGateHooks(input: ChecklistGatePlanInput): Record<st
  * locate, a throw anywhere) answers `unknown` and ALLOWS.
  */
 export const CHECKLIST_GATE_SCRIPT_SOURCE = `// Tachyon internal-checklist gate (t-685a0c) — materialized; do not edit.
-// node <this> <runtime> <planRoot> <failureFile> <reason>; PreToolUse payload on stdin. exit 2 = refuse.
+// node <this> '<json config>'; PreToolUse payload on stdin. exit 2 = refuse.
 const fs = require("fs");
 const path = require("path");
-const runtime = process.argv[2] || "";
-const planRoot = process.argv[3] || "";
-const failureFile = process.argv[4] || "";
-const reason = process.argv[5] || "[tachyon] settings.checklist requires a written plan before the first change.";
+let config = {};
+try { config = JSON.parse(process.argv[2] || "{}"); } catch (_e) {}
+const runtime = config.runtime || "";
+const planRoot = config.planRoot || "";
+const failureFile = config.failureFile || "";
+const reason = config.reason || "[tachyon] settings.checklist requires a written plan before the first change.";
 let raw = "";
 
 // An ALLOWLIST of mutators, deliberately: a tool this set does not know passes. The union across the

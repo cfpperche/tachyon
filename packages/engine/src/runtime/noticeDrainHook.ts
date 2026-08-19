@@ -109,9 +109,20 @@ function shellQuote(value: string): string {
 /** The one command string, so claude, codex and grok cannot drift in how they invoke the same script. */
 export function noticeDrainHookCommand(input: NoticeDrainHookInput): string {
   const q = shellQuote;
+  const agent = input.agentArg === NOTICE_DRAIN_CODEX_AGENT_ARG
+    ? "$TACHYON_AGENT_NAME"
+    : input.agentArg.startsWith("'") && input.agentArg.endsWith("'")
+      ? input.agentArg.slice(1, -1).replace(/'\\''/g, "'")
+      : input.agentArg;
+  const config = JSON.stringify({
+    agent,
+    workspaceRoot: input.workspaceRoot,
+    failureFile: input.failureFile ?? "",
+    maxNotices: NOTICE_DRAIN_MAX_NOTICES,
+    maxChars: NOTICE_DRAIN_MAX_CHARS,
+  });
   return (
-    `node ${q(input.scriptPath)} ${input.agentArg} ${q(input.workspaceRoot)} `
-    + `${q(input.failureFile ?? "")} ${String(NOTICE_DRAIN_MAX_NOTICES)} ${String(NOTICE_DRAIN_MAX_CHARS)}`
+    `node ${q(input.scriptPath)} ${q(config)}`
   );
 }
 
@@ -156,7 +167,7 @@ export function composeNoticeDrainLine(lines: readonly string[], maxChars: numbe
 
 /**
  * The materialized drain. Self-contained CommonJS, run as
- * `node <this> <agent> <workspaceRoot> <failureFile> <maxNotices> <maxChars>` with the Stop payload on
+ * `node <this> '<json config>'` with the Stop payload on
  * stdin. Exit 2 emits the first stderr line into the model's context; every other exit is silent.
  *
  * Two rules decide whether this helps or loops:
@@ -171,15 +182,17 @@ export function composeNoticeDrainLine(lines: readonly string[], maxChars: numbe
  * unresolvable agent name — all exit 0 and let the pane path do what it does today.
  */
 export const NOTICE_DRAIN_SCRIPT_SOURCE = `// Tachyon end-of-turn notice drain (t-b47fb2) — materialized; do not edit.
-// node <this> <agent> <workspaceRoot> <failureFile> <maxNotices> <maxChars>; Stop payload on stdin.
+// node <this> '<json config>'; Stop payload on stdin.
 // exit 2 = emit the pending notices into the model's context; any other exit is silent.
 const fs = require("fs");
 const path = require("path");
-const agent = process.argv[2] || process.env.TACHYON_AGENT_NAME || "";
-const workspaceRoot = process.argv[3] || "";
-const failureFile = process.argv[4] || "";
-const maxNotices = Number(process.argv[5]) || ${NOTICE_DRAIN_MAX_NOTICES};
-const maxChars = Number(process.argv[6]) || ${NOTICE_DRAIN_MAX_CHARS};
+let config = {};
+try { config = JSON.parse(process.argv[2] || "{}"); } catch (_e) {}
+const agent = (config.agent === "$TACHYON_AGENT_NAME" ? process.env.TACHYON_AGENT_NAME : config.agent) || "";
+const workspaceRoot = config.workspaceRoot || "";
+const failureFile = config.failureFile || "";
+const maxNotices = Number(config.maxNotices) || ${NOTICE_DRAIN_MAX_NOTICES};
+const maxChars = Number(config.maxChars) || ${NOTICE_DRAIN_MAX_CHARS};
 let raw = "";
 
 function sanitizeReason(e) {
