@@ -5092,12 +5092,23 @@ export class Workspace {
             { change: true, create: true, delete: true },
             onChange,
           ));
-          this.profileDocumentWatches.push(this.host.watch(
-            this.workspaceRoot,
-            `${declared}/**`,
-            { change: true, create: true, delete: true },
-            onChange,
-          ));
+          // A profile reference may name one document (for example instructions.md) or a
+          // capability directory. The exact watch handles both; only directories may be scanned
+          // recursively. The reference can race with a delete/replacement, so a failed stat simply
+          // leaves the exact watch in place and the next profile reload classifies it again.
+          try {
+            if (fs.statSync(path.join(this.workspaceRoot, declared)).isDirectory()) {
+              this.profileDocumentWatches.push(this.host.watch(
+                this.workspaceRoot,
+                `${declared}/**`,
+                { change: true, create: true, delete: true },
+                onChange,
+              ));
+            }
+          } catch {
+            // The exact watch observes a later create/replacement; never let a document race
+            // prevent the engine from reaching readiness.
+          }
         }
       } finally {
         closeCanonicalAgentProfile(source);

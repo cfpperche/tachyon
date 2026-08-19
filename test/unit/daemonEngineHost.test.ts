@@ -1,10 +1,12 @@
 import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import { afterEach, describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DaemonEngineHost, EngineUiUnavailableError, type DaemonHostEvent, type DaemonUiRequest } from "@tachyon/engine/workspace/DaemonEngineHost.js";
 import { TmuxService } from "@tachyon/engine/tmux/TmuxService.js";
+import { scanAgentRosterDirectory } from "@tachyon/engine/config/agentRosterDirectory.js";
 import { routeHumanApprovalRequest } from "@tachyon/engine/engine-service/engineService.js";
 
 const roots: string[] = [];
@@ -276,6 +278,92 @@ describe("DaemonEngineHost", () => {
     try {
       expect(ws.config).toMatchObject({ agents: { test: { cmd: "sh" } } });
       expect(f.host.getState(`tachyon.version.${ws.wsHash}`)).toBe("0.57.0");
+    } finally {
+      await ws.dispose();
+    }
+  });
+
+  it("watches a profile instruction file without treating it as a directory", async () => {
+    const f = fixture();
+    fs.writeFileSync(path.join(f.root, "tachyon.yml"), "terminals: {}\n", "utf8");
+    const profileDir = path.join(f.root, ".tachyon", "agents", "claude");
+    const instructionFile = path.join(profileDir, "instructions.md");
+    fs.mkdirSync(profileDir, { recursive: true });
+    const instructions = "Keep the answer concise.\n";
+    fs.writeFileSync(instructionFile, instructions, "utf8");
+    const sha256 = createHash("sha256").update(instructions).digest("hex");
+    fs.writeFileSync(path.join(profileDir, "agent.yml"), [
+      "schemaVersion: 1",
+      "agentId: 11111111-1111-4111-8111-111111111111",
+      "runtime:",
+      "  adapter: claude",
+      "  executable: claude",
+      "prompt:",
+      "  instructions: persistent-instructions",
+      "references:",
+      "  - id: persistent-instructions",
+      "    kind: instructions",
+      "    scope: profile",
+      "    owner: 11111111-1111-4111-8111-111111111111",
+      "    path: instructions.md",
+      "    mode: pinned",
+      `    sha256: ${sha256}`,
+      "",
+    ].join("\n"), "utf8");
+    expect(scanAgentRosterDirectory(f.root).members).toEqual(["claude"]);
+    const tmux = new TmuxService(async () => ({ stdout: "", stderr: "" }));
+    const ws = await createWorkspaceForTest(
+      f.root,
+      { host: f.host, onViewsChanged: (view) => f.host.onViewsChanged(view) },
+      { tmux, startBridge: false },
+    );
+    try {
+      expect((ws as unknown as { profileDocumentWatches: unknown[] }).profileDocumentWatches).toHaveLength(1);
+      const eventsBefore = f.events.filter((event) => event.kind === "views-changed" && event.view === "agents").length;
+      fs.writeFileSync(instructionFile, "Keep the answer short and cite evidence.\n", "utf8");
+      await waitFor(() => f.events.filter((event) => event.kind === "views-changed" && event.view === "agents").length > eventsBefore);
+    } finally {
+      await ws.dispose();
+    }
+  });
+
+  it("continues scanning a profile reference directory", async () => {
+    const f = fixture();
+    fs.writeFileSync(path.join(f.root, "tachyon.yml"), "terminals: {}\n", "utf8");
+    const profileDir = path.join(f.root, ".tachyon", "agents", "claude");
+    const capabilityDir = path.join(profileDir, "capabilities", "review");
+    const capabilityFile = path.join(capabilityDir, "SKILL.md");
+    fs.mkdirSync(capabilityDir, { recursive: true });
+    fs.writeFileSync(capabilityFile, "Review carefully.\n", "utf8");
+    const sha256 = createHash("sha256").update("Review carefully.\n").digest("hex");
+    fs.writeFileSync(path.join(profileDir, "agent.yml"), [
+      "schemaVersion: 1",
+      "agentId: 11111111-1111-4111-8111-111111111111",
+      "runtime:",
+      "  adapter: claude",
+      "  executable: claude",
+      "references:",
+      "  - id: review-skill",
+      "    kind: skill",
+      "    scope: profile",
+      "    owner: 11111111-1111-4111-8111-111111111111",
+      "    path: capabilities/review",
+      "    mode: pinned",
+      `    sha256: ${sha256}`,
+      "",
+    ].join("\n"), "utf8");
+    expect(scanAgentRosterDirectory(f.root).members).toEqual(["claude"]);
+    const tmux = new TmuxService(async () => ({ stdout: "", stderr: "" }));
+    const ws = await createWorkspaceForTest(
+      f.root,
+      { host: f.host, onViewsChanged: (view) => f.host.onViewsChanged(view) },
+      { tmux, startBridge: false },
+    );
+    try {
+      expect((ws as unknown as { profileDocumentWatches: unknown[] }).profileDocumentWatches).toHaveLength(2);
+      const eventsBefore = f.events.filter((event) => event.kind === "views-changed" && event.view === "agents").length;
+      fs.writeFileSync(capabilityFile, "Review carefully and cite sources.\n", "utf8");
+      await waitFor(() => f.events.filter((event) => event.kind === "views-changed" && event.view === "agents").length > eventsBefore);
     } finally {
       await ws.dispose();
     }
