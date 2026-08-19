@@ -5251,11 +5251,32 @@ export class Workspace {
 
   /** Store one machine-local credential; the return value is deliberately metadata-only. */
   async setProfileSecret(provider: string, id: string, value: string): Promise<{ stored: true; location: "daemon secrets.json (machine-local fallback)" }> {
+    await this.writeProfileSecret(provider, id, value);
+    return { stored: true, location: "daemon secrets.json (machine-local fallback)" };
+  }
+
+  /** Replace is explicit at the engine door: the webview never reads the previous value. */
+  async replaceProfileSecret(provider: string, id: string, value: string): Promise<{ replaced: true; location: "daemon secrets.json (machine-local fallback)" }> {
+    await this.writeProfileSecret(provider, id, value);
+    return { replaced: true, location: "daemon secrets.json (machine-local fallback)" };
+  }
+
+  async removeProfileSecret(provider: string, id: string): Promise<{ removed: true; location: "daemon secrets.json (machine-local fallback)" }> {
+    this.validateProfileSecretCoordinate(provider, id);
+    if (!this.host.deleteSecret) throw new Error("this engine host cannot remove machine secrets");
+    await this.host.deleteSecret(secretStorageKey(provider, id));
+    return { removed: true, location: "daemon secrets.json (machine-local fallback)" };
+  }
+
+  private async writeProfileSecret(provider: string, id: string, value: string): Promise<void> {
+    this.validateProfileSecretCoordinate(provider, id);
+    await this.host.setSecret(secretStorageKey(provider, id), value);
+  }
+
+  private validateProfileSecretCoordinate(provider: string, id: string): void {
     if (!/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(provider) || id.length === 0 || id.length > 512) {
       throw new Error("secret provider and id are invalid");
     }
-    await this.host.setSecret(secretStorageKey(provider, id), value);
-    return { stored: true, location: "daemon secrets.json (machine-local fallback)" };
   }
 
   /** Inventory coordinates only: stored keys and profile requirements, never values. */

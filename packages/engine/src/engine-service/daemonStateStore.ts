@@ -58,6 +58,15 @@ export class DaemonStateStore {
     this.secrets = next;
   }
 
+  deleteSecret(key: string): void {
+    validateKey(key);
+    if (!(key in this.secrets)) return;
+    const next = nullRecord<string>(this.secrets);
+    delete next[key];
+    writeObject(this.secretsPath, next);
+    this.secrets = next;
+  }
+
   /** Safe inventory: keys only, never values. */
   listSecretKeys(): string[] { return Object.keys(this.secrets).sort(); }
 }

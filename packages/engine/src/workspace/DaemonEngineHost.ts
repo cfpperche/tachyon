@@ -316,6 +316,7 @@ export class DaemonEngineHost implements EngineHost {
   setState(key: string, value: unknown): void { this.store.setState(key, value); }
   getSecret(key: string): Promise<string | undefined> { return Promise.resolve(this.store.getSecret(key)); }
   setSecret(key: string, value: string): Promise<void> { this.store.setSecret(key, value); return Promise.resolve(); }
+  deleteSecret(key: string): Promise<void> { this.store.deleteSecret(key); return Promise.resolve(); }
   hasSecret(key: string): boolean { return this.store.getSecret(key) !== undefined; }
   listSecretKeys(): string[] { return this.store.listSecretKeys(); }
   appVersion(): string { return this.options.appVersion; }

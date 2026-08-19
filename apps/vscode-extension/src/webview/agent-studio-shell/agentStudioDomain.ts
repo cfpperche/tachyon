@@ -33,6 +33,9 @@ import {
   agentProfileBundleCreatedMessage,
   agentProfileBundleErrorMessage,
   agentProfileBundleExportMessage,
+  secretInventoryMessage,
+  secretOperationErrorMessage,
+  secretOperationResultMessage,
 } from "@tachyon/webview-ui/webview/agent-studio-shell/messages";
 import type { StudioDomainContext } from "../shared/studio/studioRegistry.js";
 
@@ -49,6 +52,14 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   }
   if (m.type === "browse") {
     void browse(ws, ctx);
+    return;
+  }
+  if (m.type === "refreshSecretInventory") {
+    void refreshSecretInventory(ws, ctx);
+    return;
+  }
+  if (m.type === "saveProfileSecret" || m.type === "replaceProfileSecret" || m.type === "removeProfileSecret") {
+    void runSecretOperation(ws, ctx, m);
     return;
   }
   const agent = ctx.entityId;
@@ -133,6 +144,36 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   if (m.type === "authorizeSkill") { void authorizeSkill(ws, ctx, agent, m.skillName, m.reauthorize); return; }
   if (m.type === "authorizePlugin") { void authorizePlugin(ws, ctx, agent, m.pluginName, m.reauthorize); return; }
   if (m.type === "refreshAuthorizableCapabilities") { void refreshCandidates(ws, ctx, agent); return; }
+}
+
+async function refreshSecretInventory(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext): Promise<void> {
+  try {
+    ctx.post(secretInventoryMessage(await ws.secretInventory()));
+  } catch (error) {
+    ctx.post(secretOperationErrorMessage("save", safeSecretError(error)));
+  }
+}
+
+async function runSecretOperation(
+  ws: WorkspaceAgentStudioTarget,
+  ctx: StudioDomainContext,
+  message: Extract<ReturnType<typeof validateAgentStudioInboundMessage>, { type: "saveProfileSecret" | "replaceProfileSecret" | "removeProfileSecret" }>,
+): Promise<void> {
+  const operation = message.type === "saveProfileSecret" ? "save" : message.type === "replaceProfileSecret" ? "replace" : "remove";
+  try {
+    if (message.type === "saveProfileSecret") await ws.setProfileSecret(message.provider, message.id, message.value);
+    else if (message.type === "replaceProfileSecret") await ws.replaceProfileSecret(message.provider, message.id, message.value);
+    else await ws.removeProfileSecret(message.provider, message.id);
+    ctx.post(secretOperationResultMessage(operation, message.provider, message.id));
+    ctx.post(secretInventoryMessage(await ws.secretInventory()));
+  } catch (error) {
+    ctx.post(secretOperationErrorMessage(operation, safeSecretError(error)));
+  }
+}
+
+function safeSecretError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return redactSecrets(message).slice(0, 2_000);
 }
 
 /**

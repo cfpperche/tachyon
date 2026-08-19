@@ -22,6 +22,13 @@ export const dirtyMessage = (dirty: boolean) => envelope({ type: "dirty" as cons
 export const saveMessage = () => envelope({ type: "save" as const });
 export const cancelMessage = () => envelope({ type: "cancel" as const });
 export const browseMessage = () => envelope({ type: "browse" as const });
+export const refreshSecretInventoryMessage = () => envelope({ type: "refreshSecretInventory" as const });
+export const saveProfileSecretMessage = (provider: string, id: string, value: string) => envelope({ type: "saveProfileSecret" as const, provider, id, value });
+export const replaceProfileSecretMessage = (provider: string, id: string, value: string) => envelope({ type: "replaceProfileSecret" as const, provider, id, value });
+export const removeProfileSecretMessage = (provider: string, id: string) => envelope({ type: "removeProfileSecret" as const, provider, id });
+export const secretInventoryMessage = (inventory: import("./domain").SecretInventoryView) => envelope({ type: "secretInventory" as const, inventory });
+export const secretOperationResultMessage = (operation: "save" | "replace" | "remove", provider: string, id: string) => envelope({ type: "secretOperationResult" as const, operation, provider, id });
+export const secretOperationErrorMessage = (operation: "save" | "replace" | "remove", message: string) => envelope({ type: "secretOperationError" as const, operation, message });
 
 /**
  * t-5498a6 — ask the host to authorize one workspace skill for this profile.
