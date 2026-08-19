@@ -42,7 +42,7 @@ VS Code theme (--vscode-*)
 | Border | `--ds-border` | Hairlines, cards |
 | Surfaces | `--ds-card`, `--ds-input-bg`, editor bg | Panels |
 | Focus | `--ds-focus` | Focus ring / active tab |
-| Status | `--ds-ok`, `--ds-warn`, `--ds-err`, `--ds-info` | Badges |
+| Status | `--ds-ok`, `--ds-warn`, `--ds-err`, `--ds-info` | Badges; shadcn `--destructive` must bridge to `--ds-err` |
 | Radius | **`--ds-radius` only** (6px) | One radius; shadcn `--radius` must bridge to this |
 | Type | `--ds-body`, `--tachyon-font-mono` | Default UI is mono-dense (sidebar/Control density) |
 | Space | `--ds-1` … `--ds-6`, **page shell** `--ds-page-pad-x/y/bottom`, `--ds-page-chrome-*`, `--ds-border-width` | Gaps; **editor pages must use page shell tokens** — not ad-hoc `12px 16px` |
