@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseConfig, type AgentDef } from "@tachyon/engine/config/loadConfig.js";
+import { type AgentDef } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 import { upsertAgent } from "@tachyon/engine/config/YamlConfigEditor.js";
 import { fromTerminalDef, toTerminalEntry, type FormState } from "@tachyon/engine/webview/formLogic.js";
 import schema from "../../apps/vscode-extension/tachyon.schema.json";
@@ -142,8 +143,8 @@ const TERMINAL_PROBE_VALUES: Record<string, unknown> = {
 /** Declared entry keys, read from the shipped schema rather than from a list in this file. */
 function schemaEntryKeys(): string[] {
   const entry = (schema as unknown as {
-    properties: { agents: { additionalProperties: { properties: Record<string, unknown> } } };
-  }).properties.agents.additionalProperties.properties;
+    properties: { "x-removed-agents": { additionalProperties: { properties: Record<string, unknown> } } };
+  }).properties["x-removed-agents"].additionalProperties.properties;
   return Object.keys(entry);
 }
 

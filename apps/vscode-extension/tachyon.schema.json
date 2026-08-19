@@ -6,8 +6,8 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "agents": {
-      "description": "Agents (AI CLIs, dev servers, watchers — any command) keyed by name. May be empty or omitted.",
+    "x-removed-agents": {
+      "description": "Removed legacy shape retained outside the schema's authored properties. Canonical agents live at .tachyon/agents/<name>/agent.yml.",
       "type": "object",
       "propertyNames": {
         "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
@@ -333,7 +333,7 @@
         "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
       },
       "additionalProperties": {
-        "$ref": "#/properties/agents/additionalProperties"
+          "$ref": "#/properties/x-removed-agents/additionalProperties"
       }
     },
     "layouts": {

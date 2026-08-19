@@ -16,7 +16,8 @@ import {
 } from "@tachyon/engine/webview/formLogic.js";
 import { detectInstalledClis } from "@tachyon/engine/webview/cliDetect.js";
 import { isAttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
-import { composeCommand, shellQuote, instructionsDeliverable, parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { composeCommand, shellQuote, instructionsDeliverable } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 import { upsertAgent } from "@tachyon/engine/config/YamlConfigEditor.js";
 
 const BASE: FormState = {

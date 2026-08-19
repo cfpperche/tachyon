@@ -107,9 +107,8 @@ terminals:
 
 An agent is not in this file at all. `t-ae221c` moved the roster to the directory:
 `.tachyon/agents/reviewer/` with a readable `agent.yml` in it IS the agent `reviewer`, created
-through Agent Studio. A `tachyon.yml` that still carries an `agents:` block loads with a warning
-saying the block is ignored and can be deleted; nothing under it declares anything, so an inline
-definition is no longer refused by name — it is unreachable.
+through Agent Studio. A `tachyon.yml` `agents:` block is an unknown legacy key and is ignored;
+nothing under it declares anything, so an inline definition is unreachable.
 
 ## Consequences for tests
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
-import { parseConfig, type TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
+import { type TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 
 describe("container-generated delegation behavior", () => {

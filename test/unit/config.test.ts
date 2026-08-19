@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { agentsOf, asAgent, parseConfig, suggestKindForCommand, composeCommand, resolveBinary, instructionsDeliverable, openingPromptCapability, terminalsOf } from "@tachyon/engine/config/loadConfig.js";
+import { agentsOf, asAgent, suggestKindForCommand, composeCommand, resolveBinary, instructionsDeliverable, openingPromptCapability, terminalsOf } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
+import { parseConfig as parseRawConfig } from "@tachyon/engine/config/loadConfig.js";
 import { PROJECT_GUIDANCE_MAX_FILES } from "@tachyon/engine/config/projectGuidance.js";
 
 const VALID = `
@@ -100,33 +102,33 @@ describe("parseConfig", () => {
     const empty = parseConfig("agents: {}\n");
     expect(empty.warnings).toEqual([]);
 
-    for (const [yaml, block] of [
-      ['agents: "olá"\n', "'agents'"],
-      ["agents:\n  - one\n", "'agents'"],
-      ["agents: {}\nterminals: oops\n", "'terminals'"],
-    ] as const) {
-      const result = parseConfig(yaml);
+    for (const yaml of [
+      'agents: "olá"\n',
+      "agents:\n  - one\n",
+      "agents: {}\nterminals: oops\n",
+    ]) {
+      const result = parseRawConfig(yaml);
       expect(result.errors, yaml).toEqual([]);
       expect(result.config?.agents, yaml).toEqual({});
-      expect(result.warnings.some((e) => e.includes(block) && e.includes("mapping")), yaml).toBe(true);
+      expect(result.warnings.some((e) => e.includes("unknown top-level key 'agents'")), yaml).toBe(true);
       expect(result.warnings.some((e) => e.includes("non-empty")), yaml).toBe(false);
     }
   });
 
   it("requires cmd and validates field types with paths in messages", () => {
-    const { warnings } = parseConfig(`agents:\n  bad:\n    cwd: 3\n`);
-    expect(warnings.some((e) => e.includes("agents.bad.cmd"))).toBe(true);
+    const { warnings } = parseRawConfig(`agents:\n  bad:\n    cwd: 3\n`);
+    expect(warnings.some((e) => e.includes("unknown top-level key 'agents'"))).toBe(true);
 
-    const { warnings: e2 } = parseConfig(`agents:\n  a:\n    cmd: x\n    autostart: "yes"\n`);
-    expect(e2[0]).toContain("agents.a.autostart");
+    const { warnings: e2 } = parseRawConfig(`agents:\n  a:\n    cmd: x\n    autostart: "yes"\n`);
+    expect(e2[0]).toContain("unknown top-level key 'agents'");
 
-    const { warnings: e3 } = parseConfig(`agents:\n  a:\n    cmd: x\n    env:\n      N: 1\n`);
-    expect(e3[0]).toContain("agents.a.env");
+    const { warnings: e3 } = parseRawConfig(`agents:\n  a:\n    cmd: x\n    env:\n      N: 1\n`);
+    expect(e3[0]).toContain("unknown top-level key 'agents'");
   });
 
   it("rejects invalid agent names and unknown keys", () => {
-    expect(parseConfig(`agents:\n  "1bad":\n    cmd: x\n`).warnings[0]).toContain("invalid name");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    nope: 1\n`).warnings[0]).toContain("unknown key 'nope'");
+    expect(parseRawConfig(`agents:\n  "1bad":\n    cmd: x\n`).warnings[0]).toContain("unknown top-level key 'agents'");
+    expect(parseRawConfig(`agents:\n  a:\n    cmd: x\n    nope: 1\n`).warnings[0]).toContain("unknown top-level key 'agents'");
     expect(parseConfig(`agents:\n  a:\n    cmd: x\ntypo: 1\n`).warnings[0]).toContain("unknown top-level key 'typo'");
   });
 
@@ -194,11 +196,11 @@ describe("parseConfig", () => {
   });
 
   it("spec 352 — terminal subagents are unknown and malformed agent lists are validated", () => {
-    const direct = parseConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    subagents: [a]\n`);
-    expect(direct.config?.agents.dev.kind).toBe("agent");
-    expect(direct.warnings.some((warning) => warning.includes("unknown key 'kind'"))).toBe(false);
+    const direct = parseRawConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    subagents: [a]\n`);
+    expect(direct.config?.agents).toEqual({});
+    expect(direct.warnings.some((warning) => warning.includes("unknown top-level key 'agents'"))).toBe(true);
     expect(parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n    subagents: [a]\n`).warnings.some((e) => e.includes("unknown key 'subagents'"))).toBe(true);
-    expect(parseConfig(`agents:\n  a:\n    cmd: claude\n    subagents: ghost\n`).warnings.some((e) => e.includes("subagents: must be a non-empty list"))).toBe(true);
+    expect(parseRawConfig(`agents:\n  a:\n    cmd: claude\n    subagents: ghost\n`).warnings.some((e) => e.includes("unknown top-level key 'agents'"))).toBe(true);
   });
 
   it("tolerates a legacy layouts: block + settings.layout (feature retired — recognized, ignored, no error)", () => {
@@ -309,10 +311,10 @@ describe("parseConfig", () => {
 
   it("validates agent worktree fields (type + branch chars)", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
-    expect(parseConfig(`${base.replace("cmd: x", 'cmd: x\n    worktree: "yes"')}`).warnings[0]).toContain("worktree: must be a boolean");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    branch: "bad branch"\n`).warnings[0]).toContain("branch: must not contain whitespace");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    branch: "feat/..hack"\n`).warnings[0]).toContain("'..'");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    worktreeSetup: []\n`).warnings[0]).toContain("worktreeSetup");
+    expect(parseRawConfig(`${base.replace("cmd: x", 'cmd: x\n    worktree: "yes"')}`).warnings[0]).toContain("unknown top-level key 'agents'");
+    expect(parseRawConfig(`agents:\n  a:\n    cmd: x\n    branch: "bad branch"\n`).warnings[0]).toContain("unknown top-level key 'agents'");
+    expect(parseRawConfig(`agents:\n  a:\n    cmd: x\n    branch: "feat/..hack"\n`).warnings[0]).toContain("unknown top-level key 'agents'");
+    expect(parseRawConfig(`agents:\n  a:\n    cmd: x\n    worktreeSetup: []\n`).warnings[0]).toContain("unknown top-level key 'agents'");
   });
 
   it("parses settings.worktree.{base,branch} and requires {agent} in the template", () => {
@@ -325,11 +327,11 @@ describe("parseConfig", () => {
   });
 
   it("warns and drops removed agent and worktree verify keys", () => {
-    const parsed = parseConfig(`agents:\n  a:\n    cmd: x\n    verify: npm test\nsettings:\n  worktree:\n    verify: ci\n`);
+    const parsed = parseRawConfig(`agents:\n  a:\n    cmd: x\n    verify: npm test\nsettings:\n  worktree:\n    verify: ci\n`);
     expect(parsed.errors).toEqual([]);
-    expect(parsed.warnings).toContain("agents.a: unknown key 'verify'");
+    expect(parsed.warnings).not.toContain("agents.a: unknown key 'verify'");
     expect(parsed.warnings).toContain("settings.worktree: unknown key 'verify'");
-    expect(parsed.config?.agents.a).not.toHaveProperty("verify");
+    expect(parsed.config?.agents).toEqual({});
     expect(parsed.config?.settings.worktree).not.toHaveProperty("verify");
   });
 
@@ -452,7 +454,7 @@ describe("parseConfig", () => {
   it("warns and ignores removed role and anchor keys while preserving bridgeGuidance", () => {
     const { config, errors, warnings } = parseConfig(`agents:\n  a:\n    cmd: claude\n    role: reviewer\nsettings:\n  anchor:\n    auto: true\n  bridgeGuidance: false\n`);
     expect(errors).toEqual([]);
-    expect(warnings).toContain("agents.a: unknown key 'role'");
+    expect(warnings).not.toContain("agents.a: unknown key 'role'");
     expect(warnings).toContain("settings: unknown key 'anchor'");
     expect(config?.settings.bridgeGuidance).toBe(false);
   });
@@ -555,46 +557,15 @@ describe("parseConfig", () => {
     expect(r.warnings.some((e) => e.includes("silentHooks"))).toBe(true);
   });
 
-  // spec 358 phase 2 — deprecated transcript isolation config remains read-compatible
-  describe("deprecated isolate: transcript", () => {
-    it("loads on a claude agent with an actionable warning", () => {
-      const { config, errors, warnings } = parseConfig("agents:\n  reviewer:\n    cmd: claude\n    isolate: transcript\n");
-      expect(errors).toEqual([]);
-      expect(asAgent(config?.agents.reviewer)?.isolate).toBe("transcript");
-      expect(warnings).toEqual([
-        "agents.reviewer: isolate: transcript is deprecated — codex is private-home by default; use harness:{} for a private claude config home",
-      ]);
-    });
-    it("rejects an unknown value", () => {
-      const { warnings } = parseConfig("agents:\n  reviewer:\n    cmd: claude\n    isolate: full\n");
-      expect(warnings.some((e) => /isolate: deprecated; the only legacy-compatible value is 'transcript'/.test(e))).toBe(true);
-    });
-    it("loads on a codex agent with the same warning", () => {
-      const { config, errors, warnings } = parseConfig("agents:\n  c:\n    cmd: codex\n    isolate: transcript\n");
-      expect(errors).toEqual([]);
-      expect(asAgent(config?.agents.c)?.isolate).toBe("transcript");
-      expect(warnings[0]).toContain("codex is private-home by default");
-    });
-    it("rejects non-claude/codex agents", () => {
-      const { warnings } = parseConfig("agents:\n  c:\n    cmd: opencode\n    isolate: transcript\n");
-      expect(warnings.some((e) => /deprecated legacy mode is only compatible with claude\/codex agents/.test(e))).toBe(true);
-    });
-    it("rejects terminals", () => {
-      const { warnings } = parseConfig("terminals:\n  sh:\n    cmd: claude\n    isolate: transcript\n");
-      expect(warnings.some((e) => /unknown key 'isolate'/.test(e) && e.includes("Agent Studio"))).toBe(true);
-    });
-    it("rejects a user-set env.CLAUDE_CONFIG_DIR (Tachyon owns the home)", () => {
-      const { warnings } = parseConfig("agents:\n  r:\n    cmd: claude\n    isolate: transcript\n    env:\n      CLAUDE_CONFIG_DIR: /tmp/x\n");
-      expect(warnings.some((e) => /isolate: remove 'env.CLAUDE_CONFIG_DIR'/.test(e))).toBe(true);
-    });
-    it("rejects a user-set env.CODEX_HOME (Tachyon owns the home)", () => {
-      const { warnings } = parseConfig("agents:\n  r:\n    cmd: codex\n    isolate: transcript\n    env:\n      CODEX_HOME: /tmp/x\n");
-      expect(warnings.some((e) => /isolate: remove 'env.CODEX_HOME'/.test(e))).toBe(true);
-    });
-
-    it.each(["PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"])("SDD 401: rejects Pi-owned env %s", (owned) => {
-      const { warnings } = parseConfig(`agents:\n  pi:\n    cmd: pi\n    env:\n      ${owned}: /tmp/user-owned\n`);
-      expect(warnings.some((e) => e.includes(`remove '${owned}'`) && e.includes("Tachyon owns Pi"))).toBe(true);
+  describe("removed agents: roster shape", () => {
+    it.each([
+      "agents:\n  reviewer:\n    cmd: claude\n    isolate: transcript\n",
+      "agents:\n  c:\n    cmd: codex\n    isolate: transcript\n",
+      "agents:\n  pi:\n    cmd: pi\n    env:\n      PI_CODING_AGENT_DIR: /tmp/user-owned\n",
+    ])("treats the retired inline declaration as an unknown top-level key", (yaml) => {
+      const result = parseRawConfig(yaml);
+      expect(result.config?.agents).toEqual({});
+      expect(result.warnings.some((warning) => warning.includes("unknown top-level key 'agents'"))).toBe(true);
     });
   });
 
@@ -949,9 +920,9 @@ describe("resolveBinary / suggestKindForCommand / composeCommand — launcher se
 
 describe("removed agent identity config", () => {
   it("warns and ignores the removed key without blocking the roster", () => {
-    const result = parseConfig("agents:\n  a:\n    cmd: codex\n    soul: true\n");
+    const result = parseRawConfig("agents:\n  a:\n    cmd: codex\n    soul: true\n");
     expect(result.errors).toEqual([]);
-    expect(result.warnings).toContain("agents.a: unknown key 'soul'");
-    expect(result.config?.agents.a).toBeDefined();
+    expect(result.warnings.some((warning) => warning.includes("unknown top-level key 'agents'"))).toBe(true);
+    expect(result.config?.agents).toEqual({});
   });
 });

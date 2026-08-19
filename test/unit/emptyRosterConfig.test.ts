@@ -153,6 +153,6 @@ describe("t-f67185 empty roster workspace", () => {
     expect(errors).toEqual([]);
     expect(config?.agents).toEqual({});
     expect(config?.settings.maxAgents).toBe(2);
-    expect(warnings.some((e) => e.includes("'agents'") && e.includes("mapping"))).toBe(true);
+    expect(warnings.some((e) => e.includes("unknown top-level key 'agents'"))).toBe(true);
   });
 });

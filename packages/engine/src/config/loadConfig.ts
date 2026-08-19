@@ -628,7 +628,7 @@ export const MAX_IDLE_NOTIFY_MINUTES = 7 * 24 * 60;
  * Two literals in two files could not be kept in step by discipline, so the parser reads THIS list
  * and `configSchema.test.ts` compares it to the schema's published properties.
  */
-export const KNOWN_TOP_LEVEL_KEYS = ["agents", "terminals", "layouts", "schedules", "settings"] as const;
+export const KNOWN_TOP_LEVEL_KEYS = ["terminals", "layouts", "schedules", "settings"] as const;
 
 /** The `settings:` keys this parser knows, retired-but-still-named ones included. See KNOWN_TOP_LEVEL_KEYS. */
 export const KNOWN_SETTINGS_KEYS = [
@@ -715,7 +715,7 @@ const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skill
  * config home it asked for would hand it the workspace's own MCP servers and credentials.
  * `cmd`/`env` are the agent's, for the H4 ownership checks.
  */
-function parseHarness(name: string, raw: unknown, cmd: string, env: Record<string, string> | undefined, discarded: string[]): HarnessDef | undefined {
+export function parseHarness(name: string, raw: unknown, cmd: string, env: Record<string, string> | undefined, discarded: string[]): HarnessDef | undefined {
   const binary = binaryOf(cmd);
   // Harnessable CLIs with a private-home materializer. Pi uses its dedicated resource materializer
   // rather than the generic MCP-oriented ResumeAdapter harness shape (spec 406).
@@ -977,7 +977,6 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
 }
 
 /** Fields genuinely shared by canonical agent projections and terminal declarations. */
-const ISOLATE_TRANSCRIPT_DEPRECATION = "isolate: transcript is deprecated — codex is private-home by default; use harness:{} for a private claude config home";
 
 /**
  * SDD 478 M6 — the refusal text is part of the contract. Every agent-only key declared on a terminal
@@ -1081,72 +1080,6 @@ function parseManagedEntryBase(
   return entry;
 }
 
-function parseAgentProjection(name: string, def: Record<string, unknown>, discarded: string[], warnings: string[]): AgentEntry | null {
-  const base = parseManagedEntryBase("agents", name, def, true, discarded);
-  if (!base) return null;
-  const entry: AgentEntry = { ...base, kind: "agent" };
-  if (def.instructions !== undefined) {
-    if (typeof def.instructions !== "string") discarded.push(`agents.${name}.instructions: must be a string`);
-    else if (def.instructions.trim().length > 0) entry.instructions = def.instructions;
-  }
-  if (def.worktree !== undefined) {
-    if (typeof def.worktree !== "boolean") discarded.push(`agents.${name}.worktree: must be a boolean`);
-    else entry.worktree = def.worktree;
-  }
-  if (def.branch !== undefined) {
-    if (typeof def.branch !== "string") {
-      discarded.push(`agents.${name}.branch: must be a string`);
-    } else {
-      const bad = validateBranchLiteral(def.branch);
-      if (bad) discarded.push(`agents.${name}.branch: ${bad}`);
-      else entry.branch = def.branch;
-    }
-  }
-  if (def.baseRef !== undefined) {
-    if (typeof def.baseRef !== "string" || def.baseRef.trim().length === 0) {
-      discarded.push(`agents.${name}.baseRef: must be a non-empty string`);
-    } else entry.baseRef = def.baseRef;
-  }
-  if (def.worktreeSetup !== undefined) {
-    const list = typeof def.worktreeSetup === "string" ? [def.worktreeSetup] : def.worktreeSetup;
-    if (!Array.isArray(list) || list.length === 0 || list.some((c) => typeof c !== "string" || c.trim().length === 0)) {
-      discarded.push(`agents.${name}.worktreeSetup: must be a non-empty command string or list of non-empty command strings`);
-    } else entry.worktreeSetup = list as string[];
-  }
-  if (def.harness !== undefined) {
-    const harness = parseHarness(name, def.harness, entry.cmd, entry.environment?.values, discarded);
-    if (harness) entry.harness = harness;
-  }
-  if (def.isolate !== undefined) {
-    // spec 358 phase 2 — read-compat only. New configs should use the two-axis model:
-    // transcript isolation is default/private-home where needed, while `harness:` remains the opt-in stronger
-    // config/MCP/rules/skills/hooks boundary. Existing `isolate: transcript` must keep loading until maintainers
-    // migrate their local secondaries.
-    if (def.isolate !== "transcript") {
-      discarded.push(`agents.${name}.isolate: deprecated; the only legacy-compatible value is 'transcript'`);
-    } else if (binaryOf(entry.cmd) !== "claude" && binaryOf(entry.cmd) !== "codex") {
-      discarded.push(`agents.${name}.isolate: deprecated legacy mode is only compatible with claude/codex agents (got '${binaryOf(entry.cmd) || entry.cmd}')`);
-    } else if (entry.environment?.values?.[binaryOf(entry.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"] !== undefined) {
-      const ownedEnv = binaryOf(entry.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
-      discarded.push(`agents.${name}.isolate: remove 'env.${ownedEnv}' — Tachyon owns the config home for this deprecated legacy mode`);
-    } else {
-      warnings.push(`agents.${name}: ${ISOLATE_TRANSCRIPT_DEPRECATION}`);
-      entry.isolate = "transcript";
-    }
-  }
-  if (def.subagents !== undefined) {
-    if (!Array.isArray(def.subagents) || def.subagents.length === 0 || def.subagents.some((s) => typeof s !== "string" || s.trim().length === 0)) {
-      discarded.push(`agents.${name}.subagents: must be a non-empty list of agent names`);
-    } else {
-      entry.subagents = (def.subagents as string[]).map((s) => s.trim());
-    }
-  }
-  for (const key of Object.keys(def)) {
-    if (!(KNOWN_AGENT_ENTRY_KEYS as readonly string[]).includes(key)) discarded.push(`agents.${name}: unknown key '${key}'`);
-  }
-  return entry;
-}
-
 const KNOWN_TERMINAL_DECLARATION_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart"] as const;
 
 function parseTerminalDeclaration(name: string, def: Record<string, unknown>, discarded: string[]): TerminalEntry | null {
@@ -1226,7 +1159,12 @@ function buildDeclaredOwner(
   return declaredOwner;
 }
 
-export function parseConfig(yamlText: string): ParseResult {
+export interface ParseConfigOptions {
+  /** Canonical profile projections supplied by the profile-aware loader, never read from YAML. */
+  canonicalAgents?: Record<string, ManagedEntryDef>;
+}
+
+export function parseConfig(yamlText: string, options: ParseConfigOptions = {}): ParseResult {
   /**
    * t-48dd8d — every message collected here names something the parser DROPPED, not a reason to
    * refuse the file. It used to be `errors`, and a non-empty `errors` meant no `config` at all: one
@@ -1273,24 +1211,7 @@ export function parseConfig(yamlText: string): ParseResult {
   // spec 215 — agents: and terminals: merge into ONE kind-tagged record (the engine's single
   // source of truth). t-f67185 — an empty roster is valid: Board, pins, and plugins do not need a
   // declared agent or terminal. Malformed blocks still refuse.
-  const agents: Record<string, ManagedEntryDef> = {};
-  if (raw.agents !== undefined && !isPlainObject(raw.agents)) {
-    discarded.push("'agents' must be a mapping of agent name -> definition");
-  }
-  if (isPlainObject(raw.agents)) {
-    for (const [name, def] of Object.entries(raw.agents)) {
-      if (!NAME_RE.test(name)) {
-        discarded.push(`agents.${name}: invalid name (must match ${NAME_RE})`);
-        continue;
-      }
-      if (!isPlainObject(def)) {
-        discarded.push(`agents.${name}: must be a mapping with at least 'cmd'`);
-        continue;
-      }
-      const agent = parseAgentProjection(name, def, discarded, warnings);
-      if (agent) agents[name] = agent;
-    }
-  }
+  const agents: Record<string, ManagedEntryDef> = { ...(options.canonicalAgents ?? {}) };
 
   if (raw.terminals !== undefined) {
     if (!isPlainObject(raw.terminals)) {

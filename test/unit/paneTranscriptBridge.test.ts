@@ -7,7 +7,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { Bridge } from "@tachyon/bridge/Bridge.js";
 import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
-import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 import { PinStore } from "@tachyon/engine/pins/PinStore.js";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";

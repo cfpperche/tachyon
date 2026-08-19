@@ -5,7 +5,7 @@ import path from "node:path";
 import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
-import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 import { HarnessManager, harnessHome, opencodeHarnessDirs } from "@tachyon/engine/harness/HarnessManager.js";
 import { expectedAgentOpencodeEntry, expectedAgentClaudeEntry } from "@tachyon/engine/registration/adapters.js";
 import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";

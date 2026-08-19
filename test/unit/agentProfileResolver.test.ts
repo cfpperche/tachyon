@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { stringify } from "yaml";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { asAgent, parseConfig, type AgentEntry } from "@tachyon/engine/config/loadConfig.js";
+import type { AgentEntry } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture } from "../helpers/parseConfigFixture.js";
 import {
   agentProfileRuntimeSelectorsSha256,
   resolveAgentProfile,
@@ -63,11 +64,11 @@ function writeProfile(root: string, profile: Record<string, unknown>, agent = "c
 }
 
 function legacyAgent(name = "codex", extra = ""): AgentEntry {
-  const parsed = parseConfig(`agents:\n  ${name}:\n    cmd: codex --model gpt-5.6-sol\n${extra}`);
+  const parsed = parseConfigFixture(`agents:\n  ${name}:\n    cmd: codex --model gpt-5.6-sol\n${extra}`);
   expect(parsed.errors).toEqual([]);
-  const agent = asAgent(parsed.config!.agents[name]);
-  expect(agent, `${name} must parse as an agent`).toBeDefined();
-  return agent!;
+  const agent = parsed.config!.agents[name];
+  expect(agent?.kind, `${name} must parse as an agent`).toBe("agent");
+  return agent as AgentEntry;
 }
 
 function legacySource(definition: AgentEntry, source?: string): NonNullable<ResolveAgentProfileInput["legacy"]> {

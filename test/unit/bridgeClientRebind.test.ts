@@ -22,7 +22,7 @@ import {
 } from "@tachyon/bridge/clientRebind.js";
 import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
 import { durableBoundGeneration, type SessionRecord } from "@tachyon/engine/resume/sessionRecord.js";
-import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-364-"));

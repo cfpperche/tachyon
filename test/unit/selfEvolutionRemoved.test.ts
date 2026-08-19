@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseConfig, asAgent } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import { agentProfileSchemaV1 } from "@tachyon/engine/config/agentProfileSchema.js";
 import { EXTENSION_COMMAND_ACTIONS, EXTENSION_QUERY_ACTIONS } from "@tachyon/engine/runtime-api/extensionOperations.js";
 import { FORMATION_GOVERNED_LANES } from "../helpers/sessionPolicy.js";
@@ -21,43 +21,10 @@ import { AGENT_FORGET_PLAN_STEP_IDS } from "@tachyon/shared/config/agentForgetPl
  * The sets themselves are read from PRODUCTION values, never re-typed from the source they check.
  */
 describe("t-8ea8e0 — self-evolution is not a capability this product has", () => {
-  it("the agent config contract accepts exactly this key set, and refuses anything else by name", () => {
-    // The loader's accepted keys, measured by running it: every key is offered on one agent and the
-    // ones that survive ARE the contract. An opt-in flag for a self-evolving agent has to appear
-    // here to work at all, whatever it is called.
-    const offered = {
-      cmd: "codex",
-      cwd: "apps/web",
-      env: { A: "1" },
-      autostart: true,
-      watch: ["src/**"],
-      attention: { enabled: true },
-      restart: "never",
-      kind: "agent",
-      instructions: "be helpful",
-      worktree: true,
-      branch: "feature/x",
-      worktreeSetup: "npm ci",
-      harness: {},
-      isolate: true,
-      subagents: ["child"],
-    };
-    const parsed = parseConfig(JSON.stringify({ agents: { probe: offered } }));
-    const agent = asAgent(parsed.config?.agents.probe);
-    expect(agent).toBeDefined();
-
-    // The keys that SURVIVE onto the parsed entry are the contract. (`harness: {}`, `isolate` and
-    // `subagents` are offered above and normalized away — they are accepted syntax, not stored
-    // state — which is exactly why this asserts what the parser KEEPS, not what it was handed.)
-    expect(Object.keys(agent!).sort()).toEqual([
-      "attention", "autostart", "branch", "cmd", "cwd", "environment",
-      "instructions", "kind", "restart", "watch", "worktree", "worktreeSetup",
-    ]);
-
-    // And an unknown key is refused BY NAME rather than dropped in silence.
-    const refused = parseConfig("agents:\n  probe:\n    cmd: codex\n    selfEvolution: {enabled: true}\n");
-    expect(asAgent(refused.config?.agents.probe)).not.toHaveProperty("selfEvolution");
-    expect(refused.discarded.some((message) => message.includes("selfEvolution"))).toBe(true);
+  it("the retired inline agent roster is not a configuration contract", () => {
+    const parsed = parseConfig("agents:\n  probe:\n    cmd: codex\n    selfEvolution: {enabled: true}\n");
+    expect(parsed.config?.agents).toEqual({});
+    expect(parsed.discarded.some((message) => message.includes("unknown top-level key 'agents'"))).toBe(true);
   });
 
   it("the canonical profile accepts exactly these reference kinds and prompt bindings", () => {

@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   asAgent,
-  parseConfig,
   ATTENTION_DEFAULT_SILENCE_SEC,
   type AgentEntry,
   type ManagedEntryDef,
   type TerminalEntry,
 } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 
 /**
  * SDD 478 M2 — `ManagedEntryDef` is a discriminated union, so an agent-only capability on a terminal
