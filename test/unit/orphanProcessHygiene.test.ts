@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import path from "node:path";
-import { scanOrphanedWorktreeProcesses, type OrphanProcessHygieneFs } from "@tachyon/engine/worktree/orphanProcessHygiene.js";
+import {
+  PROC_UNAVAILABLE_REASON,
+  scanLiveWorktreeProcesses,
+  scanOrphanedWorktreeProcesses,
+  type OrphanProcessHygieneFs,
+} from "@tachyon/engine/worktree/orphanProcessHygiene.js";
 
 function procFixture(entries: Record<string, { cwd?: string; command?: string }>): OrphanProcessHygieneFs {
   return {
@@ -32,6 +37,7 @@ describe("worktree orphan process hygiene", () => {
       managedRoot: root,
       scanned: 4,
       unreadable: 1,
+      measured: true,
       orphanedProcesses: [{ pid: 41, cwd: `${root}/worker`, command: "node" }],
     });
   });
@@ -44,7 +50,41 @@ describe("worktree orphan process hygiene", () => {
       managedRoot: "/worktrees/ws",
       scanned: 0,
       unreadable: 1,
+      measured: false,
+      unavailableReason: PROC_UNAVAILABLE_REASON,
       orphanedProcesses: [],
     });
+  });
+});
+
+describe("t-361963: live cwd scan shares the orphan walk", () => {
+  it("names a still-existing cwd under the checkout that the orphan filter ignores", () => {
+    const root = "/cache/tachyon/worktrees/ws123/rev";
+    const entries = {
+      "41": { cwd: `${root} (deleted)`, command: "node\n" },
+      "42": { cwd: root, command: "tail\n" },
+      "43": { cwd: "/elsewhere", command: "sleep\n" },
+    };
+    expect(scanOrphanedWorktreeProcesses(root, "/proc", procFixture(entries)).orphanedProcesses)
+      .toEqual([{ pid: 41, cwd: root, command: "node" }]);
+    expect(scanLiveWorktreeProcesses(root, "/proc", procFixture(entries))).toEqual({
+      worktreePath: root,
+      scanned: 3,
+      unreadable: 0,
+      measured: true,
+      processes: [
+        { pid: 41, cwd: root, command: "node" },
+        { pid: 42, cwd: root, command: "tail" },
+      ],
+    });
+  });
+
+  it("declares the instrument unavailable instead of looking like an empty finding", () => {
+    const proc = procFixture({});
+    proc.readdirSync = () => { throw new Error("no proc"); };
+    const report = scanLiveWorktreeProcesses("/wt/rev", "/proc", proc);
+    expect(report.measured).toBe(false);
+    expect(report.processes).toEqual([]);
+    expect(report.unavailableReason).toBe(PROC_UNAVAILABLE_REASON);
   });
 });

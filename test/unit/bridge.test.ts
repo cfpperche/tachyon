@@ -195,6 +195,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(description("dismiss_agent")).toContain("the private runtime home under .tachyon/bridge-mcp");
     expect(description("dismiss_agent")).toContain("Tachyon activity and pane transcripts are deleted");
     expect(description("worktree_processes")).toContain("does not terminate reported processes automatically");
+    expect(description("worktree_processes")).toContain("measured=false");
   });
 
   const { sessions, launches, dead, panes, exec } = fakeTmuxExec();

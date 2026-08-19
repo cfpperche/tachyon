@@ -90,7 +90,8 @@ export function registerWorktreeTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "List processes whose cwd points into a deleted Tachyon worktree for this workspace. " +
-        "This report is read-only. Tachyon does not terminate reported processes automatically.",
+        "This report is read-only. Tachyon does not terminate reported processes automatically. " +
+        "On systems without /proc the report declares measured=false — that is not an empty finding.",
       inputSchema: {},
     },
     async () => {
@@ -202,14 +203,16 @@ export function registerWorktreeTools(mcp: McpServer, deps: BridgeDeps): void {
         "provably gone (not declared, not live, not in the session ledger) may be removed by any " +
         "agent caller, because there is no inhabitant left to protect. It is still classification-gated, " +
         "so a home that is dirty, occupied or holding unlanded commits is refused like any other. " +
-        "Dirty trees require confirmDirty=true. Optional deleteBranch only when Tachyon created the branch.",
+        "Dirty trees require confirmDirty=true. Optional deleteBranch only when Tachyon created the branch. " +
+        "Live processes with cwd under the checkout refuse removal unless confirmLiveProcesses=true — that flag does not kill them.",
       inputSchema: {
         idOrPath: z.string().min(1),
         deleteBranch: z.boolean().optional().default(false),
         confirmDirty: z.boolean().optional().default(false).describe("required when the worktree has uncommitted changes"),
+        confirmLiveProcesses: z.boolean().optional().default(false).describe("required when processes still have cwd under the checkout; does not kill them"),
       },
     },
-    async ({ idOrPath, deleteBranch, confirmDirty }) => {
+    async ({ idOrPath, deleteBranch, confirmDirty, confirmLiveProcesses }) => {
       try {
         if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
         const actor = resolveDeclaredActor(deps, undefined);
@@ -219,6 +222,7 @@ export function registerWorktreeTools(mcp: McpServer, deps: BridgeDeps): void {
         const result = await deps.managedWorktrees.remove(idOrPath, {
           deleteBranch,
           confirmDirty,
+          confirmLiveProcesses,
           actor: callerActor,
         });
         if (result.removed) return ok(JSON.stringify(result, null, 2));
@@ -229,7 +233,11 @@ export function registerWorktreeTools(mcp: McpServer, deps: BridgeDeps): void {
         // authority verdict is retried — a worktree refused for dirtiness is refused again, by the
         // same classifier, with the same reason.
         if (!confirmDirty) {
-          const viaHygiene = await deps.managedWorktrees.removeClassified(idOrPath, { deleteBranch, actor: callerActor });
+          const viaHygiene = await deps.managedWorktrees.removeClassified(idOrPath, {
+            deleteBranch,
+            confirmLiveProcesses,
+            actor: callerActor,
+          });
           if (viaHygiene.removed) return ok(JSON.stringify(viaHygiene, null, 2));
           return fail(new Error(viaHygiene.error ?? result.error ?? "remove refused"));
         }

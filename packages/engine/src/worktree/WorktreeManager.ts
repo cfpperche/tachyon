@@ -22,6 +22,11 @@ import type { SharedDependencyState } from "./dependencySharing.js";
 import type { WorktreeCreatePhase } from "./worktreeCreateSession.js";
 import type { WorktreeRecord } from "./worktreeRecord.js";
 import { resolveGitBinary, gitNotFoundError } from "./gitBinary.js";
+import {
+  liveWorktreeProcessRefusal,
+  scanLiveWorktreeProcesses,
+  type LiveWorktreeProcessReport,
+} from "./orphanProcessHygiene.js";
 
 /** Whether the resolved branch already exists, and if so whether it's free to attach. */
 export type BranchState = "absent" | "exists-free" | "checked-out-elsewhere";
@@ -304,6 +309,8 @@ export interface WorktreeRemovalResult {
 
 export type WorktreeOccupancy = { state: "live" | "pending" | "dirty"; agent: string; cwd: string };
 export type WorktreeOccupancyProbe = (worktreePath: string) => Promise<WorktreeOccupancy | undefined>;
+/** t-361963 — injectable so tests can declare "instrument absent" without mocking the host /proc. */
+export type WorktreeProcessProbe = (worktreePath: string) => LiveWorktreeProcessReport;
 
 export function createGitExec(resolveBinary: () => string): GitExec {
   return (args, cwd) => new Promise((resolve, reject) => {
@@ -422,6 +429,8 @@ export class WorktreeManager {
       getSettings: () => TachyonConfig["settings"];
       git?: GitExec;
       occupancy?: WorktreeOccupancyProbe;
+      /** Defaults to the shared /proc walk in orphanProcessHygiene. */
+      processProbe?: WorktreeProcessProbe;
       pathExists?: (p: string) => boolean;
       now?: () => string;
     },
@@ -1050,6 +1059,10 @@ export class WorktreeManager {
    * Occupancy is always fail-closed before force is considered (spec 392): occupied or
    * unknown occupancy never removes, even with `force: true`.
    *
+   * t-361963 — descendant processes with cwd under the checkout are named and refused
+   * unless `confirmLiveProcesses` is set. That flag does not kill, signal, or wait.
+   * Occupancy (`occ.pid`) is a different door and is not forced by this flag.
+   *
    * Branch deleted ONLY when Tachyon-created AND deleteBranch is set.
    */
   remove(
@@ -1063,6 +1076,11 @@ export class WorktreeManager {
        * - dirty/unknown → require force (caller must have confirmDirty)
        */
       refuseUnlessForceIfDirty?: boolean;
+      /**
+       * t-361963 — remove even if the /proc probe found (or could not measure)
+       * processes with cwd under this checkout. Does not kill anyone.
+       */
+      confirmLiveProcesses?: boolean;
     },
   ): Promise<WorktreeRemovalResult> {
     return this.withLock(rec.path, async () => {
@@ -1099,6 +1117,20 @@ export class WorktreeManager {
             `worktree is ${relation} agent '${occ.agent}' (cwd ${occ.cwd})` +
             `; stop agent '${occ.agent}' (kill_agent) or wait until it leaves this worktree`,
         };
+      }
+      // t-361963 — occupancy only saw the remembered pane pid. This is the rest, using the
+      // same /proc walk as worktree_processes, before git deletes the directory. An
+      // unmeasured probe is not an empty finding. confirmLiveProcesses names the exit
+      // and never kills.
+      if (this.exists(rec.path) && opts?.confirmLiveProcesses !== true) {
+        const report = (this.opts.processProbe ?? scanLiveWorktreeProcesses)(rec.path);
+        if (!report.measured || report.processes.length > 0) {
+          return {
+            removed: false,
+            branchDeleted: false,
+            error: liveWorktreeProcessRefusal(rec.path, report),
+          };
+        }
       }
       // Legacy default force=true (opts omitted). Managed Bridge passes force explicitly.
       let force = opts?.force !== false;

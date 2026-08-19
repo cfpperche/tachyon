@@ -230,6 +230,7 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     action: z.literal("worktree.remove-managed"),
     id: text(256, 1),
     deleteBranch: z.boolean().optional(),
+    confirmLiveProcesses: z.boolean().optional(),
   }).strict(),
   // SDD 498 — registry-id-scoped like its neighbours above. It carries the row id and NOTHING else:
   // no sha, no branch, no path. Everything the act needs is re-measured in the engine from that id, so

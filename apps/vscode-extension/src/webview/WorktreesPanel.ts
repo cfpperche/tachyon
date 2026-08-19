@@ -23,7 +23,7 @@ type WorktreesRefreshKind = "worktrees";
 export interface WorktreesDeps {
   collect: (needs?: ReturnType<typeof collectNeedsFor>) => Promise<WorkspaceBundle[]>;
   revealPath(path: string): void;
-  remove(id: string, deleteBranch: boolean, wsHash: string): Promise<string | undefined>;
+  remove(id: string, deleteBranch: boolean, wsHash: string, confirmLiveProcesses?: boolean): Promise<string | undefined>;
   forget(id: string, wsHash: string): Promise<string | undefined>;
   /** t-d29398 — release a preserved checkout's Git quarantine (non-destructive; never removes). */
   releaseLock(id: string, wsHash: string): Promise<string | undefined>;
@@ -205,7 +205,20 @@ export class WorktreesPanelManager {
       : op === "releaseLock"
         ? await this.deps.releaseLock(id, project)
         : await this.deps.forget(id, project);
-    if (refusal) void vscode.window.showWarningMessage(refusal);
+    if (refusal) {
+      // t-361963 — occupancy cannot be forced here; live cwd descendants can. The human
+      // already clicked Remove; this is the explicit second step, and it does not kill.
+      const liveProcessRefusal = /confirmLiveProcesses=true/.test(refusal);
+      if (op === "remove" && liveProcessRefusal) {
+        const again = await vscode.window.showWarningMessage(refusal, vscode.l10n.t("Remove anyway"));
+        if (again) {
+          const second = await this.deps.remove(id, deleteBranch, project, true);
+          if (second) void vscode.window.showWarningMessage(second);
+        }
+      } else {
+        void vscode.window.showWarningMessage(refusal);
+      }
+    }
     await this.send(session);
   }
 }

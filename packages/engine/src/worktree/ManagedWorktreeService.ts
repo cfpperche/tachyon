@@ -775,7 +775,7 @@ export class ManagedWorktreeService {
    */
   async removeClassified(
     idOrPath: string,
-    opts: { deleteBranch?: boolean; actor: { kind: string; name?: string } },
+    opts: { deleteBranch?: boolean; confirmLiveProcesses?: boolean; actor: { kind: string; name?: string } },
   ): Promise<HygieneRemovalResult> {
     const entry = findManagedEntry(this.load(), idOrPath);
     if (!entry) return { removed: false, branchDeleted: false, error: `managed worktree not found: ${idOrPath}` };
@@ -803,6 +803,7 @@ export class ManagedWorktreeService {
       deleteBranch: opts.deleteBranch === true && entry.tachyonCreatedBranch,
       force: false,
       refuseUnlessForceIfDirty: true,
+      confirmLiveProcesses: opts.confirmLiveProcesses === true,
     });
     // The audit line is emitted only for a removal that actually happened, and it carries the proofs
     // rather than a verdict: a later reader can disagree with the decision, but not with what it saw.
@@ -1028,7 +1029,7 @@ export class ManagedWorktreeService {
 
   async remove(
     idOrPath: string,
-    opts: { deleteBranch?: boolean; confirmDirty?: boolean; actor: { kind: string; name?: string } },
+    opts: { deleteBranch?: boolean; confirmDirty?: boolean; confirmLiveProcesses?: boolean; actor: { kind: string; name?: string } },
   ): Promise<WorktreeRemovalResult> {
     const entry = findManagedEntry(this.load(), idOrPath);
     if (!entry) return { removed: false, branchDeleted: false, error: `managed worktree not found: ${idOrPath}` };
@@ -1048,6 +1049,7 @@ export class ManagedWorktreeService {
       deleteBranch: opts.deleteBranch === true && entry.tachyonCreatedBranch,
       force: opts.confirmDirty === true,
       refuseUnlessForceIfDirty: true,
+      confirmLiveProcesses: opts.confirmLiveProcesses === true,
     });
   }
 
@@ -1064,6 +1066,7 @@ export class ManagedWorktreeService {
       baseRef?: string;
       /** When true: force remove (abandon/data-loss). When false: soft + dirty refuse. */
       force?: boolean;
+      confirmLiveProcesses?: boolean;
     },
   ): Promise<WorktreeRemovalResult> {
     const abs = path.resolve(worktreePath);
@@ -1073,6 +1076,7 @@ export class ManagedWorktreeService {
         deleteBranch: !!opts?.deleteBranch && entry.tachyonCreatedBranch,
         force: opts?.force === true,
         refuseUnlessForceIfDirty: opts?.force !== true,
+        confirmLiveProcesses: opts?.confirmLiveProcesses === true,
       });
     }
 
@@ -1087,12 +1091,13 @@ export class ManagedWorktreeService {
     return this.opts.manager.remove(rec, !!opts?.deleteBranch && !!opts?.tachyonCreatedBranch, {
       force: opts?.force !== false,
       refuseUnlessForceIfDirty: opts?.force === false,
+      confirmLiveProcesses: opts?.confirmLiveProcesses === true,
     });
   }
 
   private async removeEntryEngine(
     entry: ManagedWorktreeEntry,
-    opts: { deleteBranch: boolean; force: boolean; refuseUnlessForceIfDirty: boolean },
+    opts: { deleteBranch: boolean; force: boolean; refuseUnlessForceIfDirty: boolean; confirmLiveProcesses?: boolean },
   ): Promise<WorktreeRemovalResult> {
     const rec: WorktreeRecord = {
       path: entry.path,
@@ -1104,6 +1109,7 @@ export class ManagedWorktreeService {
     const result = await this.opts.manager.remove(rec, opts.deleteBranch, {
       force: opts.force,
       refuseUnlessForceIfDirty: opts.refuseUnlessForceIfDirty,
+      confirmLiveProcesses: opts.confirmLiveProcesses === true,
     });
     // A checkout that was already absent is as gone as one we just deleted, so the registry must
     // stop claiming it either way — a removal that leaves a record behind is the divergence again.

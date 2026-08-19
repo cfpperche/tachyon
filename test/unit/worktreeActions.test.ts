@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Uri } from "vscode";
-import { __createdPanels, __getExecutedCommands, __getQuickPickCalls, __getWarningMessageCalls, __resetVscodeMock, __setCommandResult } from "../mocks/vscode.js";
+import { __createdPanels, __getExecutedCommands, __getQuickPickCalls, __getWarningMessageCalls, __resetVscodeMock, __setCommandResult, __setWarningMessageResult } from "../mocks/vscode.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager, type WorktreesDeps } from "../../apps/vscode-extension/src/webview/WorktreesPanel.js";
 import { readyMessage } from "@tachyon/webview-ui/webview/worktrees/messages.js";
 import type { WorkspaceBundle, WorktreeRow } from "@tachyon/webview-ui/sections/model";
@@ -57,17 +57,20 @@ function bundle(wsHash: string, worktree: WorktreeRow): WorkspaceBundle {
 
 function harness(over: Partial<WorktreesDeps> = {}): {
   manager: WorktreesPanelManager;
-  removed: Array<{ id: string; deleteBranch: boolean; wsHash: string }>;
+  removed: Array<{ id: string; deleteBranch: boolean; wsHash: string; confirmLiveProcesses?: boolean }>;
   forgotten: Array<{ id: string; wsHash: string }>;
   released: Array<{ id: string; wsHash: string }>;
 } {
-  const removed: Array<{ id: string; deleteBranch: boolean; wsHash: string }> = [];
+  const removed: Array<{ id: string; deleteBranch: boolean; wsHash: string; confirmLiveProcesses?: boolean }> = [];
   const forgotten: Array<{ id: string; wsHash: string }> = [];
   const released: Array<{ id: string; wsHash: string }> = [];
   const deps: WorktreesDeps = {
     collect: async () => [bundle("ws-a", row("ws-a", "a-only")), bundle("ws-b", row("ws-b", "b-only"))],
     revealPath: () => {},
-    remove: async (id, deleteBranch, wsHash) => { removed.push({ id, deleteBranch, wsHash }); return undefined; },
+    remove: async (id, deleteBranch, wsHash, confirmLiveProcesses) => {
+      removed.push({ id, deleteBranch, wsHash, ...(confirmLiveProcesses ? { confirmLiveProcesses: true } : {}) });
+      return undefined;
+    },
     forget: async (id, wsHash) => { forgotten.push({ id, wsHash }); return undefined; },
     releaseLock: async (id, wsHash) => { released.push({ id, wsHash }); return undefined; },
     // SDD 498 — this harness is about the removal/forget/release routing; a land that is never asked
@@ -159,6 +162,35 @@ describe("SDD 485 D6 — standalone Worktrees dashboard", () => {
     panelA.webview.__receive({ type: "worktreeRemove", id: "a-only" });
     await flush();
     expect(__getWarningMessageCalls().map((call) => call.message)).toContain("occupied by codex");
+  });
+
+  it("t-361963: a live-process refusal offers Remove anyway and retries with confirmLiveProcesses", async () => {
+    const refusal =
+      "worktree has 1 live process with cwd under /wt: pid 9 tail. Pass confirmLiveProcesses=true to remove anyway — Tachyon will not kill them.";
+    let calls = 0;
+    const h = harness({
+      remove: async (id, deleteBranch, wsHash, confirmLiveProcesses) => {
+        calls += 1;
+        if (calls === 1) {
+          expect(confirmLiveProcesses).toBeUndefined();
+          return refusal;
+        }
+        expect({ id, deleteBranch, wsHash, confirmLiveProcesses }).toEqual({
+          id: "a-only",
+          deleteBranch: false,
+          wsHash: "ws-a",
+          confirmLiveProcesses: true,
+        });
+        return undefined;
+      },
+    });
+    __setWarningMessageResult("Remove anyway");
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeRemove", id: "a-only" });
+    await flush();
+    await flush();
+    expect(calls).toBe(2);
+    expect(__getWarningMessageCalls().some((call) => call.message === refusal && call.actions.includes("Remove anyway"))).toBe(true);
   });
 });
 
