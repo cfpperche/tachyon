@@ -55,6 +55,7 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
       defaultCwd: deps.defaultCwd,
       persistentInstructionsHelp: this.persistentInstructionsHelp,
       profileLabels: this.profileLabels,
+      secretInventory: (await this.ws.secretInventory?.()) ?? { stored: [] },
     };
     if (entityId === undefined) {
       return { status: "ok", entity: { storage: "canonical", fields: canonicalAgentFields(), ...reference } };

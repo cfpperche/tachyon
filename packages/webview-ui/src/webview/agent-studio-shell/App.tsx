@@ -276,6 +276,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 ...(patch.expectedRevision ? { expectedRevision: patch.expectedRevision } : {}),
                 displayName: patch.editable.displayName,
                 runtime: { ...patch.editable.runtime },
+                environment: structuredClone(patch.editable.environment ?? { values: {}, secrets: {} }),
                 nativeConfig: structuredClone(patch.editable.nativeConfig ?? {}),
                 capabilities: structuredClone(patch.editable.capabilities ?? { skills: [], mcp: [], hooks: [] }),
               },
@@ -917,6 +918,40 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 ))}
               </div>}
             </div>
+
+            {canonical && (
+              <section class="ash-native-config-editor" aria-labelledby="ash-environment-title">
+                <div class="ash-label" id="ash-environment-title">Environment</div>
+                <div class="hint">Literal values are passed to the runtime. Secret references are selected from Keys; secret values never appear in Agent Studio.</div>
+                <div class="ash-label">Environment values</div>
+                {Object.entries(fields.canonical!.environment.values ?? {}).map(([name, value]) => <div class="ash-native-config-editor-row" key={`env-${name}`}>
+                  <Input aria-label="Environment variable name" value={name} onInput={(event) => {
+                    const next = (event.currentTarget as HTMLInputElement).value;
+                    updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: Object.fromEntries(Object.entries(current.canonical.environment.values ?? {}).map(([key, item]) => [key === name ? next : key, item])) } } }) : current);
+                  }} />
+                  <Input aria-label={`Value for ${name}`} value={value} onInput={(event) => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: { ...current.canonical.environment.values, [name]: (event.currentTarget as HTMLInputElement).value } } } }) : current)} />
+                </div>)}
+                <Button onClick={() => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: { ...current.canonical.environment.values, "": "" } } } }) : current)}>Add value</Button>
+                <div class="ash-label">Secret references</div>
+                {Object.entries(fields.canonical!.environment.secrets ?? {}).map(([name, reference]) => {
+                  const stored = entity?.secretInventory?.stored ?? [];
+                  const current = `${reference.provider}\0${reference.id}`;
+                  const options = stored.some((item) => `${item.provider}\0${item.id}` === current) ? stored : [{ provider: reference.provider, id: reference.id }, ...stored];
+                  return <div class="ash-native-config-editor-row" key={`secret-${name}`}>
+                    <Input aria-label="Secret environment variable name" value={name} onInput={(event) => {
+                      const next = (event.currentTarget as HTMLInputElement).value;
+                      updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: Object.fromEntries(Object.entries(state.canonical.environment.secrets ?? {}).map(([key, item]) => [key === name ? next : key, item])) } } }) : state);
+                    }} />
+                    <Select aria-label={`Secret coordinate for ${name}`} value={current} onChange={(event) => {
+                      const [provider, ...id] = (event.currentTarget as HTMLSelectElement).value.split("\0");
+                      updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: { ...state.canonical.environment.secrets, [name]: { ...reference, provider, id: id.join("\0") } } } } }) : state);
+                    }}>{options.map((item) => <option value={`${item.provider}\0${item.id}`} key={`${item.provider}\0${item.id}`}>{item.provider} / {item.id}{stored.some((key) => key.provider === item.provider && key.id === item.id) ? "" : " (missing from Keys)"}</option>)}</Select>
+                    <Input aria-label={`Purpose for ${name}`} value={reference.purpose} placeholder="Purpose" onInput={(event) => updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: { ...state.canonical.environment.secrets, [name]: { ...reference, purpose: (event.currentTarget as HTMLInputElement).value } } } } }) : state)} />
+                  </div>;
+                })}
+                <Button onClick={() => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, secrets: { ...current.canonical.environment.secrets, "": { provider: "", id: "", purpose: "" } } } } }) : current)}>Add secret reference</Button>
+              </section>
+            )}
 
             {canonical && (canonicalRuntime === "codex" || canonicalRuntime === "claude" || canonicalRuntime === "grok") && (
               <section class="ash-native-config-editor" aria-labelledby="ash-runtime-selectors-title">
