@@ -103,7 +103,13 @@ const GATE_ENV = {
 const GATE_LAUNCH_ARGS = ["--disable-crash-reporter"];
 
 const SINGLE_ROOT_FIXTURE = stagedFixture("test/fixtures/sample-workspace");
-const WORKSPACE_FOLDERS = [SINGLE_ROOT_FIXTURE];
+const MULTI_ROOT_FIXTURE = stagedFixture("test/fixtures/multiroot");
+const MULTI_ROOT_WORKSPACE = path.join(MULTI_ROOT_FIXTURE, "multi.code-workspace");
+const WORKSPACE_FOLDERS = [
+  SINGLE_ROOT_FIXTURE,
+  path.join(MULTI_ROOT_FIXTURE, "alpha"),
+  path.join(MULTI_ROOT_FIXTURE, "beta"),
+];
 
 /**
  * t-05097f — one-time migration of PRE-ISOLATION residue, for this run's staged workspace only.
@@ -304,6 +310,14 @@ function tearDownIsolatedGate() {
 }
 
 process.on("exit", tearDownIsolatedGate);
+// t-9dd48e — Node's exit event does not run when the process terminates from a signal.
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => {
+    tearDownIsolatedGate();
+    // The once-handler is removed before it runs, so re-sending preserves the signal exit status.
+    process.kill(process.pid, signal);
+  });
+}
 
 function stagedFixture(relativePath) {
   const source = path.resolve(import.meta.dirname, relativePath);
@@ -341,12 +355,17 @@ export default defineConfig([
     },
   },
   {
-    // Not staged: the multi-root fixture is a `.code-workspace` whose folder entries would need
-    // rewriting to move. Left as-is rather than half-moved — tracked separately if it needs the
-    // same treatment.
+    /**
+     * t-25d2f1 — multi-root must use the same disposable-fixture boundary as every other label.
+     *
+     * The workspace file uses paths relative to itself, so copying the complete `multiroot/`
+     * directory preserves both folder entries without rewriting them. Running against the committed
+     * file was not harmless: VS Code rewrote its `folders` array to `[]`, dirtied the checkout, and
+     * made the next run fail before either Workspace existed.
+     */
     label: "multi-root",
     files: "test/integration-multiroot/**/*.test.js",
-    workspaceFolder: "test/fixtures/multiroot/multi.code-workspace",
+    workspaceFolder: MULTI_ROOT_WORKSPACE,
     extensionDevelopmentPath: EXTENSION_DEVELOPMENT_PATH,
     launchArgs: GATE_LAUNCH_ARGS,
     env: GATE_ENV,
