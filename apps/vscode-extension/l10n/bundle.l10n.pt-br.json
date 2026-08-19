@@ -344,6 +344,7 @@
   "Reject the proposed schedule '{0}'?": "Rejeitar o agendamento proposto '{0}'?",
   "Rejected": "Rejeitada",
   "Remove": "Remover",
+  "Remove anyway": "Remover mesmo assim",
   "Remove agent '{0}'? {1}": "Remover o agente '{0}'? {1}",
   "Remove worktree": "Remover worktree",
   "Remove worktree (keep branch)": "Remover worktree (manter branch)",

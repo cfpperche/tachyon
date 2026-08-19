@@ -814,6 +814,7 @@ export interface DismissedWorktree {
 export async function dismissOwnedWorktree(
   deps: Pick<BridgeDeps, "agentWorktrees" | "notify">,
   name: string,
+  opts?: { confirmLiveProcesses?: boolean },
 ): Promise<DismissedWorktree | undefined> {
   const ports = deps.agentWorktrees;
   const record = ports?.ledger.get(name)?.worktree;
@@ -821,7 +822,7 @@ export async function dismissOwnedWorktree(
   // `deleteBranch: true`, the same argument the engine door passes. The shared cascade soft-removes
   // the checkout (dirty files make every end-of-life door refuse) and runs `git branch -d`, so a
   // branch holding commits that are not merged survives and the receipt says so.
-  const receipt = await removeAgentWorktree(ports, name, true);
+  const receipt = await removeAgentWorktree(ports, name, true, opts);
   const released = {
     path: record.path,
     branch: record.branch,

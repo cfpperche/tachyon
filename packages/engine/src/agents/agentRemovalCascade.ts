@@ -77,7 +77,7 @@ export interface AgentWorktreeRemovalPorts {
     remove(
       rec: WorktreeRecord,
       deleteBranch: boolean,
-      opts: { force: false; refuseUnlessForceIfDirty: true },
+      opts: { force: false; refuseUnlessForceIfDirty: true; confirmLiveProcesses?: boolean },
     ): Promise<WorktreeRemovalResult>;
   };
   managedWorktrees: { syncAgentRecord(agent: string, rec: WorktreeRecord | null): void };
@@ -161,6 +161,7 @@ export async function removeAgentWorktree(
   ports: AgentWorktreeRemovalPorts,
   agent: string,
   deleteBranch: boolean,
+  opts?: { confirmLiveProcesses?: boolean },
 ): Promise<AgentWorktreeRemovalReceipt> {
   const descendants = await ports.manager.liveDescendants(agent);
   if (descendants.length > 0) {
@@ -195,6 +196,7 @@ export async function removeAgentWorktree(
   const result = await ports.worktrees.remove(record, deleteBranch, {
     force: false,
     refuseUnlessForceIfDirty: true,
+    confirmLiveProcesses: opts?.confirmLiveProcesses === true,
   });
   if (!result.removed && !result.absent) {
     // t-eb25ba — WorktreeManager's soft-remove refusal names `confirmDirty=true`, which is real for

@@ -521,6 +521,7 @@ export async function executeExtensionCommand(
       const result = await workspace.managedWorktrees.removeClassified(command.id, {
         actor: { kind: "human" },
         deleteBranch: command.deleteBranch === true,
+        confirmLiveProcesses: command.confirmLiveProcesses === true,
       });
       return json(result as unknown as JsonValue);
     }

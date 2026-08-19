@@ -2240,11 +2240,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // SDD 485 D6 — Worktrees owns these ports now. Both require the dashboard's immutable project;
   // there is deliberately no first-workspace fallback, because that would let a stale/malicious row
   // address another project's checkout.
-  const removeManagedWorktree = async (id: string, deleteBranch: boolean, wsHash: string): Promise<string | undefined> => {
+  const removeManagedWorktree = async (id: string, deleteBranch: boolean, wsHash: string, confirmLiveProcesses?: boolean): Promise<string | undefined> => {
     const ws = byHash(wsHash);
     if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
     const result = jsonObject(
-      await extensionInvoke(ws, { action: "worktree.remove-managed", id, ...(deleteBranch ? { deleteBranch: true } : {}) }),
+      await extensionInvoke(ws, {
+        action: "worktree.remove-managed",
+        id,
+        ...(deleteBranch ? { deleteBranch: true } : {}),
+        ...(confirmLiveProcesses ? { confirmLiveProcesses: true } : {}),
+      }),
       "worktree.remove-managed",
     );
     return result.removed === true ? undefined : String(result.error ?? "removal refused");

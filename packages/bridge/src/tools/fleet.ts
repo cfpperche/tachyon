@@ -430,9 +430,12 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         "which is why the scope is narrower than read-only tools'. For a Temporary, end-of-life removes " +
         "Tachyon activity, pane transcripts, and the private runtime home under .tachyon/bridge-mcp. A harness home " +
         "under .tachyon/harness keeps its runtime-native caches, which are not a uniform archive.",
-      inputSchema: { name: AGENT_NAME },
+      inputSchema: {
+        name: AGENT_NAME,
+        confirmLiveProcesses: z.boolean().optional().describe("remove the owned worktree even if processes still have cwd under it; does not kill them"),
+      },
     },
-    async ({ name }) => {
+    async ({ name, confirmLiveProcesses }) => {
       try {
         // Ahead of every side effect, including the worktree cascade below: an out-of-scope caller
         // must not be able to reach the teardown, and must not learn from a refusal whether it ran.
@@ -447,7 +450,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         // that would recurse (and would double-remove through the other doors). t-28bf8f puts the far
         // narrower row-collection GUARD there instead — no recursion, and it covers the sidebar's Kill.
         if (info?.lifetime === "temporary" && deps.agentWorktrees?.ledger.get(name)?.worktree) {
-          const released = await dismissOwnedWorktree(deps, name);
+          const released = await dismissOwnedWorktree(deps, name, { confirmLiveProcesses });
           // t-28bf8f — the row is collected HERE, and only here, because only now is the checkout
           // proved released. The cascade's own occupancy gate tore the pane down through
           // `manager.kill`, which since t-28bf8f deliberately leaves a still-owning Temporary row
@@ -483,9 +486,12 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         "home under .tachyon/bridge-mcp (Grok/Hermes, with a receipt naming its size), plus the file-shaped configs there for Claude/OpenCode. A harness home under " +
         ".tachyon/harness keeps its runtime-native caches, which are not a uniform archive. Declared tachyon.yml agents " +
         "cannot be dismissed through the Bridge.",
-      inputSchema: { name: AGENT_NAME },
+      inputSchema: {
+        name: AGENT_NAME,
+        confirmLiveProcesses: z.boolean().optional().describe("remove the owned worktree even if processes still have cwd under it; does not kill them"),
+      },
     },
-    async ({ name }) => {
+    async ({ name, confirmLiveProcesses }) => {
       try {
         const info = await managedEntry(deps, name);
         if (!info) return fail(new Error(`agent '${name}' not found`));
@@ -509,7 +515,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         // t-d06da3 — the worktree step, ahead of BOTH dismissal branches, through the cascade the
         // other door already runs. See `dismissOwnedWorktree` for why it is that cascade and not a
         // second one, and which of its gates a Temporary dismiss actually needs.
-        const released = await dismissOwnedWorktree(deps, name);
+        const released = await dismissOwnedWorktree(deps, name, { confirmLiveProcesses });
         if (info.dead && !released) {
           await deps.manager.kill(name);
           return ok(`agent '${name}' dismissed`);
