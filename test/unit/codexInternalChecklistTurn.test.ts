@@ -252,11 +252,11 @@ describe("t-17b510 — judgeCodexInternalChecklistTurn from Codex TUI hooks", ()
     fs.writeFileSync(stopScript, PERSISTENCE_STOP_RECORDER_SOURCE);
     fs.writeFileSync(toolScript, CODEX_TOOL_HOOK_RECORDER_SOURCE);
 
-    const stop = spawnSync(process.execPath, [stopScript, "codex-x", stopFile, failureFile], {
+    const stop = spawnSync(process.execPath, [stopScript, JSON.stringify({ agent: "codex-x", out: stopFile, failureFile })], {
       input: JSON.stringify(TUI_STOP_INDUCE),
       encoding: "utf8",
     });
-    const tool = spawnSync(process.execPath, [toolScript, "codex-x", toolFile, failureFile], {
+    const tool = spawnSync(process.execPath, [toolScript, JSON.stringify({ agent: "codex-x", out: toolFile, failureFile })], {
       input: JSON.stringify(TUI_POST_PLAN),
       encoding: "utf8",
     });
@@ -279,7 +279,7 @@ describe("t-17b510 — judgeCodexInternalChecklistTurn from Codex TUI hooks", ()
       }),
     ).toEqual({ state: "verdict", verdict: "present" });
 
-    const trivialStop = spawnSync(process.execPath, [stopScript, "codex-x", stopFile, failureFile], {
+    const trivialStop = spawnSync(process.execPath, [stopScript, JSON.stringify({ agent: "codex-x", out: stopFile, failureFile })], {
       input: JSON.stringify(TUI_STOP_TRIVIAL),
       encoding: "utf8",
     });
