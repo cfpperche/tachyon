@@ -3,7 +3,7 @@ import { COCKPIT_SECTION_ORDER } from "@tachyon/webview-ui/sections/model";
 import { CONTROL_SECTION_NAV } from "@tachyon/webview-ui/webview/sidebar/sectionNav.js";
 
 describe("CONTROL_SECTION_NAV (t-6e2952)", () => {
-  it("lists nine top-level tiles, covering every section Control renders", () => {
+  it("lists ten top-level tiles, covering every section Control renders", () => {
     // SDD 485 C5 — the launcher is no longer a projection of COCKPIT_SECTION_ORDER: it lists what a human
     // can OPEN, and one of them (the Board) now opens a standalone app instead of navigating Control.
     // The containment direction is what must hold — a section Control renders with no tile is unreachable.
@@ -15,7 +15,7 @@ describe("CONTROL_SECTION_NAV (t-6e2952)", () => {
     // SDD 500 — and ten became NINE, this time because two tiles MERGED rather than one being deleted:
     // Overview and Engine are one screen called System. Same shape either way — the ids stay decodable
     // and only the launcher shrinks.
-    expect(CONTROL_SECTION_NAV).toHaveLength(9);
+    expect(CONTROL_SECTION_NAV).toHaveLength(10);
     const tiles = CONTROL_SECTION_NAV.map((t) => t.id);
     for (const id of COCKPIT_SECTION_ORDER) expect(tiles, `section '${id}' has no launcher tile`).toContain(id);
     // t-5f2b5b — and the deletion is pinned, not merely reflected in a number: `fleet` is STILL a
