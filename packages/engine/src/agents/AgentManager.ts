@@ -72,6 +72,7 @@ import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } 
 import { sweepSessions } from "../tmux/sessionSweep.js";
 import type { FormationLifecyclePort } from "./formation/lifecycleConsumer.js";
 import { PARENT_CWD_REFUSAL } from "./spawnContract.js";
+import { resolveProfileSecretEnvironment } from "../config/agentSecretResolver.js";
 // t-a281e7 — the mid-turn guard reuses the repo's ONE definition of "busy", the same predicate
 // write_input and the notice queue refuse on. A second, private notion of busy here is how the two
 // accounts drift apart.
@@ -577,6 +578,8 @@ export interface AgentManagerOptions {
   formation?: FormationLifecyclePort;
   /** Env injected into every spawned session (e.g. TACHYON_BRIDGE_URL/TOKEN); agent-declared env wins on conflict. */
   getExtraEnv?: () => Record<string, string>;
+  /** Resolve opaque profile references at the last possible boundary; values never enter config or diagnostics. */
+  resolveSecret?: (key: string) => Promise<string | undefined>;
   /** Bridge URL supplied as data for runtime MCP wiring; the manager does not know its env-var name. */
   bridgeUrl?: () => string | undefined;
   /** spec 351 — mint a fresh per-agent Bridge token for `name` (TACHYON_AGENT_BRIDGE_TOKEN), returning the
@@ -2594,6 +2597,7 @@ export class AgentManager {
     // preparation so its probe sees the exact prospective environment and owns explicit compensation.
     const suppression = this.applyFormationNativeSuppression(name, def);
     def = suppression.def;
+    def = await this.resolveSecretEnvironment(def);
     const session = this.session(name);
     let replaceDeadSession = false;
     if (await this.opts.tmux.hasSession(session)) {
@@ -3141,6 +3145,17 @@ export class AgentManager {
     this.opts.onSpawned?.(name, opts?.reveal === false ? "silent" : "reveal", { worktree, temporary });
     await this.attachPaneTranscript(session);
     return;
+  }
+
+  private async resolveSecretEnvironment(def: AgentDef): Promise<AgentDef> {
+    const agent = asAgent(def);
+    const refs = agent?.environment?.secrets;
+    if (!agent || !refs || Object.keys(refs).length === 0) return def;
+    // Non-canonical test/legacy definitions may carry an opaque field transiently; only canonical
+    // profile projection makes secret presence a launch precondition.
+    if (!this.opts.resolveSecret) return def;
+    const values = { ...(agent.environment?.values ?? {}), ...await resolveProfileSecretEnvironment(refs, this.opts.resolveSecret) };
+    return { ...agent, environment: { values } };
   }
 
   /**
@@ -4522,6 +4537,7 @@ export class AgentManager {
     const projectGuidance = this.projectGuidanceFor(def);
     const suppression = this.applyFormationNativeSuppression(name, def);
     def = suppression.def;
+    def = await this.resolveSecretEnvironment(def);
     const session = this.session(name);
     let worktree: WorktreeRecord | undefined;
     let preparationLocked = false;
@@ -5009,7 +5025,8 @@ export class AgentManager {
     // def.env, but resume previously injected only bridge env, silently dropping e.g. an
     // ANTHROPIC_BASE_URL model-swap. definitionOf = config (declared) or temporary def. spec 226 (H3):
     // also re-apply the isolated-harness wiring so a resumed harness agent stays scoped.
-    const resumeDef = this.agentDefinitionOf(name);
+    let resumeDef = this.agentDefinitionOf(name);
+    if (resumeDef) resumeDef = await this.resolveSecretEnvironment(resumeDef) as AgentEntry;
     // Security review (782f1c6): mirror restart's fuller delegated-check (`record.def?.parent` alone
     // misses a GATED agent — gated spawns always force `parent: undefined` and record `delegator`
     // instead, which never lands in `record.def`), and gate on the resumed worktree so an uncontained,

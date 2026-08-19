@@ -24,6 +24,7 @@ import {
   loadProfileAwareConfig,
   parseProfileAwareConfigSyntax,
 } from "../config/agentProfileConfigLoader.js";
+import { secretStorageKey } from "../config/agentProfileProjection.js";
 import {
   parseAgentProfileAuthorityRegistry,
   serializeAgentProfileAuthorityRegistry,
@@ -1135,6 +1136,7 @@ export class Workspace {
       onAuthRequired: (name, evidence) => this.presentAuthRequiredLaunch(name, evidence),
 
       getConfig: () => this.config,
+      resolveSecret: (key) => this.host.getSecret(key),
       getRefusedAgents: () => this.refusedAgents(),
       // t-8354ae — refuse spawn of names that exist only in the LKG snapshot while config is invalid.
       assertSpawnAllowed: (name) => this.assertNotLkgOnlySpawn(name),
@@ -5143,6 +5145,9 @@ export class Workspace {
       workspaceRoot: this.workspaceRoot,
       authorities: this.agentProfileAuthorities,
       homeDir: this.agentProfileHomeDir,
+      hasSecret: this.host.hasSecret
+        ? (key) => this.host.hasSecret!(key)
+        : undefined,
     });
     return parsed;
   }
@@ -5242,6 +5247,38 @@ export class Workspace {
       agentName,
       authority: this.profileAuthorityPort(),
     });
+  }
+
+  /** Store one machine-local credential; the return value is deliberately metadata-only. */
+  async setProfileSecret(provider: string, id: string, value: string): Promise<{ stored: true; location: "daemon secrets.json (machine-local fallback)" }> {
+    if (!/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(provider) || id.length === 0 || id.length > 512) {
+      throw new Error("secret provider and id are invalid");
+    }
+    await this.host.setSecret(secretStorageKey(provider, id), value);
+    return { stored: true, location: "daemon secrets.json (machine-local fallback)" };
+  }
+
+  /** Inventory coordinates only: stored keys and profile requirements, never values. */
+  secretInventory(): { stored: Array<{ provider: string; id: string }>; required: Array<{ agent: string; name: string; provider: string; id: string; purpose: string; present: boolean }> } {
+    const stored = (this.host.listSecretKeys?.() ?? [])
+      .filter((key) => key.startsWith("profile-secret/"))
+      .map((key) => {
+        const [, provider, ...rest] = key.split("/");
+        return { provider: provider ?? "", id: rest.join("/") };
+      });
+    const required: Array<{ agent: string; name: string; provider: string; id: string; purpose: string; present: boolean }> = [];
+    for (const agent of scanAgentRosterDirectory(this.workspaceRoot).members) {
+      const file = path.join(this.workspaceRoot, ".tachyon", "agents", agent, "agent.yml");
+      try {
+        const profile = agentProfileSchemaV1.safeParse(parseDocument(fs.readFileSync(file, "utf8")).toJSON()).data;
+        for (const [name, reference] of Object.entries(profile?.environment?.secrets ?? {})) {
+          required.push({ agent, name, provider: reference.provider, id: reference.id, purpose: reference.purpose, present: this.host.hasSecret?.(secretStorageKey(reference.provider, reference.id)) ?? false });
+        }
+      } catch {
+        // Invalid profiles are already reported by the normal config loader; inventory remains safe.
+      }
+    }
+    return { stored, required };
   }
 
   async inspectAgentProfileStudio(agentName: string): Promise<AgentProfileStudioSnapshotV1> {

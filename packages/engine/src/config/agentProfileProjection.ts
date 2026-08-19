@@ -282,6 +282,8 @@ export interface ProjectAgentProfileInput {
   authority: AgentProfileAuthorityRecord;
   workspaceDefaults?: WorkspaceProfileDefaults;
   homeDir?: string;
+  /** Machine-local vault presence, never the secret value. */
+  hasSecret?: (key: string) => boolean;
 }
 
 export type ProjectAgentProfileResult =
@@ -595,6 +597,11 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
 
 const CAPABILITY_REFERENCE_KINDS = new Set(["skill", "mcp", "hook", "pi-extension", "pi-prompt", "pi-theme", "pi-package"]);
 
+/** Stable machine-local key; provider/id remain visible in inventory while the value stays opaque. */
+export function secretStorageKey(provider: string, id: string): string {
+  return `profile-secret/${provider}/${id}`;
+}
+
 /**
  * t-afc86e — turn an agent's `worktree.setup` reference ids into the command
  * strings the runtime entry carries, or return the reasons it cannot.
@@ -745,6 +752,7 @@ function projectDefinition(
   resolved: ResolvedAgentProfile,
   nativeConfigProjection?: ResolvedAgentNativeConfigProjection,
   withheldCapabilities?: readonly WithheldCapability[],
+  hasSecret?: (key: string) => boolean,
 ): AgentEntry | string[] {
   const definition = resolved.definition;
   const errors: string[] = [];
@@ -752,11 +760,13 @@ function projectDefinition(
   if (!isAttestedRuntime(definition.runtime.adapter) || definition.runtime.executable !== definition.runtime.adapter || definition.runtime.args?.length) {
     errors.push("profile/projection: unsupported runtime projection");
   }
-  // The in-memory boundary can carry opaque references, but a runnable projection still refuses
-  // them until the existing host/provider authority has a resolver. Silently launching without a
-  // declared credential would be worse than the old flattened representation.
-  if (definition.environment?.secrets && Object.keys(definition.environment.secrets).length > 0) {
-    errors.push("profile/projection: secret references have no configured host/provider resolver");
+  // The value never enters the projection. Presence is enough to make the profile runnable; the
+  // launch authority reads the value immediately before spawn. Missing credentials remain a hard
+  // refusal, and the error names only the safe inventory coordinates.
+  for (const [name, reference] of Object.entries(definition.environment?.secrets ?? {})) {
+    if (!hasSecret || !hasSecret(secretStorageKey(reference.provider, reference.id))) {
+      errors.push(`profile/projection: missing secret '${name}' (${reference.provider}/${reference.id})`);
+    }
   }
   errors.push(...validateAgentNativeConfigPolicy(definition.runtime.adapter, definition.nativeConfig));
   if (definition.prompt?.memory) {
@@ -811,6 +821,9 @@ function projectDefinition(
   };
   if (definition.workspace?.cwd) projected.cwd = definition.workspace.cwd;
   if (definition.environment?.values) projected.environment = { values: { ...definition.environment.values } };
+  if (definition.environment?.secrets) {
+    projected.environment = { ...(projected.environment ?? {}), secrets: { ...definition.environment.secrets } };
+  }
   if (definition.workspace?.worktree?.enabled !== undefined) projected.worktree = definition.workspace.worktree.enabled;
   if (definition.workspace?.worktree?.branch) projected.branch = definition.workspace.worktree.branch;
   if (definition.workspace?.worktree?.baseRef) projected.baseRef = definition.workspace.worktree.baseRef;
@@ -945,7 +958,7 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
   // repair"), so they must not arrive as two different shapes on two different surfaces.
   const withheldCapabilities = [...captured.withheld, ...(resolved.value.withheldCapabilities ?? [])];
   warnings.push(...withheldCapabilities.map((entry) => withheldCapabilityNotice(input.agentName, entry)));
-  const definition = projectDefinition(resolved.value, nativeConfigProjection, withheldCapabilities);
+  const definition = projectDefinition(resolved.value, nativeConfigProjection, withheldCapabilities, input.hasSecret);
   if (Array.isArray(definition)) return { ok: false, errors: definition };
   return { ok: true, definition, resolved: { ...resolved.value, ...(withheldCapabilities.length ? { withheldCapabilities } : {}) }, warnings };
 }

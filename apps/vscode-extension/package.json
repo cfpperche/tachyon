@@ -206,6 +206,11 @@
         "icon": "$(add)"
       },
       {
+        "command": "tachyon.setProfileSecret",
+        "title": "Tachyon: Store profile secret",
+        "icon": "$(key)"
+      },
+      {
         "command": "tachyon.newAgentStudio",
         "title": "%command.newAgentStudio%",
         "icon": "$(add)"

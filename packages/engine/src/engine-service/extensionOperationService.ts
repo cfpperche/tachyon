@@ -100,6 +100,8 @@ export async function executeExtensionQuery(
       return json(await agentForgetPlanResult(workspace, query.agent, query.expectedRevision));
     case "agent-profile.authorizable-capabilities":
       return json(await workspace.authorizableCapabilitiesFor(query.agent));
+    case "secrets.inventory":
+      return json(workspace.secretInventory());
     case "agent-profile.studio-bundle-export": {
       const exported = await workspace.exportAgentProfileStudioBundle(query.agent, query.expectedRevision);
       return json({
@@ -412,6 +414,8 @@ export async function executeExtensionCommand(
       });
       return json(authorized);
     }
+    case "secret.set":
+      return json(await workspace.setProfileSecret(command.provider, command.id, command.value));
     case "agent-profile.studio-lifecycle":
       return json(await workspace.commitAgentProfileStudioLifecycle(command.mutation));
     case "agent-profile.studio-bundle-clone": {

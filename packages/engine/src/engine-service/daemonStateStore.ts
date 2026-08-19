@@ -57,6 +57,9 @@ export class DaemonStateStore {
     writeObject(this.secretsPath, next);
     this.secrets = next;
   }
+
+  /** Safe inventory: keys only, never values. */
+  listSecretKeys(): string[] { return Object.keys(this.secrets).sort(); }
 }
 
 function ensurePrivateDirectory(root: string): void {
