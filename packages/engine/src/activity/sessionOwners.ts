@@ -55,7 +55,7 @@ export function sessionOwnersFile(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".tachyon", "activity", "session-owners.jsonl");
 }
 
-/** The materialized recorder the SessionStart hook invokes (`node <recorder> <agent> <ownersFile>`). */
+/** The materialized recorder the SessionStart hook invokes (`node <recorder> '<json config>'`). */
 export function sessionOwnerRecorderPath(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".tachyon", "activity", "session-owner-record.cjs");
 }
@@ -380,6 +380,10 @@ function q(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
+function jsonArg(value: unknown): string {
+  return q(JSON.stringify(value));
+}
+
 /**
  * A TOML basic string. Control characters are ESCAPED rather than passed through: a `-c key=value`
  * override is parsed as TOML, and a raw newline inside a quoted value would end the value and hand the
@@ -489,12 +493,10 @@ export function buildOwnershipSettings(
   statusLine?: { type: "command"; command: string; padding?: number };
 } {
   const failureFile = persistence?.failureFile ?? opts.failureFile;
-  const failureArg = failureFile ? ` ${q(failureFile)}` : "";
-  const pointerFailureArgs = failureFile ? ` ${q(failureFile)} ${q(agent)}` : "";
-  const hooks = [{ type: "command", command: `node ${q(recorderPath)} ${q(agent)} ${q(ownersFile)}${failureArg}` }];
+  const hooks = [{ type: "command", command: `node ${q(recorderPath)} ${jsonArg({ agent, out: ownersFile, failureFile: failureFile ?? "" })}` }];
   // spec 245 — a SECOND SessionStart command emits a one-line pointer (additionalContext) to the project
   // handoff when one exists. Additive; claude unions additionalContext across hooks. Never dumps content.
-  if (pointer) hooks.push({ type: "command", command: `node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}${pointerFailureArgs}` });
+  if (pointer) hooks.push({ type: "command", command: `node ${q(pointer.pointerPath)} ${jsonArg({ path: pointer.handoffPath, failureFile: failureFile ?? "", agent })}` });
   const settings: {
     hooks: { SessionStart: OwnershipHookGroup[]; Stop?: OwnershipHookGroup[]; [event: string]: OwnershipHookGroup[] | undefined };
     skipDangerousModePermissionPrompt?: boolean;
@@ -504,10 +506,10 @@ export function buildOwnershipSettings(
   if (opts.statusLine) settings.statusLine = { ...opts.statusLine };
   const stopHooks: OwnershipHookGroup["hooks"] = [];
   if (persistence) {
-    stopHooks.push({ type: "command", command: `node ${q(persistence.stopRecorderPath)} ${q(agent)} ${q(persistence.stopFile)} ${q(persistence.failureFile)}` });
+    stopHooks.push({ type: "command", command: `node ${q(persistence.stopRecorderPath)} ${jsonArg({ agent, out: persistence.stopFile, failureFile: persistence.failureFile })}` });
   }
   if (runtimeStatus) {
-    stopHooks.push({ type: "command", command: `node ${q(runtimeStatus.publisherPath)} ${q(runtimeStatus.runtime)}${failureFile ? ` ${q(failureFile)} ${q(agent)}` : ""}` });
+    stopHooks.push({ type: "command", command: `node ${q(runtimeStatus.publisherPath)} ${q(JSON.stringify({ runtime: runtimeStatus.runtime, failureFile: failureFile ?? "", agent }))}` });
   }
   if (stopHooks.length > 0) {
     settings.hooks.Stop = [{ hooks: stopHooks }];
@@ -555,11 +557,11 @@ export function buildCodexSessionStartHookConfig(
   noticeDrain?: OwnershipHookGroup,
 ): string | string[] {
   const ownershipHooks = [
-    `{type="command",command=${tomlString(`node ${q(recorderPath)} "$TACHYON_AGENT_NAME" ${q(ownersFile)}${persistence ? ` ${q(persistence.failureFile)}` : ""}`)},statusMessage="Recording Tachyon session ownership"}`,
+    `{type="command",command=${tomlString(`node ${q(recorderPath)} ${jsonArg({ agent: "$TACHYON_AGENT_NAME", out: ownersFile, failureFile: persistence?.failureFile ?? "" })}`)},statusMessage="Recording Tachyon session ownership"}`,
   ];
   const pointerHooks: string[] = [];
   if (pointer) {
-    pointerHooks.push(`{type="command",command=${tomlString(`node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}${persistence ? ` ${q(persistence.failureFile)} "$TACHYON_AGENT_NAME"` : ""}`)},statusMessage="Checking Tachyon project handoff"}`);
+    pointerHooks.push(`{type="command",command=${tomlString(`node ${q(pointer.pointerPath)} ${jsonArg({ path: pointer.handoffPath, failureFile: persistence?.failureFile ?? "", agent: "$TACHYON_AGENT_NAME" })}`)},statusMessage="Checking Tachyon project handoff"}`);
   }
   const startEntries = [
     `{matcher="startup|resume|clear|compact",hooks=[${ownershipHooks.join(",")}]}`,
@@ -572,8 +574,8 @@ export function buildCodexSessionStartHookConfig(
   const start = `hooks.SessionStart=[${startEntries.join(",")}]`;
   const projected = renderCodexProjectedHookConfig(mergeCodexPlanToolHooks(projectedHooks, toolHooks));
   const stopHooks: string[] = [];
-  if (persistence) stopHooks.push(`{type="command",command=${tomlString(`node ${q(persistence.stopRecorderPath)} "$TACHYON_AGENT_NAME" ${q(persistence.stopFile)} ${q(persistence.failureFile)}`)},statusMessage="Recording Tachyon persistence stop"}`);
-  if (runtimeStatusPublisher) stopHooks.push(`{type="command",command=${tomlString(`node ${q(runtimeStatusPublisher)} codex`)},statusMessage="Publishing Tachyon runtime status"}`);
+  if (persistence) stopHooks.push(`{type="command",command=${tomlString(`node ${q(persistence.stopRecorderPath)} ${jsonArg({ agent: "$TACHYON_AGENT_NAME", out: persistence.stopFile, failureFile: persistence.failureFile })}`)},statusMessage="Recording Tachyon persistence stop"}`);
+  if (runtimeStatusPublisher) stopHooks.push(`{type="command",command=${tomlString(`node ${q(runtimeStatusPublisher)} ${q(JSON.stringify({ runtime: "codex", failureFile: "", agent: "$TACHYON_AGENT_NAME" }))}`)},statusMessage="Publishing Tachyon runtime status"}`);
   const drainEntry = noticeDrain
     ? `{hooks=[${noticeDrain.hooks.map((hook) =>
       `{type=${tomlString(hook.type)},command=${tomlString(hook.command)}${hook.statusMessage === undefined ? "" : `,statusMessage=${tomlString(hook.statusMessage)}`}}`).join(",")}]}`
@@ -601,7 +603,7 @@ function mergeCodexPlanToolHooks(
   toolHooks?: { recorderPath: string; file: string; failureFile: string },
 ): Record<string, OwnershipHookGroup[]> | undefined {
   if (!toolHooks) return projectedHooks;
-  const command = `node ${q(toolHooks.recorderPath)} "$TACHYON_AGENT_NAME" ${q(toolHooks.file)} ${q(toolHooks.failureFile)}`;
+  const command = `node ${q(toolHooks.recorderPath)} ${jsonArg({ agent: "$TACHYON_AGENT_NAME", out: toolHooks.file, failureFile: toolHooks.failureFile })}`;
   const merged: Record<string, OwnershipHookGroup[]> = { ...(projectedHooks ?? {}) };
   for (const event of ["PreToolUse", "PostToolUse"] as const) {
     merged[event] = [
@@ -631,10 +633,10 @@ function renderCodexProjectedHookConfig(projectedHooks?: Record<string, Ownershi
 }
 
 /** The standalone recorder. Reads the SessionStart hook payload on stdin and appends ONE ownership row.
- *  Self-contained (no Tachyon imports) — run as `node <this> <agent> <ownersFile>` by the injected hook.
+ *  Self-contained (no Tachyon imports) — run as `node <this> '<json config>'` by the injected hook.
  *  Best-effort: any failure is swallowed so a hook error can never block the claude session. */
 export const SESSION_OWNER_RECORDER_SOURCE = `// Tachyon session-ownership recorder (spec 243) — materialized; do not edit.
-// Invoked by a per-spawn claude SessionStart --settings hook: node <this> <agent> <ownersFile>
+// Invoked by a per-spawn claude SessionStart --settings hook: node <this> '<json config>'
 const fs = require("fs");
 const path = require("path");
 let raw = "";
@@ -654,9 +656,11 @@ function logFailure(file, row) {
 }
 process.stdin.on("data", (c) => { raw += c; });
 process.stdin.on("end", () => {
-  const agent = process.argv[2] || "";
-  const out = process.argv[3] || "";
-  const failureFile = process.argv[4] || "";
+  let config = {};
+  try { config = JSON.parse(process.argv[2] || "{}"); } catch (_e) {}
+  const agent = config.agent || process.argv[2] || "";
+  const out = config.out || process.argv[3] || "";
+  const failureFile = config.failureFile || process.argv[4] || "";
   try {
     if (!agent || !out) return;
     const p = JSON.parse(raw || "{}");
@@ -688,11 +692,11 @@ process.stdin.on("end", () => {
 });
 `;
 
-/** The standalone SessionStart handoff-pointer (spec 245). Run as \`node <this> <handoffPath>\`. If a non-trivial
+/** The standalone SessionStart handoff-pointer (spec 245). Run as \`node <this> '<json config>'\`. If a non-trivial
  *  project handoff exists, prints a ONE-LINE additionalContext pointer (NOT the content) so a resuming agent reads
  *  it via get_project_handoff. Silent (no output) when there is no handoff — additive, never a context dump. */
 export const SESSION_HANDOFF_POINTER_SOURCE = `// Tachyon project-handoff SessionStart pointer (spec 245) — materialized; do not edit.
-// Invoked by a per-spawn claude SessionStart --settings hook: node <this> <handoffPath>
+// Invoked by a per-spawn claude SessionStart --settings hook: node <this> '<json config>'
 const fs = require("fs");
 const path = require("path");
 ${PERSISTENCE_LEDGER_RETENTION_SOURCE}
@@ -709,10 +713,12 @@ function logFailure(file, row) {
     prunePersistenceLedger(file);
   } catch (_e) {}
 }
+let config = {};
 try {
-  const p = process.argv[2];
-  const failureFile = process.argv[3] || "";
-  const agent = process.argv[4] || "";
+  try { config = JSON.parse(process.argv[2] || "{}"); } catch (_e) {}
+  const p = config.path || process.argv[2];
+  const failureFile = config.failureFile || process.argv[3] || "";
+  const agent = config.agent || process.argv[4] || "";
   if (p) {
     const raw = fs.readFileSync(p, "utf8");
     const body = raw.replace(/^---[\\s\\S]*?\\n---\\n?/, "").trim();
@@ -727,7 +733,7 @@ try {
   }
 } catch (e) {
   if (e && e.code === "ENOENT") process.exit(0);
-  logFailure(process.argv[3] || "", { agent: process.argv[4] || "", event: "SessionStart", script: "handoff-pointer", path: process.argv[2] || "", reason: sanitizeReason(e) });
+  logFailure(config.failureFile || process.argv[3] || "", { agent: config.agent || process.argv[4] || "", event: "SessionStart", script: "handoff-pointer", path: config.path || process.argv[2] || "", reason: sanitizeReason(e) });
   /* no handoff / unreadable → no pointer */
 }
 `;
@@ -754,9 +760,11 @@ function logFailure(file, row) {
 }
 process.stdin.on("data", (c) => { raw += c; });
 process.stdin.on("end", () => {
-  const agent = process.argv[2] || "";
-  const out = process.argv[3] || "";
-  const failureFile = process.argv[4] || "";
+  let config = {};
+  try { config = JSON.parse(process.argv[2] || "{}"); } catch (_e) {}
+  const agent = config.agent || process.argv[2] || "";
+  const out = config.out || process.argv[3] || "";
+  const failureFile = config.failureFile || process.argv[4] || "";
   try {
     if (!agent || !out) return;
     let payload = {};
@@ -801,9 +809,11 @@ function logFailure(file, row) {
 }
 process.stdin.on("data", (c) => { raw += c; });
 process.stdin.on("end", () => {
-  const agent = process.argv[2] || "";
-  const out = process.argv[3] || "";
-  const failureFile = process.argv[4] || "";
+  let config = {};
+  try { config = JSON.parse(process.argv[2] || "{}"); } catch (_e) {}
+  const agent = config.agent || process.argv[2] || "";
+  const out = config.out || process.argv[3] || "";
+  const failureFile = config.failureFile || process.argv[4] || "";
   try {
     if (!agent || !out) return;
     let payload = {};
@@ -839,9 +849,11 @@ const fs = require("fs");
 const path = require("path");
 const url = process.env.${URL_ENV_VAR} || "";
 const token = process.env.${AGENT_TOKEN_ENV_VAR} || "";
-const runtime = process.argv[2] || "";
-const failureFile = process.argv[3] || "";
-const agent = process.argv[4] || "";
+let config = {};
+try { config = JSON.parse(process.argv[2] || "{}"); } catch (_e) {}
+const runtime = config.runtime || process.argv[2] || "";
+const failureFile = config.failureFile || process.argv[3] || "";
+const agent = (config.agent === "$TACHYON_AGENT_NAME" ? process.env.TACHYON_AGENT_NAME : config.agent) || process.argv[4] || "";
 ${PERSISTENCE_LEDGER_RETENTION_SOURCE}
 function sanitizeReason(e) {
   const msg = e && typeof e.message === "string" ? e.message : String(e || "unknown error");

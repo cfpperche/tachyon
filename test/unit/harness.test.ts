@@ -2057,7 +2057,7 @@ describe("HarnessManager materialize (fs)", () => {
     const cmd = settings.hooks.SessionStart[0].hooks[0].command;
     expect(settings.hooks.SessionStart[0].hooks[0].type).toBe("command");
     expect(cmd).toContain("session-owner-record.cjs");
-    expect(cmd).toContain("'claude-x'");
+    expect(cmd).toContain('"agent":"claude-x"');
     expect(cmd).toContain("session-owners.jsonl");
     // the recorder script materialized on disk + is valid JS
     const recorder = path.join(ws, ".tachyon", "activity", "session-owner-record.cjs");

@@ -220,7 +220,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     const s = buildOwnershipSettings("/ws/.tachyon/activity/rec.cjs", "claude-x", "/ws/.tachyon/activity/owners.jsonl");
     const cmd = s.hooks.SessionStart[0].hooks[0].command;
     expect(s.hooks.SessionStart[0].hooks[0].type).toBe("command");
-    expect(cmd).toBe("node '/ws/.tachyon/activity/rec.cjs' 'claude-x' '/ws/.tachyon/activity/owners.jsonl'");
+    expect(cmd).toBe("node '/ws/.tachyon/activity/rec.cjs' '{\"agent\":\"claude-x\",\"out\":\"/ws/.tachyon/activity/owners.jsonl\",\"failureFile\":\"\"}'");
   });
 
   it("t-4e286c: buildOwnershipSettings can seed Claude's dangerous-mode consent skip", () => {
@@ -237,8 +237,8 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
       failureFile: "/ws/.tachyon/activity/persistence-hooks-failures.jsonl",
     });
     const startCmds = s.hooks.SessionStart[0].hooks.map((h) => h.command);
-    expect(startCmds).toEqual(["node '/ws/.tachyon/activity/rec.cjs' 'claude-x' '/ws/.tachyon/activity/owners.jsonl' '/ws/.tachyon/activity/persistence-hooks-failures.jsonl'"]);
-    expect(s.hooks.Stop?.[0].hooks[0].command).toBe("node '/ws/.tachyon/activity/persistence-stop-record.cjs' 'claude-x' '/ws/.tachyon/activity/persistence-stop.jsonl' '/ws/.tachyon/activity/persistence-hooks-failures.jsonl'");
+    expect(startCmds).toEqual(["node '/ws/.tachyon/activity/rec.cjs' '{\"agent\":\"claude-x\",\"out\":\"/ws/.tachyon/activity/owners.jsonl\",\"failureFile\":\"/ws/.tachyon/activity/persistence-hooks-failures.jsonl\"}'"]);
+    expect(s.hooks.Stop?.[0].hooks[0].command).toBe("node '/ws/.tachyon/activity/persistence-stop-record.cjs' '{\"agent\":\"claude-x\",\"out\":\"/ws/.tachyon/activity/persistence-stop.jsonl\",\"failureFile\":\"/ws/.tachyon/activity/persistence-hooks-failures.jsonl\"}'");
   });
 
   it("spec 317: buildOwnershipSettings wires the failure ledger into all persistence hooks", () => {
@@ -343,21 +343,21 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
       {
         source: SESSION_OWNER_RECORDER_SOURCE,
         file: "session-owner-record.cjs",
-        args: (badPath: string, failureFile: string) => ["codex-x", badPath, failureFile],
+        args: (badPath: string, failureFile: string) => [JSON.stringify({ agent: "codex-x", out: badPath, failureFile })],
         input: JSON.stringify({ session_id: "s", transcript_path: "/tmp/t.jsonl", cwd: "/ws", source: "startup" }),
         match: { agent: "codex-x", event: "SessionStart", script: "session-owner-record" },
       },
       {
         source: SESSION_HANDOFF_POINTER_SOURCE,
         file: "handoff-pointer.cjs",
-        args: (badPath: string, failureFile: string) => [badPath, failureFile],
+        args: (badPath: string, failureFile: string) => [JSON.stringify({ path: badPath, failureFile, agent: "" })],
         input: "",
         match: { agent: "", event: "SessionStart", script: "handoff-pointer" },
       },
       {
         source: PERSISTENCE_STOP_RECORDER_SOURCE,
         file: "persistence-stop-record.cjs",
-        args: (badPath: string, failureFile: string) => ["codex-x", badPath, failureFile],
+        args: (badPath: string, failureFile: string) => [JSON.stringify({ agent: "codex-x", out: badPath, failureFile })],
         input: JSON.stringify({ session_id: "s", cwd: "/ws" }),
         match: { agent: "codex-x", event: "Stop", script: "persistence-stop-record" },
       },
@@ -394,7 +394,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     const sentinel = "SECRET_SENTINEL_SHOULD_NOT_LEAK";
     fs.writeFileSync(script, SESSION_OWNER_RECORDER_SOURCE);
 
-    const res = spawnSync(process.execPath, [script, "codex-x", ownersFile, failureFile], {
+    const res = spawnSync(process.execPath, [script, JSON.stringify({ agent: "codex-x", out: ownersFile, failureFile })], {
       input: `{"session_id":"${sentinel}"`,
       encoding: "utf8",
     });
@@ -422,7 +422,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     fs.mkdirSync(badOut);
     fs.mkdirSync(unwritableFailureTarget);
 
-    const res = spawnSync(process.execPath, [script, "codex-x", badOut, unwritableFailureTarget], {
+    const res = spawnSync(process.execPath, [script, JSON.stringify({ agent: "codex-x", out: badOut, failureFile: unwritableFailureTarget })], {
       input: JSON.stringify({ session_id: "s", cwd: "/ws" }),
       encoding: "utf8",
     });
@@ -458,7 +458,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
       TACHYON_AGENT_BRIDGE_URL: "http://127.0.0.1:9/mcp",
     };
     delete withoutUrlEnv[URL_ENV_VAR];
-    const withoutUrl = spawnSync(process.execPath, [script, "claude", failureFile, "claude"], {
+    const withoutUrl = spawnSync(process.execPath, [script, JSON.stringify({ runtime: "claude", failureFile, agent: "claude" })], {
       env: withoutUrlEnv,
       encoding: "utf8",
     });
@@ -468,7 +468,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     expect(missing.path).toBe("");
 
     fs.writeFileSync(failureFile, "");
-    const withUrl = spawnSync(process.execPath, [script, "claude", failureFile, "claude"], {
+    const withUrl = spawnSync(process.execPath, [script, JSON.stringify({ runtime: "claude", failureFile, agent: "claude" })], {
       env: { ...process.env, [AGENT_TOKEN_ENV_VAR]: "tok", [URL_ENV_VAR]: "http://127.0.0.1:1/mcp" },
       encoding: "utf8",
     });
@@ -493,7 +493,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("test server has no TCP address");
     try {
-      await execFileAsync(process.execPath, [script, "grok", failureFile, "gonegrok"], {
+      await execFileAsync(process.execPath, [script, JSON.stringify({ runtime: "grok", failureFile, agent: "gonegrok" })], {
         env: { ...process.env, [AGENT_TOKEN_ENV_VAR]: "revoked", [URL_ENV_VAR]: `http://127.0.0.1:${address.port}/mcp` },
       });
     } finally {
@@ -516,7 +516,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("test server has no TCP address");
     try {
-      await execFileAsync(process.execPath, [script, "claude", failureFile, "claude"], {
+      await execFileAsync(process.execPath, [script, JSON.stringify({ runtime: "claude", failureFile, agent: "claude" })], {
         env: { ...process.env, [AGENT_TOKEN_ENV_VAR]: "live", [URL_ENV_VAR]: `http://127.0.0.1:${address.port}/mcp` },
       });
     } finally {
@@ -572,7 +572,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     fs.writeFileSync(script, PERSISTENCE_STOP_RECORDER_SOURCE);
     fs.writeFileSync(stopFile, Array.from({ length: 2005 }, (_x, i) => JSON.stringify({ agent: "codex-x", event: "Stop", sessionId: `old-${i}` })).join("\n") + "\n");
 
-    const res = spawnSync(process.execPath, [script, "codex-x", stopFile, failureFile], {
+    const res = spawnSync(process.execPath, [script, JSON.stringify({ agent: "codex-x", out: stopFile, failureFile })], {
       input: JSON.stringify({ session_id: "newest", cwd: "/ws" }),
       encoding: "utf8",
     });

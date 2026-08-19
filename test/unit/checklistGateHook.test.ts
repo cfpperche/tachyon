@@ -318,10 +318,10 @@ describe("t-685a0c — the locks that are not per-runtime", () => {
     const blocked = path.join(makeTempDir("tachyon-checklist-gate-enotdir-"), "not-a-dir");
     fs.writeFileSync(blocked, "");
     const payload = JSON.stringify({ session_id: SESSION, tool_name: "Edit", tool_input: {} });
-    const unreadable = spawnSync("node", [script, "claude", path.join(blocked, "tasks"), "", "reason"], { input: payload, encoding: "utf8" });
+    const unreadable = spawnSync("node", [script, JSON.stringify({ runtime: "claude", planRoot: path.join(blocked, "tasks"), failureFile: "", reason: "reason" })], { input: payload, encoding: "utf8" });
     expect(unreadable.status).toBe(0);
     // The same script, against a root that simply has no session directory yet: that IS absence.
-    const missing = spawnSync("node", [script, "claude", path.join(makeTempDir("tachyon-checklist-gate-empty-"), "tasks"), "", "reason"], {
+    const missing = spawnSync("node", [script, JSON.stringify({ runtime: "claude", planRoot: path.join(makeTempDir("tachyon-checklist-gate-empty-"), "tasks"), failureFile: "", reason: "reason" })], {
       input: payload,
       encoding: "utf8",
     });
@@ -332,7 +332,7 @@ describe("t-685a0c — the locks that are not per-runtime", () => {
   it("a session id that could escape its ledger directory is refused a lookup, and allows", () => {
     const script = checklistGateScriptPath(fixture.root);
     const escape = JSON.stringify({ session_id: "../..", tool_name: "Edit", tool_input: {} });
-    expect(spawnSync("node", [script, "claude", claudeTasksRoot(), "", "reason"], { input: escape, encoding: "utf8" }).status).toBe(0);
+    expect(spawnSync("node", [script, JSON.stringify({ runtime: "claude", planRoot: claudeTasksRoot(), failureFile: "", reason: "reason" })], { input: escape, encoding: "utf8" }).status).toBe(0);
   });
 
   it("the refusal is ONE line — grok keeps only the first, so a second line would be lost", () => {

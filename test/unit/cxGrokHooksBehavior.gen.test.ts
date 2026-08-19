@@ -78,7 +78,7 @@ describe("container-generated delegation behavior", () => {
 
       expect(startHooks.map((h) => h.type)).toEqual(["command", "command"]);
       expect(startHooks[0].command).toContain("session-owner-record.cjs");
-      expect(startHooks[0].command).toContain("'grok-x'");
+      expect(startHooks[0].command).toContain('"agent":"grok-x"');
       expect(startHooks[0].command).toContain("session-owners.jsonl");
       expect(startHooks[1].command).toContain("handoff-pointer.cjs");
       expect(startHooks[1].command).toContain("HANDOFF.md");

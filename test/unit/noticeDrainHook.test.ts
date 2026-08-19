@@ -47,7 +47,7 @@ function runDrain(root: string, agent: string, opts: { maxNotices?: number; maxC
   try {
     execFileSync(
       process.execPath,
-      [script, agent, root, failureFile, String(opts.maxNotices ?? NOTICE_DRAIN_MAX_NOTICES), String(opts.maxChars ?? NOTICE_DRAIN_MAX_CHARS)],
+      [script, JSON.stringify({ agent, workspaceRoot: root, failureFile, maxNotices: opts.maxNotices ?? NOTICE_DRAIN_MAX_NOTICES, maxChars: opts.maxChars ?? NOTICE_DRAIN_MAX_CHARS })],
       { input: JSON.stringify({ hook_event_name: "Stop", session_id: "s1", cwd: root }), encoding: "utf8" },
     );
     return { code: 0, stderr: "" };
@@ -247,9 +247,15 @@ describe("t-b47fb2 — which runtimes the drain reaches, and on which channel", 
   });
 
   it("claude and grok bake the agent name; codex resolves it from the environment", () => {
-    expect(planNoticeDrainHook("claude", input)?.hooks[0]?.command).toContain("'coord'");
+    expect(planNoticeDrainHook("claude", input)?.hooks[0]?.command).toContain('"agent":"coord"');
     expect(planNoticeDrainHook("codex", { ...input, agentArg: NOTICE_DRAIN_CODEX_AGENT_ARG })?.hooks[0]?.command)
-      .toContain('"$TACHYON_AGENT_NAME"');
+      .toContain('"agent":"$TACHYON_AGENT_NAME"');
+  });
+
+  it("keeps the materialized command to one JSON argument after the script", () => {
+    const command = planNoticeDrainHook("claude", input)?.hooks[0]?.command ?? "";
+    expect(command.match(/'[^']*(?:'\\''[^']*)*'/g)?.length).toBe(2);
+    expect(command).toContain('"workspaceRoot":"/ws"');
   });
 
   it("rides the lifecycle Stop channel as its OWN group, beside the bookkeeping hooks", () => {
