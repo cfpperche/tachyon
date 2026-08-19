@@ -337,6 +337,72 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     expect(CODEX_TOOL_HOOK_RECORDER_SOURCE).toContain("toolInput");
   });
 
+  it("t-628ee7: materialized Codex writers resolve the agent from the environment in persisted rows", () => {
+    const tmp = makeTempDir("tachyon-hook-agent-resolution-");
+    const cases = [
+      {
+        source: SESSION_OWNER_RECORDER_SOURCE,
+        name: "session-owner-record.cjs",
+        output: "session-owners.jsonl",
+        config: (out: string, failureFile: string) => ({ agent: "$TACHYON_AGENT_NAME", out, failureFile }),
+        input: JSON.stringify({ session_id: "session-1", transcript_path: "/tmp/transcript.jsonl", cwd: "/ws" }),
+      },
+      {
+        source: SESSION_HANDOFF_POINTER_SOURCE,
+        name: "handoff-pointer.cjs",
+        output: "handoff-failures.jsonl",
+        config: (out: string, failureFile: string) => ({ agent: "$TACHYON_AGENT_NAME", path: out, failureFile }),
+        input: "",
+      },
+      {
+        source: PERSISTENCE_STOP_RECORDER_SOURCE,
+        name: "persistence-stop-record.cjs",
+        output: "persistence-stop.jsonl",
+        config: (out: string, failureFile: string) => ({ agent: "$TACHYON_AGENT_NAME", out, failureFile }),
+        input: JSON.stringify({ session_id: "session-1", turn_id: "turn-1", cwd: "/ws" }),
+      },
+      {
+        source: CODEX_TOOL_HOOK_RECORDER_SOURCE,
+        name: "codex-tool-hook-record.cjs",
+        output: "codex-tool-hooks.jsonl",
+        config: (out: string, failureFile: string) => ({ agent: "$TACHYON_AGENT_NAME", out, failureFile }),
+        input: JSON.stringify({ hook_event_name: "PostToolUse", session_id: "session-1", turn_id: "turn-1", tool_name: "update_plan", tool_input: { plan: [] } }),
+      },
+    ];
+
+    for (const expectedAgent of ["codex-test", ""]) {
+      for (const tc of cases) {
+        const dir = path.join(tmp, `${tc.name}-${expectedAgent || "empty"}`);
+        fs.mkdirSync(dir, { recursive: true });
+        const script = path.join(dir, tc.name);
+        const output = path.join(dir, tc.output);
+        const failureFile = path.join(dir, "failures.jsonl");
+        fs.writeFileSync(script, tc.source);
+        if (tc.name === "handoff-pointer.cjs") fs.mkdirSync(output);
+        const env: NodeJS.ProcessEnv = { ...process.env, TACHYON_AGENT_NAME: expectedAgent };
+        if (!expectedAgent) delete env.TACHYON_AGENT_NAME;
+
+        const result = spawnSync(process.execPath, [script, JSON.stringify(tc.config(output, failureFile))], {
+          env,
+          input: tc.input,
+          encoding: "utf8",
+        });
+
+        expect(result.status).toBe(0);
+        expect(result.stderr).toBe("");
+        if (!expectedAgent && tc.name !== "handoff-pointer.cjs") {
+          expect(fs.existsSync(output), tc.name).toBe(false);
+          continue;
+        }
+        const lines = fs.readFileSync(tc.name === "handoff-pointer.cjs" ? failureFile : output, "utf8").trim().split("\n");
+        expect(lines).toHaveLength(1);
+        const row = JSON.parse(lines[0]!);
+        expect(row.agent).toBe(expectedAgent);
+        expect(row.agent).not.toBe("$TACHYON_AGENT_NAME");
+      }
+    }
+  });
+
   it("spec 317: materialized hooks log sanitized failures and still exit cleanly", () => {
     const tmp = makeTempDir("tachyon-hook-failure-");
     const cases = [

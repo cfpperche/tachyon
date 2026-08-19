@@ -20,7 +20,7 @@ describe("container-generated delegation behavior", () => {
       fs.mkdirSync(ws, { recursive: true });
       fs.mkdirSync(cwd, { recursive: true });
       fs.writeFileSync(recorder, SESSION_OWNER_RECORDER_SOURCE);
-      execFileSync("node", [recorder, "grok-x", owners], {
+      execFileSync("node", [recorder, JSON.stringify({ agent: "grok-x", out: owners })], {
         cwd,
         env: { ...process.env, GROK_HOME: grokHome },
         input: JSON.stringify({ hookEventName: "SessionStart", sessionId: "grok-session", cwd, workspaceRoot: cwd }),

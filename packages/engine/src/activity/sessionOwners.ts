@@ -658,7 +658,9 @@ process.stdin.on("data", (c) => { raw += c; });
 process.stdin.on("end", () => {
   let config = {};
   try { config = JSON.parse(process.argv[2] || "{}"); } catch (_e) {}
-  const agent = config.agent || process.argv[2] || "";
+  const agent = config.agent === "$TACHYON_AGENT_NAME"
+    ? process.env.TACHYON_AGENT_NAME || ""
+    : config.agent || "";
   const out = config.out || process.argv[3] || "";
   const failureFile = config.failureFile || process.argv[4] || "";
   try {
@@ -714,11 +716,12 @@ function logFailure(file, row) {
   } catch (_e) {}
 }
 let config = {};
+let agent = "";
 try {
   try { config = JSON.parse(process.argv[2] || "{}"); } catch (_e) {}
   const p = config.path || process.argv[2];
   const failureFile = config.failureFile || process.argv[3] || "";
-  const agent = config.agent || process.argv[4] || "";
+  agent = config.agent === "$TACHYON_AGENT_NAME" ? process.env.TACHYON_AGENT_NAME || "" : config.agent || "";
   if (p) {
     const raw = fs.readFileSync(p, "utf8");
     const body = raw.replace(/^---[\\s\\S]*?\\n---\\n?/, "").trim();
@@ -733,7 +736,7 @@ try {
   }
 } catch (e) {
   if (e && e.code === "ENOENT") process.exit(0);
-  logFailure(config.failureFile || process.argv[3] || "", { agent: config.agent || process.argv[4] || "", event: "SessionStart", script: "handoff-pointer", path: config.path || process.argv[2] || "", reason: sanitizeReason(e) });
+  logFailure(config.failureFile || process.argv[3] || "", { agent, event: "SessionStart", script: "handoff-pointer", path: config.path || process.argv[2] || "", reason: sanitizeReason(e) });
   /* no handoff / unreadable → no pointer */
 }
 `;
@@ -762,7 +765,9 @@ process.stdin.on("data", (c) => { raw += c; });
 process.stdin.on("end", () => {
   let config = {};
   try { config = JSON.parse(process.argv[2] || "{}"); } catch (_e) {}
-  const agent = config.agent || process.argv[2] || "";
+  const agent = config.agent === "$TACHYON_AGENT_NAME"
+    ? process.env.TACHYON_AGENT_NAME || ""
+    : config.agent || "";
   const out = config.out || process.argv[3] || "";
   const failureFile = config.failureFile || process.argv[4] || "";
   try {
@@ -811,7 +816,9 @@ process.stdin.on("data", (c) => { raw += c; });
 process.stdin.on("end", () => {
   let config = {};
   try { config = JSON.parse(process.argv[2] || "{}"); } catch (_e) {}
-  const agent = config.agent || process.argv[2] || "";
+  const agent = config.agent === "$TACHYON_AGENT_NAME"
+    ? process.env.TACHYON_AGENT_NAME || ""
+    : config.agent || "";
   const out = config.out || process.argv[3] || "";
   const failureFile = config.failureFile || process.argv[4] || "";
   try {
