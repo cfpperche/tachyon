@@ -17,6 +17,7 @@ import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
 import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/RuntimeOpsPanel.js";
 import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanInboxPanel.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesPanel.js";
+import { KEYS_VIEW_TYPE, KeysPanelManager } from "./webview/KeysPanel.js";
 import type { WorktreeLandResult } from "@tachyon/webview-ui/webview/worktrees/messages";
 import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "./webview/SettingsPanel.js";
 import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "./webview/SystemPanel.js";
@@ -3079,6 +3080,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return true;
   };
 
+  const keysPanels = new KeysPanelManager(context.extensionUri, { byHash }, undefined, controlWorkspaceScope);
+  context.subscriptions.push({ dispose: () => keysPanels.dispose() });
+  const openKeysTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+    if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
+    keysPanels.open(ws.wsHash); return true;
+  };
+
   // SDD 485 D8 — every read and write is rooted in the immutable dashboard project.
   const runtimeConfigPanels = new RuntimeConfigPanelManager(
     context.extensionUri,
@@ -3130,6 +3139,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<SectionPanelState>(context, REVIEW_VIEW_TYPE, (panel, state) => reviewPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, SYSTEM_VIEW_TYPE, (panel, state) => systemPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, WORKTREES_VIEW_TYPE, (panel, state) => worktreesPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, KEYS_VIEW_TYPE, (panel, state) => keysPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_CONFIG_VIEW_TYPE, (panel, state) => runtimeConfigPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, SETTINGS_VIEW_TYPE, (panel, state) => settingsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
@@ -3532,6 +3542,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         if (resolved === "worktrees") {
           openWorktreesTab();
+          return Promise.resolve();
+        }
+        if (resolved === "keys") {
+          openKeysTab();
           return Promise.resolve();
         }
         if (resolved === "runtime-config") {

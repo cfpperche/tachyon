@@ -1971,6 +1971,25 @@
     ]
   },
   {
+    "view": "keys",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=keys&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Keys",
+    "aliases": [
+      "keys",
+      "machine keys",
+      "credentials",
+      "secrets"
+    ]
+  },
+  {
     "view": "settings",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=settings&fixture=default",

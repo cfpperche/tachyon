@@ -202,6 +202,7 @@ const WEBVIEW_APP_ROWS = [
   // SDD 485 D6 — Worktrees is filtered by buildSectionsModel's wsHash before its classified rows are
   // exposed, so it is one dashboard per project. It never had a standalone id; use a new one.
   { view: "worktrees", viewId: "tachyonWorktrees", section: "worktrees", host: "section", cardinality: "dashboard" },
+  { view: "keys", viewId: "tachyonKeys", host: "section", cardinality: "dashboard" },
   // t-5f2b5b — SDD 485 D7's Fleet app is GONE (owner decision, 2026-08-07: the sidebar Agents tab is the
   // only fleet). Its `tachyonFleet` viewType lives on only in extension.ts's dispose-only serializer loop,
   // which is where a retired id belongs — not here, where a row means "this surface still creates a panel".
