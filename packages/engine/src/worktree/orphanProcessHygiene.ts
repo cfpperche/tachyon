@@ -19,8 +19,9 @@ export interface OrphanProcessHygieneReport {
   unreadable: number;
   /**
    * t-361963 — `/proc` is Linux. A failed walk is not an empty finding. `measured: false`
-   * is the declared "instrument absent" answer; callers must not treat an empty
-   * `orphanedProcesses` list as "nothing is running".
+   * is the declared "did not measure" answer; callers must not treat an empty
+   * `orphanedProcesses` list as "nothing is running". Two reasons share this field:
+   * platform has no `/proc` (ENOENT/ENOTDIR) vs the walk failed where `/proc` exists.
    */
   measured: boolean;
   unavailableReason?: string;
@@ -47,8 +48,16 @@ const DELETED_SUFFIX = " (deleted)";
 export const PROC_UNAVAILABLE_REASON =
   "/proc is unavailable; process cwd cannot be measured on this system. Absence of a reading is not absence of processes.";
 
+export const PROC_WALK_FAILED_REASON =
+  "/proc exists but the process cwd walk failed. Absence of a reading is not absence of processes.";
+
 export const CONFIRM_LIVE_PROCESSES_EXIT =
   "Pass confirmLiveProcesses=true to remove anyway — Tachyon will not kill them.";
+
+/** Platform has no /proc — a permanent fact, not a finding. Removal must not refuse on this. */
+export function isProcInstrumentAbsent(reason: string | undefined): boolean {
+  return reason === PROC_UNAVAILABLE_REASON;
+}
 
 interface CwdProcess {
   pid: number;
@@ -83,12 +92,14 @@ function scanCwdProcesses(
   let names: string[];
   try {
     names = proc.readdirSync(procRoot);
-  } catch {
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    const instrumentAbsent = code === "ENOENT" || code === "ENOTDIR";
     return {
       scanned: 0,
       unreadable: 1,
       measured: false,
-      unavailableReason: PROC_UNAVAILABLE_REASON,
+      unavailableReason: instrumentAbsent ? PROC_UNAVAILABLE_REASON : PROC_WALK_FAILED_REASON,
       processes: [],
     };
   }
@@ -173,7 +184,7 @@ export function liveWorktreeProcessRefusal(
 ): string {
   if (!report.measured) {
     return (
-      `worktree process probe cannot measure at ${worktreePath}: ${report.unavailableReason ?? PROC_UNAVAILABLE_REASON} ` +
+      `worktree process probe cannot measure at ${worktreePath}: ${report.unavailableReason ?? PROC_WALK_FAILED_REASON} ` +
       CONFIRM_LIVE_PROCESSES_EXIT
     );
   }
@@ -184,4 +195,14 @@ export function liveWorktreeProcessRefusal(
     `worktree has ${n} live ${noun} with cwd under ${worktreePath}: ${listed}. ` +
     CONFIRM_LIVE_PROCESSES_EXIT
   );
+}
+
+/**
+ * Only a measured finding, or a failed walk on a system that has `/proc`, blocks removal.
+ * A platform without `/proc` is not a finding — callers proceed and declare they did not measure.
+ */
+export function liveWorktreeProcessBlocksRemoval(report: LiveWorktreeProcessReport): boolean {
+  if (report.processes.length > 0) return true;
+  if (report.measured) return false;
+  return !isProcInstrumentAbsent(report.unavailableReason);
 }

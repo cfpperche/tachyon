@@ -17,6 +17,10 @@ import os from "node:os";
 import path from "node:path";
 import { WorktreeManager } from "@tachyon/engine/worktree/WorktreeManager.js";
 import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
+import {
+  PROC_UNAVAILABLE_REASON,
+  PROC_WALK_FAILED_REASON,
+} from "@tachyon/engine/worktree/orphanProcessHygiene.js";
 
 describe("t-361963: probe live cwd processes before worktree remove", () => {
   const dirs: string[] = [];
@@ -125,7 +129,7 @@ describe("t-361963: probe live cwd processes before worktree remove", () => {
     expect(alive(held.pid)).toBe(true);
   });
 
-  it("unmeasured /proc is a declared refusal, not an empty finding", async () => {
+  it("a failed /proc walk (instrument exists) is a declared refusal, not an empty finding", async () => {
     const settings: TachyonConfig["settings"] = { worktree: { base } };
     const m = new WorktreeManager({
       workspaceRoot: repo,
@@ -137,7 +141,7 @@ describe("t-361963: probe live cwd processes before worktree remove", () => {
         scanned: 0,
         unreadable: 1,
         measured: false,
-        unavailableReason: "/proc is unavailable; process cwd cannot be measured on this system. Absence of a reading is not absence of processes.",
+        unavailableReason: PROC_WALK_FAILED_REASON,
         processes: [],
       }),
     });
@@ -145,12 +149,39 @@ describe("t-361963: probe live cwd processes before worktree remove", () => {
     const refused = await m.remove(record, true);
     expect(refused.removed).toBe(false);
     expect(refused.error).toMatch(/cannot measure/);
-    expect(refused.error).toMatch(/Absence of a reading is not absence of processes/);
+    expect(refused.error).toMatch(/walk failed/);
     expect(refused.error).toMatch(/confirmLiveProcesses=true/);
     expect(fs.existsSync(record.path)).toBe(true);
 
     const forced = await m.remove(record, true, { confirmLiveProcesses: true });
     expect(forced.removed).toBe(true);
+    expect(fs.existsSync(record.path)).toBe(false);
+  });
+
+  it("platform without /proc: removal proceeds and the result says it did not measure", async () => {
+    const settings: TachyonConfig["settings"] = { worktree: { base } };
+    const m = new WorktreeManager({
+      workspaceRoot: repo,
+      wsHash: "h",
+      getSettings: () => settings,
+      occupancy: async () => undefined,
+      processProbe: (worktreePath) => ({
+        worktreePath,
+        scanned: 0,
+        unreadable: 1,
+        measured: false,
+        unavailableReason: PROC_UNAVAILABLE_REASON,
+        processes: [],
+      }),
+    });
+    const { record } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
+    const result = await m.remove(record, true);
+    expect(result.removed).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result.processProbe).toEqual({
+      measured: false,
+      unavailableReason: PROC_UNAVAILABLE_REASON,
+    });
     expect(fs.existsSync(record.path)).toBe(false);
   });
 });

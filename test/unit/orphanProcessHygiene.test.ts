@@ -2,10 +2,17 @@ import { describe, expect, it } from "vitest";
 import path from "node:path";
 import {
   PROC_UNAVAILABLE_REASON,
+  PROC_WALK_FAILED_REASON,
   scanLiveWorktreeProcesses,
   scanOrphanedWorktreeProcesses,
   type OrphanProcessHygieneFs,
 } from "@tachyon/engine/worktree/orphanProcessHygiene.js";
+
+function ioError(code: string, message: string): NodeJS.ErrnoException {
+  const err = new Error(message) as NodeJS.ErrnoException;
+  err.code = code;
+  return err;
+}
 
 function procFixture(entries: Record<string, { cwd?: string; command?: string }>): OrphanProcessHygieneFs {
   return {
@@ -42,9 +49,9 @@ describe("worktree orphan process hygiene", () => {
     });
   });
 
-  it("fails visibly when proc cannot be read", () => {
+  it("declares no instrument when /proc is missing (ENOENT)", () => {
     const proc = procFixture({});
-    proc.readdirSync = () => { throw new Error("no proc"); };
+    proc.readdirSync = () => { throw ioError("ENOENT", "no proc"); };
 
     expect(scanOrphanedWorktreeProcesses("/worktrees/ws", "/proc", proc)).toEqual({
       managedRoot: "/worktrees/ws",
@@ -52,6 +59,20 @@ describe("worktree orphan process hygiene", () => {
       unreadable: 1,
       measured: false,
       unavailableReason: PROC_UNAVAILABLE_REASON,
+      orphanedProcesses: [],
+    });
+  });
+
+  it("declares a failed walk when /proc exists but cannot be read", () => {
+    const proc = procFixture({});
+    proc.readdirSync = () => { throw ioError("EACCES", "denied"); };
+
+    expect(scanOrphanedWorktreeProcesses("/worktrees/ws", "/proc", proc)).toEqual({
+      managedRoot: "/worktrees/ws",
+      scanned: 0,
+      unreadable: 1,
+      measured: false,
+      unavailableReason: PROC_WALK_FAILED_REASON,
       orphanedProcesses: [],
     });
   });
@@ -79,12 +100,12 @@ describe("t-361963: live cwd scan shares the orphan walk", () => {
     });
   });
 
-  it("declares the instrument unavailable instead of looking like an empty finding", () => {
-    const proc = procFixture({});
-    proc.readdirSync = () => { throw new Error("no proc"); };
-    const report = scanLiveWorktreeProcesses("/wt/rev", "/proc", proc);
-    expect(report.measured).toBe(false);
-    expect(report.processes).toEqual([]);
-    expect(report.unavailableReason).toBe(PROC_UNAVAILABLE_REASON);
+  it("ENOENT is instrument-absent; EACCES is a failed walk — same measured:false, different reason", () => {
+    const missing = procFixture({});
+    missing.readdirSync = () => { throw ioError("ENOENT", "no proc"); };
+    const denied = procFixture({});
+    denied.readdirSync = () => { throw ioError("EACCES", "denied"); };
+    expect(scanLiveWorktreeProcesses("/wt/rev", "/proc", missing).unavailableReason).toBe(PROC_UNAVAILABLE_REASON);
+    expect(scanLiveWorktreeProcesses("/wt/rev", "/proc", denied).unavailableReason).toBe(PROC_WALK_FAILED_REASON);
   });
 });

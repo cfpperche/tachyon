@@ -23,6 +23,7 @@ import type { WorktreeCreatePhase } from "./worktreeCreateSession.js";
 import type { WorktreeRecord } from "./worktreeRecord.js";
 import { resolveGitBinary, gitNotFoundError } from "./gitBinary.js";
 import {
+  liveWorktreeProcessBlocksRemoval,
   liveWorktreeProcessRefusal,
   scanLiveWorktreeProcesses,
   type LiveWorktreeProcessReport,
@@ -305,6 +306,14 @@ export interface WorktreeRemovalResult {
    * own a durable claim on this checkout may treat it as done; everyone else keeps failing.
    */
   absent?: WorktreeAbsence;
+  /**
+   * t-361963 — what the cwd probe knew at the decision. Present once the probe ran.
+   * `measured: false` with the no-/proc reason is a declaration, not a refusal.
+   */
+  processProbe?: {
+    measured: boolean;
+    unavailableReason?: string;
+  };
 }
 
 export type WorktreeOccupancy = { state: "live" | "pending" | "dirty"; agent: string; cwd: string };
@@ -1077,8 +1086,9 @@ export class WorktreeManager {
        */
       refuseUnlessForceIfDirty?: boolean;
       /**
-       * t-361963 — remove even if the /proc probe found (or could not measure)
-       * processes with cwd under this checkout. Does not kill anyone.
+       * t-361963 — remove even if the /proc probe found live cwd descendants,
+       * or if `/proc` exists and the walk failed. Does not kill anyone.
+       * A platform without `/proc` does not need this flag.
        */
       confirmLiveProcesses?: boolean;
     },
@@ -1119,19 +1129,27 @@ export class WorktreeManager {
         };
       }
       // t-361963 — occupancy only saw the remembered pane pid. This is the rest, using the
-      // same /proc walk as worktree_processes, before git deletes the directory. An
-      // unmeasured probe is not an empty finding. confirmLiveProcesses names the exit
-      // and never kills.
-      if (this.exists(rec.path) && opts?.confirmLiveProcesses !== true) {
+      // same /proc walk as worktree_processes, before git deletes the directory.
+      // Only a measured finding (or a failed walk where /proc exists) refuses.
+      // A platform without /proc proceeds and the result declares it did not measure.
+      let processProbe: WorktreeRemovalResult["processProbe"];
+      if (this.exists(rec.path)) {
         const report = (this.opts.processProbe ?? scanLiveWorktreeProcesses)(rec.path);
-        if (!report.measured || report.processes.length > 0) {
+        processProbe = {
+          measured: report.measured,
+          ...(report.unavailableReason ? { unavailableReason: report.unavailableReason } : {}),
+        };
+        if (opts?.confirmLiveProcesses !== true && liveWorktreeProcessBlocksRemoval(report)) {
           return {
             removed: false,
             branchDeleted: false,
             error: liveWorktreeProcessRefusal(rec.path, report),
+            processProbe,
           };
         }
       }
+      const withProbe = <T extends WorktreeRemovalResult>(result: T): T =>
+        processProbe ? { ...result, processProbe } : result;
       // Legacy default force=true (opts omitted). Managed Bridge passes force explicitly.
       let force = opts?.force !== false;
       if (opts?.refuseUnlessForceIfDirty && this.exists(rec.path)) {
@@ -1174,9 +1192,9 @@ export class WorktreeManager {
         // message: `probeAbsence` re-measures the repository and the disk, so a lock, a permission
         // error or a dirty refusal still fails exactly as before.
         const absent = await this.probeAbsence(rec.path);
-        if (!absent) return { removed: false, branchDeleted: false, error };
+        if (!absent) return withProbe({ removed: false, branchDeleted: false, error });
         await this.git(gitArgs.prune(), this.opts.workspaceRoot);
-        return { removed: false, branchDeleted: false, error, absent };
+        return withProbe({ removed: false, branchDeleted: false, error, absent });
       }
       let branchDeleted = false;
       if (deleteBranch && rec.tachyonCreatedBranch) {
@@ -1187,7 +1205,7 @@ export class WorktreeManager {
         branchDeleted = del.code === 0;
       }
       await this.git(gitArgs.prune(), this.opts.workspaceRoot);
-      return { removed: true, branchDeleted };
+      return withProbe({ removed: true, branchDeleted });
     });
   }
 
