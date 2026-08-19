@@ -6,8 +6,8 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "x-removed-agents": {
-      "description": "Removed legacy shape retained outside the schema's authored properties. Canonical agents live at .tachyon/agents/<name>/agent.yml.",
+    "terminals": {
+      "description": "Terminals (servers, shells, builds) keyed by name (spec 215). May be empty or omitted. Each entry accepts only the fields consumed by the terminal declaration reader.",
       "type": "object",
       "propertyNames": {
         "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
@@ -20,7 +20,7 @@
         ],
         "properties": {
           "cmd": {
-            "description": "Shell command that runs the agent.",
+            "description": "Shell command that runs the terminal.",
             "type": "string",
             "minLength": 1
           },
@@ -29,19 +29,19 @@
             "type": "string"
           },
           "env": {
-            "description": "Extra environment variables for the agent's session. For Pi runtime commands, PI_CODING_AGENT_DIR and PI_CODING_AGENT_SESSION_DIR are Tachyon-owned private-home boundaries and must not be set here.",
+            "description": "Extra environment variables for the terminal session. For Pi runtime commands, PI_CODING_AGENT_DIR and PI_CODING_AGENT_SESSION_DIR are Tachyon-owned private-home boundaries and must not be set here.",
             "type": "object",
             "additionalProperties": {
               "type": "string"
             }
           },
           "autostart": {
-            "description": "Start this agent when Tachyon starts.",
+            "description": "Start this terminal when Tachyon starts.",
             "type": "boolean",
             "default": false
           },
           "watch": {
-            "description": "Glob(s) — restart the agent when a matching file changes.",
+            "description": "Glob(s) — restart the terminal when a matching file changes.",
             "oneOf": [
               {
                 "type": "string",
@@ -57,16 +57,8 @@
               }
             ]
           },
-          "restart": {
-            "description": "Crash policy: on-crash auto-restarts when the process dies with a non-zero exit (backoff 2s/4s/8s, max 3 per minute). Clean exits (0) never auto-restart.",
-            "enum": [
-              "never",
-              "on-crash"
-            ],
-            "default": "never"
-          },
           "attention": {
-            "description": "Needs-you detection. Defaults: on for kind=agent, off for kind=terminal. Object form tunes the idle threshold and adds prompt patterns.",
+            "description": "Needs-you detection. Defaults off for terminals. Object form tunes the idle threshold and adds prompt patterns.",
             "oneOf": [
               {
                 "type": "boolean"
@@ -95,245 +87,15 @@
               }
             ]
           },
-          "kind": {
-            "description": "agent = AI CLI (claude, codex, ...); terminal = server/shell/build. Default: inferred from cmd. Drives sidebar grouping and attention defaults.",
+          "restart": {
+            "description": "Crash policy: on-crash auto-restarts when the process dies with a non-zero exit (backoff 2s/4s/8s, max 3 per minute). Clean exits (0) never auto-restart.",
             "enum": [
-              "agent",
-              "terminal"
-            ]
-          },
-          "instructions": {
-            "description": "Persistent operational specialization for this agent. Distinct from identity and the current execution task.",
-            "type": "string"
-          },
-          "worktree": {
-            "description": "Run this agent in its own git worktree + branch (opt-in, off by default). This provides a separate checkout and working directory; it does not confine writes.",
-            "type": "boolean",
-            "default": false
-          },
-          "branch": {
-            "description": "Literal branch name for this agent's worktree (overrides the global settings.worktree.branch template). Validated via git check-ref-format at creation.",
-            "type": "string"
-          },
-          "baseRef": {
-            "description": "Git ref a fresh agent worktree branches from. Invalid refs warn and fall back to the primary checkout's HEAD.",
-            "type": "string",
-            "minLength": 1
-          },
-          "worktreeSetup": {
-            "description": "Command(s) run ONCE in the fresh worktree before the agent starts (sequential, stop-on-failure). $TACHYON_WORKSPACE_ROOT and $TACHYON_WORKTREE_ROOT are set.",
-            "oneOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "minItems": 1
-              }
-            ]
-          },
-          "harness": {
-            "description": "Isolated harness (spec 226/228/298/311/406): agent-scoped resources materialized into a private config home so they never leak to sibling agents. Supported: claude, codex, opencode, grok, hermes, pi (a harness on another runtime/terminal entry is a config error). Claude supports rules/skills/hooks/MCP; Codex supports instructions/skills/hooks/MCP; OpenCode/Grok/Hermes support mcp/skills/hooks (and empty harness:{} for private home + Bridge). Pi supports only workspace-local extensions/skills/prompts/themes/package directories, requires a non-empty resource list, and rejects inherit:none; its exact resource mode disables ambient Pi discovery and never fetches or installs packages. Tachyon owns runtime config-home and resource plumbing. NOTE: cross-field rules are enforced by the loadConfig validator (not expressible in pure JSON Schema).",
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "inherit": {
-                "description": "Whether to seed the workspace base before overlaying. 'none' = clean slate (sees ONLY the declared config); 'workspace' = the workspace base plus declared resources. 'global' is not supported. Default: workspace. Pi resource harnesses accept only workspace (or omission), not none.",
-                "enum": [
-                  "none",
-                  "workspace"
-                ]
-              },
-              "mcp": {
-                "description": "MCP servers scoped to THIS agent only (stdio shape). Each env value must be an exact ${VAR} reference — never a literal — so no secret is written to disk; claude expands it from the agent's process env at spawn.",
-                "type": "object",
-                "minProperties": 1,
-                "propertyNames": {
-                  "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
-                },
-                "additionalProperties": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "command"
-                  ],
-                  "properties": {
-                    "command": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "args": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "env": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "type": "string",
-                        "pattern": "^\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}$"
-                      }
-                    }
-                  }
-                }
-              },
-              "hooks": {
-                "description": "spec 228/311 — runtime-native hooks. Claude: settings.json hooks object. Codex: hooks.<Event> config.toml object. Runtime validates the detailed event schema.",
-                "type": "object",
-                "minProperties": 1
-              },
-              "rules": {
-                "description": "spec 228 — Claude-only rule file path(s), concatenated into the agent's private CLAUDE.md (its own behavioral context). Workspace-relative; a single string or a non-empty list. Codex uses instructions instead.",
-                "oneOf": [
-                  {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "minItems": 1
-                  }
-                ]
-              },
-              "instructions": {
-                "description": "spec 311 — Codex-only instruction file path(s), concatenated into the agent's private CODEX_HOME/AGENTS.md. Workspace-relative; a single string or a non-empty list.",
-                "oneOf": [
-                  {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "minItems": 1
-                  }
-                ]
-              },
-              "skills": {
-                "description": "spec 228/311/406 — skill dir path(s) (each holding a SKILL.md), copied into the agent's private home. Workspace-relative; a single string or a non-empty list.",
-                "oneOf": [
-                  {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "minItems": 1
-                  }
-                ]
-              },
-              "extensions": {
-                "description": "spec 406 — Pi-only extension file or directory paths. Workspace-relative local paths only; a single string or non-empty list. Remote npm/git/URL sources are rejected.",
-                "oneOf": [
-                  {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "minItems": 1
-                  }
-                ]
-              },
-              "prompts": {
-                "description": "spec 406 — Pi-only prompt-template .md file paths. Workspace-relative local paths only; a single string or non-empty list.",
-                "oneOf": [
-                  {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "minItems": 1
-                  }
-                ]
-              },
-              "themes": {
-                "description": "spec 406 — Pi-only theme .json file paths. Workspace-relative local paths only; a single string or non-empty list.",
-                "oneOf": [
-                  {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "minItems": 1
-                  }
-                ]
-              },
-              "packages": {
-                "description": "spec 406 — Pi-only workspace-local package directory paths. Tachyon snapshots these directories and does not fetch, install, or update npm/git packages. A single string or non-empty list.",
-                "oneOf": [
-                  {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "minItems": 1
-                  }
-                ]
-              }
-            }
-          },
-          "isolate": {
-            "description": "Deprecated read compatibility for legacy private transcript homes. Existing isolate: transcript entries still load with a migration warning; new Claude configs should use harness: {}, while Codex is private-home by default.",
-            "deprecated": true,
-            "enum": [
-              "transcript"
-            ]
-          },
-          "subagents": {
-            "description": "Agents this agent declares as direct children for durable roster ownership. References must name agent entries; terminals, cycles, duplicate owners, nesting, and dangling names are rejected or dropped with warnings by the loader.",
-            "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
-            },
-            "minItems": 1
+              "never",
+              "on-crash"
+            ],
+            "default": "never"
           }
         }
-      }
-    },
-    "terminals": {
-      "description": "Terminals (servers, shells, builds) keyed by name (spec 215). May be empty or omitted. Same entry shape as an agent, but kind is always 'terminal' (so 'kind' and 'instructions' aren't meaningful here — loadConfig rejects them) and attention defaults off. The engine treats these identically to an agents: entry with kind: terminal — this block just reads more naturally.",
-      "type": "object",
-      "propertyNames": {
-        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
-      },
-      "additionalProperties": {
-          "$ref": "#/properties/x-removed-agents/additionalProperties"
       }
     },
     "layouts": {
