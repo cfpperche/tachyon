@@ -103,7 +103,7 @@ export function checklistGateRefusal(runtime: ChecklistGateRuntime): string {
   return (
     "[tachyon] settings.checklist requires a written plan for this task before the first change. " +
     `${HOW_TO_WRITE[runtime]} ` +
-    "Reads and the plan tool always pass; this blocks the first change only, never your delivery."
+    "Shell commands count as changes, including reads; the gate applies whenever the required plan is absent."
   );
 }
 
