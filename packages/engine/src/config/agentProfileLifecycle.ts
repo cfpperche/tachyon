@@ -25,7 +25,7 @@ import {
   type AgentProfileAuthorityPort,
 } from "./agentProfileTransactions.js";
 import { AgentProfileRefusal } from "@tachyon/shared/config/agentProfileRefusal.js";
-import { closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAgentProfile, verifiedDescriptorPath, type CanonicalAgentProfileSource } from "./agentProfileReader.js";
+import { AgentProfileReadError, closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAgentProfile, verifiedDescriptorPath, type CanonicalAgentProfileSource } from "./agentProfileReader.js";
 import {
   WORKSPACE_SETUP_PATH,
   WORKSPACE_SETUP_REFERENCE_ID,
@@ -508,6 +508,7 @@ function savedAgentProfile(workspaceRoot: string, agentName: string): {
   sha256: string;
   workspaceCommands?: { setup?: string[] };
   persistentInstructions?: string;
+  withheldDocuments?: NonNullable<AgentProfileLifecycleSnapshot["withheldDocuments"]>;
 } | undefined {
   const source = readCanonicalAgentProfile(workspaceRoot, agentName);
   if (!source) return undefined;
@@ -520,15 +521,44 @@ function savedAgentProfile(workspaceRoot: string, agentName: string): {
     // produced `source.sha256`. Reading them later, from a path, would be a second open against a
     // directory that may have moved underneath — the exact race `readAgentProfileReference`'s
     // fd-relative walk exists to close.
-    const workspaceCommands = readStudioWorkspaceCommands(source, parsed.data);
+    const withheldDocuments: NonNullable<AgentProfileLifecycleSnapshot["withheldDocuments"]> = [];
+    const readOwnedDocument = <T>(referenceId: string | undefined, read: () => T): T | undefined => {
+      try {
+        return read();
+      } catch (error) {
+        if (!(error instanceof AgentProfileReadError) || error.code !== "profile/digest-mismatch"
+          || !referenceId || !error.expectedSha256 || !error.consumedSha256) throw error;
+        const reference = parsed.data.references?.find((candidate) => candidate.id === referenceId);
+        if (!reference) throw error;
+        withheldDocuments.push({
+          referenceId,
+          name: path.posix.basename(reference.path),
+          kind: reference.kind,
+          path: reference.path,
+          code: "profile/digest-mismatch",
+          expectedSha256: error.expectedSha256,
+          consumedSha256: error.consumedSha256,
+          detail: error.message,
+        });
+        return undefined;
+      }
+    };
+    const workspaceCommands = readOwnedDocument(
+      parsed.data.workspace?.worktree?.setup?.length === 1 ? parsed.data.workspace.worktree.setup[0] : undefined,
+      () => readStudioWorkspaceCommands(source, parsed.data),
+    );
     // t-d48775 — and the instructions document, for the same reason and under the same open handle.
-    const persistentInstructions = readStudioPersistentInstructions(source, parsed.data);
+    const persistentInstructions = readOwnedDocument(
+      parsed.data.prompt?.instructions,
+      () => readStudioPersistentInstructions(source, parsed.data),
+    );
     return {
       profile: parsed.data,
       text: source.text,
       sha256: source.sha256,
       ...(workspaceCommands ? { workspaceCommands } : {}),
       ...(persistentInstructions !== undefined ? { persistentInstructions } : {}),
+      ...(withheldDocuments.length > 0 ? { withheldDocuments } : {}),
     };
   } finally {
     closeCanonicalAgentProfile(source);
@@ -625,6 +655,7 @@ export async function inspectAgentProfileLifecycle(input: {
     profile: structuredClone(canonical.profile),
     ...(canonical.workspaceCommands ? { workspaceCommands: structuredClone(canonical.workspaceCommands) } : {}),
     ...(canonical.persistentInstructions !== undefined ? { persistentInstructions: canonical.persistentInstructions } : {}),
+    ...(canonical.withheldDocuments?.length ? { withheldDocuments: structuredClone(canonical.withheldDocuments) } : {}),
     provenance: {
       canonical: { scope: "profile", writable: true, sha256: canonical.sha256 },
       authority: {

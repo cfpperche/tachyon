@@ -611,8 +611,10 @@ function materializeWorkspaceCommands(
   const definition = resolved.definition;
   const errors: string[] = [];
   const byId = new Map(resolved.references.map((reference) => [reference.id, reference]));
+  const withheld = new Set((resolved.withheldCapabilities ?? []).map((entry) => entry.referenceId));
   const textOf = (id: string, kind: "worktree-setup", field: string): string | undefined => {
     const reference = byId.get(id);
+    if (!reference && withheld.has(id)) return undefined;
     if (!reference || reference.kind !== kind) {
       errors.push(`profile/projection: ${field} names no pinned '${kind}' reference`);
       return undefined;
@@ -667,6 +669,7 @@ function materializePersistentInstructions(
   const id = resolved.definition.prompt?.instructions;
   if (!id) return {};
   const reference = resolved.references.find((candidate) => candidate.id === id);
+  if (!reference && resolved.withheldCapabilities?.some((entry) => entry.referenceId === id)) return {};
   if (!reference || reference.kind !== "instructions" || reference.scope !== "profile"
     || reference.owner !== resolved.agentId || reference.mode !== "pinned" || !reference.sha256
     || reference.path !== PERSISTENT_INSTRUCTIONS_FILE_NAME) {

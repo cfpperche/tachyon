@@ -487,12 +487,15 @@ function resolveReferences(
           referenceMode: reference.mode,
         });
       } catch (error) {
-        // t-b0cfd4 — a CAPABILITY that cannot be captured is withheld by name; anything else still
-        // fails the profile. The distinction is what the failure costs: a capability is one tool the
-        // agent will not have, and the agent without it is still the agent. A prompt lane, an
-        // A setup reference is part of what the agent IS, so resolving it
-        // wrong would produce a different agent rather than a smaller one.
+        // A digest mismatch means the pin did its job: the changed bytes did not cross. The refusal
+        // therefore belongs to that declared document, regardless of whether it is tooling, setup or
+        // instructions. Other document read failures remain profile failures; only the exact
+        // approved-vs-consumed decision has the human Reauthorize exit.
         if (CAPABILITY_REFERENCE_KINDS.has(reference.kind) && error instanceof AgentCapabilitySourceError) {
+          withheld.push(withheldFrom(reference, error));
+          continue;
+        }
+        if (error instanceof AgentProfileReadError && error.code === "profile/digest-mismatch") {
           withheld.push(withheldFrom(reference, error));
           continue;
         }
@@ -542,7 +545,7 @@ function resolveReferences(
 }
 
 /** t-b0cfd4 — the failure, restated as what the human lost and what repairs it. */
-export function withheldFrom(reference: AgentProfileReferenceV1, error: AgentCapabilitySourceError): WithheldCapability {
+export function withheldFrom(reference: AgentProfileReferenceV1, error: AgentCapabilitySourceError | AgentProfileReadError): WithheldCapability {
   return {
     referenceId: reference.id,
     name: path.posix.basename(reference.path),

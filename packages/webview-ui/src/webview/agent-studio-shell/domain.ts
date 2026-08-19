@@ -62,6 +62,7 @@ export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   "forgetAgentProfile",
   "setAgentProfileSubagents",
   "setAgentProfileProposeGrant",
+  "reauthorizeProfileDocument",
   "exportSavedAgentProfileBundle",
   "cloneSavedAgentProfileBundle",
   "importSavedAgentProfileBundle",
@@ -109,7 +110,8 @@ export type AgentStudioLifecycleActionMessage =
   /** t-4c113c — the owner's full declared-subagents list; an empty list clears the declaration. */
   | { type: "setAgentProfileSubagents"; agent: string; expectedRevision: string; subagents: string[] }
   /** t-3bde32 — grant or revoke this agent's authority to PROPOSE Saved Agents for human review. */
-  | { type: "setAgentProfileProposeGrant"; agent: string; expectedRevision: string; granted: boolean };
+  | { type: "setAgentProfileProposeGrant"; agent: string; expectedRevision: string; granted: boolean }
+  | { type: "reauthorizeProfileDocument"; agent: string; expectedRevision: string; referenceId: string };
 
 export type AgentStudioBundleActionMessage =
   | { type: "exportSavedAgentProfileBundle"; agent: string; expectedRevision: string }
@@ -211,6 +213,14 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
       && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
       && typeof value.granted === "boolean"
       ? { type: "setAgentProfileProposeGrant", agent: value.agent, expectedRevision: value.expectedRevision, granted: value.granted }
+      : undefined;
+  }
+  if (value.type === "reauthorizeProfileDocument") {
+    return exactKeys(value, ["type", "agent", "expectedRevision", "referenceId"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
+      && typeof value.referenceId === "string" && SKILL_NAME_RE.test(value.referenceId)
+      ? { type: "reauthorizeProfileDocument", agent: value.agent, expectedRevision: value.expectedRevision, referenceId: value.referenceId }
       : undefined;
   }
   if (typeof value.type !== "string" || !AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES.includes(value.type as never)
@@ -433,6 +443,8 @@ export interface AgentProfileLabels {
   runtimeReasoningEffort: string;
   runtimeServiceTier: string;
   runtimeDefault: string;
+  withheldDocumentChanged: string;
+  reauthorize: string;
   canonicalTrustHelp: string;
   worktreeBaseRefLabel: string;
   worktreeBaseRefPlaceholder: string;
@@ -518,6 +530,8 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     runtimeReasoningEffort: t("Reasoning effort"),
     runtimeServiceTier: t("Service tier"),
     runtimeDefault: t("Runtime default"),
+    withheldDocumentChanged: t("content changed since authorization and is withheld"),
+    reauthorize: t("Reauthorize"),
     canonicalTrustHelp: t("Enabling or starting this canonical agent authorizes native folder trust only for the current workspace and effective working directory. General approvals, sandbox policy, and arbitrary hook trust stay unchanged."),
     worktreeBaseRefLabel: t("Start from (blank = primary HEAD)"),
     worktreeBaseRefPlaceholder: t("main or release/next"),

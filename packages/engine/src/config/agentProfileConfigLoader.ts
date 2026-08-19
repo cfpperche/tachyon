@@ -5,6 +5,7 @@ import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import { agentRosterDirectoryWarning, scanAgentRosterDirectory } from "./agentRosterDirectory.js";
 import { projectCanonicalAgentProfile } from "./agentProfileProjection.js";
 import { LEGACY_TERMINALS_BLOCK_WARNING, scanTerminalDeclarations } from "./terminalDeclarations.js";
+import { withheldCapabilityNotice } from "./withheldCapability.js";
 
 export type AgentConfigSource =
   | { mode: "terminal"; source: string }
@@ -168,7 +169,11 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
       continue;
     }
     projected.set(agentName, result.definition);
-    profileWarnings.push(...result.warnings.map((warning) => `agents.${agentName}.profile: ${warning}`));
+    const withheldNotices = new Set((result.definition.profileWithheldCapabilities ?? [])
+      .map((withheld) => withheldCapabilityNotice(agentName, withheld)));
+    profileWarnings.push(...result.warnings.map((warning) =>
+      withheldNotices.has(warning) ? warning : `agents.${agentName}.profile: ${warning}`,
+    ));
     profileSources[agentName] = {
       mode: "profile",
       source: home,

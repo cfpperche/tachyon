@@ -109,6 +109,16 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
     });
     return;
   }
+  if (m.type === "reauthorizeProfileDocument") {
+    void runAgentProfileAction(ws, ctx, {
+      schemaVersion: 1,
+      operation: "reauthorize-document",
+      agentName: agent,
+      expectedRevision: m.expectedRevision,
+      referenceId: m.referenceId,
+    });
+    return;
+  }
   if (m.type === "planAgentProfileForget") { void planForget(ws, ctx, agent, m.expectedRevision); return; }
   if (m.type === "forgetAgentProfile") {
     void runAgentProfileAction(ws, ctx, {

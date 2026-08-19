@@ -30,6 +30,10 @@
 export const AGENT_PROFILE_REFUSAL_CODES = [
   /** The profile moved under the human between reading it and acting on it. */
   "agent-profile/revision-conflict",
+  /** The named document is no longer in the withheld set shown by Studio. */
+  "agent-profile/document-not-withheld",
+  /** The named entry is not a pinned profile-local document and cannot use this repair door. */
+  "agent-profile/document-not-reauthorizable",
   /**
    * t-746f0f — the agent is running, and this mutation is one a live session would diverge from.
    *

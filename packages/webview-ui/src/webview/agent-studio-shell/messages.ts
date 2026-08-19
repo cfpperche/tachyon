@@ -49,6 +49,8 @@ export const refreshAgentProfileMessage = (agent: string) =>
   envelope({ type: "refreshAgentProfile" as const, agent });
 export const setAgentProfileEnabledMessage = (agent: string, expectedRevision: string, enabled: boolean) =>
   envelope({ type: "setAgentProfileEnabled" as const, agent, expectedRevision, enabled });
+export const reauthorizeProfileDocumentMessage = (agent: string, expectedRevision: string, referenceId: string) =>
+  envelope({ type: "reauthorizeProfileDocument" as const, agent, expectedRevision, referenceId });
 export const renameAgentProfileMessage = (agent: string, expectedRevision: string, newName: string) =>
   envelope({ type: "renameAgentProfile" as const, agent, expectedRevision, newName });
 /** t-e722ce — webview → host: compute the read-only forget plan for this profile revision. */
@@ -67,7 +69,7 @@ export const cloneSavedAgentProfileBundleMessage = (agent: string, expectedRevis
 export const importSavedAgentProfileBundleMessage = (agent: string, destinationAgentName: string, contentBase64: string) => envelope({ type: "importSavedAgentProfileBundle" as const, agent, destinationAgentName, contentBase64 });
 
 export const agentProfileSnapshotMessage = (
-  action: "refresh" | "set-enabled" | "rename" | "set-subagents" | "set-propose-saved-agent-grant",
+  action: "refresh" | "set-enabled" | "rename" | "set-subagents" | "set-propose-saved-agent-grant" | "reauthorize-document",
   snapshot: AgentProfileStudioSnapshotV1,
 ) => envelope({ type: "agentProfileSnapshot" as const, action, snapshot });
 export const agentProfileOwnershipMessage = (agent: string, ownership: AgentOwnershipViewV1) =>
