@@ -129,22 +129,13 @@ const TERMINAL_PROBE_VALUES: Record<string, unknown> = {
   watch: ["src/**", "package.json"],
   restart: "on-crash",
   attention: { enabled: true, silenceSec: 30, patterns: ["waiting for approval"] },
-  kind: "terminal",
-  instructions: "you are a reviewer",
-  worktree: true,
-  branch: "feature/x",
-  baseRef: "release/next",
-  worktreeSetup: "npm ci",
-  harness: { mcp: {} },
-  isolate: "transcript",
-  subagents: ["child"],
 };
 
 /** Declared entry keys, read from the shipped schema rather than from a list in this file. */
 function schemaEntryKeys(): string[] {
   const entry = (schema as unknown as {
-    properties: { "x-removed-agents": { additionalProperties: { properties: Record<string, unknown> } } };
-  }).properties["x-removed-agents"].additionalProperties.properties;
+    properties: { terminals: { additionalProperties: { properties: Record<string, unknown> } } };
+  }).properties.terminals.additionalProperties.properties;
   return Object.keys(entry);
 }
 
@@ -165,11 +156,8 @@ describe("t-26ba8f — the family: a no-op Studio save is the identity on the lo
     // exists to catch, so it is asserted rather than trusted.
     //
     // Equality in BOTH directions, and no exemption list: a probe for a key the schema no longer
-    // declares is the same rot from the other end, and there is no such thing as a key that cannot be
-    // probed — the probe measures whether the loader ACCEPTS the key, and a refusal is a valid answer
-    // (it is the answer `kind`, `instructions`, `worktree`, `branch`, `worktreeSetup`
-    // and `harness` already give). Adding a key to `tachyon.schema.json` must mean deciding here what
-    // a terminal does with it.
+    // declares is the same rot from the other end. Adding a key to `tachyon.schema.json` must mean
+    // deciding here what a terminal does with it.
     expect(Object.keys(TERMINAL_PROBE_VALUES).sort()).toEqual(schemaEntryKeys().sort());
   });
 

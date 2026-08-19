@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
+import Ajv from "ajv";
 import { describe, expect, it } from "vitest";
-import { KNOWN_AGENT_ENTRY_KEYS, KNOWN_SETTINGS_KEYS, KNOWN_TOP_LEVEL_KEYS } from "@tachyon/engine/config/loadConfig.js";
+import { KNOWN_SETTINGS_KEYS, KNOWN_TOP_LEVEL_KEYS } from "@tachyon/engine/config/loadConfig.js";
 
 interface SchemaNode {
   type?: string;
@@ -25,6 +26,17 @@ interface SchemaNode {
 
 const schemaPath = path.join(process.cwd(), "apps", "vscode-extension", "tachyon.schema.json");
 const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as SchemaNode;
+const validateConfig = new Ajv({ allErrors: true }).compile(schema);
+
+const validTerminal = {
+  cmd: "npm run dev",
+  cwd: ".",
+  env: { NODE_ENV: "test" },
+  autostart: false,
+  watch: ["src/**"],
+  attention: { enabled: false, silenceSec: 5, patterns: ["ready"] },
+  restart: "on-crash",
+};
 
 describe("tachyon.schema.json — settings.companion", () => {
   it("publishes tabTools, allowedHosts, and lanAccess for Companion shells", () => {
@@ -127,15 +139,29 @@ describe("tachyon.schema.json — the parser and the editor publish the same key
    * did not know this file existed.
    */
   it("publishes exactly the top-level and settings keys parseConfig knows", () => {
-    expect(Object.keys(schema.properties ?? {}).filter((key) => key !== "x-removed-agents").sort()).toEqual([...KNOWN_TOP_LEVEL_KEYS].sort());
+    expect(Object.keys(schema.properties ?? {}).sort()).toEqual([...KNOWN_TOP_LEVEL_KEYS].sort());
     expect(Object.keys(schema.properties?.settings?.properties ?? {}).sort()).toEqual([...KNOWN_SETTINGS_KEYS].sort());
   });
 
-  it("publishes exactly the managed-entry keys parseConfig knows", () => {
-    const entry = schema.properties?.["x-removed-agents"]?.additionalProperties;
+  it("publishes exactly the seven terminal keys parseTerminalDeclaration knows", () => {
+    const entry = schema.properties?.terminals?.additionalProperties;
     expect(typeof entry).toBe("object");
     expect(Object.keys(typeof entry === "object" ? entry.properties ?? {} : {}).sort())
-      .toEqual([...KNOWN_AGENT_ENTRY_KEYS].sort());
+      .toEqual(["attention", "autostart", "cmd", "cwd", "env", "restart", "watch"]);
+  });
+});
+
+describe("tachyon.schema.json — terminal declarations", () => {
+  it("validates a terminal containing all seven parser-supported fields", () => {
+    expect(validateConfig({ terminals: { dev: validTerminal } })).toBe(true);
+  });
+
+  it("rejects agent-only fields inside a terminal", () => {
+    expect(validateConfig({ terminals: { dev: { cmd: "npm run dev", worktree: true } } })).toBe(false);
+  });
+
+  it("contains no removed agent schema key anywhere", () => {
+    expect(JSON.stringify(schema)).not.toContain("x-removed-agents");
   });
 });
 
