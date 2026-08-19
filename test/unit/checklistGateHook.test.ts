@@ -337,8 +337,11 @@ describe("t-685a0c — the locks that are not per-runtime", () => {
 
   it("the refusal is ONE line — grok keeps only the first, so a second line would be lost", () => {
     for (const runtime of ["claude", "codex", "grok"] as const) {
-      expect(checklistGateRefusal(runtime)).not.toContain("\n");
-      expect(checklistGateRefusal(runtime)).toContain("never your delivery");
+      const refusal = checklistGateRefusal(runtime);
+      expect(refusal).not.toContain("\n");
+      expect(refusal).toContain("Shell commands count as changes, including reads; the gate applies whenever the required plan is absent.");
+      expect(refusal).not.toMatch(/reads.*pass/i);
+      expect(refusal).not.toMatch(/first change only/i);
     }
   });
 });
