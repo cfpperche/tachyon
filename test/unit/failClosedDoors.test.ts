@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
-import { LEGACY_AGENTS_BLOCK_WARNING, parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
+import { parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
 import { validateTerminalForm, type FormState } from "@tachyon/engine/webview/formLogic.js";
 import { blankTerminalFields } from "@tachyon/webview-ui/webview/terminal-studio-shell/domain.js";
 import { buildStarterYaml, type DetectedProject } from "../../apps/vscode-extension/src/init/initLogic.js";
@@ -42,10 +42,10 @@ describe("door: terminals: in tachyon.yml", () => {
     for (const warning of warnings) expect(warning).not.toContain("with kind: agent");
   });
 
-  it("does not let direct parseConfig callers turn an agent projection into a terminal", () => {
+  it("treats direct agents: input as an unknown top-level key", () => {
     const { config, warnings } = parseConfig("agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    worktree: true\n");
-    expect(config?.agents.dev).toMatchObject({ kind: "agent", worktree: true });
-    expect(warnings).toEqual([]);
+    expect(config?.agents.dev).toBeUndefined();
+    expect(warnings.some((warning) => warning.includes("unknown top-level key 'agents'"))).toBe(true);
   });
 
   it("still accepts a generic process with the keys a terminal really has", () => {
@@ -71,12 +71,17 @@ describe("door: agents: in tachyon.yml (retired, and inert)", () => {
     ["an inline definition", "agents:\n  rev:\n    cmd: claude\n"],
     ["a canonical pointer", "agents:\n  rev:\n    profile: .tachyon/agents/rev/agent.yml\n"],
     ["a shape nothing ever wrote", "agents:\n  rev:\n    anything: at all\n"],
-  ])("loads with a warning and declares no agent for %s", (_label, yaml) => {
+  ])("ignores the removed block and declares no agent for %s", (_label, yaml) => {
     const { errors, warnings, config } = parseProfileAwareConfigSyntax(yaml);
     expect(errors).toEqual([]);
-    expect(warnings).toContain(LEGACY_AGENTS_BLOCK_WARNING);
+    expect(warnings).not.toContain("agents");
     expect(config?.agents).toEqual({});
   });
+});
+
+it("schema does not advertise the removed agents: field", async () => {
+  const schema = await import("../../apps/vscode-extension/tachyon.schema.json");
+  expect((schema.default.properties as Record<string, unknown>).agents).toBeUndefined();
 });
 
 describe("door: Terminal Studio commit", () => {

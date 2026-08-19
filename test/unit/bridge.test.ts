@@ -4,7 +4,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { Bridge, derivePort, DERIVED_PORT_BASE, DERIVED_PORT_SPAN, type BridgeRequestCompleteInfo } from "@tachyon/bridge/Bridge.js";
 import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import { TmuxQueueError, TmuxService, sessionName, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
-import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 import { PinStore } from "@tachyon/engine/pins/PinStore.js";
 import { PinAttachmentStore } from "@tachyon/engine/pins/PinAttachmentStore.js";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";

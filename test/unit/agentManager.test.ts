@@ -9,7 +9,8 @@ import { TmuxService, workspaceHash, sessionName, type ExecResult } from "@tachy
 import { RuntimeLaunchPreflightRegistry } from "@tachyon/shared/runtime/launchPreflight.js";
 import { GrokLaunchPreflight } from "@tachyon/engine/runtime/adapters/grokLaunchPreflight.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
-import { asAgent, parseConfig, type AgentPermissionProjectionEntry, type TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
+import { asAgent, type AgentPermissionProjectionEntry, type TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
 import { agentLogId } from "@tachyon/engine/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";

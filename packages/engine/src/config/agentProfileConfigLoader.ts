@@ -1,5 +1,5 @@
-import { isMap, parseDocument, type YAMLMap } from "yaml";
-import { asAgent, parseConfig, type AgentEntry, type ParseResult, type TachyonConfig } from "./loadConfig.js";
+import { parseDocument } from "yaml";
+import { asAgent, parseConfig, type AgentEntry, type ManagedEntryDef, type ParseResult, type TachyonConfig } from "./loadConfig.js";
 import type { WorkspaceProfileDefaults } from "./agentProfileResolver.js";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import { agentRosterDirectoryWarning, scanAgentRosterDirectory } from "./agentRosterDirectory.js";
@@ -68,34 +68,10 @@ export interface LoadProfileAwareConfigInput {
 }
 
 /**
- * t-ae221c — the ONE thing `tachyon.yml` still has to say about `agents:`, and it is a warning.
- *
- * Migration without a migrator. Every `tachyon.yml` in the world still carries the block, and under
- * t-48dd8d a retired key is accepted and ignored rather than refused — so the file a human already
- * wrote keeps loading, its terminals and settings keep working, and the block simply stops meaning
- * anything. Nothing here rewrites the human's file; saying it can go is the whole product answer.
- *
- * Deliberately a WARNING and not a `discarded` entry: `discarded` blocks a programmatic write
- * (t-099be8), and blocking Agent Studio from ever writing a terminal or a setting again until a human
- * hand-edits an inert block would make the forgiving read pointless.
+ * Strip the removed `agents:` block before the ordinary config parser sees it.
  */
-export const LEGACY_AGENTS_BLOCK_WARNING =
-  "agents: is no longer the fleet roster — a directory under .tachyon/agents/ with a readable "
-  + "agent.yml is. The block was ignored and can be deleted from this file.";
-
-/**
- * Strip the retired `agents:` block, warning when there was one, and stub the roster the caller
- * measured. Returns the warnings; the document is mutated in place.
- */
-function replaceAgentsBlock(doc: ReturnType<typeof parseDocument>, rosterNames: readonly string[]): string[] {
-  const warnings: string[] = [];
-  const declared = doc.get("agents", true);
-  if (declared !== undefined && declared !== null && (!isMap(declared) || (declared as YAMLMap).items.length > 0)) {
-    warnings.push(LEGACY_AGENTS_BLOCK_WARNING);
-  }
+function replaceAgentsBlock(doc: ReturnType<typeof parseDocument>): void {
   doc.delete("agents");
-  for (const agentName of rosterNames) doc.setIn(["agents", agentName], { cmd: "codex" });
-  return warnings;
 }
 
 /**
@@ -104,14 +80,22 @@ function replaceAgentsBlock(doc: ReturnType<typeof parseDocument>, rosterNames: 
  * `scanAgentRosterDirectory` and passes the names in. A caller that only wants `settings:` — which is
  * every constructor-time caller — passes nothing and gets an empty roster, which is honest.
  */
-export function parseProfileAwareConfigSyntax(yamlText: string, rosterNames: readonly string[] = []): ParseResult {
+export function parseProfileAwareConfigSyntax(yamlText: string, roster: readonly string[] = []): ParseResult {
   const doc = parseDocument(yamlText, { uniqueKeys: true });
   if (doc.errors.length > 0) {
     return { errors: doc.errors.map((error) => `invalid YAML: ${error.message}`), warnings: [], discarded: [] };
   }
-  const warnings = replaceAgentsBlock(doc, rosterNames);
-  const parsed = parseConfig(String(doc));
-  return { ...parsed, warnings: [...warnings, ...parsed.warnings] };
+  replaceAgentsBlock(doc);
+  const canonicalAgents: Record<string, ManagedEntryDef> = Object.fromEntries(roster.map((name) => [name, {
+    cmd: "codex",
+    kind: "agent" as const,
+    autostart: false,
+    watch: [],
+    attention: { enabled: true, silenceSec: 8, patterns: [] },
+    restart: "never" as const,
+  }]));
+  const parsed = parseConfig(String(doc), { canonicalAgents });
+  return parsed;
 }
 
 /**
@@ -199,7 +183,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   // t-ae221c — the retired block leaves the document before the legacy parser sees it, and the
   // projected roster takes its place. A refused agent is simply never written back, which is what
   // keeps it out of `config.agents` while `agentSources` still remembers its name (t-0ad300).
-  profileWarnings.unshift(...replaceAgentsBlock(doc, []));
+  replaceAgentsBlock(doc);
   const legacyTerminals = doc.get("terminals", true);
   if (legacyTerminals !== undefined && legacyTerminals !== null) {
     profileWarnings.push(LEGACY_TERMINALS_BLOCK_WARNING);
@@ -210,22 +194,8 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
     }
     doc.setIn(["terminals", terminalName], definition);
   }
-  for (const [agentName, definition] of projected) {
-    const {
-      profileCapabilities: _profileCapabilities,
-      profileWithheldCapabilities: _profileWithheldCapabilities,
-      profileNativeConfig: _profileNativeConfig,
-      profileLifecycle: _profileLifecycle,
-      ...publicDefinition
-    } = definition;
-    const parserInput: Record<string, unknown> = { ...publicDefinition };
-    // The legacy parser's normalized output always contains watch: [], while
-    // its source syntax deliberately rejects an explicitly empty watch list.
-    if (definition.watch.length === 0) delete parserInput.watch;
-    doc.setIn(["agents", agentName], parserInput);
-  }
-
-  const parsed = parseConfig(String(doc));
+  const canonicalAgents = Object.fromEntries(projected);
+  const parsed = parseConfig(String(doc), { canonicalAgents });
   if (!parsed.config) return { errors: parsed.errors, warnings: parsed.warnings, discarded: parsed.discarded, profileErrors };
   const warnings = [...profileWarnings, ...parsed.warnings.filter((warning) => {
     const profileName = [...projected.keys()].find((name) => warning.startsWith(`agents.${name}: isolate: transcript is deprecated`));

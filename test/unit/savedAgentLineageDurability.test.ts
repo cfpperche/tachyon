@@ -5,7 +5,7 @@ import path from "node:path";
 import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
 import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
-import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 
 /**
  * SDD 482 slice 0 — ratified decision 5: runtime lineage is durable for Saved agents too.

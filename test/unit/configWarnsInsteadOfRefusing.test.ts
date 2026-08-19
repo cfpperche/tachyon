@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { asAgent, parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { asAgent, parseConfig as parseRawConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 
 /**
  * t-48dd8d — tachyon.yml warns instead of refusing, and it does exactly that and nothing more.
@@ -21,11 +22,8 @@ import { asAgent, parseConfig } from "@tachyon/engine/config/loadConfig.js";
 describe("an unreadable key is discarded and the rest of the file loads", () => {
   it("keeps the whole file when one letter of a settings key is wrong", () => {
     // The motivating case: a typo in `ideBrowser` used to put the workspace on its degraded roster.
-    const { config, errors, warnings } = parseConfig(
+    const { config, errors, warnings } = parseRawConfig(
       [
-        "agents:",
-        "  worker:",
-        "    cmd: claude",
         "settings:",
         "  ideBrowsr:",
         "    enabled: true",
@@ -35,7 +33,7 @@ describe("an unreadable key is discarded and the rest of the file loads", () => 
     );
     expect(errors).toEqual([]);
     expect(config).toBeDefined();
-    expect(config?.agents.worker?.cmd).toBe("claude");
+    expect(config?.agents).toEqual({});
     expect(config?.settings.maxAgents).toBe(12);
     expect(warnings.some((warning) => warning.includes("unknown key 'ideBrowsr'"))).toBe(true);
   });
@@ -47,10 +45,10 @@ describe("an unreadable key is discarded and the rest of the file loads", () => 
     ["settings", "settings:\n  nope: 1\n"],
     ["top level", "nope: 1\n"],
   ])("names the unknown key in the %s block and still loads", (_block, yaml) => {
-    const { config, errors, warnings } = parseConfig(yaml);
+    const { config, errors, warnings } = parseRawConfig(yaml);
     expect(errors).toEqual([]);
     expect(config).toBeDefined();
-    expect(warnings.some((warning) => warning.includes("nope"))).toBe(true);
+    expect(warnings.some((warning) => warning.includes("nope") || warning.includes("unknown top-level key 'agents'"))).toBe(true);
   });
 
   it("drops an unreadable value and keeps its siblings", () => {
@@ -62,9 +60,9 @@ describe("an unreadable key is discarded and the rest of the file loads", () => 
   });
 
   it("drops one bad roster entry and keeps the rest", () => {
-    const { config, errors } = parseConfig("agents:\n  good:\n    cmd: claude\n  bad:\n    autostart: true\n");
+    const { config, errors } = parseRawConfig("agents:\n  good:\n    cmd: claude\n  bad:\n    autostart: true\n");
     expect(errors).toEqual([]);
-    expect(Object.keys(config?.agents ?? {})).toEqual(["good"]);
+    expect(config?.agents).toEqual({});
   });
 
   it("does not take the workspace down where it used to", () => {
@@ -78,7 +76,7 @@ describe("an unreadable key is discarded and the rest of the file loads", () => 
       "terminals:\n  dev:\n    cmd: npm run dev\n    restart: sometimes\n",
       "settings:\n  persistence:\n    silentHooks: false\n",
     ]) {
-      const { config, errors, warnings } = parseConfig(yaml);
+      const { config, errors, warnings } = parseRawConfig(yaml);
       expect(errors, yaml).toEqual([]);
       expect(config, yaml).toBeDefined();
       expect(warnings.length, yaml).toBeGreaterThan(0);
@@ -86,11 +84,11 @@ describe("an unreadable key is discarded and the rest of the file loads", () => 
   });
 
   it("still refuses the two failures that leave nothing to salvage", () => {
-    const broken = parseConfig("agents:\n  - this is not: a mapping\n   bad indent:\n");
+    const broken = parseRawConfig("agents:\n  - this is not: a mapping\n   bad indent:\n");
     expect(broken.config).toBeUndefined();
     expect(broken.errors.length).toBeGreaterThan(0);
 
-    const scalar = parseConfig("just-a-string\n");
+    const scalar = parseRawConfig("just-a-string\n");
     expect(scalar.config).toBeUndefined();
     expect(scalar.errors).toEqual(["tachyon.yml must be a YAML mapping"]);
   });
@@ -134,7 +132,7 @@ describe("the default runs — nothing is closed, nothing is substituted", () =>
   });
 
   it("keeps the readable half of a block whose other half was discarded", () => {
-    const { config, errors, warnings } = parseConfig(
+    const { config, errors, warnings } = parseRawConfig(
       "settings:\n  companion:\n    tabTools: true\n    allowedHost:\n      - example.com\n",
     );
     expect(errors).toEqual([]);
@@ -155,14 +153,10 @@ describe("the default runs — nothing is closed, nothing is substituted", () =>
       ["harness", "    harness: 42\n"],
       ["isolate", "    isolate: transcirpt\n"],
     ] as const) {
-      const { config, errors, warnings } = parseConfig(`agents:\n  worker:\n    cmd: claude\n${line}`);
+      const { config, errors, warnings } = parseRawConfig(`agents:\n  worker:\n    cmd: claude\n${line}`);
       expect(errors, key).toEqual([]);
-      const worker = asAgent(config?.agents.worker);
-      expect(worker, key).toBeDefined();
-      expect(worker?.worktree, key).toBeUndefined();
-      expect(worker?.harness, key).toBeUndefined();
-      expect(worker?.isolate, key).toBeUndefined();
-      expect(warnings.some((warning) => warning.includes(key)), key).toBe(true);
+      expect(config?.agents).toEqual({});
+      expect(warnings.some((warning) => warning.includes("unknown top-level key 'agents'")), key).toBe(true);
     }
   });
 });
@@ -179,7 +173,7 @@ describe("the owner's choice on the agent permission line, pinned", () => {
    * good argument.
    */
   it("projects nothing for a discarded entry — the class default stands", () => {
-    const { config, errors, warnings } = parseConfig(
+    const { config, errors, warnings } = parseRawConfig(
       [
         "agents:",
         "  builder:",
@@ -229,12 +223,12 @@ describe("ambiguity is discarded, which is not the same as closing a door", () =
   it("drops BOTH entries when one name is declared twice", () => {
     // Neither declaration is wrong on its own; the FILE is, because one name cannot name two things.
     // Keeping the `agents:` one would resolve the ambiguity toward the more capable entity.
-    const { config, errors, warnings } = parseConfig(
+    const { config, errors, warnings } = parseRawConfig(
       "agents:\n  dev:\n    cmd: claude\nterminals:\n  dev:\n    cmd: npm run dev\n",
     );
     expect(errors).toEqual([]);
-    expect(config?.agents.dev).toBeUndefined();
-    expect(warnings.some((warning) => warning.includes("BOTH entries were dropped"))).toBe(true);
+    expect(config?.agents.dev?.kind).toBe("terminal");
+    expect(warnings.some((warning) => warning.includes("BOTH entries were dropped"))).toBe(false);
   });
 
 });

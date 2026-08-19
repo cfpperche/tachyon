@@ -16,7 +16,7 @@ import {
   writeConfigLkg,
   type ConfigLkgSnapshot,
 } from "@tachyon/engine/config/configLkg.js";
-import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 import type { SessionRecord } from "@tachyon/engine/resume/sessionRecord.js";
 import { buildDoctorReport, formatDoctorReport } from "@tachyon/engine/workspace/doctorReport.js";
 

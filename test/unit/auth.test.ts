@@ -9,7 +9,7 @@ import { loadOrCreateExternalToken, loadOrCreateToken, tokenMatches } from "@tac
 import { CallerIdentityRegistry } from "@tachyon/bridge/callerIdentity.js";
 import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
-import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 import { PinStore } from "@tachyon/engine/pins/PinStore.js";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";

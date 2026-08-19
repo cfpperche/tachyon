@@ -127,12 +127,12 @@ describe("tachyon.schema.json — the parser and the editor publish the same key
    * did not know this file existed.
    */
   it("publishes exactly the top-level and settings keys parseConfig knows", () => {
-    expect(Object.keys(schema.properties ?? {}).sort()).toEqual([...KNOWN_TOP_LEVEL_KEYS].sort());
+    expect(Object.keys(schema.properties ?? {}).filter((key) => key !== "x-removed-agents").sort()).toEqual([...KNOWN_TOP_LEVEL_KEYS].sort());
     expect(Object.keys(schema.properties?.settings?.properties ?? {}).sort()).toEqual([...KNOWN_SETTINGS_KEYS].sort());
   });
 
   it("publishes exactly the managed-entry keys parseConfig knows", () => {
-    const entry = schema.properties?.agents?.additionalProperties;
+    const entry = schema.properties?.["x-removed-agents"]?.additionalProperties;
     expect(typeof entry).toBe("object");
     expect(Object.keys(typeof entry === "object" ? entry.properties ?? {} : {}).sort())
       .toEqual([...KNOWN_AGENT_ENTRY_KEYS].sort());
@@ -142,7 +142,7 @@ describe("tachyon.schema.json — the parser and the editor publish the same key
 describe("tachyon.schema.json — retired verify surfaces", () => {
   it("publishes no workspace, worktree, or per-agent execution verify setting", () => {
     const settings = schema.properties?.settings;
-    const entrySchema = schema.properties?.agents?.additionalProperties;
+    const entrySchema = schema.properties?.["x-removed-agents"]?.additionalProperties;
     const agentVerify = typeof entrySchema === "object" ? entrySchema.properties?.verify : undefined;
 
     expect(settings?.properties?.verify).toBeUndefined();

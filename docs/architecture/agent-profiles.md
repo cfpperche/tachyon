@@ -9,9 +9,9 @@ and nothing else is (`t-ae221c`).
     agent.yml        <- the definition; its presence is membership
 ```
 
-`tachyon.yml` declares no agents. A file that still carries an `agents:` block loads with a warning
-saying the block is ignored and can be deleted — there is no migrator and nothing rewrites a human's
-file. Operational shell definitions remain supported under the separate `terminals:` block.
+`tachyon.yml` declares no agents. An `agents:` block is an unknown legacy key and is ignored by the
+profile-aware loader; there is no migrator and nothing rewrites a human's file. Operational shell
+definitions remain supported under the separate `terminals:` block.
 
 A directory with no readable `agent.yml` is NOT fleet. `reconcile_roster` names what it is —
 `orphan-home` for a home with nothing in it, `unlisted-profile` for bytes that cannot be read — and

@@ -13,8 +13,8 @@ import {
   agentStanzaSourceSlice,
   replaceAgentStanzaValue,
 } from "@tachyon/engine/config/YamlConfigEditor.js";
-import { asAgent, parseConfig } from "@tachyon/engine/config/loadConfig.js";
-import { LEGACY_AGENTS_BLOCK_WARNING, parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
 
 /**
  * t-c1ef82 — the EXACT call promotion makes (`extensionOperationService.promoteAgent`).
@@ -45,6 +45,7 @@ layouts:
 settings:
   maxAgents: 6   # guardrail
 `;
+const TERMINAL_YML = YML.replace(/^agents:/m, "terminals:");
 
 function expectValid(text: string) {
   const { config, errors } = parseConfig(text);
@@ -132,7 +133,8 @@ settings:
     const retired = "agents:\n  rev:\n    cmd: claude\n    kind: terminal\n";
     const read = parseProfileAwareConfigSyntax(retired);
     expect(read.errors).toEqual([]);
-    expect(read.warnings).toContain(LEGACY_AGENTS_BLOCK_WARNING);
+    expect(read.warnings).toEqual([]);
+    expect(read.discarded).toEqual([]);
     expect(read.config?.agents).toEqual({});
     // What promotion writes instead lands in `terminals:`, where a terminal is readable.
     expect(promote(undefined, "rev", "claude").text).toContain("terminals:");
@@ -142,28 +144,28 @@ settings:
     const base = `agents:\n  claude:\n    cmd: claude\n    subagents: [reviewer]\n  reviewer:\n    cmd: codex\n`;
     const editedParent = upsertAgent(base, "claude", { cmd: "claude", subagents: ["reviewer"] }, "claude").text;
     const parentCfg = expectValid(editedParent);
-    expect(asAgent(parentCfg.agents.claude)?.subagents).toEqual(["reviewer"]);
-    expect(parentCfg.declaredOwner).toEqual({ reviewer: "claude" });
+    expect(parentCfg.agents).toEqual({});
+    expect(parentCfg.declaredOwner).toEqual({});
     expect(editedParent).not.toContain("declaredOwner");
 
     const editedChild = upsertAgent(base, "reviewer", { cmd: "codex --model gpt-5" }, "reviewer").text;
     const childCfg = expectValid(editedChild);
-    expect(asAgent(childCfg.agents.claude)?.subagents).toEqual(["reviewer"]);
-    expect(asAgent(childCfg.agents.reviewer)?.subagents).toBeUndefined();
+    expect(childCfg.agents).toEqual({});
+    expect(childCfg.declaredOwner).toEqual({});
     expect(editedChild).not.toContain("declaredOwner");
   });
 
   it("cloneAgent copies the full definition under a new name", () => {
-    const { text } = cloneAgent(YML, "dev", "dev-2");
+    const { text } = cloneAgent(TERMINAL_YML, "dev", "dev-2");
     const config = expectValid(text);
     expect(config.agents["dev-2"]).toEqual(config.agents.dev);
     expect(text).toContain("o agente principal"); // comments elsewhere intact
-    expect(() => cloneAgent(YML, "ghost", "x2")).toThrow("does not exist");
-    expect(() => cloneAgent(YML, "dev", "frontend")).toThrow("already exists");
+    expect(() => cloneAgent(TERMINAL_YML, "ghost", "x2")).toThrow("does not exist");
+    expect(() => cloneAgent(TERMINAL_YML, "dev", "frontend")).toThrow("already exists");
   });
 
   it("the '2 claude, 5 codex' flow: clone clone clone stays valid", () => {
-    let text = upsertAgent(YML, "review", { cmd: "codex" }).text;
+    let text = upsertAgent(TERMINAL_YML, "review", { cmd: "codex" }, undefined, "terminals").text;
     for (let i = 2; i <= 5; i++) {
       text = cloneAgent(text, "review", `review-${i}`).text;
     }
@@ -175,7 +177,7 @@ settings:
 
   it("deleteAgent removes the agent, including the last declared entry", () => {
     // spec 234 — the YML fixture still carries a `layouts:` block: it must load fine (tolerated, ignored).
-    const { text } = deleteAgent(YML, "dev");
+    const { text } = deleteAgent(TERMINAL_YML, "dev");
     const config = expectValid(text);
     expect(config.agents.dev).toBeUndefined();
     expect(config.agents.frontend).toBeDefined();
@@ -189,12 +191,12 @@ settings:
   });
 
   it("renameAgent renames the key and preserves the definition", () => {
-    const { text } = renameAgent(YML, "frontend", "ui");
+    const { text } = renameAgent(TERMINAL_YML, "frontend", "ui");
     const config = expectValid(text);
     expect(config.agents.frontend).toBeUndefined();
     expect(config.agents.ui.cmd).toBe("claude");
     expect(config.agents.ui.autostart).toBe(true);
-    expect(() => renameAgent(YML, "frontend", "dev")).toThrow("already exists");
+    expect(() => renameAgent(TERMINAL_YML, "frontend", "dev")).toThrow("already exists");
   });
 
   it("agentEntryLine points Edit at the right line", () => {

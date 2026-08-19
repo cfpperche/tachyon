@@ -10,7 +10,6 @@ import {
   type LegacySessionEntry,
 } from "@tachyon/engine/agents/legacyFleetGate.js";
 import type { InstancePolicySource } from "@tachyon/engine/agents/agentInstancePolicy.js";
-import { agentsOf, parseConfig } from "@tachyon/engine/config/loadConfig.js";
 
 /**
  * `t-fab832` step 1 — the activation gate, proven seed by seed.
@@ -120,12 +119,11 @@ describe("legacy fleet gate — negative controls (t-fab832)", () => {
    * the agent species, so blocking on one would be the gate reaching outside what it gates.
    */
   it("never receives a product terminal because the caller requests agent membership", () => {
-    const { config } = parseConfig("agents:\n  reviewer:\n    cmd: claude\nterminals:\n  devserver:\n    cmd: bash\n");
-    const rosterEntries = Object.keys(agentsOf(config)).map((name): LegacyRosterEntry => ({
-      name,
+    const rosterEntries: LegacyRosterEntry[] = [{
+      name: "reviewer",
       kind: "agent",
       hasProfilePointer: true,
-    }));
+    }];
     expect(rosterEntries.map((entry) => entry.name)).toContain("reviewer");
     expect(inspect({ rosterEntries })).toEqual({ ok: true, offenders: [] });
   });

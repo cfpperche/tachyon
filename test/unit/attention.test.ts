@@ -11,7 +11,8 @@ import {
   type AttentionSettings,
   type AgentAttention,
 } from "@tachyon/shared/attention/AttentionMonitor.js";
-import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
+import { parseConfig as parseRawConfig } from "@tachyon/engine/config/loadConfig.js";
 import { LifecycleMonitor } from "@tachyon/engine/agents/LifecycleMonitor.js";
 
 // Captured verbatim from the spec 186 spike — a real Claude Code trust prompt pane.
@@ -800,14 +801,10 @@ describe("attention config", () => {
     expect(config?.agents.b.attention).toEqual({ enabled: true, silenceSec: 30, patterns: ["CUSTOM PROMPT"] });
   });
 
-  it("rejects invalid attention shapes with path-qualified errors", () => {
-    expect(parseConfig("agents:\n  a:\n    cmd: x\n    attention: 5\n").warnings[0]).toContain("agents.a.attention");
-    expect(
-      parseConfig("agents:\n  a:\n    cmd: x\n    attention:\n      silenceSec: 0\n").warnings[0],
-    ).toContain("silenceSec");
-    expect(
-      parseConfig("agents:\n  a:\n    cmd: x\n    attention:\n      nope: 1\n").warnings[0],
-    ).toContain("unknown key 'nope'");
+  it("treats removed agents: attention declarations as an unknown top-level key", () => {
+    expect(parseRawConfig("agents:\n  a:\n    cmd: x\n    attention: 5\n").warnings[0]).toContain("unknown top-level key 'agents'");
+    expect(parseRawConfig("agents:\n  a:\n    cmd: x\n    attention:\n      silenceSec: 0\n").warnings[0]).toContain("unknown top-level key 'agents'");
+    expect(parseRawConfig("agents:\n  a:\n    cmd: x\n    attention:\n      nope: 1\n").warnings[0]).toContain("unknown top-level key 'agents'");
   });
 });
 

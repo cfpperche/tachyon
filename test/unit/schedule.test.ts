@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Scheduler } from "@tachyon/engine/schedule/Scheduler.js";
-import { parseConfig, parseEvery, parseAt, type TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseEvery, parseAt, type TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 
 const AGENTS = "agents:\n  claude: {cmd: claude}\n";
 

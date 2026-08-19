@@ -16,7 +16,7 @@ import {
 } from "@tachyon/engine/config/agentProfileProjection.js";
 import { agentProfileSchemaV1 } from "@tachyon/engine/config/agentProfileSchema.js";
 import type { AgentProfileAuthorityRecord } from "@tachyon/engine/config/agentProfileAuthority.js";
-import { LEGACY_AGENTS_BLOCK_WARNING, parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
+import { parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
 import { scanAgentRosterDirectory } from "@tachyon/engine/config/agentRosterDirectory.js";
 import { digestCapturedCapability, type CapturedCapabilityEntry } from "@tachyon/engine/config/agentCapabilitySource.js";
 import { asAgent } from "@tachyon/engine/config/loadConfig.js";
@@ -118,7 +118,7 @@ describe("t-ae221c — the roster is the directory", () => {
   });
 });
 
-describe("t-ae221c — a legacy agents: block loads with a warning and no migrator", () => {
+describe("t-e050fd — a removed agents: block is ignored", () => {
   /**
    * The migration, and the whole of it. Every `tachyon.yml` in the world still carries the block;
    * t-48dd8d's forgiving read is what lets it keep loading while it stops meaning anything.
@@ -140,7 +140,7 @@ describe("t-ae221c — a legacy agents: block loads with a warning and no migrat
     });
 
     expect(result.errors).toEqual([]);
-    expect(result.warnings).toContain(LEGACY_AGENTS_BLOCK_WARNING);
+    expect(result.warnings).not.toContain("agents");
     // Advisory, never `discarded`: `discarded` blocks every programmatic write to this file.
     expect(result.discarded).toEqual([]);
     // The block named `vanished`; only the directory decides, so it is simply not there.
@@ -148,6 +148,22 @@ describe("t-ae221c — a legacy agents: block loads with a warning and no migrat
     expect(result.config!.agents.shell?.kind).toBe("terminal");
     expect(result.config!.settings.maxAgents).toBe(12);
     expect(yamlText).toBe(before);
+  });
+
+  it("lets the canonical profile win when the legacy block declares the same name", () => {
+    const root = temporaryRoot("tachyon-legacy-agent-collision-");
+    const bytes = writeProfile(root, { runtime: { adapter: "codex", executable: "codex" } });
+    const result = loadProfileAwareConfig({
+      yamlText: "agents:\n  codex:\n    cmd: bash\nsettings:\n  maxAgents: 9\n",
+      workspaceRoot: root,
+      authorities: new Map([["codex", authority(bytes)]]),
+      homeDir: temporaryRoot("tachyon-legacy-agent-collision-home-"),
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).not.toContain("agents");
+    expect(result.config?.agents.codex).toMatchObject({ cmd: "codex", kind: "agent" });
+    expect(result.config?.settings.maxAgents).toBe(9);
   });
 
   it("admits an agent the block never mentioned", () => {
@@ -181,15 +197,14 @@ describe("t-ae221c — a legacy agents: block loads with a warning and no migrat
   it("the syntax pass stubs only the roster it is handed, and warns about the retired block", () => {
     const withBlock = parseProfileAwareConfigSyntax(
       "agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\n  legacy:\n    cmd: bash\nsettings:\n  auth: false\n",
-      ["measured"],
     );
     expect(withBlock.errors).toEqual([]);
-    expect(withBlock.warnings).toContain(LEGACY_AGENTS_BLOCK_WARNING);
-    expect(Object.keys(withBlock.config!.agents)).toEqual(["measured"]);
+    expect(withBlock.warnings).not.toContain("agents");
+    expect(Object.keys(withBlock.config!.agents)).toEqual([]);
     expect(withBlock.config!.settings.auth).toBe(false);
 
     const withoutBlock = parseProfileAwareConfigSyntax("settings:\n  auth: true\n");
-    expect(withoutBlock.warnings).not.toContain(LEGACY_AGENTS_BLOCK_WARNING);
+    expect(withoutBlock.warnings).not.toContain("unknown top-level key 'agents'");
     expect(withoutBlock.config!.agents).toEqual({});
   });
 });
@@ -1464,7 +1479,7 @@ describe("loadProfileAwareConfig", () => {
       authorities: new Map(),
     });
     expect(authored.errors).toEqual([]);
-    expect(authored.warnings).toContain(LEGACY_AGENTS_BLOCK_WARNING);
+    expect(authored.warnings).not.toContain("agents");
     expect(authored.config?.agents).toEqual({});
   });
 
