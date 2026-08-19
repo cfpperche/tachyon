@@ -854,7 +854,12 @@ async function post(body, sessionId) {
   if (!url || !token || !["claude", "codex", "grok"].includes(runtime)) throw new Error("runtime status hook environment is incomplete");
   const init = await post({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "tachyon-runtime-hook", version: "1" } } });
   const sessionId = init.headers.get("mcp-session-id") || "";
-  if (!init.ok || !sessionId) throw new Error("runtime status hook initialize failed");
+  if (!init.ok) {
+    let body = "";
+    try { body = await init.text(); } catch (_e) {}
+    throw new Error("runtime status hook initialize HTTP failed: " + init.status + " " + init.statusText + (body ? "; body=" + body : ""));
+  }
+  if (!sessionId) throw new Error("runtime status hook initialize succeeded without mcp-session-id: " + init.status + " " + init.statusText);
   await post({ jsonrpc: "2.0", method: "notifications/initialized" }, sessionId);
   const publish = await post({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "runtime_status_publish", arguments: { event: "stopped", runtime } } }, sessionId);
   if (!publish.ok) throw new Error("runtime status hook publish failed");

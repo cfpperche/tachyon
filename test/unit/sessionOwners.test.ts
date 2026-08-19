@@ -2,12 +2,16 @@ import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { createServer } from "node:http";
+import { promisify } from "node:util";
 import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, CODEX_TOOL_HOOK_RECORDER_SOURCE, CODEX_UPDATE_PLAN_HOOK_MATCHER, PERSISTENCE_STOP_RECORDER_SOURCE, RUNTIME_STATUS_PUBLISHER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, appendOwnerRow, compactSessionOwnerRows, compactSpawnSettings, persistenceHookFailureFile, prunePersistenceLedger, readSessionOwners, removeSessionOwnerRows, removeSpawnSettings, resolveRotationFollow, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";
 import { AGENT_TOKEN_ENV_VAR, URL_ENV_VAR } from "@tachyon/shared/bridge/env.js";
 import { URL_ENV_VAR as spawnUrlEnvVar, AGENT_TOKEN_ENV_VAR as spawnTokenEnvVar } from "@tachyon/bridge/token.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("sessionOwners — pure ledger helpers (spec 243)", () => {
+  const execFileAsync = promisify(execFile);
   const row = (o: Record<string, unknown>) => JSON.stringify(o);
 
   it("parseOwnerRows keeps well-formed rows and skips blank/partial/garbage lines", () => {
@@ -474,6 +478,52 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     const last = JSON.parse(lines.at(-1)!);
     expect(last.path).toBe("http://127.0.0.1:1/mcp");
     expect(last.reason).not.toContain("environment is incomplete");
+  });
+
+  it("t-43e9f6: publisher records an initialize HTTP refusal separately, including the raw response", async () => {
+    const tmp = makeTempDir("tachyon-runtime-status-http-refusal-");
+    const script = path.join(tmp, "runtime-status-publish.cjs");
+    const failureFile = path.join(tmp, "failures.jsonl");
+    fs.writeFileSync(script, RUNTIME_STATUS_PUBLISHER_SOURCE);
+    const server = createServer((_req, res) => {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "unauthorized", reason: "token_revoked" }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test server has no TCP address");
+    try {
+      await execFileAsync(process.execPath, [script, "grok", failureFile, "gonegrok"], {
+        env: { ...process.env, [AGENT_TOKEN_ENV_VAR]: "revoked", [URL_ENV_VAR]: `http://127.0.0.1:${address.port}/mcp` },
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+    const failure = JSON.parse(fs.readFileSync(failureFile, "utf8").trim());
+    expect(failure.reason).toBe('runtime status hook initialize HTTP failed: 401 Unauthorized; body={"error":"unauthorized","reason":"token_revoked"}');
+  });
+
+  it("t-43e9f6: publisher records a successful initialize without a session id separately", async () => {
+    const tmp = makeTempDir("tachyon-runtime-status-missing-session-");
+    const script = path.join(tmp, "runtime-status-publish.cjs");
+    const failureFile = path.join(tmp, "failures.jsonl");
+    fs.writeFileSync(script, RUNTIME_STATUS_PUBLISHER_SOURCE);
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2025-03-26" } }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test server has no TCP address");
+    try {
+      await execFileAsync(process.execPath, [script, "claude", failureFile, "claude"], {
+        env: { ...process.env, [AGENT_TOKEN_ENV_VAR]: "live", [URL_ENV_VAR]: `http://127.0.0.1:${address.port}/mcp` },
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+    const failure = JSON.parse(fs.readFileSync(failureFile, "utf8").trim());
+    expect(failure.reason).toBe("runtime status hook initialize succeeded without mcp-session-id: 200 OK");
   });
 
   it("spec 319: persistence ledger retention keeps recent valid rows and latest row per key", () => {
