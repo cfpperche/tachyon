@@ -392,6 +392,29 @@ The configuration was right in content and wrong in address. A dead surface the 
 recommends is not clutter — it is an active instruction to do the wrong thing, and the editor's
 autocomplete delivers it. Closed by `t-e050fd`; the sweep for others is `t-ee3d5d`.
 
+## No new protection without a named actor
+
+We build for capability, not for threats nobody reported. **A guard that protects against an actor
+you cannot name is not caution — it is invented work**, and it is paid for twice: once to build,
+again every time it misfires.
+
+Before adding a check, a pin, a digest, or an authorization step, answer one question in writing:
+**who is the actor?** "An agent of ours, acting under the owner's instruction" is not an actor. If
+there is no answer, do not build it. The owner's standing rule is older than this file: do not
+invent security rules he did not ask for, and we are still the only users of this project.
+
+This does not touch hashes used as IDENTITY — content-addressed names, workspace keys, tree
+attestation. Those answer "which thing is this", not "may this pass", and removing one breaks
+addressing rather than loosening a lock. Nor does it touch a guard the owner did ask for: refusing
+to accept an agent's word as proof is an explicit request, and the tree attestation is its mechanism.
+
+Measured 2026-08-19 (`t-7c8898`): a mechanical sweep found 117 hash sites in 25 families. Fourteen
+families are indispensable, one was explicitly requested, and **ten families across 41 sites are
+protection nobody asked for**. One of them had already cost a full card the same day (`t-204313`):
+a pinned instructions file deadlocked the only repair door the product names, while the only agent
+that edits that file does so under the owner's own instruction. The debt is parked in `t-ada6ad`
+and is not to grow.
+
 ## The editor is a client, not the door
 
 Tachyon runs as a VS Code extension today. It must not be shaped as if that were permanent. **A VS
