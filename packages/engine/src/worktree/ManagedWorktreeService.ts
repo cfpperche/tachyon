@@ -70,7 +70,7 @@ export interface ManagedWorktreeServiceOpts {
   now?: () => string;
   onRegistryChanged?: () => void;
   /** t-36182f — surface the plugin-tooling projection outcome for a linked worktree (best-effort). */
-  notify?: (message: string) => void;
+  notify?: (message: string, level?: "info" | "warn" | "error") => void;
   /**
    * t-e74631 — who spawned whom, for hygiene authority. `AgentManager.parentOf` satisfies it.
    * Optional: absent means lineage is UNKNOWN, not that everyone is an orphan, and the authority
@@ -713,8 +713,16 @@ export class ManagedWorktreeService {
         }
 
         note("resolve-base");
-        const startRef = input.baseRef ?? "HEAD";
-        const baseRefProbe = await this.git(["rev-parse", startRef], this.opts.workspaceRoot);
+        let startRef = input.baseRef ?? "HEAD";
+        let baseRefProbe = await this.git(["rev-parse", startRef], this.opts.workspaceRoot);
+        if (input.baseRef && (baseRefProbe.code !== 0 || !baseRefProbe.stdout.trim())) {
+          this.opts.notify?.(
+            `'${slug}' declares worktree baseRef '${input.baseRef}', but it cannot be resolved — using HEAD instead`,
+            "warn",
+          );
+          startRef = "HEAD";
+          baseRefProbe = await this.git(["rev-parse", startRef], this.opts.workspaceRoot);
+        }
         if (baseRefProbe.code !== 0 || !baseRefProbe.stdout.trim()) {
           throw new Error(`cannot resolve base ref '${startRef}'`);
         }
