@@ -4770,6 +4770,21 @@ export class AgentManager {
     return await this.computeResumeReadiness(name, record);
   }
 
+  /**
+   * t-88261 — rebind must consult the same live-process mid-turn guard as resume/restart before
+   * its stop phase. The Bridge owns orchestration, so expose only the guard result across that
+   * boundary; turn detection remains solely in assertNotMidTurn().
+   */
+  async assertRebindNotMidTurn(name: string, initiatedBy?: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    try {
+      await this.assertNotMidTurn(name, "resume", initiatedBy);
+      return { ok: true };
+    } catch (error) {
+      if (error instanceof AgentMidTurnError) return { ok: false, reason: error.message };
+      throw error;
+    }
+  }
+
   private async computeResumeReadiness(name: string, record: SessionRecord): Promise<RebindResumeReadiness> {
     if (!record.resume) return { kind: "denied", reason: "record has no resume block" };
     if (!record.def?.cmd) {

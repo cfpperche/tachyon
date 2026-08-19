@@ -2239,6 +2239,10 @@ export class Workspace {
       // transcript that may still appear from a record that cannot resume. Rebind must receive
       // `ready` before it stops anything.
       canResume: (name, record) => this.manager.rebindResumeReadiness(name, record),
+      // t-88261: consult the existing mid-turn guard while the survivor is still alive. The
+      // reload initiator is passed by the coordinator so the established identity-based
+      // self-restart exemption remains intact.
+      assertNotMidTurn: (name: string, initiatedBy?: string) => this.manager.assertRebindNotMidTurn(name, initiatedBy),
       stopGracefully: (name) => this.manager.stopGracefully(name),
       hardKillSession: async (name) => {
         // Kill the tmux session only — do NOT call AgentManager.kill (that wipes Temporary ledger rows).

@@ -117,6 +117,8 @@ export interface BridgeClientRebindDeps {
   /** Fresh, read-only proof that the generic resume path is available, retryable, or permanently
    * denied. This must run before any expected-death marker or stop. */
   canResume: (name: string, record: SessionRecord) => Promise<RebindResumeReadiness>;
+  /** t-88261: the AgentManager's existing mid-turn guard, evaluated while the survivor is alive. */
+  assertNotMidTurn?: (name: string, initiatedBy?: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
   stopGracefully: (name: string) => Promise<void>;
   /** Hard kill the tmux session WITHOUT wiping ledger/Temporary state (unlike AgentManager.kill). */
   hardKillSession: (name: string) => Promise<void>;
@@ -619,6 +621,8 @@ export class BridgeClientRebindCoordinator {
       });
       if (pre.state === "failed") {
         this.deps.notify(`Bridge client rebind of '${name}' skipped before stop: ${pre.reason} (agent left running)`, "error");
+      } else if (pre.state === "suspect") {
+        this.deps.notify(`Bridge client rebind of '${name}' deferred before stop: ${pre.reason} (agent left running)`, "info");
       }
       return;
     }
@@ -943,6 +947,13 @@ export class BridgeClientRebindCoordinator {
     if (rt.suspectGeneration !== undefined && rt.suspectGeneration > G) {
       // Shouldn't happen; treat as skip.
       return { ok: false, reason: "suspect generation ahead of current", state: rt.clientState };
+    }
+    // t-88261 — rebind is the one replacement door that used to stop the survivor before calling
+    // resume(), making resume's live-process guard impossible to reach. Reuse that guard at the
+    // destructive boundary, with the authenticated reload initiator as its identity exemption.
+    if (this.deps.assertNotMidTurn) {
+      const guard = await this.deps.assertNotMidTurn(name, this.deps.getReloadInitiator?.());
+      if (!guard.ok) return { ok: false, reason: guard.reason, state: "suspect" };
     }
     void suspectG;
     return { ok: true, record };

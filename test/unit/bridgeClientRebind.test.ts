@@ -49,6 +49,7 @@ function makeDeps(opts: {
   initiator?: string;
   resumeImpl?: (name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean }) => Promise<void>;
   canResumeImpl?: (name: string, record: SessionRecord) => Promise<RebindResumeReadiness>;
+  assertNotMidTurnImpl?: (name: string, initiatedBy?: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
   stopImpl?: (name: string) => Promise<void>;
   hasSessionImpl?: (name: string) => Promise<boolean>;
   onSleep?: (ms: number) => void;
@@ -105,6 +106,7 @@ function makeDeps(opts: {
     isRunning: async (name) => opts.running.has(name),
     ...(opts.hasSessionImpl ? { hasSession: opts.hasSessionImpl } : {}),
     canResume: (name, record) => opts.canResumeImpl?.(name, record) ?? Promise.resolve({ kind: "ready" as const }),
+    ...(opts.assertNotMidTurnImpl ? { assertNotMidTurn: opts.assertNotMidTurnImpl } : {}),
     stopGracefully: async (name) => {
       stops.push(name);
       if (opts.stopImpl) await opts.stopImpl(name);
@@ -344,6 +346,62 @@ describe("isWiredSuspect / isTachyonBridgeWiredRecord", () => {
     } finally {
       for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
     }
+  });
+
+  it("t-88261: live mid-turn survivor is refused before stop", async () => {
+    const auditDir = tmpDir();
+    const ledger = new Map([["worker", baseRecord({ bridgeClient: { boundGeneration: 0, wired: true } })]]);
+    const running = new Set(["worker"]);
+    const deps = makeDeps({
+      ledger,
+      running,
+      auditPath: path.join(auditDir, "mid-turn.jsonl"),
+      assertNotMidTurnImpl: async () => ({ ok: false, reason: "cannot resume 'worker': it is mid-turn" }),
+    });
+    const c = new BridgeClientRebindCoordinator(deps);
+    await c.onListenerReady();
+    expect(deps.stops).toEqual([]);
+    expect(deps.resumes).toEqual([]);
+    expect(running.has("worker")).toBe(true);
+    expect(deps.notifies.some((n) => n.m.includes("deferred before stop"))).toBe(true);
+  });
+
+  it("t-88261: idle survivor still rebinds normally", async () => {
+    const auditDir = tmpDir();
+    const ledger = new Map([["worker", baseRecord({ bridgeClient: { boundGeneration: 0, wired: true } })]]);
+    const running = new Set(["worker"]);
+    const deps = makeDeps({
+      ledger,
+      running,
+      auditPath: path.join(auditDir, "idle.jsonl"),
+      assertNotMidTurnImpl: async () => ({ ok: true }),
+    });
+    const c = new BridgeClientRebindCoordinator(deps);
+    await c.onListenerReady();
+    expect(deps.stops).toEqual(["worker"]);
+    expect(deps.resumes).toEqual(["worker"]);
+  });
+
+  it("t-88261: self-restart identity is passed to the existing guard", async () => {
+    const auditDir = tmpDir();
+    const ledger = new Map([["worker", baseRecord({ bridgeClient: { boundGeneration: 0, wired: true } })]]);
+    const running = new Set(["worker"]);
+    let initiatedBy: string | undefined;
+    const deps = makeDeps({
+      ledger,
+      running,
+      initiator: "worker",
+      auditPath: path.join(auditDir, "self.jsonl"),
+      assertNotMidTurnImpl: async (_name, caller) => {
+        initiatedBy = caller;
+        return caller === "worker" ? { ok: true } : { ok: false, reason: "mid-turn" };
+      },
+    });
+    const c = new BridgeClientRebindCoordinator(deps);
+    await c.onListenerReady();
+    expect(initiatedBy).toBe("worker");
+    expect(deps.stops).toEqual(["worker"]);
+    expect(deps.resumes).toEqual(["worker"]);
   });
 });
 
