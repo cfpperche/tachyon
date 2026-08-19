@@ -2,10 +2,49 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { HarnessManager, harnessHome } from "@tachyon/engine/harness/HarnessManager.js";
+import { SESSION_OWNER_RECORDER_SOURCE } from "@tachyon/engine/activity/sessionOwners.js";
 import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
+import { runtimeUsesSilentPersistenceHooks, sessionOwnerCoverage } from "@tachyon/engine/runtime/parity.js";
 
 describe("container-generated delegation behavior", () => {
+  it("records a native Grok SessionStart payload in the shared ledger format", () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-grok-owner-"));
+    try {
+      const ws = path.join(base, "ws");
+      const grokHome = path.join(base, "grok-home");
+      const recorder = path.join(base, "session-owner-record.cjs");
+      const owners = path.join(ws, ".tachyon", "activity", "session-owners.jsonl");
+      const cwd = path.join(base, "project");
+      fs.mkdirSync(ws, { recursive: true });
+      fs.mkdirSync(cwd, { recursive: true });
+      fs.writeFileSync(recorder, SESSION_OWNER_RECORDER_SOURCE);
+      execFileSync("node", [recorder, "grok-x", owners], {
+        cwd,
+        env: { ...process.env, GROK_HOME: grokHome },
+        input: JSON.stringify({ hookEventName: "SessionStart", sessionId: "grok-session", cwd, workspaceRoot: cwd }),
+        encoding: "utf8",
+      });
+      const row = JSON.parse(fs.readFileSync(owners, "utf8")) as Record<string, string>;
+      expect(row).toMatchObject({
+        agent: "grok-x",
+        sessionId: "grok-session",
+        cwd,
+        transcriptPath: path.join(grokHome, "sessions", encodeURIComponent(cwd), "grok-session", "chat_history.jsonl"),
+      });
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it("declares runtimes without a lifecycle recorder as uncovered", () => {
+    expect(runtimeUsesSilentPersistenceHooks("grok")).toBe(true);
+    expect(runtimeUsesSilentPersistenceHooks("pi")).toBe(false);
+    expect(runtimeUsesSilentPersistenceHooks("unknown-cli")).toBe(false);
+    expect(sessionOwnerCoverage("pi")).toEqual({ covered: false, reason: "runtime 'pi' has no Tachyon session-owner recorder" });
+  });
+
   it("a harnessed grok agent materializes lifecycle hooks that wire the Tachyon session recorders", () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-grok-hooks-"));
     try {
