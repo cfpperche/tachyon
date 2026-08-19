@@ -317,4 +317,44 @@ describe.skipIf(!ECHO)("launcher CLI end-to-end (bundled _tachyon-tool.js)", () 
     expect(envRes.status).toBe(0);
     expect(envRes.stdout).toMatch(/INIT=\s*$/m); // stripped → empty
   });
+
+  /**
+   * t-ba0d68 — an agent-chosen `--session` must not reach the tool. The launcher already sees
+   * `TACHYON_AGENT_NAME` and the rest argv; the stamp rewrites both `--session <name>` and
+   * `--session=<name>` silently (refusing would push the agent onto the raw binary).
+   */
+  const SESSION_PROBE = Buffer.from('#!/bin/sh\necho "SESSION_ENV=$AGENT_BROWSER_SESSION"\necho "ARGS=$*"\n');
+  const writeBrowserLock = (binSha256: string, installPath: string, launchPolicy?: unknown) => {
+    const tool = { ...fetchedLock("agent-browser", "agent-browser", binSha256, installPath), ...(launchPolicy ? { launchPolicy } : {}) };
+    fs.writeFileSync(path.join(ws, ".tachyon", "plugins.lock.json"), JSON.stringify({
+      schemaVersion: 1,
+      plugins: { "agent-browser": { name: "agent-browser", version: "1.0.0", runtimes: [], targets: [], tools: [tool] } },
+    }));
+  };
+
+  it("t-ba0d68 — an agent-chosen --session does not escape the stamp (two-arg and equals forms)", () => {
+    fs.copyFileSync(bundle, launcherJs(ws));
+    const { installPath, binSha256 } = installFetched(ws, "agent-browser", "agent-browser", SESSION_PROBE);
+    writeBrowserLock(binSha256, installPath);
+    const env = { ...process.env, TACHYON_AGENT_NAME: "pincodex", AGENT_BROWSER_SESSION: "env-escape" };
+    for (const extra of [["--session", "agent-chosen"], ["--session=agent-chosen"]]) {
+      const res = spawnSync("node", [launcherJs(ws), "agent-browser", "agent-browser", ...extra, "open", "https://example.com"], { encoding: "utf8", env });
+      expect(res.status).toBe(0);
+      expect(res.stdout).toMatch(/ARGS=--session tachyon-pincodex open https:\/\/example.com/);
+      expect(res.stdout).not.toMatch(/agent-chosen/);
+      expect(res.stdout).toMatch(/SESSION_ENV=tachyon-pincodex/);
+    }
+  });
+
+  it("t-ba0d68 — a browser tool with no --session still gets the stamped name injected", () => {
+    fs.copyFileSync(bundle, launcherJs(ws));
+    const { installPath, binSha256 } = installFetched(ws, "agent-browser", "agent-browser", SESSION_PROBE);
+    writeBrowserLock(binSha256, installPath);
+    const res = spawnSync("node", [launcherJs(ws), "agent-browser", "agent-browser", "open", "https://example.com"], {
+      encoding: "utf8",
+      env: { ...process.env, TACHYON_AGENT_NAME: "pincodex" },
+    });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/ARGS=--session tachyon-pincodex open https:\/\/example.com/);
+  });
 });

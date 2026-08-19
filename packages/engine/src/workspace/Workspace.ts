@@ -18,6 +18,7 @@ import { DEFAULT_SOCKET_NAME, TmuxService, workspaceHash, SESSION_PREFIX, type S
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { agentsOf, asAgent, CONFIG_FILENAMES, suggestKindForCommand, terminalsOf, type TachyonConfig } from "../config/loadConfig.js";
 import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
+import { closeAgentToolSessions } from "../agents/closeAgentToolSessions.js";
 import { projectAgentForgetPlan, type AgentForgetPlanV1 } from "@tachyon/shared/config/agentForgetPlan.js";
 import {
   loadProfileAwareConfig,
@@ -3911,6 +3912,14 @@ export class Workspace {
       locatorPresent: this.isSavedAgentMember(name),
       profileHomePresent: fs.existsSync(home),
     });
+  }
+
+  /**
+   * t-ba0d68 — close tool sessions this agent opened, through the tool's own port.
+   * Best-effort: a hung or failing close does not throw, so dismiss can still finish.
+   */
+  closeToolSessions(agent: string): Promise<void> {
+    return closeAgentToolSessions({ agent, workspaceRoot: this.workspaceRoot });
   }
 
   /**

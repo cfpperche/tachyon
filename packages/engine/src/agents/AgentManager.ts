@@ -31,6 +31,7 @@ import { spawnContractCompletion, type SpawnContract } from "./spawnContract.js"
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, projectScopedTranscriptWarning, runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
+import { closeAgentToolSessions } from "./closeAgentToolSessions.js";
 import { ensurePaneTranscriptFile, removePaneTranscript, rotatePaneTranscriptIfNeeded } from "./paneTranscript.js";
 import { removeDerivedAgentFiles, writePrivateFileAtomic } from "./derivedFile.js";
 import { persistentInstructionsLaunchArgs } from "./persistentInstructionsLaunch.js";
@@ -3568,6 +3569,8 @@ export class AgentManager {
     this.postmortemOutput.delete(name);
     const session = this.session(name);
     if (!(await this.opts.tmux.hasSession(session))) throw new AgentNotRunningError(name);
+    // t-ba0d68 — close tool sessions before the pane dies. Best-effort; does not throw.
+    await closeAgentToolSessions({ agent: name, workspaceRoot: this.opts.workspaceRoot });
     await this.refreshOwnership(name); // A3: capture an in-TUI /resume before the session ends
     await this.detachPaneTranscript(session);
     await this.opts.tmux.killSession(session);
@@ -4179,6 +4182,9 @@ export class AgentManager {
    * before list() observed its exit.) Idempotent.
    */
   dismissTemporary(name: string): void {
+    // t-ba0d68 — a stopped Temporary with no worktree never enters removeAgentWorktree.
+    // Fire-and-forget: this method is sync; the worktree door awaits the same helper.
+    void closeAgentToolSessions({ agent: name, workspaceRoot: this.opts.workspaceRoot });
     this.forgetTemporary(name); // in-memory def + lineage
     // pin p-4dadd3 (a): dismiss is the TRUE end-of-life for a Temporary one-shot — the clean-exit dead pane
     // (remain-on-exit) keeps offering "Activity" in postmortem until the user dismisses it, so the durable

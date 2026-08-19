@@ -29,6 +29,12 @@ import { runI18nPtbrStagedGate } from "./i18nPtbrGate.js";
 import { appendExternalToolEvent } from "../externalTools/events.js";
 import { isLauncherExternalToolKind } from "@tachyon/engine/externalTools/filters.js";
 import type { ExternalToolKind } from "@tachyon/shared/externalTools/types.js";
+import {
+  argvHasSessionFlag,
+  stampToolSessionArgv,
+  toolSessionNameForAgent,
+  toolUsesStampedSession,
+} from "@tachyon/engine/agents/toolSession.js";
 
 export const TACHYON_BIN_REL = ".tachyon/bin";
 
@@ -311,6 +317,17 @@ export function runLauncher(argv: string[], deps: ResolveDeps): number {
       const base: NodeJS.ProcessEnv = { ...process.env };
       for (const k of policy.scrubEnv ?? []) delete base[k];
       env = { ...base, ...(policy.env ?? {}) };
+    }
+  }
+  // t-ba0d68 — stamp `--session` from the invoking agent's identity so teardown can close it.
+  // Silent rewrite (not POLICY_CONFLICT): refusing would push the agent onto the raw binary.
+  // AGENT_BROWSER_SESSION is forced to the same name so the env form cannot escape the stamp.
+  const agentName = typeof agent === "string" ? agent.trim() : "";
+  if (agentName) {
+    const inject = toolUsesStampedSession(pluginName, toolName);
+    if (inject || argvHasSessionFlag(args)) {
+      args = stampToolSessionArgv(args, agentName, { injectIfMissing: inject });
+      env = { ...(env ?? process.env), AGENT_BROWSER_SESSION: toolSessionNameForAgent(agentName) };
     }
   }
   try {

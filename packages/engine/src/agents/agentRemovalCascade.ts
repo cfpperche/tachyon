@@ -14,6 +14,7 @@ import type { AgentOccupancyVerdict } from "./AgentManager.js";
 import type { WorktreeRemovalResult, WorktreeAbsence } from "../worktree/WorktreeManager.js";
 import type { WorktreeRecord } from "../worktree/worktreeRecord.js";
 import { AgentProfileRefusal } from "@tachyon/shared/config/agentProfileRefusal.js";
+import { closeAgentToolSessions } from "./closeAgentToolSessions.js";
 
 export interface AgentDeleteSessionManager {
   probeAgentOccupancy(agent: string): Promise<AgentOccupancyVerdict>;
@@ -81,6 +82,15 @@ export interface AgentWorktreeRemovalPorts {
     ): Promise<WorktreeRemovalResult>;
   };
   managedWorktrees: { syncAgentRecord(agent: string, rec: WorktreeRecord | null): void };
+  /**
+   * t-ba0d68 — close the tool sessions this agent opened (the launcher-stamped `--session`)
+   * through the tool's own close port, never by killing processes. Optional so existing
+   * fakes keep compiling; production wires it. A hung or failing close must not refuse
+   * the rest of teardown.
+   */
+  closeToolSessions?(agent: string): void | Promise<void>;
+  /** Fallback when `closeToolSessions` is omitted; Workspace already holds this. */
+  workspaceRoot?: string;
 }
 
 export interface AgentWorktreeRemovalReceipt {
@@ -193,6 +203,15 @@ export async function removeAgentWorktree(
     }
   }
   await ports.manager.releaseOwnedWorktreeForRemoval(agent, record.path);
+  // t-ba0d68 — close tool sessions THIS agent opened, through the tool's own port, before the
+  // checkout is deleted. Chrome's cwd is the worktree; closing after unlink leaves daemons in a
+  // deleted directory. A hung or failing close must not trap dismiss — we never kill the browser.
+  try {
+    if (ports.closeToolSessions) await ports.closeToolSessions(agent);
+    else if (typeof ports.workspaceRoot === "string") closeAgentToolSessions({ agent, workspaceRoot: ports.workspaceRoot });
+  } catch {
+    /* tool did not answer close; teardown continues */
+  }
   const result = await ports.worktrees.remove(record, deleteBranch, {
     force: false,
     refuseUnlessForceIfDirty: true,
