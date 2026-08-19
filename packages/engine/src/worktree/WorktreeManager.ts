@@ -375,6 +375,8 @@ export class WorktreeUnavailableError extends Error {
 export interface EnsureOptions {
   agent: string;
   branch: string; // already resolved via branchFor
+  /** Ref used only when creating a new branch. Invalid refs warn through the resolver and become HEAD. */
+  baseRef?: string;
   /** prior persisted record for this agent, if any — drives validated reuse */
   prior?: WorktreeRecord;
   /** Acquire a durable Git quarantine lock for this launch attempt, including validated reuse.
@@ -427,6 +429,12 @@ export class WorktreeManager {
   }
   private nowIso(): string {
     return (this.opts.now ?? (() => new Date().toISOString()))();
+  }
+
+  /** Resolve a caller-declared start ref without mutating repository state. */
+  async resolveRef(ref: string): Promise<string | undefined> {
+    const probe = await this.git(["rev-parse", "--verify", `${ref}^{commit}`], this.opts.workspaceRoot);
+    return probe.code === 0 && probe.stdout.trim() ? probe.stdout.trim() : undefined;
   }
 
   /** Serialize all worktree ops for one agent (spawn/restart/setup/remove). */
@@ -894,11 +902,18 @@ export class WorktreeManager {
     const action = actionForBranchState(o.branch, state);
     if (action.kind === "fail") throw new WorktreeUnavailableError(action.reason, "add-failed");
 
-    const baseRef = (await this.git(gitArgs.headRef(), this.opts.workspaceRoot)).stdout.trim();
+    const startRef = o.baseRef ?? "HEAD";
+    const baseRef = (await this.git(["rev-parse", startRef], this.opts.workspaceRoot)).stdout.trim();
     // spec 223 — only when we CREATE a new branch (fork off the main checkout's current branch) is
     // that branch the true PR base; an ATTACHED existing branch wasn't forked from here, so leave its
     // base unknown (codex MAJOR — don't persist a wrong base for attach). "HEAD"/empty = detached.
-    const srcBranch = action.kind === "create" ? (await this.git(gitArgs.currentBranch(), this.opts.workspaceRoot)).stdout.trim() : "";
+    const declaredBaseBranch = o.baseRef
+      && (await this.git(["show-ref", "--verify", "--quiet", `refs/heads/${o.baseRef}`], this.opts.workspaceRoot)).code === 0
+      ? o.baseRef
+      : undefined;
+    const srcBranch = action.kind === "create"
+      ? declaredBaseBranch ?? (await this.git(gitArgs.currentBranch(), this.opts.workspaceRoot)).stdout.trim()
+      : "";
     const baseBranch = srcBranch && srcBranch !== "HEAD" ? srcBranch : undefined;
     const initialHead = action.kind === "create"
       ? baseRef
@@ -1273,6 +1288,8 @@ export interface WorktreeSpawnCtx {
   name: string;
   worktree?: boolean;
   branch?: string;
+  /** Optional ref for a fresh agent branch. Reuse paths deliberately ignore it. */
+  baseRef?: string;
   worktreeSetup?: string[];
   /** lineage parent — a sub-agent inherits the parent's cwd unless it explicitly opts into a separate worktree */
   parent?: string;
@@ -1447,9 +1464,18 @@ export async function resolveWorktreeCwd(
   // divergence is re-checked each time the branch could have moved.
   const wantShare = !!deps.shareDependencies;
   try {
+    let baseRef = ctx.baseRef;
+    if (!deps.priorRecord && baseRef) {
+      const resolved = await deps.manager.resolveRef(baseRef);
+      if (!resolved) {
+        deps.notify(`'${ctx.name}' declares worktree baseRef '${baseRef}', but it cannot be resolved — using HEAD instead`, "warn");
+        baseRef = undefined;
+      }
+    }
     const { record: rec, created, initialHead, preparationLocked } = await deps.manager.ensure({
       agent: ctx.name,
       branch,
+      ...(!deps.priorRecord && baseRef ? { baseRef } : {}),
       prior: deps.priorRecord,
       // Every process launch, including restart, gets a durable quarantine receipt. If a restart
       // has to recreate a missing checkout, this also ensures its fresh `worktree add` is finalized.

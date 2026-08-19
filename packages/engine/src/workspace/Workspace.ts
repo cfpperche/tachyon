@@ -1243,6 +1243,7 @@ export class Workspace {
             name: ctx.name,
             worktree: ctxAgent?.worktree,
             branch: ctxAgent?.branch,
+            baseRef: ctxAgent?.baseRef,
             worktreeSetup: ctxAgent?.worktreeSetup,
             parent: ctx.parent,
             // spec 484 — a Temporary's NAME is reusable across spawns, so it cannot stand for its

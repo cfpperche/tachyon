@@ -27,7 +27,7 @@ export interface AgentProfileV1 {
   };
   workspace?: {
     cwd?: string;
-    worktree?: { enabled?: boolean; base?: string; branch?: string; setup?: string[] };
+    worktree?: { enabled?: boolean; base?: string; branch?: string; baseRef?: string; setup?: string[] };
   };
   isolation?: "transcript";
   ownership?: { subagents: string[] };

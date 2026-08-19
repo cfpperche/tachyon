@@ -1147,6 +1147,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               }} /> Run in its own git worktree + branch</label>
               <label class="ash-label" for="ash-branch">Branch (blank = tachyon/&lt;name&gt;)</label>
               <Input id="ash-branch" value={fields.branch} placeholder="feature/auth-redesign" onInput={(e) => set("branch", (e.currentTarget as HTMLInputElement).value)} />
+              <label class="ash-label" for="ash-base-ref">{profileLabels.worktreeBaseRefLabel}</label>
+              <Input id="ash-base-ref" value={fields.baseRef ?? ""} placeholder={profileLabels.worktreeBaseRefPlaceholder} onInput={(e) => set("baseRef", (e.currentTarget as HTMLInputElement).value)} />
               {/* t-afc86e — setup is published as a pinned profile-local document in the same
                 * transaction as the save. It stays read-only when another owner published it. */}
               <label class="ash-label" for="ash-setup">Setup commands (run once on create)</label>

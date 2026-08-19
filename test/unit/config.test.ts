@@ -288,14 +288,15 @@ describe("parseConfig", () => {
   });
 
   // spec 210 — worktree config surface
-  it("parses agent worktree/branch/worktreeSetup (string normalized to a list)", () => {
+  it("parses agent worktree/branch/baseRef/worktreeSetup (string normalized to a list)", () => {
     const { config, errors } = parseConfig(
-      `agents:\n  rev:\n    cmd: claude\n    worktree: true\n    branch: feature/auth\n    worktreeSetup: pnpm install\n`,
+      `agents:\n  rev:\n    cmd: claude\n    worktree: true\n    branch: feature/auth\n    baseRef: release/next\n    worktreeSetup: pnpm install\n`,
     );
     expect(errors).toEqual([]);
     const a = asAgent(config?.agents.rev);
     expect(a?.worktree).toBe(true);
     expect(a?.branch).toBe("feature/auth");
+    expect(a?.baseRef).toBe("release/next");
     expect(a?.worktreeSetup).toEqual(["pnpm install"]);
   });
 

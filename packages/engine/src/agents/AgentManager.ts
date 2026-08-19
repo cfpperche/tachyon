@@ -514,6 +514,8 @@ export interface SpawnOptions {
   reveal?: boolean;
   /** spec 210 — opt this Temporary spawn into a separate git checkout + branch, including parented spawns. */
   worktree?: boolean;
+  /** git ref a fresh agent worktree branches from; ignored when reusing an existing checkout */
+  baseRef?: string;
   /** spec 230 — extra env merged into this Temporary spawn (e.g. a pipeline node's TACHYON_RUN_ID/NODE_ID/NODE_NONCE). Agent-declared env still wins on conflict via the spawn merge order. */
   env?: Record<string, string>;
   /** spec 230 — tag this Temporary spawn as a pipeline-run node; persisted to SessionDef.pipeline so the generic resume/offer path skips it (the run owns it). */
@@ -2574,10 +2576,16 @@ export class AgentManager {
           // spec 210 — MCP top-level spawn may opt into a separate worktree (uses the default
           // branch tachyon/<name>; ignored for a sub-agent, which inherits the parent's cwd).
           worktree: opts.worktree,
+          baseRef: opts.baseRef,
         }
         : { ...base, kind: "terminal" };
     }
     if (!def) throw new UnknownAgentError(name);
+    if (opts?.baseRef) {
+      const agent = asAgent(def);
+      if (!agent) throw new Error("baseRef is available only for agents");
+      def = { ...agent, baseRef: opts.baseRef };
+    }
 
     const taskBrief = opts?.taskBrief;
 

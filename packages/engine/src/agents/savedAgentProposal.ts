@@ -185,7 +185,7 @@ export function savedAgentCreateMutation(
       lifecycle: { autostart: false, restart: "never", attention: true },
       // t-afc86e — a proposal carries no setup commands: the proposer describes an
       // agent, and workspace-local build steps are the human's to add after approval.
-      worktree: { enabled: proposedWorktreeEnabled(spec), branch: "", setup: [] },
+      worktree: { enabled: proposedWorktreeEnabled(spec), branch: "", baseRef: "", setup: [] },
       // t-d48775 — and a proposal carries no persistent instructions, for the reason directly above.
       // The Studio field is now writable, so this is the second door onto the same binding: an agent
       // that could fill it would be authoring the durable prompt of an agent a human has not read yet.
