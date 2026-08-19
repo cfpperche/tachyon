@@ -155,6 +155,17 @@ export interface WorktreeRow {
    * must for `classification`.
    */
   land?: import("@tachyon/engine/worktree/land.js").LandSuggestion;
+  /**
+   * t-0ab150 — session-only create progress. Present while a create is in flight or after it failed.
+   * Never persisted: a reload mid-create has no row, which is today's behavior. Absent on a live
+   * registered worktree. A client must not treat this row as removable or cleanup-selectable.
+   */
+  create?: { phase: string; error?: string };
+}
+
+/** t-0ab150 — a session create row is never a live checkout for cleanup, land, or counts. */
+export function worktreeRowIsCreateSession(row: WorktreeRow): boolean {
+  return row.create != null;
 }
 
 export interface ApprovalRow {
@@ -450,7 +461,7 @@ export function buildSectionsModel(
     version: b.tmux?.version,
   }));
 
-  const worktreesActive = worktrees.filter((w) => w.status === "active").length;
+  const worktreesActive = worktrees.filter((w) => w.status === "active" && !w.create).length;
   const approvalsPending = approvals.filter((a) => !a.status || a.status === "pending").length;
   // t-e76acc — a missing per-bundle count contributes nothing rather than a zero it cannot vouch for.
   const validationsAwaitingHuman = scoped.reduce((sum, b) => sum + (b.validationsAwaitingHuman ?? 0), 0);

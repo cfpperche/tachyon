@@ -133,6 +133,7 @@ import { shareDependencies } from "../worktree/dependencySharing.js";
 import { resolveParentLocation } from "../worktree/parentLocation.js";
 import { approvalResolutionPorts } from "../approvals/approvalResolutionPorts.js";
 import { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
+import { newManagedId } from "../worktree/managedWorktree.js";
 import { composeHygieneLineageSource, type OwnerPresence } from "../worktree/hygieneAuthority.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
 import { RunLedger } from "../pipeline/RunLedger.js";
@@ -1281,10 +1282,21 @@ export class Workspace {
               warn: (message) => this.host.notify(message, "warn"),
             }),
             notify: (m, level) => this.host.notify(m, level ?? "info"),
+            onCreateProgress: ({ phase, path: wtPath, branch: wtBranch }) =>
+              this.managedWorktrees.noteCreate({
+                id: newManagedId("agent", ctx.name),
+                kind: "agent",
+                path: wtPath,
+                branch: wtBranch,
+                agent: ctx.name,
+                phase,
+              }),
+            onCreateFailed: (error) => this.managedWorktrees.failCreate(newManagedId("agent", ctx.name), error),
           },
         );
         if (!resolved?.worktree) return resolved;
         this.managedWorktrees.syncAgentRecord(ctx.name, resolved.worktree, ctx.delegator);
+        this.managedWorktrees.finishCreate(newManagedId("agent", ctx.name));
         let exactPreparedHead: string | undefined;
         try {
           const { headRef } = await this.worktrees.headState(resolved.cwd);
@@ -2389,10 +2401,38 @@ export class Workspace {
       allocateWorktree: async (runId) => {
         const agent = `run-${runId}`;
         const branch = branchFor(agent, this.config?.settings ?? {}, {});
-        const { record, preparationLocked } = await this.worktrees.ensure({ agent, branch, quarantineForLaunch: true });
-        if (!preparationLocked) throw new Error(`pipeline worktree '${record.path}' was not quarantined during allocation`);
+        const createId = newManagedId("agent", agent);
+        let record: WorktreeRecord;
+        let preparationLocked: boolean | undefined;
+        try {
+          const ensured = await this.worktrees.ensure({
+            agent,
+            branch,
+            quarantineForLaunch: true,
+            onCreateProgress: ({ phase, path: wtPath, branch: wtBranch }) =>
+              this.managedWorktrees.noteCreate({
+                id: createId,
+                kind: "agent",
+                path: wtPath,
+                branch: wtBranch,
+                agent,
+                phase,
+              }),
+          });
+          record = ensured.record;
+          preparationLocked = ensured.preparationLocked;
+        } catch (err) {
+          this.managedWorktrees.failCreate(createId, err instanceof Error ? err.message : String(err));
+          throw err;
+        }
+        if (!preparationLocked) {
+          const reason = `pipeline worktree '${record.path}' was not quarantined during allocation`;
+          this.managedWorktrees.failCreate(createId, reason);
+          throw new Error(reason);
+        }
         this.pipelineRunWt.set(agent, record);
         this.managedWorktrees.syncAgentRecord(agent, record);
+        this.managedWorktrees.finishCreate(createId);
         // PipelineManager invokes this only after its initial RunLedger record is crash-durable and
         // before the first node can spawn. Failure leaves both the durable run and Git receipt intact.
         return {

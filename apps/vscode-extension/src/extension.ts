@@ -2549,6 +2549,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               // only "is this the shape I can render", and a payload that is not (an older engine, a
               // truncated response) drops the whole block rather than rendering half of it.
               ...(land ? { land } : {}),
+              // t-0ab150 — session-only create progress. Shape-checked: a missing or non-string
+              // phase is "we do not have a create row", never a guessed one.
+              ...(() => {
+                const raw = e.create;
+                if (!raw || typeof raw !== "object") return {};
+                const phase = (raw as { phase?: unknown }).phase;
+                if (typeof phase !== "string" || !phase) return {};
+                const error = (raw as { error?: unknown }).error;
+                return { create: { phase, ...(typeof error === "string" && error ? { error } : {}) } };
+              })(),
             };
           });
         } catch (err) {

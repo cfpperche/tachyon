@@ -19,6 +19,7 @@ import path from "node:path";
 import type { AgentEntry, TachyonConfig } from "../config/loadConfig.js";
 import { parseNameStatus, mergeChanges, unifiedDiffFromAddedFile, type ChangedFile } from "./review.js";
 import type { SharedDependencyState } from "./dependencySharing.js";
+import type { WorktreeCreatePhase } from "./worktreeCreateSession.js";
 import type { WorktreeRecord } from "./worktreeRecord.js";
 import { resolveGitBinary, gitNotFoundError } from "./gitBinary.js";
 
@@ -396,6 +397,11 @@ export interface EnsureOptions {
    * it. Also runs BEFORE `runSetup`, so a `worktreeSetup` that builds can see the dependencies.
    */
   shareDependencies?: (worktreePath: string) => Promise<SharedDependencyState | undefined>;
+  /**
+   * t-0ab150 — named phases the CREATE arm actually crosses. Never called on validated reuse:
+   * that checkout already exists and must not be advertised as being created.
+   */
+  onCreateProgress?: (info: { phase: WorktreeCreatePhase; path: string; branch: string }) => void;
 }
 
 /**
@@ -896,12 +902,16 @@ export class WorktreeManager {
     }
 
     // Create — resolve the branch state, then act.
+    const noteCreate = (phase: WorktreeCreatePhase) =>
+      o.onCreateProgress?.({ phase, path: wtPath, branch: o.branch });
+    noteCreate("validate");
     const exists = (await this.git(gitArgs.branchExists(o.branch), this.opts.workspaceRoot)).code === 0;
     let state: BranchState = "absent";
     if (exists) state = (await this.branchCheckedOutElsewhere(o.branch)) ? "checked-out-elsewhere" : "exists-free";
     const action = actionForBranchState(o.branch, state);
     if (action.kind === "fail") throw new WorktreeUnavailableError(action.reason, "add-failed");
 
+    noteCreate("resolve-base");
     const startRef = o.baseRef ?? "HEAD";
     const baseRef = (await this.git(["rev-parse", startRef], this.opts.workspaceRoot)).stdout.trim();
     // spec 223 — only when we CREATE a new branch (fork off the main checkout's current branch) is
@@ -923,6 +933,7 @@ export class WorktreeManager {
     const addArgs = action.kind === "create"
       ? quarantine ? gitArgs.addNewBranchLocked(wtPath, o.branch, baseRef) : gitArgs.addNewBranch(wtPath, o.branch, baseRef)
       : quarantine ? gitArgs.attachBranchLocked(wtPath, o.branch) : gitArgs.attachBranch(wtPath, o.branch);
+    noteCreate("add");
     const add = await this.git(addArgs, this.opts.workspaceRoot);
     if (add.code !== 0) throw new WorktreeUnavailableError(`git worktree add failed: ${add.stderr.trim() || add.stdout.trim()}`, "add-failed");
 
@@ -935,11 +946,15 @@ export class WorktreeManager {
       // t-3f93b4 — the checkout exists and is at its expected tip, so its lockfile is now readable.
       // Decide dependency sharing BEFORE setup, so a `worktreeSetup` that builds or tests is not the
       // thing that discovers the worktree has nothing installed.
+      if (o.shareDependencies) noteCreate("share-dependencies");
       const dependencies = await o.shareDependencies?.(wtPath);
       if (dependencies) record.dependencies = dependencies;
       // Fresh checkout (create or attach) → run setup HERE, still holding the lock, so no
       // concurrent reuse-spawn can race into the half-set-up worktree.
-      if (o.runSetup) await o.runSetup(record);
+      if (o.runSetup) {
+        noteCreate("setup");
+        await o.runSetup(record);
+      }
       return { record, created: true, initialHead, ...(quarantine ? { preparationLocked: true } : {}) };
     } catch (primary) {
       const preserved = new Error(
@@ -1343,6 +1358,9 @@ export interface WorktreeResolveDeps {
    */
   shareDependencies?: (worktreePath: string) => Promise<SharedDependencyState | undefined>;
   notify: (message: string, level?: "info" | "warn" | "error") => void;
+  /** t-0ab150 — session-row updates for a fresh create. Omitted → no overlay (tests, reuse). */
+  onCreateProgress?: (info: { phase: WorktreeCreatePhase; path: string; branch: string }) => void;
+  onCreateFailed?: (error: string) => void;
 }
 
 /**
@@ -1482,6 +1500,7 @@ export async function resolveWorktreeCwd(
       quarantineForLaunch: true,
       runSetup: wantSetup ? (r) => deps.runSetup(r, ctx.worktreeSetup as string[]) : undefined,
       ...(wantShare ? { shareDependencies: deps.shareDependencies } : {}),
+      ...(deps.onCreateProgress ? { onCreateProgress: deps.onCreateProgress } : {}),
     });
     announceDiscardedCwd(ctx, deps, rec.path, "it runs in its own git worktree, which IS its working directory");
     // Node divergence remains loud to the human even though dependency state is no longer prompt
@@ -1497,6 +1516,7 @@ export async function resolveWorktreeCwd(
       ...(initialHead ? { rollbackHeadSha: initialHead } : {}),
     };
   } catch (err) {
+    deps.onCreateFailed?.(err instanceof Error ? err.message : String(err));
     // Once `git worktree add` succeeded, a preparation failure preserves a recovery checkout. Never
     // silently turn the requested isolated launch into a root launch or hide that preserved state.
     if (err instanceof AggregateError
