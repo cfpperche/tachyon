@@ -773,6 +773,7 @@ export class Workspace {
       manager: this.worktrees,
       git: this.gitExec,
       occupancy: (worktreePath) => this.manager.worktreeOccupant(worktreePath),
+      notify: (message, level) => this.host.notify(message, level),
       onRegistryChanged: () => {
         // Best-effort refresh signal (agents view re-syncs worktree reveal on host).
         try { this.host.onViewsChanged("agents"); } catch { /* host optional during early boot */ }

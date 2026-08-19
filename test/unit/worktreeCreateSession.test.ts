@@ -109,12 +109,12 @@ describe("t-0ab150 create-session row (real git)", () => {
 
   it("silent undo: a session row is not ready-to-remove, not scanned by reconcile, and removeClassified does not delete it", async () => {
     const svc = service();
-    await expect(svc.createChange({ slug: "broke", baseRef: "no-such-ref", createdBy: "alice" })).rejects.toThrow(/cannot resolve base ref/);
+    await expect(svc.createChange({ slug: "broke", branch: "invalid branch", createdBy: "alice" })).rejects.toThrow(/invalid branch name/);
 
     const rows = await svc.listClassified();
     const row = rows.find((r) => r.slug === "broke");
     expect(row, "failed create must leave a session row with the error").toBeDefined();
-    expect(row?.create?.error).toMatch(/cannot resolve base ref/);
+    expect(row?.create?.error).toMatch(/invalid branch name/);
     expect(row?.classification?.state).not.toBe("ready-to-remove");
     expect(row?.classification?.state).not.toBe("record-only");
 
