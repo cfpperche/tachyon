@@ -100,6 +100,8 @@ export interface EngineHost {
   // or syncable file.
   getSecret(key: string): Promise<string | undefined>;
   setSecret(key: string, value: string): Promise<void>;
+  /** Remove one machine-local secret. Hosts that predate the vault removal door may omit it. */
+  deleteSecret?(key: string): Promise<void>;
   /** Synchronous presence check used while projecting the synchronous profile config loader. */
   hasSecret?(key: string): boolean;
   listSecretKeys?(): string[];

@@ -19,6 +19,7 @@ import {
   type WorkspacePluginPresentationTarget,
   type WorkspaceProbePresentationTarget,
   type WorkspaceAgentStudioTarget,
+  type SecretInventoryView,
   type WorkspaceStudioTarget,
 } from "./WorkspacePresentation.js";
 
@@ -81,6 +82,10 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
   studioSubmit(submit: StudioSubmit): string[] | undefined | Promise<string[] | undefined> {
     return this.studio.studioSubmit(submit);
   }
+  secretInventory(): Promise<SecretInventoryView> { return this.studio.secretInventory(); }
+  setProfileSecret(provider: string, id: string, value: string) { return this.studio.setProfileSecret(provider, id, value); }
+  replaceProfileSecret(provider: string, id: string, value: string) { return this.studio.replaceProfileSecret(provider, id, value); }
+  removeProfileSecret(provider: string, id: string) { return this.studio.removeProfileSecret(provider, id); }
   inspectAgentProfileStudio(agent: string) { return this.studio.inspectAgentProfileStudio(agent); }
   agentOwnershipView(agent: string) { return this.studio.agentOwnershipView(agent); }
   commitAgentProfileStudio(mutation: Parameters<ClientWorkspaceStudioTarget["commitAgentProfileStudio"]>[0]) {

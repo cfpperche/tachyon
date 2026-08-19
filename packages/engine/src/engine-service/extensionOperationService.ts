@@ -416,6 +416,10 @@ export async function executeExtensionCommand(
     }
     case "secret.set":
       return json(await workspace.setProfileSecret(command.provider, command.id, command.value));
+    case "secret.replace":
+      return json(await workspace.replaceProfileSecret(command.provider, command.id, command.value));
+    case "secret.remove":
+      return json(await workspace.removeProfileSecret(command.provider, command.id));
     case "agent-profile.studio-lifecycle":
       return json(await workspace.commitAgentProfileStudioLifecycle(command.mutation));
     case "agent-profile.studio-bundle-clone": {

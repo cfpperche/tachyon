@@ -4090,18 +4090,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       studioPanels.agent.openNew(ws.wsHash);
     }),
-    vscode.commands.registerCommand("tachyon.setProfileSecret", async () => {
-      const ws = await pickFolderForCreate();
-      if (!ws) return;
-      const provider = await vscode.window.showInputBox({ prompt: vscode.l10n.t("Secret provider (for example, zai)"), ignoreFocusOut: true });
-      if (!provider) return;
-      const id = await vscode.window.showInputBox({ prompt: vscode.l10n.t("Secret id"), ignoreFocusOut: true });
-      if (!id) return;
-      const value = await vscode.window.showInputBox({ prompt: vscode.l10n.t("Secret value"), password: true, ignoreFocusOut: true });
-      if (!value) return;
-      await extensionInvoke(ws, { action: "secret.set", provider, id, value });
-      notify(vscode.l10n.t("Secret stored in the machine vault."), "info");
-    }),
     // t-be359b — `hash` is how a caller that ALREADY asked says which folder it got. The sidebar draws
     // the product QuickPicker over its own fleet list and sends the answer; the Command Palette sends
     // nothing and falls through to pickFolderForCreate's native list, which is the right product for a

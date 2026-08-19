@@ -40,6 +40,10 @@ export interface WorkspaceStudioTarget extends WorkspacePresentationTarget {
 }
 
 export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
+  secretInventory(): Promise<SecretInventoryView>;
+  setProfileSecret(provider: string, id: string, value: string): Promise<{ stored: true; location: string }>;
+  replaceProfileSecret(provider: string, id: string, value: string): Promise<{ replaced: true; location: string }>;
+  removeProfileSecret(provider: string, id: string): Promise<{ removed: true; location: string }>;
   inspectAgentProfileStudio(agent: string): Promise<AgentProfileStudioSnapshotV1>;
   /**
    * t-5498a6 — authorize a workspace skill for this profile. A refusal is a RESULT, not a throw:
@@ -87,6 +91,12 @@ export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
   exportAgentProfileStudioBundle(agent: string, expectedRevision: string): Promise<AgentProfileStudioBundleExportResultV1>;
   cloneAgentProfileStudioBundle(agent: string, expectedRevision: string, destinationAgentName: string): Promise<AgentProfileStudioBundleCreatedResultV1>;
   importAgentProfileStudioBundle(destinationAgentName: string, bytes: Buffer): Promise<AgentProfileStudioBundleCreatedResultV1>;
+}
+
+/** Coordinates and dependency facts only. Secret values are intentionally absent from this type. */
+export interface SecretInventoryView {
+  stored: Array<{ provider: string; id: string }>;
+  required: Array<{ agent: string; name: string; provider: string; id: string; purpose: string; present: boolean }>;
 }
 
 export function workspacePresentationTarget(client: WorkspaceClient): WorkspacePresentationTarget {

@@ -16,7 +16,7 @@ import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
 import { canonicalWorkspaceStudioFormV1 } from "@tachyon/engine/engine-service/protocol.js";
 import type { ExtensionCommandV1 } from "@tachyon/engine/runtime-api/extensionOperations.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
-import type { WorkspaceAgentStudioTarget } from "./WorkspacePresentation.js";
+import type { SecretInventoryView, WorkspaceAgentStudioTarget } from "./WorkspacePresentation.js";
 import {
   agentOwnershipViewSchemaV1,
   isAgentProfileStudioSnapshotV1,
@@ -127,6 +127,55 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
       throw new Error("persistent engine returned a malformed canonical Agent Studio snapshot");
     }
     return structuredClone(result.value) as AgentProfileStudioSnapshotV1;
+  }
+
+  async secretInventory(): Promise<SecretInventoryView> {
+    const result = await this.client.query({
+      schemaVersion: 1,
+      method: "extension.query",
+      input: { action: "secrets.inventory" },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.query" || result.action !== "secrets.inventory") {
+      throw new Error("persistent engine returned a mismatched secret inventory result");
+    }
+    const value = result.value as Partial<SecretInventoryView>;
+    if (!Array.isArray(value?.stored) || !Array.isArray(value?.required)) {
+      throw new Error("persistent engine returned a malformed secret inventory result");
+    }
+    return structuredClone(value) as SecretInventoryView;
+  }
+
+  private async invokeSecret(action: "secret.set" | "secret.replace" | "secret.remove", provider: string, id: string, value?: string): Promise<unknown> {
+    const input = { action, provider, id, ...(value === undefined ? {} : { value }) } as ExtensionCommandV1;
+    const result = await this.client.invoke(`${action}:${this.operationId()}`, {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input,
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== action) {
+      throw new Error(`persistent engine returned a mismatched ${action} result`);
+    }
+    return result.value;
+  }
+
+  async setProfileSecret(provider: string, id: string, value: string): Promise<{ stored: true; location: string }> {
+    const valueResult = await this.invokeSecret("secret.set", provider, id, value) as { stored?: unknown; location?: unknown };
+    if (valueResult?.stored !== true || typeof valueResult.location !== "string") throw new Error("persistent engine returned a malformed secret save result");
+    return { stored: true, location: valueResult.location };
+  }
+
+  async replaceProfileSecret(provider: string, id: string, value: string): Promise<{ replaced: true; location: string }> {
+    const valueResult = await this.invokeSecret("secret.replace", provider, id, value) as { replaced?: unknown; location?: unknown };
+    if (valueResult?.replaced !== true || typeof valueResult.location !== "string") throw new Error("persistent engine returned a malformed secret replacement result");
+    return { replaced: true, location: valueResult.location };
+  }
+
+  async removeProfileSecret(provider: string, id: string): Promise<{ removed: true; location: string }> {
+    const valueResult = await this.invokeSecret("secret.remove", provider, id) as { removed?: unknown; location?: unknown };
+    if (valueResult?.removed !== true || typeof valueResult.location !== "string") throw new Error("persistent engine returned a malformed secret removal result");
+    return { removed: true, location: valueResult.location };
   }
 
   /**

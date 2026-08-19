@@ -49,6 +49,10 @@ import {
   cloneSavedAgentProfileBundleMessage,
   importSavedAgentProfileBundleMessage,
   saveMessage,
+  refreshSecretInventoryMessage,
+  saveProfileSecretMessage,
+  replaceProfileSecretMessage,
+  removeProfileSecretMessage,
 } from "./messages";
 import { RuntimeLogo } from "./runtimeLogos";
 import { ForgetPlanView } from "./ForgetPlanView";
@@ -59,6 +63,7 @@ import type {
   AgentStudioHostMessage,
   AgentStudioPatch,
 } from "./types";
+import type { SecretInventoryView } from "./domain";
 import type { AgentOwnershipViewV1 } from "@tachyon/shared/config/agentProfileStudio";
 import type { AuthorizableCapabilities } from "@tachyon/engine/config/agentCapabilityCandidates.js";
 // Node-free by construction — same reason domain.ts may import it into this browser bundle.
@@ -161,6 +166,13 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   const [bundleAction, setBundleAction] = useState<"clone" | "import" | undefined>();
   const [bundleDestination, setBundleDestination] = useState("");
   const [bundleImportBase64, setBundleImportBase64] = useState<string | undefined>();
+  const [secretInventory, setSecretInventory] = useState<SecretInventoryView | undefined>();
+  const [secretProvider, setSecretProvider] = useState("");
+  const [secretId, setSecretId] = useState("");
+  const [secretValue, setSecretValue] = useState("");
+  const [secretRemoveTarget, setSecretRemoveTarget] = useState<{ provider: string; id: string } | undefined>();
+  const [secretBusy, setSecretBusy] = useState<string | undefined>();
+  const [secretNotice, setSecretNotice] = useState<{ kind: "success" | "error"; text: string } | undefined>();
   const bundleCancelButtonRef = useRef<HTMLButtonElement>(null);
   const [ready, setReady] = useState(false);
   const entityRef = useRef<AgentStudioEntity | undefined>(undefined);
@@ -205,6 +217,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     setOwnership(undefined);
     setOwnershipDraft(undefined);
     setBundleAction(undefined); setBundleDestination(""); setBundleImportBase64(undefined);
+    setSecretInventory(undefined); setSecretProvider(""); setSecretId(""); setSecretValue(""); setSecretRemoveTarget(undefined); setSecretBusy(undefined); setSecretNotice(undefined);
     setTombstone(undefined);
     setReady(false);
     dispatch.post(readyMessage({ routeKey, mountNonce }));
@@ -292,6 +305,17 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       fieldsRef.current = next;
       dirtyRef.current = computeAgentDirty(entityRef.current, next);
       setFields(next);
+    } else if (d.type === "secretInventory") {
+      setSecretInventory(d.inventory);
+      setSecretBusy(undefined);
+    } else if (d.type === "secretOperationResult") {
+      setSecretBusy(undefined);
+      setSecretValue("");
+      setSecretRemoveTarget(undefined);
+      setSecretNotice({ kind: "success", text: d.operation === "remove" ? `Removed ${d.provider}/${d.id} from the machine vault.` : `${d.operation === "replace" ? "Replaced" : "Stored"} ${d.provider}/${d.id} in the machine vault.` });
+    } else if (d.type === "secretOperationError") {
+      setSecretBusy(undefined);
+      setSecretNotice({ kind: "error", text: d.message });
     } else if (d.type === "agentProfileSnapshot") {
       const current = entityRef.current;
       if (!current || current.storage !== "canonical") return;
@@ -386,6 +410,12 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     post(refreshAuthorizableCapabilitiesMessage(name));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entityRef.current?.name, entityRef.current?.profile?.revision]);
+
+  useEffect(() => {
+    if (!ready || tombstone) return;
+    post(refreshSecretInventoryMessage());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, tombstone]);
 
   useEffect(() => {
     if (renameConfirmOpen) renameCancelButtonRef.current?.focus();
@@ -522,6 +552,13 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     freezeForSave();
     post(saveMessage());
   };
+
+  const selectedSecret = secretInventory?.stored.some((secret) => secret.provider === secretProvider && secret.id === secretId) ?? false;
+  const secretDependents = secretRemoveTarget
+    ? (secretInventory?.required ?? []).filter((required) => required.provider === secretRemoveTarget.provider && required.id === secretRemoveTarget.id)
+    : [];
+  const secretCoordinateValid = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(secretProvider)
+    && secretId.length > 0 && secretId.length <= 512;
 
   return (
     <StudioFrame
@@ -760,6 +797,63 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 )}
               </section>
             )}
+            <section class="ash-static-section ash-secret-vault" aria-labelledby="ash-secret-vault-title">
+              <div class="ash-label" id="ash-secret-vault-title">Machine secrets</div>
+              <div class="hint">Store or replace a credential in Tachyon's machine-local daemon vault. The value is accepted once and is never shown here or returned to the webview.</div>
+              <div class="hint">Storage: <code>secrets.json</code> with restricted machine-local permissions. This is not a keychain.</div>
+              <div class="ash-group">
+                <label class="ash-label" for="ash-secret-provider">Provider</label>
+                <Input id="ash-secret-provider" value={secretProvider} placeholder="zai" onInput={(event) => setSecretProvider((event.currentTarget as HTMLInputElement).value)} />
+                <label class="ash-label" for="ash-secret-id">Secret id</label>
+                <Input id="ash-secret-id" value={secretId} placeholder="glm-coding-pro" onInput={(event) => setSecretId((event.currentTarget as HTMLInputElement).value)} />
+                <label class="ash-label" for="ash-secret-value">New secret value</label>
+                <Input id="ash-secret-value" type="password" value={secretValue} placeholder="Enter a value; the old value is never displayed" onInput={(event) => setSecretValue((event.currentTarget as HTMLInputElement).value)} />
+                <div class="ash-profile-replace-confirm-actions">
+                  <Button
+                    variant="primary"
+                    disabled={!secretCoordinateValid || secretValue.length === 0 || !!secretBusy}
+                    onClick={() => {
+                      setSecretBusy(selectedSecret ? "Replacing machine secret" : "Storing machine secret");
+                      setSecretNotice(undefined);
+                      post(selectedSecret ? replaceProfileSecretMessage(secretProvider, secretId, secretValue) : saveProfileSecretMessage(secretProvider, secretId, secretValue));
+                    }}
+                  >{selectedSecret ? "Replace secret" : "Store secret"}</Button>
+                  <Button disabled={!!secretBusy} onClick={() => { setSecretProvider(""); setSecretId(""); setSecretValue(""); }}>Clear</Button>
+                  <Button disabled={!!secretBusy} onClick={() => post(refreshSecretInventoryMessage())}>Refresh inventory</Button>
+                </div>
+              </div>
+              <div class="ash-label ash-label-break">Stored coordinates</div>
+              {secretInventory === undefined
+                ? <div class="ash-native-config-empty">Loading machine-secret inventory…</div>
+                : secretInventory.stored.length === 0
+                  ? <div class="ash-native-config-empty">No machine secrets stored.</div>
+                  : <div class="ash-native-config">
+                    {secretInventory.stored.map((secret) => {
+                      const dependents = secretInventory.required.filter((required) => required.provider === secret.provider && required.id === secret.id);
+                      return <div class="ash-native-config-row" key={`${secret.provider}/${secret.id}`}>
+                        <code>{secret.provider}/{secret.id}</code>
+                        <span class="hint">value hidden · {dependents.length} dependent profile{dependents.length === 1 ? "" : "s"}</span>
+                        <Button disabled={!!secretBusy} onClick={() => { setSecretProvider(secret.provider); setSecretId(secret.id); setSecretValue(""); setSecretRemoveTarget(undefined); }}>Replace</Button>
+                        <Button variant="danger" disabled={!!secretBusy} onClick={() => { setSecretRemoveTarget(secret); setSecretNotice(undefined); }}>Remove</Button>
+                      </div>;
+                    })}
+                  </div>}
+              {secretRemoveTarget && (
+                <div class="ash-profile-delete-confirm" aria-labelledby="ash-secret-remove-title">
+                  <div class="ash-profile-delete-confirm-title" id="ash-secret-remove-title">Remove {secretRemoveTarget.provider}/{secretRemoveTarget.id}?</div>
+                  <div class="hint">The value will be deleted from the machine vault. The value is not shown.</div>
+                  {secretDependents.length === 0
+                    ? <div class="hint">No saved agent currently declares this secret.</div>
+                    : <><div>This will prevent these agents from launching until the secret is stored again:</div><ul>{secretDependents.map((dependent) => <li key={`${dependent.agent}/${dependent.name}`}><strong>{dependent.agent}</strong> — missing {dependent.name} ({dependent.purpose})</li>)}</ul></>}
+                  <div class="ash-profile-delete-confirm-actions">
+                    <Button onClick={() => setSecretRemoveTarget(undefined)}>Cancel</Button>
+                    <Button variant="danger" disabled={!!secretBusy} onClick={() => { setSecretBusy("Removing machine secret"); post(removeProfileSecretMessage(secretRemoveTarget.provider, secretRemoveTarget.id)); }}>Remove secret</Button>
+                  </div>
+                </div>
+              )}
+              {secretBusy && <div class="ash-profile-notice" role="status" aria-live="polite">{secretBusy}…</div>}
+              {secretNotice && <div class={`ash-profile-notice ${secretNotice.kind === "error" ? "ash-profile-notice-error" : ""}`} role="status" aria-live="polite">{secretNotice.text}</div>}
+            </section>
             {canonicalSnapshot && mode === "edit" && (
               <section class="ash-profile-sources" aria-labelledby="ash-profile-sources-title">
                 <div>

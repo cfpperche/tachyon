@@ -73,6 +73,8 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "agent-profile.authorize-skill",
   "agent-profile.authorize-plugin",
   "secret.set",
+  "secret.replace",
+  "secret.remove",
   // t-ea8f78 — host-only wake through Workspace.deliverNotice. Not a Bridge tool: an agent that
   // could reach this would be ringing anyone's pane. The Saved Agent commit lives in the editor
   // and needs this one door onto the same queue approval.resolve already uses.
@@ -201,6 +203,17 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     provider: name,
     id: text(512, 1),
     value: text(64 * 1024, 1),
+  }).strict(),
+  z.object({
+    action: z.literal("secret.replace"),
+    provider: name,
+    id: text(512, 1),
+    value: text(64 * 1024, 1),
+  }).strict(),
+  z.object({
+    action: z.literal("secret.remove"),
+    provider: name,
+    id: text(512, 1),
   }).strict(),
   z.object({ action: z.literal("config.companion.tabTools"), enabled: z.boolean() }).strict(),
   z.object({
