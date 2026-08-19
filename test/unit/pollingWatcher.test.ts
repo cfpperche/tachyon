@@ -58,6 +58,15 @@ describe("PollingFileWatcher", () => {
     expect(() => new PollingFileWatcher(root, "src/*.ts", { create: true }, () => {}, { maxEntries: 1 })).toThrow(/exceeded/);
   });
 
+  it("keeps a raced file-to-directory watch from crashing the host", () => {
+    const root = fixture();
+    fs.mkdirSync(path.join(root, "profile"));
+    fs.writeFileSync(path.join(root, "profile", "instructions.md"), "document\n");
+
+    const watcher = new PollingFileWatcher(root, "profile/instructions.md/**", { change: true }, () => {});
+    watchers.push(watcher);
+  });
+
   it("coalesces bursts of native hints into one authoritative scan", async () => {
     const root = fixture();
     fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n");

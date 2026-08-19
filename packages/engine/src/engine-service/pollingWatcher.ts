@@ -99,6 +99,10 @@ export class PollingFileWatcher implements HostDisposable {
       try { entries = fs.readdirSync(absolute, { withFileTypes: true }); }
       catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+        if (isTransientFilesystemError(error)) {
+          this.report(error);
+          return;
+        }
         throw error;
       }
       for (const entry of entries) {
@@ -111,7 +115,9 @@ export class PollingFileWatcher implements HostDisposable {
             const stat = fs.lstatSync(childAbsolute);
             output.set(childRelative, `${stat.dev}:${stat.ino}:${stat.mode}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`);
           } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+            if (!isTransientFilesystemError(error)) throw error;
+            this.report(error);
           }
         }
         if (entry.isDirectory() && !entry.isSymbolicLink() && depth < this.plan.maxDepth) {
@@ -126,7 +132,9 @@ export class PollingFileWatcher implements HostDisposable {
         const stat = fs.lstatSync(absolute);
         output.set(this.plan.exactRelative, `${stat.dev}:${stat.ino}:${stat.mode}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`);
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return output;
+        if (!isTransientFilesystemError(error)) throw error;
+        this.report(error);
       }
       return output;
     }
@@ -141,6 +149,12 @@ export class PollingFileWatcher implements HostDisposable {
     this.lastError = normalized.message;
     this.options.onError?.(normalized);
   }
+}
+
+/** A watch is an observation aid; a raced delete, replacement, or permission change is not fatal. */
+function isTransientFilesystemError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === "ENOENT" || code === "ENOTDIR" || code === "EACCES" || code === "EPERM" || code === "ELOOP";
 }
 
 interface WatcherPlan {

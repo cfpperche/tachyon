@@ -7,6 +7,9 @@ import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child
 import { createHash } from "node:crypto";
 import { EngineControlClient } from "@tachyon/engine/engine-service/controlClient.js";
 import { StagedPayloadStore } from "@tachyon/engine/engine-service/stagedPayloadStore.js";
+import { serializeAgentProfileAuthorityRegistry } from "@tachyon/engine/config/agentProfileAuthority.js";
+import { CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR } from "@tachyon/engine/config/agentProfileProjection.js";
+import { agentProfileAuthoritiesSecretKey } from "@tachyon/engine/workspace/operationalStateKeys.js";
 import { ENGINE_SHELL_PROTOCOL, type EngineServiceIdentityV1, type EngineShellHelloV1, type WorkspaceEventV1 } from "@tachyon/engine/engine-service/protocol.js";
 import { encodePinStudioStagedPayloadV1 } from "@tachyon/engine/runtime-api/pinStudioCommands.js";
 import { encodeTaskStudioStagedPayloadV1 } from "@tachyon/engine/runtime-api/taskStudioCommands.js";
@@ -105,6 +108,77 @@ function expectOkMatching(envelope: unknown, label: string, shape: Record<string
 }
 
 describe("daemon engine service", () => {
+  it("starts the packaged daemon with a real profile instruction document on disk", async () => {
+    const root = makeSocketTemp("tachyon-engine-profile-startup-");
+    roots.push(root);
+    const workspaceRoot = path.join(root, "workspace");
+    const storageRoot = path.join(root, "storage");
+    const mediaRoot = path.join(root, "bundle");
+    const runtimeRoot = path.join(root, "runtime");
+    const tmuxTmp = path.join(root, "tmux-tmp");
+    const xdgRuntime = path.join(root, "xdg-runtime");
+    for (const directory of [workspaceRoot, storageRoot, mediaRoot, runtimeRoot, tmuxTmp, xdgRuntime]) {
+      fs.mkdirSync(directory, { mode: 0o700 });
+    }
+    fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), "settings: {}\n", "utf8");
+    const profileDir = path.join(workspaceRoot, ".tachyon", "agents", "claude");
+    fs.mkdirSync(profileDir, { recursive: true, mode: 0o700 });
+    const instructions = "Use evidence.\n";
+    fs.writeFileSync(path.join(profileDir, "instructions.md"), instructions, "utf8");
+    const instructionsSha256 = createHash("sha256").update(instructions, "utf8").digest("hex");
+    const profileText = [
+      "schemaVersion: 1",
+      "agentId: 11111111-1111-4111-8111-111111111111",
+      "runtime:",
+      "  adapter: claude",
+      "  executable: claude",
+      "prompt:",
+      "  instructions: persistent-instructions",
+      "references:",
+      "  - id: persistent-instructions",
+      "    kind: instructions",
+      "    scope: profile",
+      "    owner: 11111111-1111-4111-8111-111111111111",
+      "    path: instructions.md",
+      "    mode: pinned",
+      `    sha256: ${instructionsSha256}`,
+      "",
+    ].join("\n");
+    const profileBytes = Buffer.from(profileText, "utf8");
+    fs.writeFileSync(path.join(profileDir, "agent.yml"), profileBytes);
+    const profileWorkspaceHash = workspaceHash(fs.realpathSync(workspaceRoot));
+    const stateRoot = path.join(storageRoot, "state");
+    fs.mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(stateRoot, "secrets.json"), JSON.stringify({
+      [agentProfileAuthoritiesSecretKey(profileWorkspaceHash)]: serializeAgentProfileAuthorityRegistry(new Map([[
+        "claude",
+        {
+          schemaVersion: 1,
+          agentName: "claude",
+          agentId: "11111111-1111-4111-8111-111111111111",
+          revision: "profile-r1",
+          canonicalSha256: createHash("sha256").update(profileBytes).digest("hex"),
+          runtimeInspector: CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR,
+        },
+      ]])),
+    }, null, 2) + "\n", "utf8");
+    const childEnv = isolatedDaemonChildEnv(tmuxChildEnv(), {
+      TMUX_TMPDIR: tmuxTmp,
+      TACHYON_ENGINE_TMUX_TMPDIR: tmuxTmp,
+      XDG_RUNTIME_DIR: xdgRuntime,
+    });
+    const socketPath = path.join(runtimeRoot, "engine.sock");
+    const child = spawn(process.execPath, [bundledDaemonFixture("daemonEngineServiceWorker.ts"), workspaceRoot, storageRoot, mediaRoot, socketPath], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: childEnv,
+    });
+    children.push(child);
+    const identity = await readReady(child);
+    expect(identity.workspaceRoot).toBe(fs.realpathSync(workspaceRoot));
+    expect(fs.existsSync(socketPath)).toBe(true);
+    process.stdout.write(`PROFILE_DAEMON_SOCKET_CREATED ${socketPath}\n`);
+  });
+
   it("owns a real Workspace and direct Bridge across shell replacement and no-shell time", async () => {
     const root = makeSocketTemp("tachyon-engine-service-");
     roots.push(root);
