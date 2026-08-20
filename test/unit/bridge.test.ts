@@ -174,6 +174,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "run_host_action",
       "runtime_condition",
       "runtime_status_publish",
+      "search_tasks",
       "set_continuity",
       "set_project_handoff",
       "spawn_agent",
