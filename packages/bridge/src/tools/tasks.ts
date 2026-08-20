@@ -1,7 +1,4 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import fs from "node:fs";
-import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { projectTaskListRow, type TaskListFields } from "@tachyon/engine/tasks/TaskStore.js";
 import { TASK_AUTHORING_LIMITS } from "@tachyon/engine/tasks/taskAuthoring.js";
@@ -484,8 +481,9 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
       },
     },
     async ({ query, limit = 10 }) => {
-      let db: DatabaseSync | undefined;
+      let db: import("node:sqlite").DatabaseSync | undefined;
       try {
+        const { DatabaseSync } = await import("node:sqlite");
         db = new DatabaseSync(":memory:");
         db.exec(
           "CREATE VIRTUAL TABLE task_search USING fts5(" +
@@ -495,7 +493,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
         const insert = db.prepare("INSERT INTO task_search (id, title, body, status) VALUES (?, ?, ?, ?)");
         db.exec("BEGIN");
         try {
-          for (const task of readTaskSearchRows(deps.workspaceRoot)) {
+          for (const task of deps.tasks.listRaw()) {
             insert.run(task.id, task.title, task.body ?? "", task.status);
           }
           db.exec("COMMIT");
@@ -520,29 +518,4 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
   // t-a4ac02 — Bridge tool `next_task` removed. The pure function nextTask() in src/tasks/nextTask.ts
   // still computes Board spotlight via boardSnapshot; agents claim work through
   // spawn_agent(claim_task:) or update_task CAS, not an advisory pull tool.
-}
-
-type TaskSearchRow = { id: string; title: string; body?: string; status: string };
-
-function readTaskSearchRows(workspaceRoot: string): TaskSearchRow[] {
-  const dir = path.join(workspaceRoot, ".tachyon", "tasks");
-  let names: string[];
-  try {
-    names = fs.readdirSync(dir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-  const rows: TaskSearchRow[] = [];
-  for (const name of names) {
-    if (!/^t-[0-9a-f]{6}\.json$/.test(name)) continue;
-    try {
-      const value = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")) as Partial<TaskSearchRow>;
-      if (typeof value.title !== "string" || !TASK_STATUS.safeParse(value.status).success) continue;
-      rows.push({ id: name.slice(0, -5), title: value.title, status: value.status!, ...(typeof value.body === "string" ? { body: value.body } : {}) });
-    } catch {
-      // Match TaskStore listings: one unservable task must not make the rest of the board unreadable.
-    }
-  }
-  return rows;
 }
