@@ -43,7 +43,6 @@
   "command.toggleSchedulePauseItem": "Pause Schedule",
   "command.scheduleStudio": "Tachyon: New Schedule",
   "command.editScheduleStudioItem": "Edit Schedule…",
-  "command.getStarted": "Tachyon: Get Started (Walkthrough)",
   "command.checkRequirements": "Tachyon: Check Requirements",
   "command.doctor": "Tachyon: Doctor",
   "command.openConfig": "Tachyon: Open Config",

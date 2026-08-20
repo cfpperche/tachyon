@@ -3646,9 +3646,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.openControlTask", (wsHash: string, taskId: string) =>
       taskDetailPanels.open(wsHash, taskId),
     ),
-    vscode.commands.registerCommand("tachyon.getStarted", () =>
-      vscode.commands.executeCommand("workbench.action.openWalkthrough", "cfpperche.tachyon#tachyon.welcome", false),
-    ),
     vscode.commands.registerCommand("tachyon.checkRequirements", async () => {
       const r = await doctor();
       if (r.ok) {

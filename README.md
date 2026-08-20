@@ -51,7 +51,7 @@ other's output, run curated commands, and ask for you when they need a human.
 3. **Start the fleet.** Auto-start agents boot with the workspace and notify you when they need you.
 
 Tachyon stays inert until you opt in: nothing boots merely from installing the extension or opening a
-folder. On a fresh install the **Get Started** walkthrough opens on its own.
+folder. On a fresh install, open the Tachyon view and select **Set up Tachyon** to use the Onboarding app.
 
 To see a working fleet before configuring your own, clone
 [**tachyon-examples**](https://github.com/cfpperche/tachyon-examples) and open it.
