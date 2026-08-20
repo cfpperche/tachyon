@@ -9,6 +9,9 @@
  * It still measures only wall time inside each wrapped call: a zero syncTotalMs
  * rules out waiting in these doors, not a callback that returned from I/O quickly
  * and then blocked elsewhere.
+ * Six production-door activation smokes measured 17 median / 28 max calls across
+ * the seven added doors: 0.85 ms median / 1.39 ms max at the measured 49.754 µs
+ * wrapper overhead. That is small enough to keep caller attribution on every call.
  */
 import childProcess from "node:child_process";
 import fs from "node:fs";

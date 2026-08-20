@@ -19,6 +19,8 @@ function sourceFiles(target: string): string[] {
 }
 
 const SYNC_CHILD_PROCESS_ALLOWLIST: Record<string, string> = {
+  // Instrumentation only: stores/replaces built-in function references but never executes a child.
+  "apps/vscode-extension/src/workspace/hostSyncIoProbe.ts": "sync child-process attribution wrappers; no child execution",
   // Pre-commit i18n gate entry: invoked by git hooks in a separate process with no VS Code running.
   "apps/vscode-extension/src/plugins/i18nPtbrGate.ts": "separate git-hook process",
   // External-tool resolver/probe module: used by explicit plugin install/rehydrate flows and the standalone `_tachyon-external` shim, not Bridge/tmux MCP handlers.
@@ -39,8 +41,7 @@ function syncChildProcessOffenders(textOverrides: Record<string, string> = {}): 
     const rel = path.relative(repoRoot, file).split(path.sep).join(path.posix.sep);
     if (rel in SYNC_CHILD_PROCESS_ALLOWLIST) return [];
     const text = textOverrides[rel] ?? fs.readFileSync(file, "utf8");
-    // Guard executions, not instrumentation that stores or replaces a function reference.
-    return [...text.matchAll(/\b(?:execSync|execFileSync|spawnSync)\s*\(/g)].map((match) => `${rel}:${match.index}`);
+    return [...text.matchAll(/\b(?:execSync|execFileSync|spawnSync)\b/g)].map((match) => `${rel}:${match.index}`);
   });
 }
 
