@@ -34,8 +34,9 @@ function Root() {
    */
   const [boot, setBoot] = useState<SidebarBootVM | undefined>(undefined);
   // spec 242 — persisted sort prefs (per section); the host includes them in the fleet message so the FIRST
-  // render is already in the saved order (no name-asc→saved flicker).
-  const [prefs, setPrefs] = useState<{ agents?: string; terminals?: string }>({});
+  // render is already in the saved order (no name-asc→saved flicker). t-50daeb — `launcher` (the
+  // Control grid) is absent until the user picks a mode: absence IS the product order.
+  const [prefs, setPrefs] = useState<{ agents?: string; terminals?: string; launcher?: string }>({});
   const [collapsedKeys, setCollapsedKeys] = useState<string[]>([]);
   const [appVersion, setAppVersion] = useState<string | undefined>(undefined);
   const [selectedWsHash, setSelectedWsHash] = useState<string | undefined>(undefined);
@@ -96,7 +97,7 @@ function Root() {
     // t-41117e — destination already chosen in the shared ContinuePicker.
     continueTask: (fromName: string, toName: string, hash?: string) =>
       vscode?.postMessage({ type: "continueTask", fromName, toName, hash }),
-    setSort: (section: "agents" | "terminals", mode: string) => vscode?.postMessage({ type: "setSort", section, mode }),
+    setSort: (section: "agents" | "terminals" | "launcher", mode: string) => vscode?.postMessage({ type: "setSort", section, mode }),
     setCollapsedKeys: (keys: string[]) => vscode?.postMessage({ type: "setCollapsed", keys }),
     switchWorkspace: (wsHash: string) => vscode?.postMessage({ type: "switchControlWorkspace", hash: wsHash }),
   };

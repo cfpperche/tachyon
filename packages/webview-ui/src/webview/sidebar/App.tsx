@@ -63,8 +63,9 @@ export interface Dispatch {
   pipeline: (op: string, name: string, nodeId?: string, wsHash?: string) => void;
   /** t-41117e — Continue task after the webview picker chose a stopped Saved Agent destination. */
   continueTask?: (fromName: string, toName: string, wsHash?: string) => void;
-  /** spec 242 — persist the chosen sort for a status list (global per-user, per-section). */
-  setSort?: (section: "agents" | "terminals", mode: SortMode) => void;
+  /** spec 242 — persist the chosen sort for a status list (global per-user, per-section).
+   *  t-50daeb — "launcher" is the Control grid; the host stores it beside the other two. */
+  setSort?: (section: "agents" | "terminals" | "launcher", mode: SortMode) => void;
   /** Persist all collapsed sidebar group keys. Keys include workspace hashes when workspace-scoped. */
   setCollapsedKeys?: (keys: string[]) => void;
   switchWorkspace?: (wsHash: string) => void;
@@ -1112,11 +1113,17 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
  *
  * "Which section am I in" moved with the navigation: the section's own H1 in the Control panel answers
  * it, which is why every one of the twelve now has one (see cockpit/App.tsx's SectionFallback).
+ *
+ * t-50daeb — the grid is sortable A–Z with the same machine the Agents tab uses (`sortRows`, by
+ * LABEL — the name a person reads, not the id). `sort` is undefined until the user asks for one, and
+ * that absence is the PRODUCT order `LAUNCHER_ORDER` encodes: SDD 500's tile positions are decisions,
+ * not an arbitrary starting point, so alphabetical is opt-in and per-user — never the default.
  */
-function ControlGrid({ onOpen, engineHasError }: { onOpen: (section: SectionId) => void; engineHasError: boolean }) {
+function ControlGrid({ onOpen, engineHasError, sort }: { onOpen: (section: SectionId) => void; engineHasError: boolean; sort?: SortMode }) {
+  const tiles = sort ? sortRows(CONTROL_SECTION_NAV, sort, (s) => s.label) : CONTROL_SECTION_NAV;
   return (
     <div class="ctl-grid" role="group" aria-label="Control sections" data-testid="control-grid">
-      {CONTROL_SECTION_NAV.map((s) => {
+      {tiles.map((s) => {
         // t-aa2780 — one tile carries the log-error dot that used to sit on Control's Engine TAB. The
         // tab-strip dot next to it says "something is wrong"; this one says WHERE, so the alarm has an
         // address. Announced through the button's own label, not as a decorative glyph.
@@ -1313,7 +1320,7 @@ export function App({
 }: {
   fleets?: FleetVM[];
   dispatch?: Dispatch;
-  prefs?: { agents?: string; terminals?: string };
+  prefs?: { agents?: string; terminals?: string; launcher?: string };
   collapsedKeys?: string[];
   appVersion?: string;
   initialTab?: TabId;
@@ -1386,10 +1393,14 @@ export function App({
   const [wsOverride, setWsOverride] = useState<string | undefined>(undefined);
   // spec 242 — sort: the host's persisted pref seeds it; a user choice this session OVERRIDES (and persists),
   // so a stale fleet snapshot can never revert the user's pick (codex D9). Default name-asc.
-  const [sortOverride, setSortOverride] = useState<{ agents?: SortMode; terminals?: SortMode }>({});
+  const [sortOverride, setSortOverride] = useState<{ agents?: SortMode; terminals?: SortMode; launcher?: SortMode }>({});
   const sortAgents = sortOverride.agents ?? asSortMode(prefs.agents);
   const sortTerminals = sortOverride.terminals ?? asSortMode(prefs.terminals);
-  const changeSort = (section: "agents" | "terminals", mode: SortMode) => {
+  // t-50daeb — the launcher's default is the PRODUCT order (SDD 500's positions are deliberate), so an
+  // absent pref stays ABSENT instead of coercing to name-asc: the grid sorts only once a mode exists.
+  const sortLauncher: SortMode | undefined =
+    sortOverride.launcher ?? (prefs.launcher === undefined ? undefined : asSortMode(prefs.launcher));
+  const changeSort = (section: "agents" | "terminals" | "launcher", mode: SortMode) => {
     setSortOverride((o) => ({ ...o, [section]: mode })); // optimistic + session-authoritative
     dispatch?.setSort?.(section, mode); // persist for next load
   };
@@ -1670,6 +1681,26 @@ export function App({
         {/* t-72ff5a — the project selector used to live here, in Control's `.sec-actions` slot
             (SDD 485 C6). It moved up into the sidebar chrome above the search bar once it began to
             govern seven tabs instead of the next Control panel; see the comment there. */}
+        {/* t-50daeb — the same A–Z flip the two list tabs have, on the launcher. The initial state is
+            PRODUCT order, so the control starts INACTIVE ("click to sort A–Z") rather than claiming a
+            direction the grid does not have; once a mode exists it flips exactly like Agents does. */}
+        {tab === "Control" && (() => {
+          const label = sortLauncher ? SORT_LABEL[sortLauncher] : "Product order";
+          const flipSort = () => changeSort("launcher", sortLauncher === "name-asc" ? "name-desc" : "name-asc");
+          return (
+            <span class="sec-actions">
+              <button
+                type="button"
+                class={`act${sortLauncher ? " on" : ""}`}
+                title={`Sort launcher — ${label} (${sortLauncher ? "click to flip" : "click to sort A–Z"})`}
+                aria-label={`Sort launcher (${label}); ${sortLauncher ? "click to flip" : "click to sort A–Z"}`}
+                onClick={flipSort}
+              >
+                <SortIcon dir={sortLauncher ?? "name-asc"} />
+              </button>
+            </span>
+          );
+        })()}
         {(tab === "Agents" || tab === "Terminals") && (() => {
           const section = tab === "Agents" ? "agents" : "terminals";
           const active = section === "agents" ? sortAgents : sortTerminals;
@@ -1754,7 +1785,11 @@ export function App({
           <AttentionStack fleets={fleets} dispatch={dispatch} />
         ) : tab === "Control" ? (
           // t-6e2952 — one grid for the window (Control is a singleton), so no folder header above it.
-          <ControlGrid onOpen={(section) => dispatch?.global("openControl", undefined, section)} engineHasError={engineHasError} />
+          <ControlGrid
+            onOpen={(section) => dispatch?.global("openControl", undefined, section)}
+            engineHasError={engineHasError}
+            sort={sortLauncher}
+          />
         ) : selected ? (
           // t-72ff5a — the seven scoped tabs render exactly the selected project, with no folder
           // header and no aggregation.
