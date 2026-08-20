@@ -689,7 +689,11 @@ export async function main() {
     // t-9e3978 — prove the editor-host suite points at Tachyon before spending the unit suite.
     // This is deliberately only the cheap identity/activation smoke; the integration suite stays
     // out of verify:full because its multi-root fixture is not yet isolated (t-25d2f1).
-    const extensionSmoke = await runChild("xvfb-run", ["-a", "npm", "run", "--silent", "smoke:extension-host"], extensionSmokeLog, active);
+    //
+    // No `xvfb-run` here any more: the smoke starts its own headless display. While the wrapper
+    // lived HERE, this was the only headless call site, and the command a human types by hand
+    // (`npm run smoke:extension-host`) opened a real editor window on their desktop.
+    const extensionSmoke = await runChild("npm", ["run", "--silent", "smoke:extension-host"], extensionSmokeLog, active);
     if (extensionSmoke.code !== 0 || extensionSmoke.signal || receivedSignal) {
       process.stderr.write(`${formatFailure({ phase: "extension-host smoke", fallback: await readTail(extensionSmokeLog), logDir: root, exit: describeChildExit(extensionSmoke) })}\n`);
       return receivedSignal === "SIGINT" ? 130 : receivedSignal === "SIGTERM" ? 143 : extensionSmoke.code || 1;
