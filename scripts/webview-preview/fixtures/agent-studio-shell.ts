@@ -208,6 +208,10 @@ const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
     cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: true },
     worktree: { enabled: true, branch: "feature/reviewer", setup: ["pnpm install", "pnpm --filter web build"] },
     instructions: "you are a code reviewer; read the diff and flag correctness issues", isolation: "transcript",
+    environment: {
+      values: { NODE_ENV: "review" },
+      secrets: { GITHUB_TOKEN: { provider: "github", id: "review-token", purpose: "GitHub API access" } },
+    },
     capabilities: { skills: ["review-checklist"], mcp: ["docs-search"], hooks: [] },
   },
   bindings: {
@@ -235,6 +239,7 @@ const canonicalEntity: AgentStudioEntity = {
   storage: "canonical",
   profile: canonicalSnapshot,
   fields: canonicalAgentFields(canonicalSnapshot),
+  secretInventory: { stored: [{ provider: "github", id: "review-token" }, { provider: "zai", id: "glm-coding-pro" }] },
 };
 
 const withheldDocumentSnapshot: AgentProfileStudioSnapshotV1 = {

@@ -1,6 +1,7 @@
 import type { AgentFormState, QuickAddChip } from "@tachyon/engine/webview/formLogic.js";
 import type {
   AgentOwnershipViewV1,
+  AgentProfileStudioEditableV1,
   AgentProfileStudioMutationV1,
   AgentProfileStudioSnapshotV1,
 } from "@tachyon/shared/config/agentProfileStudio.js";
@@ -391,6 +392,8 @@ export interface AgentStudioEntity {
   defaultCwd: string;
   persistentInstructionsHelp: string;
   profileLabels?: AgentProfileLabels;
+  /** Safe vault coordinates only; values are never included. */
+  secretInventory?: { stored: Array<{ provider: string; id: string }> };
 }
 
 /** Host-localized copy for the canonical profile-only region. */
@@ -584,6 +587,7 @@ export interface AgentStudioCanonicalContext {
   runtime: AgentProfileStudioSnapshotV1["editable"]["runtime"];
   nativeConfig: NonNullable<AgentProfileStudioSnapshotV1["editable"]["nativeConfig"]>;
   capabilities: NonNullable<AgentProfileStudioSnapshotV1["editable"]["capabilities"]>;
+  environment: NonNullable<AgentProfileStudioEditableV1["environment"]>;
 }
 
 export type AgentStudioFields = AgentFormState & { canonical?: AgentStudioCanonicalContext };
@@ -653,6 +657,7 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
       snapshot ? snapshot.editable.nativeConfig ?? {} : defaultCodexScalarNativeConfigPolicy(),
     ),
     capabilities: structuredClone(snapshot?.editable.capabilities ?? { skills: [], mcp: [], hooks: [] }),
+    environment: structuredClone(snapshot?.editable.environment ?? { values: {}, secrets: {} }),
   };
   return fields;
 }
@@ -924,6 +929,7 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
       // meaningful value here, not an omission: it is how the binding is cleared.
       instructions: fields.instructions,
       isolation: fields.isolate ? "transcript" : "",
+      environment: structuredClone(fields.canonical.environment),
       nativeConfig,
       capabilities: structuredClone(fields.canonical.capabilities),
     },

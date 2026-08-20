@@ -115,6 +115,13 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
    */
   instructions: text(PERSISTENT_INSTRUCTIONS_MAX_CHARS),
   isolation: z.enum(["", "transcript"]),
+  /** Literal values and vault coordinates; secret material never crosses this boundary. */
+  environment: z.object({
+    values: z.record(z.string(), text(16 * 1024)).optional(),
+    secrets: z.record(z.string(), z.object({
+      provider: text(128), id: text(512).min(1), purpose: text(256),
+    }).strict()).optional(),
+  }).strict().optional(),
   nativeConfig: agentNativeConfigSchemaV1.optional(),
   /** Existing, authority-bound capability references only; Studio cannot author a new reference. */
   capabilities: capabilityIdsSchema.optional(),
@@ -438,6 +445,7 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
       // write that emptiness back over them.
       instructions: snapshot.persistentInstructions ?? "",
       isolation: profile.isolation ?? "",
+      ...(profile.environment ? { environment: structuredClone(profile.environment) } : {}),
       nativeConfig: structuredClone(profile.nativeConfig ?? {}),
       capabilities: {
         skills: [...(profile.capabilities?.skills ?? [])],
@@ -580,6 +588,8 @@ export function createProfileFromStudioMutation(
       },
     } : {}),
     ...(parsed.editable.isolation ? { isolation: parsed.editable.isolation } : {}),
+    ...(parsed.editable.environment && (Object.keys(parsed.editable.environment.values ?? {}).length > 0 || Object.keys(parsed.editable.environment.secrets ?? {}).length > 0)
+      ? { environment: structuredClone(parsed.editable.environment) } : {}),
     ...(Object.keys(parsed.editable.nativeConfig ?? {}).length > 0 ? { nativeConfig: structuredClone(parsed.editable.nativeConfig) } : {}),
   };
 }
@@ -657,6 +667,8 @@ export function patchProfileFromStudioMutation(
     runtime: { ...parsed.editable.runtime },
     prompt: Object.keys(prompt).length > 0 ? prompt : undefined,
     lifecycle, workspace, isolation: parsed.editable.isolation || undefined,
+    environment: (Object.keys(parsed.editable.environment?.values ?? {}).length > 0 || Object.keys(parsed.editable.environment?.secrets ?? {}).length > 0)
+      ? structuredClone(parsed.editable.environment) : undefined,
     nativeConfig: Object.keys(parsed.editable.nativeConfig ?? {}).length > 0 ? structuredClone(parsed.editable.nativeConfig) : undefined,
   };
   const references = new Map((current.profile.references ?? []).map((reference) => [reference.id, reference]));
@@ -683,6 +695,8 @@ export function patchProfileFromStudioMutation(
     lifecycle,
     workspace,
     isolation: parsed.editable.isolation || undefined,
+    environment: (Object.keys(parsed.editable.environment?.values ?? {}).length > 0 || Object.keys(parsed.editable.environment?.secrets ?? {}).length > 0)
+      ? structuredClone(parsed.editable.environment) : undefined,
     nativeConfig: Object.keys(parsed.editable.nativeConfig ?? {}).length > 0
       ? structuredClone(parsed.editable.nativeConfig)
       : undefined,

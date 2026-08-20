@@ -14,6 +14,7 @@ import {
   type AgentProfileStudioMutationV1,
 } from "@tachyon/shared/config/agentProfileStudio.js";
 import type { AgentProfileLifecycleSnapshot } from "@tachyon/engine/config/agentProfileLifecycle.js";
+import { resolveProfileSecretEnvironment } from "@tachyon/engine/config/agentSecretResolver.js";
 
 function lifecycleSnapshot(): AgentProfileLifecycleSnapshot {
   return {
@@ -75,12 +76,37 @@ function mutation(expectedRevision?: string): AgentProfileStudioMutationV1 {
 }
 
 describe("canonical Agent Studio projection", () => {
+  it("writes environment references through the Studio mutation and resolves the secret only at launch", async () => {
+    const authored = createProfileFromStudioMutation({
+      ...mutation(),
+      agentName: "glm",
+      editable: {
+        ...mutation().editable,
+        environment: {
+          values: { GLM_MODE: "coding" },
+          secrets: { ZAI_API_KEY: { provider: "zai", id: "glm-coding-pro", purpose: "GLM Coding Pro" } },
+        },
+      },
+    });
+    expect(authored.environment).toEqual({
+      values: { GLM_MODE: "coding" },
+      secrets: { ZAI_API_KEY: { provider: "zai", id: "glm-coding-pro", purpose: "GLM Coding Pro" } },
+    });
+    expect(JSON.stringify(authored)).not.toContain("launch-only-secret");
+    await expect(resolveProfileSecretEnvironment(authored.environment!.secrets!, async () => "launch-only-secret"))
+      .resolves.toEqual({ ZAI_API_KEY: "launch-only-secret" });
+  });
+
   it("projects only authored editable values plus content-free binding/provenance metadata", () => {
     const projected = projectAgentProfileStudioSnapshot(lifecycleSnapshot());
     expect(projected.editable).toEqual({
       displayName: "Reviewer",
       runtime: { adapter: "codex", executable: "codex", model: "gpt-example" },
       cwd: "apps/reviewer",
+      environment: {
+        values: { PUBLIC: "private-enough-not-to-project" },
+        secrets: { TOKEN: { provider: "vault", id: "secret-handle", purpose: "auth" } },
+      },
       lifecycle: { autostart: true, restart: "on-crash", attention: false },
       // t-afc86e — `setup` comes back EMPTY here because this fixture's profile declares no
       // workspace-command reference, so the snapshot carries no artifact bytes. The populated case
@@ -100,9 +126,9 @@ describe("canonical Agent Studio projection", () => {
     });
     expect(projected.readiness).toEqual({ state: "limited", limitations: ["fork-unavailable"] });
     const serialized = JSON.stringify(projected);
-    expect(serialized).not.toContain("private-enough-not-to-project");
-    expect(serialized).not.toContain("secret-handle");
-    expect(serialized).not.toContain("vault");
+    expect(serialized).toContain("private-enough-not-to-project");
+    expect(serialized).toContain("secret-handle");
+    expect(serialized).toContain("vault");
     expect(serialized).not.toContain("capabilityReferenceIds");
   });
 
