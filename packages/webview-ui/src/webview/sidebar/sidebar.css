@@ -586,7 +586,7 @@
      sidebar reads as an embedded widget instead of a section of this panel. Same 12px horizontal rhythm
      as .sec/.row/.attention-list. auto-fill keeps 3 columns at the usual sidebar width and drops to 2
      when the user drags it narrow, instead of squeezing three unreadable labels. */
-  .ctl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: var(--ds-spacing-size20); padding: var(--ds-spacing-size40) var(--ds-spacing-size60) var(--ds-spacing-size120); }
+  .ctl-grid { position: relative; display: grid; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: var(--ds-spacing-size20); padding: var(--ds-spacing-size40) var(--ds-spacing-size60) var(--ds-spacing-size120); }
   .ctl-tile.ds-btn {
     flex-direction: column; justify-content: flex-start; gap: var(--ds-spacing-size40);
     width: 100%; min-width: 0; height: auto; min-height: 0;
@@ -623,6 +623,41 @@
     pointer-events: none;
   }
   .ctl-tile.has-err .ds-btn-label { color: var(--vscode-foreground); }
+
+  /* t-539851 — persistent rearrange mode. Tilt is a static pose (screenshot-stable) plus a small
+     oscillation the reduced-motion query kills. Dragging and cut are extra marks on the same tile. */
+  .ctl-live {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
+  .ctl-grid.is-reordering .ctl-tile.ds-btn { transform: rotate(-3.5deg); }
+  .ctl-grid.is-reordering .ctl-tile.ds-btn:nth-child(2n) { transform: rotate(3.5deg); }
+  .ctl-grid.is-reordering .ctl-tile.ds-btn {
+    animation: ctl-jiggle 0.28s ease-in-out infinite alternate;
+  }
+  .ctl-tile.ds-btn.is-cut .codicon {
+    outline: 2px solid var(--ds-focus); outline-offset: 2px;
+  }
+  .ctl-grid.is-reordering .ctl-tile.ds-btn.is-dragging,
+  .ctl-tile.ds-btn.is-dragging {
+    animation: none; opacity: 0.45; transform: scale(1.06) rotate(0); z-index: 1;
+    outline: 2px solid var(--ds-focus); outline-offset: 1px;
+  }
+  @keyframes ctl-jiggle {
+    from { transform: rotate(-3.5deg); }
+    to { transform: rotate(3.5deg); }
+  }
+  /* Same compact text control as Attentions' Clear — `.act` is a 22px icon box and overflows a label. */
+  .sec .launcher-done {
+    height: 22px; display: inline-flex; align-items: center;
+    font: inherit; font-size: var(--ds-operator-label3); font-weight: 600;
+    padding: 0 var(--ds-spacing-size80); border-radius: 4px;
+    border: 1px solid var(--ds-border); background: transparent; color: var(--ds-focus); cursor: pointer;
+  }
+  .sec .launcher-done:hover { color: var(--vscode-foreground); background: var(--ds-hover-row); }
+  @media (prefers-reduced-motion: reduce) {
+    .ctl-grid.is-reordering .ctl-tile.ds-btn { animation: none; }
+  }
 
   /* SDD 512 fatia 2 / t-bd9fb8 — fixed status footer, outside the scrolling tab panel.
      Collapsed cost is one operator row (size40 + label2 + size40 + 1px stroke). Absent → not mounted.

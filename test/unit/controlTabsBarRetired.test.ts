@@ -96,10 +96,14 @@ describe("t-aa2780 — navigation semantics did not regress", () => {
 
   it("every one of the twelve destinations is a real keyboard-operable button", () => {
     const html = grid();
-    // Twelve <button>s: reachable with Tab, actuated with Enter/Space, exactly like the twelve
-    // role="tab" buttons the strip had (which carried no roving tabindex or arrow keys either).
+    // t-539851 — still one <button> per tile, actuated with Enter/Space (the kbar/tabKey grammar).
+    // Roving tabindex is new: one Tab stop, arrows move, matching `tabKey` on the strip above.
+    // The old "no tabindex=-1" pin described twelve ordinary Tab stops; that is no longer the
+    // contract once the same file grew a keyboard reorder path that needs to move focus.
     expect((html.match(/<button/g) ?? []).length).toBe(CONTROL_SECTION_NAV.length);
-    expect(html).not.toContain("tabindex=\"-1\"");
+    expect((html.match(/tabindex="0"/g) ?? []).length).toBe(1);
+    expect((html.match(/tabindex="-1"/g) ?? []).length).toBe(CONTROL_SECTION_NAV.length - 1);
+    expect(html).toContain("onKeyDown");
     for (const tile of CONTROL_SECTION_NAV) expect(html).toContain(tile.label);
   });
 
