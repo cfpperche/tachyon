@@ -56,7 +56,8 @@ describe("t-9aec3e — environment rows", () => {
       secrets: { OK: { provider: "github", id: "tok", purpose: "p" }, "": { provider: "", id: "", purpose: "" }, HALF: { provider: "github", id: "", purpose: "" } },
     });
     const patch = serializeAgentPatch(fields, true);
-    expect(patch && patch.kind === "agent-instance" && patch.editable.environment).toMatchObject({
+    if (!patch || patch.kind !== "agent-instance") throw new Error("expected an agent-instance patch");
+    expect(patch.editable.environment).toMatchObject({
       values: { SDK: "x" },
       secrets: { OK: { provider: "github", id: "tok", purpose: "p" } },
     });
@@ -66,10 +67,12 @@ describe("t-9aec3e — environment rows", () => {
     // the row exists as UI state only; naming it puts it back in the payload
     const fields = withEnvironment({ values: { "": "" }, secrets: {} });
     const blank = serializeAgentPatch(fields, true);
-    expect(blank && blank.kind === "agent-instance" && Object.keys(blank.editable.environment.values)).toEqual([]);
+    if (!blank || blank.kind !== "agent-instance") throw new Error("expected an agent-instance patch");
+    expect(Object.keys(blank.editable.environment?.values ?? {})).toEqual([]);
     fields.canonical!.environment = { values: { SDK: "x" }, secrets: {} };
     const named = serializeAgentPatch(fields, true);
-    expect(named && named.kind === "agent-instance" && named.editable.environment.values).toEqual({ SDK: "x" });
+    if (!named || named.kind !== "agent-instance") throw new Error("expected an agent-instance patch");
+    expect(named.editable.environment?.values).toEqual({ SDK: "x" });
     expect(environmentRowProblem(fields)).toBeUndefined();
   });
 });

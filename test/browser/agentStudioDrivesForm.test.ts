@@ -81,6 +81,7 @@ describe("t-9aec3e — Agent Studio driven by a keyboard", () => {
         (add as HTMLButtonElement).click();
       });
       const row = await surface.waitForSelector('[aria-label="Environment variable name"]', { timeout: 5_000 });
+      if (!row) throw new Error("the added row's name input never mounted");
       await row.click();
       await page.keyboard.type("sdk", { delay: 60 });
       const read = await surface.evaluate(() => {
@@ -146,6 +147,7 @@ describe("t-9aec3e — Agent Studio driven by a keyboard", () => {
       expect(authored.command && authored.name, "the form must be authorable").toBe(true);
       // type the row's name with real keys — the same gesture that used to lose focus
       const row = await surface.waitForSelector('[aria-label="Environment variable name"]', { timeout: 5_000 });
+      if (!row) throw new Error("the added row's name input never mounted");
       await row.click();
       await page.keyboard.type("SDK", { delay: 40 });
       await surface.evaluate(() => {
