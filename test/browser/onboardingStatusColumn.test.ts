@@ -25,6 +25,8 @@ interface RowGeometry {
   edges: number[];
   rowsWithButton: number;
   rowsWithoutButton: number;
+  /** t-505f13 round 3 — the label cell's own typography, which the badge measurement cannot see. */
+  labelTypography: Array<{ weight: string; display: string; gap: string; hasIcon: boolean }>;
 }
 
 async function badgeGeometry(page: Page, server: GateServer, fixture: string, width: number): Promise<RowGeometry> {
@@ -40,8 +42,20 @@ async function badgeGeometry(page: Page, server: GateServer, fixture: string, wi
       const badge = row.querySelector<HTMLElement>(".ds-badge");
       return badge ? Math.round(badge.getBoundingClientRect().right * 2) / 2 : NaN;
     });
+    const labelTypography = rows.map((row) => {
+      const label = row.querySelector<HTMLElement>(".onb-env-label");
+      if (!label) return { weight: "absent", display: "absent", gap: "absent", hasIcon: false };
+      const style = getComputedStyle(label);
+      return {
+        weight: style.fontWeight,
+        display: style.display,
+        gap: style.gap,
+        hasIcon: label.querySelector(".codicon") !== null,
+      };
+    });
     return {
       edges,
+      labelTypography,
       rowsWithButton: rows.filter((row) => row.querySelector("button") !== null).length,
       rowsWithoutButton: rows.filter((row) => row.querySelector("button") === null).length,
     };
@@ -91,6 +105,35 @@ describe("t-505f13 — the onboarding status badge keeps one constant column", (
       const geometry = await badgeGeometry(page, server, "fresh", 880);
       expect(geometry.rowsWithButton).toBeGreaterThan(0);
       expect(geometry.rowsWithoutButton).toBeGreaterThan(0);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  /**
+   * t-505f13 round 3 — the LABEL cell keeps its own typography. A CSS edit that reshapes the head
+   * grid silently deleted `.onb-env-label`'s rule (owner-measured: weight 400 not 600, display
+   * block not inline-flex): the row labels lost their bold, and the workspace row's folder icon
+   * lost its alignment and breathing room next to the text. The badge-column assertions above were
+   * green throughout, because geometry of the badge says nothing about typography of the label —
+   * so this pins exactly what that edit dropped, on the row that carries the icon.
+   */
+  it("row labels stay bold and the label cell aligns icon with text (fresh @ 880)", async () => {
+    const page = await browser.newPage();
+    await page.setViewport({ ...OPERATOR_VIEWPORT });
+    try {
+      const geometry = await badgeGeometry(page, server, "fresh", 880);
+      expect(geometry.labelTypography.length).toBeGreaterThanOrEqual(5);
+      for (const label of geometry.labelTypography) {
+        expect(label.weight, "`.onb-env-label` lost font-weight: 600 — the rule was deleted by a head-grid edit").toBe("600");
+        // Computed display is "flex", not "inline-flex": a grid child is blockified. The claim that
+        // matters is that the cell IS a flex container — that is what centers the folder icon.
+        expect(label.display, "`.onb-env-label` must be a flex container: that is what centers the folder icon against the text").toContain("flex");
+        expect(label.gap, "`.onb-env-label` needs a real gap — 'normal' means the var(--ds-1) rule is gone").not.toBe("normal");
+      }
+      // The workspace row is the one that HAS an icon; if it stops carrying one the alignment
+      // assertion above becomes vacuous for exactly the row it exists for.
+      expect(geometry.labelTypography.some((label) => label.hasIcon)).toBe(true);
     } finally {
       await page.close();
     }

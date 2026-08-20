@@ -21,6 +21,11 @@
    the badge's right edge is one constant across both sections instead of floating wherever the
    button leaves room — `margin-left: auto` did exactly that, measured 847 vs 615/698 at 880. */
 .onb-env-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 232px); align-items: center; column-gap: var(--ds-2); min-height: 28px; }
+/* The label cell's OWN rule — the grid above governs the head's columns, this governs the content
+   of the label cell. A round-2 edit replaced the head block and silently dropped this line (labels
+   lost their bold; the workspace row's folder icon lost alignment and gap) — restored in round 3,
+   pinned by the typography assertion in onboardingStatusColumn.test.ts. */
+.onb-env-label { font-weight: 600; display: inline-flex; align-items: center; gap: var(--ds-1); }
 .onb-env-head .ds-badge { justify-self: end; }
 .onb-head-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--ds-1); }
 /* Narrow width: the action drops to its own row, right-aligned; the badge keeps a constant edge
