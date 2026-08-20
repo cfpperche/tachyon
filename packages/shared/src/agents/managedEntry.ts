@@ -18,6 +18,8 @@ export interface ManagedEntryInfo {
   stopRequested?: boolean;
   exitCode?: number;
   cleanExited?: boolean;
+  /** This durable roster row was absent from the first conclusive tmux inventory after activation. */
+  interruptedAtStartup?: true;
   kind: EntryKind;
   parent?: string;
   delegator?: string;

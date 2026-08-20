@@ -2376,7 +2376,11 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     // Legitimate resumable stop must survive auto-collect.
     expect(ws.ledger.get("paused")).toBeDefined();
     const listed = await ws.manager.list();
-    expect(listed.some((a) => a.name === "paused" && !a.running)).toBe(true);
+    expect(listed).toContainEqual(expect.objectContaining({
+      name: "paused",
+      running: false,
+      interruptedAtStartup: true,
+    }));
 
     const bulk = host.notices.find((n) => n.message.includes("stopped temporary") && n.message.includes("'paused'"));
     expect(bulk).toBeDefined();
@@ -2385,6 +2389,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     // Human bulk action removes the row through the production dismiss door.
     await bulk!.actions.find((a) => a.label.includes("Dismiss all"))!.run();
     expect(ws.ledger.get("paused")).toBeUndefined();
+    expect((await ws.manager.list()).some((a) => a.name === "paused")).toBe(false);
     ws.dispose();
   });
 

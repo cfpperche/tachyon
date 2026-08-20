@@ -1026,6 +1026,8 @@ export class AgentManager {
   /** Detail for rows in `stopFailed` — cleared with the flag. */
   private stopFailureDetail = new Map<string, NonNullable<ManagedEntryInfo["stopFailure"]>>();
   private cleanExited = new Set<string>();
+  /** Process-local startup fact: the durable row existed but the first strict tmux inventory did not. */
+  private interruptedAtStartup = new Set<string>();
   /**
    * t-9d76b1 — TACHYON ASKED THIS PROCESS TO EXIT. The one fact an exit code cannot carry.
    *
@@ -1786,6 +1788,16 @@ export class AgentManager {
     return [...out.entries()].filter(([, s]) => !s.dead).map(([agent]) => agent);
   }
 
+  /** Record only what startup proved; a later live observation ends the interrupted interval. */
+  recordInterruptedAtStartup(liveAgents: ReadonlySet<string>): void {
+    const rows = this.opts.ledger?.all() ?? new Map();
+    this.interruptedAtStartup = new Set(
+      [...rows]
+        .filter(([name, row]) => row.def?.kind === "agent" && !liveAgents.has(name))
+        .map(([name]) => name),
+    );
+  }
+
   async list(): Promise<ManagedEntryInfo[]> {
     const states = await this.agentStates();
     const config = this.opts.getConfig();
@@ -1807,6 +1819,7 @@ export class AgentManager {
     const infos = [...all].sort().map((name) => {
       const state = states.get(name);
       const alive = state !== undefined && !state.dead;
+      if (alive) this.interruptedAtStartup.delete(name);
       const stoppingAt = this.stoppingSince.get(name);
       const stopTimedOut = alive && stoppingAt !== undefined && now - stoppingAt >= AgentManager.STOPPING_FALLBACK_MS;
       if (stopTimedOut) {
@@ -1868,6 +1881,7 @@ export class AgentManager {
         ...(stopRequested ? { stopRequested: true } : {}),
         exitCode: state?.exitCode,
         ...(!state && this.cleanExited.has(name) ? { cleanExited: true } : {}),
+        ...(!alive && this.interruptedAtStartup.has(name) ? { interruptedAtStartup: true as const } : {}),
         // Same answer as `definitionOf(name)?.kind`, read from the snapshot above: a Saved definition
         // wins, else the Temporary's row, else the default arm.
         kind: config?.agents[name]?.kind ?? rows?.get(name)?.def?.kind ?? "agent",

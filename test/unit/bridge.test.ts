@@ -140,6 +140,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "get_task",
       "get_validation",
       "get_worktree",
+      "interrupted_work",
       "kill_agent",
       "list_agents",
       "list_evidence",
