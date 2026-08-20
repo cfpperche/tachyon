@@ -39,7 +39,8 @@ function syncChildProcessOffenders(textOverrides: Record<string, string> = {}): 
     const rel = path.relative(repoRoot, file).split(path.sep).join(path.posix.sep);
     if (rel in SYNC_CHILD_PROCESS_ALLOWLIST) return [];
     const text = textOverrides[rel] ?? fs.readFileSync(file, "utf8");
-    return [...text.matchAll(/\b(?:execSync|execFileSync|spawnSync)\b/g)].map((match) => `${rel}:${match.index}`);
+    // Guard executions, not instrumentation that stores or replaces a function reference.
+    return [...text.matchAll(/\b(?:execSync|execFileSync|spawnSync)\s*\(/g)].map((match) => `${rel}:${match.index}`);
   });
 }
 
