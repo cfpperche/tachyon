@@ -106,4 +106,39 @@ describe("dev-host unarmed preLaunchTask (t-6d8f65)", () => {
       fs.rmSync(wf, { recursive: true, force: true });
     }
   });
+
+  it("refuses a node_modules link whose source belongs to another checkout", () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "dev-host-cross-checkout-"));
+    const pointed = path.join(parent, "pointed");
+    const source = path.join(parent, "source");
+    try {
+      for (const checkout of [pointed, source]) {
+        fs.mkdirSync(checkout, { recursive: true });
+        spawnSync("git", ["init", "--quiet", checkout], { encoding: "utf8" });
+      }
+      fs.mkdirSync(path.join(pointed, "extension"));
+      fs.mkdirSync(path.join(source, "node_modules"));
+      const result = spawnSync("bash", [path.join(repoRoot, "scripts/dev-host/ensure-local-node-modules.sh"), path.join(pointed, "extension"), path.join(source, "node_modules")], { encoding: "utf8" });
+      expect(result.status, result.stderr || result.stdout).toBe(1);
+      expect(result.stderr).toMatch(/refusing node_modules link across checkouts/);
+      expect(fs.existsSync(path.join(pointed, "extension", "node_modules"))).toBe(false);
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the same-checkout link, including a borrowed checkout dependency entry", () => {
+    const checkout = fs.mkdtempSync(path.join(os.tmpdir(), "dev-host-local-checkout-"));
+    try {
+      spawnSync("git", ["init", "--quiet", checkout], { encoding: "utf8" });
+      const extension = path.join(checkout, "extension");
+      fs.mkdirSync(extension);
+      fs.mkdirSync(path.join(checkout, "node_modules"));
+      const result = spawnSync("bash", [path.join(repoRoot, "scripts/dev-host/ensure-local-node-modules.sh"), extension, path.join(checkout, "node_modules")], { encoding: "utf8" });
+      expect(result.status, result.stderr || result.stdout).toBe(0);
+      expect(fs.readlinkSync(path.join(extension, "node_modules"))).toBe(path.join(checkout, "node_modules"));
+    } finally {
+      fs.rmSync(checkout, { recursive: true, force: true });
+    }
+  });
 });
