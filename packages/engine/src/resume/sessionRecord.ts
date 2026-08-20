@@ -10,6 +10,7 @@ import { adapterForRuntime, type ResumeRuntime } from "@tachyon/shared/resume/ad
 import type { EntryKind } from "@tachyon/shared/config/entry.js";
 import type { WorktreeRecord } from "../worktree/worktreeRecord.js";
 import type { SpawnContract } from "../agents/spawnContract.js";
+import type { AgentSecretEnvironment } from "../config/loadConfig.js";
 
 /** How to reconstruct/restart a Temporary instance's definition after a host restart. */
 export interface SessionDef {
@@ -25,6 +26,8 @@ export interface SessionDef {
   /** env to re-apply on restart/resume (e.g. an ANTHROPIC_BASE_URL model-swap) — persisted so a
    *  rehydrated Temporary/forked instance keeps it after a reload (spec 225 fork inherits the source's env). */
   env?: Record<string, string>;
+  /** Temporary Agent environment references; values are resolved only at launch. */
+  environment?: { values?: Record<string, string>; secrets?: AgentSecretEnvironment };
   /** spec 226/364 — persisted marker/config for isolated/Temporary harness agents, used during reload/rebind recovery. */
   harness?: unknown;
   /**

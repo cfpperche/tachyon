@@ -520,6 +520,8 @@ export interface SpawnOptions {
   baseRef?: string;
   /** spec 230 — extra env merged into this Temporary spawn (e.g. a pipeline node's TACHYON_RUN_ID/NODE_ID/NODE_NONCE). Agent-declared env still wins on conflict via the spawn merge order. */
   env?: Record<string, string>;
+  /** Literal environment values and vault-backed secret references for a Temporary Agent launch. */
+  environment?: AgentEntry["environment"];
   /** spec 230 — tag this Temporary spawn as a pipeline-run node; persisted to SessionDef.pipeline so the generic resume/offer path skips it (the run owns it). */
   pipeline?: { runId: string; nodeId: string };
   /** spec 230 — extra instructions appended to the agent's composed prompt (a pipeline node's task, added AFTER a declared agent's role/instructions so the specialist config is preserved). */
@@ -902,7 +904,14 @@ function temporaryDefinitionFrom(def: NonNullable<SessionRecord["def"]>, worktre
   return {
     cmd: def.cmd,
     instructions: def.instructions,
-    ...(def.env ? { environment: { values: def.env } } : {}), // spec 225 — a forked sibling's inherited env survives reload
+    ...(def.env || def.environment
+      ? {
+          environment: {
+            ...(def.env ? { values: def.env } : {}),
+            ...(def.environment ?? {}),
+          },
+        }
+      : {}), // spec 225 — a forked sibling's inherited env survives reload
     autostart: false,
     watch: [],
     attention: { enabled: true, silenceSec: 8, patterns: [] },
@@ -917,6 +926,16 @@ function temporaryDefinitionFrom(def: NonNullable<SessionRecord["def"]>, worktre
 /** The launchable, non-secret half of a managed entry's environment boundary. */
 function environmentValues(def: AgentDef | null | undefined): Record<string, string> | undefined {
   return def?.environment?.values;
+}
+
+/** Keep transiently resolved fork env out of the durable row when its key is vault-backed. */
+export function persistedForkEnvironment(
+  values: Record<string, string> | undefined,
+  environment: AgentEntry["environment"] | undefined,
+): Record<string, string> | undefined {
+  if (!values) return undefined;
+  const filtered = Object.fromEntries(Object.entries(values).filter(([name]) => !environment?.secrets?.[name]));
+  return Object.keys(filtered).length > 0 ? filtered : undefined;
 }
 
 export function applyNativeLaneSuppressionCommand(cmd: string): { cmd: string; applied: boolean } {
@@ -2577,6 +2596,7 @@ export class AgentManager {
           ...base,
           kind: "agent",
           instructions: opts.instructions,
+          environment: opts.environment,
           // spec 210 — MCP top-level spawn may opt into a separate worktree (uses the default
           // branch tachyon/<name>; ignored for a sub-agent, which inherits the parent's cwd).
           worktree: opts.worktree,
@@ -2597,6 +2617,9 @@ export class AgentManager {
     // preparation so its probe sees the exact prospective environment and owns explicit compensation.
     const suppression = this.applyFormationNativeSuppression(name, def);
     def = suppression.def;
+    if (opts?.environment?.secrets && Object.keys(opts.environment.secrets).length > 0 && !this.opts.resolveSecret) {
+      throw new Error("agent launch refused: secret resolver is unavailable");
+    }
     def = await this.resolveSecretEnvironment(def);
     const session = this.session(name);
     let replaceDeadSession = false;
@@ -3026,6 +3049,7 @@ export class AgentManager {
       ...(parent ? { parent } : {}),
       ...(delegator ? { delegator } : {}), // t-bae303 — persist so rehydrate can restore gated lineage after a reload
       ...(opts?.env ? { env: opts.env } : {}), // spec 230 — persist the node env so a restart re-applies the nonce
+      ...(temporary && opts?.environment ? { environment: opts.environment } : {}), // secret refs persist; resolved values never do
       ...(opts?.pipeline ? { pipeline: opts.pipeline } : {}), // spec 230 — pipeline-owned node (planResume skips it)
       ...(opts?.contract ? { contract: opts.contract } : {}), // spec 246 — structured delegation contract (D8)
       ...(opts?.contractSkipReason ? { contractSkipReason: opts.contractSkipReason } : {}), // spec 246 D6 — auditable bypass
@@ -5181,6 +5205,7 @@ export class AgentManager {
     sourceTranscriptPath?: string;
     instructions?: string;
     env?: Record<string, string>;
+    environment?: AgentEntry["environment"];
   }> {
     const ledger = this.opts.ledger;
     if (!ledger) throw new ForkUnavailableError(name, "the session ledger is disabled");
@@ -5237,6 +5262,9 @@ export class AgentManager {
         throw new ForkUnavailableError(name, "its session transcript is no longer on disk");
       }
     }
+    const sourceDefinition = this.definitionOf(name);
+    if (!sourceDefinition) throw new ForkUnavailableError(name, "its definition is unavailable");
+    const resolvedSource = await this.resolveSecretEnvironment(sourceDefinition);
     return {
       runtime,
       adapter,
@@ -5247,7 +5275,8 @@ export class AgentManager {
       ...(sourceTranscriptPath ? { sourceTranscriptPath } : {}),
       ...(rec.worktree ? { sourceWorktree: rec.worktree } : {}),
       ...(rec.def?.instructions ? { instructions: rec.def.instructions } : {}),
-      ...(environmentValues(this.definitionOf(name)) ? { env: environmentValues(this.definitionOf(name)) } : {}),
+      ...(environmentValues(resolvedSource) ? { env: environmentValues(resolvedSource) } : {}),
+      ...(rec.def?.environment ? { environment: rec.def.environment } : {}),
     };
   }
 
@@ -5342,6 +5371,7 @@ export class AgentManager {
       ...(src.instructions ? { instructions: src.instructions } : {}),
       ...(sourceRecord?.def?.taskBrief ? { taskBrief: sourceRecord.def.taskBrief } : {}),
       ...(src.env ? { env: src.env } : {}),
+      ...(src.environment ? { environment: src.environment } : {}),
       // A canonical fork is still a Temporary sibling, so it must not inherit profileLifecycle
       // authority. This internal marker retains canonical private-home materialization even when
       // the source selected no optional native/capability families.
@@ -5366,13 +5396,15 @@ export class AgentManager {
         ? { profileWithheldCapabilities: structuredClone(sourceDefinition.profileWithheldCapabilities) }
         : {}),
     };
+    const persistedForkEnv = persistedForkEnvironment(src.env, src.environment);
     const forkRecord = () => ({
       def: {
         cmd: src.baseCmd,
         kind: "agent" as const,
         ...(src.instructions ? { instructions: src.instructions } : {}),
         ...(sourceRecord?.def?.taskBrief ? { taskBrief: sourceRecord.def.taskBrief } : {}),
-        ...(src.env ? { env: src.env } : {}),
+        ...(persistedForkEnv ? { env: persistedForkEnv } : {}),
+        ...(src.environment ? { environment: src.environment } : {}),
         fork: true,
         // t-53e485 — the source, so the fork's grant survives being re-derived from this row. NOT
         // `parent`: a fork is a sibling, and this edge answers "whose grant is this?" only.

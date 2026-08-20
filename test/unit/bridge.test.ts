@@ -14,6 +14,7 @@ import { ContinuityStore } from "@tachyon/engine/continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "@tachyon/engine/handoff/ProjectHandoffStore.js";
 import { validateCompleteNode } from "@tachyon/engine/pipeline/completeNode.js";
 import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
+import { secretStorageKey } from "@tachyon/engine/config/agentProfileProjection.js";
 import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, type WorktreeEvidence } from "@tachyon/engine/worktree/evidence.js";
 import type { ChangedFile } from "@tachyon/engine/worktree/review.js";
 import { readDoorbellEvents } from "@tachyon/engine/workspace/doorbell.js";
@@ -217,6 +218,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
         ? { state: "unsupported", code: "runtime_model_unavailable", runtime: "codex", model: command.model, suggestions: ["gpt-5.6-sol"] }
         : { state: "supported", runtime: "fixture", source: "fixture" },
     },
+    resolveSecret: async (key) => key === secretStorageKey("zai", "glm-coding-pro") ? "vault-private-value" : undefined,
   });
   const pinsRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-pins-"));
   const pins = new PinStore(pinsRoot);
@@ -972,6 +974,46 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(result.isError).toBeFalsy();
     expect(JSON.parse((result.content as Array<{ text: string }>)[0]!.text)).toMatchObject({ agent: "claude", state: "ready" });
     expect(sessions.has(`tachyon-${HASH}-claude`)).toBe(true);
+  });
+
+  it("spawn_agent Temporary Agent carries literal values and resolves secret references only at launch", async () => {
+    const result = await client.callTool({
+      name: "spawn_agent",
+      arguments: {
+        name: "environment-child",
+        cmd: "claude",
+        parent: "claude",
+        skip_contract_reason: "environment launch boundary fixture",
+        environment: {
+          values: { ANTHROPIC_BASE_URL: "https://api.example.test" },
+          secrets: { ANTHROPIC_AUTH_TOKEN: { provider: "zai", id: "glm-coding-pro", purpose: "temporary backend access" } },
+        },
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    const launch = launches.get(`tachyon-${HASH}-environment-child`)?.join(" ");
+    expect(launch).toContain("ANTHROPIC_BASE_URL=https://api.example.test");
+    expect(launch).toContain("ANTHROPIC_AUTH_TOKEN=vault-private-value");
+    expect(JSON.stringify(result)).not.toContain("vault-private-value");
+    expect(JSON.stringify(sessionLedger.get("environment-child"))).not.toContain("vault-private-value");
+    expect(sessionLedger.get("environment-child")?.def?.environment).toEqual({
+      values: { ANTHROPIC_BASE_URL: "https://api.example.test" },
+      secrets: { ANTHROPIC_AUTH_TOKEN: { provider: "zai", id: "glm-coding-pro", purpose: "temporary backend access" } },
+    });
+
+    const missing = await client.callTool({
+      name: "spawn_agent",
+      arguments: {
+        name: "missing-environment-child",
+        cmd: "claude",
+        parent: "claude",
+        skip_contract_reason: "missing secret refusal fixture",
+        environment: { secrets: { MISSING_KEY: { provider: "zai", id: "missing", purpose: "test" } } },
+      },
+    });
+    expect(missing.isError).toBe(true);
+    expect(JSON.stringify(missing.content)).toContain("missing secret 'MISSING_KEY' (zai/missing)");
+    await client.callTool({ name: "kill_agent", arguments: { name: "environment-child" } });
   });
 
   it("spawn_agent projects model preflight failures as structured content", async () => {

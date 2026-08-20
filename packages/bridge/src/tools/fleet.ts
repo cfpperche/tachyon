@@ -15,6 +15,22 @@ import { collectAgentTouchedFiles } from "@tachyon/engine/worktree/agentTouchedF
 import { admitAgentRuntimeCommand, SUPPORTED_AGENT_RUNTIME_NAMES } from "@tachyon/shared/agents/agentRuntimeAdmission.js";
 import { type BridgeDeps, AGENT_NAME, TASK_ID, dismissOwnedWorktree, dismissReceipt, emitTaskNotification, fail, lifecycleScopeGuard, managedEntry, ok, outputCapabilities, releaseSpawnClaim, resolveDeclaredActor, taskNotificationActor } from "./shared.js";
 
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const spawnEnvironmentSchema = z.object({
+  values: z.record(z.string().regex(ENV_NAME_RE), z.string().max(16 * 1024)).optional(),
+  secrets: z.record(z.string().regex(ENV_NAME_RE), z.object({
+    provider: z.string().min(1),
+    id: z.string().min(1),
+    purpose: z.string().min(1),
+  }).strict()).optional(),
+}).strict().superRefine((environment, ctx) => {
+  for (const name of Object.keys(environment.values ?? {})) {
+    if (environment.secrets?.[name]) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["values", name], message: "cannot also be a secret reference" });
+    }
+  }
+});
+
 export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
 
   mcp.registerTool(
@@ -120,6 +136,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
           .optional()
           .describe(`command for a Temporary instance — must name a supported LLM runtime (${SUPPORTED_AGENT_RUNTIME_NAMES.join(", ")}); omit to use tachyon.yml`),
         cwd: z.string().optional().describe("working directory for a Temporary instance"),
+        environment: spawnEnvironmentSchema.optional().describe("Temporary Agent environment: literal values and vault secret references"),
         instructions: z
           .string()
           .max(2000)
@@ -167,7 +184,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         ),
       },
     },
-    async ({ name, cmd, cwd, instructions, parent, worktree, baseRef, task, context, constraints, deliverable, done_when, skip_contract_reason, claim_task }) => {
+    async ({ name, cmd, cwd, environment, instructions, parent, worktree, baseRef, task, context, constraints, deliverable, done_when, skip_contract_reason, claim_task }) => {
       try {
         const isTemporaryAiAgent = !!cmd;
         // t-c861e5 — starting a declared Saved Agent is an activation, not a delegation. The
@@ -358,6 +375,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
             // work it out from the command string.
             kind: "agent",
             cwd,
+            environment,
             // A contract-skipped idle spawn has operational waiting guidance, not an execution brief.
             // Keep it in the instructions layer so the startup manifest truthfully reports no task.
             instructions: isTemporaryAiAgent
