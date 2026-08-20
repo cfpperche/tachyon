@@ -1109,7 +1109,6 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
                   branch: worktree.branch,
                   classification: worktree.classification,
                   ownerPresence: worktree.ownerPresence,
-                  land: worktree.land,
                   dependencies: {
                     installed: fs.existsSync(path.join(worktree.path, "node_modules")),
                     recordedMode: ledgerWorktree?.dependencies?.mode ?? "unknown",
