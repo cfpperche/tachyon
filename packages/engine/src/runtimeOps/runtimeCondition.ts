@@ -29,6 +29,15 @@
  *
  * A runtime can be any combination of the three; wiring and explicit consent decide observability.
  *
+ * ## Quota belongs to a provider account, not to a runtime (t-78f461)
+ *
+ * A borrowed runtime — the claude CLI against a third-party anthropic-compatible endpoint — shares
+ * the runtime id but not the provider account the quota channel reads. Its own captures carry no
+ * numbers, while the account's do, so an unscoped answer hands the agent a REAL number of the
+ * WRONG account. When the report is built for an agent caller whose provider is provably different
+ * (see `callerProviderOfEnvironment`), the entry for the caller's OWN runtime refuses those numbers
+ * by name. Other runtimes keep theirs: the tool still answers "where can I send work".
+ *
  * ## Why this is not a sixth runtime list
  *
  * Five runtime registries already disagree with each other. This module authors none: the set of
@@ -82,6 +91,51 @@ const CHANNEL_ORIGIN: RuntimeConditionOriginV1 = {
 
 /** The words the tool uses for an absence, so an agent can match on them instead of parsing prose. */
 export const NO_QUOTA_CHANNEL = "no quota channel" as const;
+
+/**
+ * t-78f461 — the words for a provider mismatch, in the same match-on-words shape as
+ * `NO_QUOTA_CHANNEL`: the captured account's numbers exist and are real, but they belong to a
+ * different provider's account, so they are withheld rather than handed over.
+ */
+export const NOT_MEASURED_FOR_THIS_PROVIDER = "not measured for this provider" as const;
+
+/**
+ * t-78f461 — the asking agent, when the report is built for one. Host-resolved from the agent's
+ * own launch record; the projection only compares labels and derives nothing.
+ */
+export interface RuntimeConditionCallerV1 {
+  /** the runtime the asking agent itself runs on, when known */
+  runtime?: string;
+  /**
+   * the asking agent's provider label (see `callerProviderOfEnvironment`). `undefined` means the
+   * mismatch is not provable — vendor default or no override — and no number is withheld.
+   */
+  provider?: string;
+}
+
+/**
+ * t-78f461 — the provider label of a claude-runtime agent, derived from the environment Tachyon
+ * launched it with. `undefined` means the vendor default: no base-URL override, or one pointing at
+ * the vendor's own endpoint, which is the account the captured scope belongs to. A foreign endpoint
+ * is labelled by its host (or the raw string when it does not parse) — the label only ever has to
+ * be provably DIFFERENT from the captured provider, never canonical.
+ *
+ * Claude-only because it is the only measured borrowed-runtime case (`t-1e9a07`); other runtimes
+ * gain an entry here when one is measured, not before.
+ */
+export function callerProviderOfEnvironment(
+  values: Readonly<Record<string, string>> | undefined,
+): string | undefined {
+  const raw = values?.ANTHROPIC_BASE_URL?.trim();
+  if (!raw) return undefined;
+  let host: string;
+  try {
+    host = new URL(raw).host;
+  } catch {
+    return raw;
+  }
+  return host === "api.anthropic.com" ? undefined : host || raw;
+}
 
 export interface RuntimeManageableV1 {
   state: "manageable" | "not-manageable";
@@ -155,6 +209,16 @@ export type RuntimeQuotaV1 =
       note: string;
     }
   | {
+      /** t-78f461 — real numbers exist, but they belong to another provider's account; withheld */
+      state: "different-provider";
+      says: typeof NOT_MEASURED_FOR_THIS_PROVIDER;
+      /** the asking agent's provider, by label */
+      callerProvider: string;
+      /** the provider whose account the captured numbers belong to */
+      accountProvider: string;
+      note: string;
+    }
+  | {
       state: "observed";
       integrity: RuntimeQuotaIntegrityV1;
       source: ProviderSourceKindV1;
@@ -196,6 +260,13 @@ export interface RuntimeConditionInputV1 {
   channels?: readonly ProviderQuotaChannelDescriptorV1[];
   preferences?: Partial<Record<RuntimeObservabilityProviderV1, ProviderObservationPreferenceV1>>;
   observations?: Partial<Record<RuntimeObservabilityProviderV1, CollectorEnvelopeV1>>;
+  /**
+   * t-78f461 — the agent this report is being built for, when there is one. When that agent's
+   * provider is provably not the account a quota channel reads, the entry for its OWN runtime
+   * withholds that account's numbers (`different-provider`) instead of handing them over. Absent
+   * for host-side doors (the slack doorbell) and non-agent callers: they keep the account truth.
+   */
+  caller?: RuntimeConditionCallerV1;
 }
 
 const AXIS_NOTES = {
@@ -365,6 +436,24 @@ function projectQuota(
   );
 
   if (quota) {
+    // t-78f461 — quota belongs to a provider account, not to a runtime. When the asking agent runs
+    // THIS runtime through a different provider, the captured account's numbers are real but they
+    // are another provider's consumption: handing them to this caller would attribute someone
+    // else's account to it. Withhold, by name, and only for the caller's own runtime — every other
+    // entry keeps its numbers so the tool still answers "where can I send work".
+    const caller = input.caller;
+    if (caller?.provider && caller.runtime === runtime && caller.provider !== provider) {
+      return {
+        state: "different-provider",
+        says: NOT_MEASURED_FOR_THIS_PROVIDER,
+        callerProvider: caller.provider,
+        accountProvider: provider,
+        note:
+          `the '${runtime}' quota channel reads the account of provider '${provider}', but this caller `
+          + `runs '${runtime}' through '${caller.provider}'. Its own provider's quota is not measured on `
+          + "this host — remaining quota is unknown, never zero and never full.",
+      };
+    }
     const integrity = integrityOf(descriptor);
     return {
       state: "observed",

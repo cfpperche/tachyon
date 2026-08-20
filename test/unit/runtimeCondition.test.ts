@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  callerProviderOfEnvironment,
   NO_QUOTA_CHANNEL,
+  NOT_MEASURED_FOR_THIS_PROVIDER,
   projectRuntimeCondition,
   type RuntimeConditionInputV1,
 } from "@tachyon/engine/runtimeOps/runtimeCondition.js";
@@ -215,5 +217,89 @@ describe("projectRuntimeCondition", () => {
     expect(gemini.manageable.gap).toContain("no Bridge wiring");
     expect(gemini.measured.state).toBe("not-measured");
     expect(gemini.measured.axes).toBeUndefined();
+  });
+});
+
+describe("t-78f461 — quota belongs to a provider account, not to a runtime", () => {
+  const OBSERVED = {
+    claude: quotaEnvelope("claude", [
+      { name: "session", usedPercent: 9, windowMinutes: 300 },
+      { name: "weekly", usedPercent: 36, windowMinutes: 10080 },
+    ]),
+  };
+
+  it("never hands an agent the numbers of an account from a different provider", () => {
+    // The measured case: a claude-runtime agent whose ANTHROPIC_BASE_URL points at another
+    // provider asks about its OWN runtime. The captured account (provider 'claude') has real
+    // numbers; they belong to a different provider's account and must not reach this caller.
+    const built = report({
+      observations: OBSERVED,
+      caller: { runtime: "claude", provider: "api.z.ai" },
+    });
+    const quota = runtime(built, "claude").capacity.quota;
+
+    expect(quota.state).toBe("different-provider");
+    expect(quota).toMatchObject({ says: NOT_MEASURED_FOR_THIS_PROVIDER, callerProvider: "api.z.ai", accountProvider: "claude" });
+    expect(JSON.stringify(quota)).not.toContain("usedPercent");
+    expect(JSON.stringify(quota)).not.toContain("windows");
+  });
+
+  it("keeps other runtimes' numbers readable for the same caller — delegation planning survives", () => {
+    // The caller's own runtime is refused; every OTHER runtime keeps its account numbers, or
+    // the tool stops answering "where can I send work" for anyone on a borrowed provider.
+    const built = report({
+      observations: OBSERVED,
+      caller: { runtime: "codex", provider: "api.z.ai" },
+    });
+
+    expect(runtime(built, "claude").capacity.quota).toMatchObject({ state: "observed" });
+    expect(runtime(built, "claude").capacity.quota).not.toMatchObject({ state: "different-provider" });
+  });
+
+  it("an agent whose provider is not known apart from the account still sees the numbers", () => {
+    // No provider label resolved (vendor-default BASE_URL or none) means the mismatch is not
+    // provable, and a refusal nobody can prove is a different defect.
+    const built = report({
+      observations: OBSERVED,
+      caller: { runtime: "claude" },
+    });
+
+    expect(runtime(built, "claude").capacity.quota).toMatchObject({ state: "observed" });
+  });
+
+  it("refuses only when there are numbers to withhold — absent accounts stay honestly absent", () => {
+    const built = report({
+      observations: {},
+      caller: { runtime: "claude", provider: "api.z.ai" },
+    });
+
+    // No captured numbers exist, so the caller gets the same declared absence as anyone else.
+    expect(runtime(built, "claude").capacity.quota).toMatchObject({ state: "unavailable" });
+  });
+});
+
+describe("callerProviderOfEnvironment (t-78f461)", () => {
+  it("labels a foreign endpoint by its host", () => {
+    expect(callerProviderOfEnvironment({ ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic" }))
+      .toBe("api.z.ai");
+  });
+
+  it("treats the vendor endpoint as the account's own provider — nothing to withhold", () => {
+    expect(callerProviderOfEnvironment({ ANTHROPIC_BASE_URL: "https://api.anthropic.com" }))
+      .toBeUndefined();
+    expect(callerProviderOfEnvironment({ ANTHROPIC_BASE_URL: "https://api.anthropic.com/v1" }))
+      .toBeUndefined();
+  });
+
+  it("returns undefined when no override is set", () => {
+    expect(callerProviderOfEnvironment({})).toBeUndefined();
+    expect(callerProviderOfEnvironment(undefined)).toBeUndefined();
+    expect(callerProviderOfEnvironment({ ANTHROPIC_BASE_URL: "   " })).toBeUndefined();
+  });
+
+  it("keeps an unparseable override as a provably-different raw label", () => {
+    // It cannot be named by host, but it is still provably not the vendor default — and the
+    // label only ever has to differ, never to be canonical.
+    expect(callerProviderOfEnvironment({ ANTHROPIC_BASE_URL: "z-endpoint" })).toBe("z-endpoint");
   });
 });

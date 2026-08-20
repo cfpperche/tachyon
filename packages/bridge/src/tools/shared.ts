@@ -388,8 +388,12 @@ export interface BridgeDeps {
    * runtime_condition. A CACHED read by contract: it must never collect from a provider, because a
    * Bridge tool that spawns a runtime process to answer a question is a measurement door wearing a
    * read door's name.
+   *
+   * t-78f461 — the argument names the AGENT the report is built for. The host derives that agent's
+   * provider from its launch environment so the projection can withhold another provider's account
+   * numbers from the agent's own runtime entry. `undefined` keeps the unscoped account report.
    */
-  runtimeCondition?: () => RuntimeConditionReportV1;
+  runtimeCondition?: (callerAgent?: string) => RuntimeConditionReportV1;
   /** t-7551f9 — continue unfinished task on another agent (new session + focused handoff). */
   continueTask?: (input: {
     fromAgent: string;

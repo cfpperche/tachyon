@@ -293,7 +293,9 @@ import { ExternalToolRegistry } from "../externalTools/registry.js";
 import { hostActionTouchesHostUi } from "../externalTools/filters.js";
 import type { ClaudeStatusLineCaptureTransport } from "../runtimeObservability/claudeStatusLineCapture.js";
 import {
+  callerProviderOfEnvironment,
   projectRuntimeCondition,
+  type RuntimeConditionCallerV1,
   type RuntimeConditionInputV1,
   type RuntimeConditionReportV1,
 } from "../runtimeOps/runtimeCondition.js";
@@ -4633,12 +4635,35 @@ export class Workspace {
    * One accessor for both doors (the Bridge tool and the slack doorbell). Cheap enough to call on the
    * heartbeat: it reads registries that are frozen at module load plus the observation service's
    * already-collected snapshot, and starts nothing.
+   *
+   * t-78f461 — `callerAgent` names the AGENT the report is being built for (the Bridge tool passes
+   * the authenticated caller). Its provider, derived from its own launch environment, decides
+   * whether its own runtime's entry withholds another provider's account numbers. The slack
+   * doorbell passes nobody and keeps the account truth.
    */
-  runtimeCondition(): RuntimeConditionReportV1 {
+  runtimeCondition(callerAgent?: string): RuntimeConditionReportV1 {
     return projectRuntimeCondition({
       generatedAt: new Date().toISOString(),
       ...(this.deps.runtimeQuotaObservations?.() ?? {}),
+      ...(callerAgent ? { caller: this.runtimeConditionCallerOf(callerAgent) } : {}),
     });
+  }
+
+  /**
+   * t-78f461 — the asking agent's own runtime and provider label, read from its launch record.
+   * Unknown runtime, no environment, or the vendor default all resolve to a partial caller, which
+   * the projection treats as "mismatch not provable" and withholds nothing.
+   */
+  private runtimeConditionCallerOf(agent: string): RuntimeConditionCallerV1 {
+    const def = this.manager.defOf(agent);
+    const entry = asAgent(def);
+    const runtime = def?.cmd ? runtimeOf(def.cmd) : undefined;
+    return {
+      ...(runtime ? { runtime } : {}),
+      ...(entry?.environment?.values
+        ? { provider: callerProviderOfEnvironment(entry.environment.values) }
+        : {}),
+    };
   }
 
   private sourceNoticeMetadata(agent: string, origin: NoticeOrigin): NoticeQueueMetadata {
