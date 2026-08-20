@@ -16,8 +16,10 @@ import type { FleetVM, SidebarBootVM } from "@tachyon/shared/sidebar/types";
 // the webview→host ready handshake is shared across all views; re-exported here for sidebar consumers.
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 
-/** persisted per-section sort prefs the host folds into the first fleet push (no name-asc→saved flicker). */
-export type SortPrefs = { agents?: string; terminals?: string };
+/** persisted per-section sort prefs the host folds into the first fleet push (no name-asc→saved flicker).
+ *  t-50daeb — `launcher` is the Control grid; absent means PRODUCT order, which is why it cannot
+ *  default to a SortMode the way the two list sections do. */
+export type SortPrefs = { agents?: string; terminals?: string; launcher?: string };
 
 /** host → webview: push the live fleet (+ sidebar prefs). */
 export const FLEET = "fleet" as const;

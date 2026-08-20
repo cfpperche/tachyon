@@ -34,7 +34,7 @@ type SidebarMsg = {
   name?: string;
   nodeId?: string;
   hash?: string;
-  section?: string; // setSort: "agents" | "terminals"
+  section?: string; // setSort: "agents" | "terminals" | "launcher"
   sectionId?: string; // global openControl: the Control section a launcher tile targets (t-6e2952)
   mode?: string; // setSort: a SortMode
   keys?: unknown; // setCollapsed: full collapsed key list
@@ -43,8 +43,9 @@ type SidebarMsg = {
   toName?: string;
 };
 
-/** spec 242 — persisted sidebar sort prefs (global per user, per section). */
-type SortPrefs = { agents?: string; terminals?: string };
+/** spec 242 — persisted sidebar sort prefs (global per user, per section). t-50daeb — `launcher` is
+ *  the Control grid; absent means PRODUCT order, so it defaults to nothing, never to a SortMode. */
+type SortPrefs = { agents?: string; terminals?: string; launcher?: string };
 const SORT_PREFS_KEY = "tachyon.sidebar.sort";
 const COLLAPSED_KEYS_KEY = "tachyon.sidebar.collapsed";
 
@@ -262,7 +263,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       controlWorkspaceScope.set(hash);
       return void this.push();
     }
-    if (m?.type === "setSort" && (m.section === "agents" || m.section === "terminals") && (m.mode === "name-asc" || m.mode === "name-desc")) {
+    // t-50daeb — the launcher is the third sortable section; same door, same persistence, same
+    // first-push seeding as the two list sections (an absent launcher pref still means product order).
+    if (m?.type === "setSort" && (m.section === "agents" || m.section === "terminals" || m.section === "launcher") && (m.mode === "name-asc" || m.mode === "name-desc")) {
       // spec 242 (D9) — update the in-memory cache SYNCHRONOUSLY (before the await) so a second overlapping
       // setSort reads the new object, then persist + republish (the validated mode never writes garbage).
       this.sortCache = { ...this.sortPrefs(), [m.section]: m.mode };
