@@ -14,9 +14,15 @@ import {
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 // t-6e2952 — the Control tab's tiles derive from the SAME catalog Control's own TabsBar order comes from
 // (COCKPIT_SECTION_ORDER); a section added there without nav metadata throws instead of silently vanishing.
-import { CONTROL_SECTION_NAV } from "./sectionNav";
+import { CONTROL_SECTION_NAV, type ControlSectionNav } from "./sectionNav";
 import type { SectionId } from "../../sections/model";
 import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
+import {
+  encodeLauncherCustom,
+  orderLauncherTiles,
+  parseLauncherPref,
+  moveLauncherTile,
+} from "../../sidebar/launcherOrder";
 import { agentAncestorNames, agentGroupParent, agentHierarchyRows } from "./grouping";
 import { attentionRows, splitNoticeAuthor } from "../../sidebar/attentionStack.js";
 import { placeMoreMenu } from "./menuPosition";
@@ -64,8 +70,9 @@ export interface Dispatch {
   /** t-41117e — Continue task after the webview picker chose a stopped Saved Agent destination. */
   continueTask?: (fromName: string, toName: string, wsHash?: string) => void;
   /** spec 242 — persist the chosen sort for a status list (global per-user, per-section).
-   *  t-50daeb — "launcher" is the Control grid; the host stores it beside the other two. */
-  setSort?: (section: "agents" | "terminals" | "launcher", mode: SortMode) => void;
+   *  t-50daeb — "launcher" is the Control grid; the host stores it beside the other two.
+   *  t-539851 — launcher also stores `custom:id,id,…` through this same string, not a new key. */
+  setSort?: (section: "agents" | "terminals" | "launcher", mode: string) => void;
   /** Persist all collapsed sidebar group keys. Keys include workspace hashes when workspace-scoped. */
   setCollapsedKeys?: (keys: string[]) => void;
   switchWorkspace?: (wsHash: string) => void;
@@ -1106,10 +1113,13 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
  * sidebar. `aria-selected` would therefore be a claim that goes stale silently, which is worse for a
  * screen-reader user than no claim at all: it would announce a selected tab that is not on screen.
  *
- * So the semantics are deliberately OTHER, and weaker on purpose: a labelled group of twelve buttons,
- * each of which OPENS a section. That is what they do. Keyboard reach does not regress — the old strip
- * had no roving tabindex or arrow-key handling either (twelve plain buttons carrying tab roles), so
- * both are twelve ordinary Tab stops actuated with Enter/Space.
+ * So the semantics are deliberately OTHER, and weaker on purpose: a labelled group of buttons,
+ * each of which OPENS a section. That is what they do.
+ *
+ * t-539851 — keyboard reach now matches `tabKey` on the tab strip in this file: one roving Tab
+ * stop, Left/Right/Home/End move, Enter/Space activate with preventDefault. The old "twelve
+ * ordinary Tab stops" pin is retired because cut/paste reordering has to move focus inside the
+ * group; a second grammar here would be worse than none.
  *
  * "Which section am I in" moved with the navigation: the section's own H1 in the Control panel answers
  * it, which is why every one of the twelve now has one (see cockpit/App.tsx's SectionFallback).
@@ -1118,12 +1128,111 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
  * LABEL — the name a person reads, not the id). `sort` is undefined until the user asks for one, and
  * that absence is the PRODUCT order `LAUNCHER_ORDER` encodes: SDD 500's tile positions are decisions,
  * not an arbitrary starting point, so alphabetical is opt-in and per-user — never the default.
+ *
+ * t-539851 — rearranging is a PERSISTENT mode because the keyboard path is W3C Grid cut/paste
+ * (mark, move focus, paste, announce). A transient press-and-hold cannot host that, so the Android
+ * launcher shape is out; iOS's mode that survives finger-up is the one that serves both inputs.
+ * Navigation copies `tabKey` in this file (Left/Right/Home/End + Enter/Space with preventDefault);
+ * the new keys are only Ctrl/Cmd+X, Ctrl/Cmd+V, and Escape.
  */
-function ControlGrid({ onOpen, engineHasError, sort }: { onOpen: (section: SectionId) => void; engineHasError: boolean; sort?: SortMode }) {
-  const tiles = sort ? sortRows(CONTROL_SECTION_NAV, sort, (s) => s.label) : CONTROL_SECTION_NAV;
+function ControlGrid({
+  onOpen,
+  engineHasError,
+  tiles,
+  reorderMode,
+  onReorderMode,
+  onCustomOrder,
+  draggingSection,
+}: {
+  onOpen: (section: SectionId) => void;
+  engineHasError: boolean;
+  tiles: readonly ControlSectionNav[];
+  reorderMode: boolean;
+  onReorderMode: (on: boolean) => void;
+  onCustomOrder: (ids: string[]) => void;
+  /** Visual-QA / test seam — production omits it. */
+  draggingSection?: string;
+}) {
+  const [focusId, setFocusId] = useState(tiles[0]?.id);
+  const [cutId, setCutId] = useState<string | undefined>(undefined);
+  const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
+  const [live, setLive] = useState("");
+  const cutRef = useRef<string | undefined>(undefined);
+  const dragRef = useRef<string | undefined>(undefined);
+  const suppressClick = useRef(false);
+  const longPress = useRef<number | undefined>(undefined);
+  const dragging = draggingId ?? draggingSection;
+  const labelOf = (id: string): string => tiles.find((t) => t.id === id)?.label ?? id;
+
+  const commitMove = (fromId: string, toId: string): void => {
+    const ids = tiles.map((t) => t.id);
+    const next = moveLauncherTile(ids, fromId, toId);
+    if (next.join("\0") === ids.join("\0")) return;
+    onCustomOrder(next);
+    onReorderMode(true);
+    setLive(`Moved ${labelOf(fromId)} to ${labelOf(toId)}'s position.`);
+  };
+
+  const clearLongPress = (): void => {
+    if (longPress.current === undefined) return;
+    if (typeof window !== "undefined") window.clearTimeout(longPress.current);
+    longPress.current = undefined;
+  };
+
+  const tileKey = (e: KeyboardEvent, i: number, s: ControlSectionNav): void => {
+    const ids = tiles.map((t) => t.id);
+    let n = i;
+    if (e.key === "ArrowRight") n = (i + 1) % ids.length;
+    else if (e.key === "ArrowLeft") n = (i - 1 + ids.length) % ids.length;
+    else if (e.key === "Home") n = 0;
+    else if (e.key === "End") n = ids.length - 1;
+    else if (e.key === "Enter" || e.key === " ") {
+      // Same activate-with-preventDefault as the search bar in this file (~1653).
+      e.preventDefault();
+      if (!suppressClick.current) onOpen(s.id);
+      return;
+    } else if ((e.ctrlKey || e.metaKey) && (e.key === "x" || e.key === "X")) {
+      e.preventDefault();
+      cutRef.current = s.id;
+      setCutId(s.id);
+      onReorderMode(true);
+      setLive(`Cut ${s.label}. Move focus and paste to place it.`);
+      return;
+    } else if ((e.ctrlKey || e.metaKey) && (e.key === "v" || e.key === "V")) {
+      e.preventDefault();
+      const from = cutRef.current;
+      if (!from) return;
+      commitMove(from, s.id);
+      cutRef.current = undefined;
+      setCutId(undefined);
+      return;
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cutRef.current = undefined;
+      setCutId(undefined);
+      onReorderMode(false);
+      setLive("Cancelled rearranging.");
+      return;
+    } else return;
+    e.preventDefault();
+    const id = ids[n]!;
+    setFocusId(id);
+    setTimeout(() => {
+      if (typeof document === "undefined") return;
+      document.getElementById(`ctl-tile-${id}`)?.focus();
+    }, 0);
+  };
+
   return (
-    <div class="ctl-grid" role="group" aria-label="Control sections" data-testid="control-grid">
-      {tiles.map((s) => {
+    <div
+      class={`ctl-grid${reorderMode ? " is-reordering" : ""}`}
+      role="group"
+      aria-label={reorderMode ? "Control sections, rearranging" : "Control sections"}
+      data-testid="control-grid"
+      data-reorder={reorderMode ? "true" : undefined}
+    >
+      <div class="ctl-live" role="status" aria-live="polite" data-testid="launcher-live">{live}</div>
+      {tiles.map((s, i) => {
         // t-aa2780 — one tile carries the log-error dot that used to sit on Control's Engine TAB. The
         // tab-strip dot next to it says "something is wrong"; this one says WHERE, so the alarm has an
         // address. Announced through the button's own label, not as a decorative glyph.
@@ -1134,16 +1243,63 @@ function ControlGrid({ onOpen, engineHasError, sort }: { onOpen: (section: Secti
         // SDD 485 — a standalone app's tile opens its OWN editor tab, so the tooltip must not promise
         // Control. The click is unchanged (one door: `tachyon.openControl <id>`); only the wording is.
         const opens = s.standalone ? `Open ${s.label}` : `Open Control — ${s.label}`;
+        const isCut = cutId === s.id;
+        const isDragging = dragging === s.id;
         return (
           <Button
             key={s.id}
-            class={`ctl-tile${err ? " has-err" : ""}`}
+            id={`ctl-tile-${s.id}`}
+            class={`ctl-tile${err ? " has-err" : ""}${isCut ? " is-cut" : ""}${isDragging ? " is-dragging" : ""}`}
             icon={s.icon}
             title={err ? `${opens} (errors in engine log)` : opens}
             aria-label={err ? `${s.label}, errors in engine log` : undefined}
             data-section={s.id}
             data-testid={`control-tile-${s.id}`}
-            onClick={() => onOpen(s.id)}
+            draggable
+            tabindex={focusId === s.id || (focusId === undefined && i === 0) ? 0 : -1}
+            onKeyDown={(e) => tileKey(e as unknown as KeyboardEvent, i, s)}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              clearLongPress();
+              if (typeof window === "undefined") return;
+              longPress.current = window.setTimeout(() => {
+                suppressClick.current = true;
+                onReorderMode(true);
+              }, 500);
+            }}
+            onPointerUp={clearLongPress}
+            onPointerCancel={clearLongPress}
+            onDragStart={(e) => {
+              clearLongPress();
+              suppressClick.current = true;
+              dragRef.current = s.id;
+              e.dataTransfer?.setData("text/plain", s.id);
+              if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+              setDraggingId(s.id);
+              onReorderMode(true);
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const from = dragRef.current || e.dataTransfer?.getData("text/plain");
+              dragRef.current = undefined;
+              setDraggingId(undefined);
+              if (from) commitMove(from, s.id);
+            }}
+            onDragEnd={() => {
+              dragRef.current = undefined;
+              setDraggingId(undefined);
+            }}
+            onClick={() => {
+              if (suppressClick.current) {
+                suppressClick.current = false;
+                return;
+              }
+              onOpen(s.id);
+            }}
           >
             {s.label}
             {err ? <span class="ctl-tile-dot" data-testid="control-tile-engine-dot" aria-hidden="true" /> : null}
@@ -1317,6 +1473,10 @@ export function App({
   initialTab = "Agents",
   selectedWsHash,
   boot,
+  /** Test / visual-QA seam — production always starts with rearranging off. */
+  initialReorderMode = false,
+  /** Test / visual-QA seam — production has no in-flight drag. */
+  initialDraggingSection,
 }: {
   fleets?: FleetVM[];
   dispatch?: Dispatch;
@@ -1330,6 +1490,8 @@ export function App({
    * exactly the first frame of every reload, and is why absence can no longer be read off `fleets`.
    */
   boot?: SidebarBootVM;
+  initialReorderMode?: boolean;
+  initialDraggingSection?: string;
 }) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [tab, setTab] = useState<TabId>(initialTab);
@@ -1393,16 +1555,26 @@ export function App({
   const [wsOverride, setWsOverride] = useState<string | undefined>(undefined);
   // spec 242 — sort: the host's persisted pref seeds it; a user choice this session OVERRIDES (and persists),
   // so a stale fleet snapshot can never revert the user's pick (codex D9). Default name-asc.
-  const [sortOverride, setSortOverride] = useState<{ agents?: SortMode; terminals?: SortMode; launcher?: SortMode }>({});
+  const [sortOverride, setSortOverride] = useState<{ agents?: SortMode; terminals?: SortMode }>({});
+  const [launcherOverride, setLauncherOverride] = useState<string | undefined>(undefined);
+  const [reorderMode, setReorderMode] = useState(initialReorderMode);
   const sortAgents = sortOverride.agents ?? asSortMode(prefs.agents);
   const sortTerminals = sortOverride.terminals ?? asSortMode(prefs.terminals);
   // t-50daeb — the launcher's default is the PRODUCT order (SDD 500's positions are deliberate), so an
   // absent pref stays ABSENT instead of coercing to name-asc: the grid sorts only once a mode exists.
-  const sortLauncher: SortMode | undefined =
-    sortOverride.launcher ?? (prefs.launcher === undefined ? undefined : asSortMode(prefs.launcher));
+  // t-539851 — custom:id,… is a third value of the SAME pref string, parsed rather than run through
+  // asSortMode (which would collapse it to name-asc and hide the arrangement).
+  const launcherParsed = parseLauncherPref(launcherOverride ?? prefs.launcher);
+  const launcherTiles = orderLauncherTiles(CONTROL_SECTION_NAV, launcherParsed);
   const changeSort = (section: "agents" | "terminals" | "launcher", mode: SortMode) => {
-    setSortOverride((o) => ({ ...o, [section]: mode })); // optimistic + session-authoritative
+    if (section === "launcher") setLauncherOverride(mode);
+    else setSortOverride((o) => ({ ...o, [section]: mode })); // optimistic + session-authoritative
     dispatch?.setSort?.(section, mode); // persist for next load
+  };
+  const commitLauncherOrder = (ids: string[]) => {
+    const encoded = encodeLauncherCustom(ids);
+    setLauncherOverride(encoded);
+    dispatch?.setSort?.("launcher", encoded);
   };
   /**
    * t-72ff5a — resolution, and it is the whole point of the change: ONE `FleetVM` is in focus, and
@@ -1685,18 +1857,42 @@ export function App({
             PRODUCT order, so the control starts INACTIVE ("click to sort A–Z") rather than claiming a
             direction the grid does not have; once a mode exists it flips exactly like Agents does. */}
         {tab === "Control" && (() => {
-          const label = sortLauncher ? SORT_LABEL[sortLauncher] : "Product order";
-          const flipSort = () => changeSort("launcher", sortLauncher === "name-asc" ? "name-desc" : "name-asc");
+          const label = launcherParsed.kind === "product"
+            ? "Product order"
+            : launcherParsed.kind === "custom"
+              ? "Custom order"
+              : SORT_LABEL[launcherParsed.mode];
+          const active = launcherParsed.kind !== "product";
+          const flipHint = launcherParsed.kind === "name" ? "click to flip" : "click to sort A–Z";
+          const flipSort = () => changeSort(
+            "launcher",
+            launcherParsed.kind === "name" && launcherParsed.mode === "name-asc" ? "name-desc" : "name-asc",
+          );
           return (
             <span class="sec-actions">
+              {reorderMode && (
+                <button
+                  type="button"
+                  class="launcher-done"
+                  title="Done rearranging"
+                  aria-label="Done rearranging launcher"
+                  data-testid="launcher-done"
+                  onClick={() => setReorderMode(false)}
+                >
+                  Done
+                </button>
+              )}
               <button
                 type="button"
-                class={`act${sortLauncher ? " on" : ""}`}
-                title={`Sort launcher — ${label} (${sortLauncher ? "click to flip" : "click to sort A–Z"})`}
-                aria-label={`Sort launcher (${label}); ${sortLauncher ? "click to flip" : "click to sort A–Z"}`}
+                class={`act${active ? " on" : ""}`}
+                title={`Sort launcher — ${label} (${flipHint})`}
+                aria-label={`Sort launcher (${label}); ${flipHint}`}
+                data-testid="launcher-sort"
                 onClick={flipSort}
               >
-                <SortIcon dir={sortLauncher ?? "name-asc"} />
+                {launcherParsed.kind === "custom"
+                  ? <Icon name="gripper" />
+                  : <SortIcon dir={launcherParsed.kind === "name" ? launcherParsed.mode : "name-asc"} />}
               </button>
             </span>
           );
@@ -1788,7 +1984,11 @@ export function App({
           <ControlGrid
             onOpen={(section) => dispatch?.global("openControl", undefined, section)}
             engineHasError={engineHasError}
-            sort={sortLauncher}
+            tiles={launcherTiles}
+            reorderMode={reorderMode}
+            onReorderMode={setReorderMode}
+            onCustomOrder={commitLauncherOrder}
+            draggingSection={initialDraggingSection}
           />
         ) : selected ? (
           // t-72ff5a — the seven scoped tabs render exactly the selected project, with no folder

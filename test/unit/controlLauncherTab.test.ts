@@ -8,6 +8,7 @@ import { initializeVsCodeNotifications } from "../../apps/vscode-extension/src/w
 import { WEBVIEW_SURFACES } from "../../apps/vscode-extension/src/webview/surfaces.js";
 import { CONTROL_SECTION_NAV } from "@tachyon/webview-ui/webview/sidebar/sectionNav.js";
 import { sortRows } from "@tachyon/webview-ui/sidebar/sortRows.js";
+import { encodeLauncherCustom, moveLauncherTile } from "@tachyon/webview-ui/sidebar/launcherOrder.js";
 import { TABS, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.js";
 import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
 import { loadWebviewModule, renderStatic, renderStaticWithElements, type RenderedElement } from "../helpers/staticPreact.js";
@@ -304,3 +305,225 @@ describe("t-50daeb — the launcher grid sorts A–Z and keeps the choice", () =
     });
   });
 });
+
+/**
+ * t-539851 — rearranging the launcher. The test DRIVES the gesture (drag or keyboard cut/paste)
+ * and asserts the order persisted through setSort. A screenshot cannot drag.
+ *
+ * Third-mode rule (written): rearranging while the grid is in A–Z writes custom:id,… and leaves A–Z.
+ */
+describe("t-539851 — drag and keyboard reorder persist the same custom order", () => {
+  type AppProps = {
+    fleets?: FleetVM[];
+    initialTab?: TabId;
+    prefs?: { agents?: string; terminals?: string; launcher?: string };
+    dispatch?: { setSort?: (section: string, mode: string) => void; global?: (op: string, hash?: string, sectionId?: string) => void };
+    initialReorderMode?: boolean;
+  };
+  let App: (props: AppProps) => unknown;
+
+  beforeEach(async () => {
+    const mod = await loadWebviewModule(path.join(repoRoot, "packages/webview-ui/src/webview/sidebar/App.tsx"));
+    App = mod.App as typeof App;
+  });
+
+  const productOrder = CONTROL_SECTION_NAV.map((s) => s.id);
+  const tileEls = (elements: RenderedElement[], id: string): RenderedElement => {
+    const el = elements.find((e) => e.tag === "button" && e.props["data-section"] === id);
+    if (!el) throw new Error(`no tile ${id}`);
+    return el;
+  };
+  const dragEvent = (id = "") => {
+    let stored = id;
+    return {
+      preventDefault() {},
+      dataTransfer: {
+        setData: (_k: string, v: string) => { stored = v; },
+        getData: () => stored,
+        effectAllowed: "move",
+        dropEffect: "move",
+      },
+    };
+  };
+  const keyEvent = (key: string, mods: { ctrlKey?: boolean } = {}) => ({
+    key,
+    ctrlKey: !!mods.ctrlKey,
+    metaKey: false,
+    preventDefault() {},
+  });
+
+  it("Interface × drop: dragging system onto mission persists custom: of the moved product order", () => {
+    const calls: Array<[string, string]> = [];
+    const { elements } = renderStaticWithElements(App({
+      fleets: [SAMPLE],
+      initialTab: "Control",
+      dispatch: { setSort: (section, mode) => calls.push([section, mode]) },
+    }));
+    const ev = dragEvent();
+    (tileEls(elements, "system").props.onDragStart as (e: unknown) => void)(ev);
+    (tileEls(elements, "mission").props.onDrop as (e: unknown) => void)(ev);
+    expect(calls).toEqual([["launcher", encodeLauncherCustom(moveLauncherTile(productOrder, "system", "mission"))]]);
+  });
+
+  it("Interface × keyboard cut/paste: the same assertion as the drop, through Ctrl+X then Ctrl+V", () => {
+    const calls: Array<[string, string]> = [];
+    const { elements, html } = renderStaticWithElements(App({
+      fleets: [SAMPLE],
+      initialTab: "Control",
+      dispatch: { setSort: (section, mode) => calls.push([section, mode]) },
+    }));
+    expect(html).toContain('data-testid="launcher-live"');
+    expect(html).toContain('aria-live="polite"');
+    (tileEls(elements, "system").props.onKeyDown as (e: unknown) => void)(keyEvent("x", { ctrlKey: true }));
+    (tileEls(elements, "mission").props.onKeyDown as (e: unknown) => void)(keyEvent("v", { ctrlKey: true }));
+    expect(calls).toEqual([["launcher", encodeLauncherCustom(moveLauncherTile(productOrder, "system", "mission"))]]);
+  });
+
+  it("Interface × drop while A–Z: rearranging leaves name-asc and writes custom of the moved A–Z list", () => {
+    const calls: Array<[string, string]> = [];
+    const { elements, html } = renderStaticWithElements(App({
+      fleets: [SAMPLE],
+      initialTab: "Control",
+      prefs: { launcher: "name-asc" },
+      dispatch: { setSort: (section, mode) => calls.push([section, mode]) },
+    }));
+    const az = sortRows(CONTROL_SECTION_NAV, "name-asc", (s) => s.label).map((s) => s.id);
+    expect([...html.matchAll(/data-section="([^"]+)"/g)].map((m) => m[1])).toEqual(az);
+    const from = az[0]!;
+    const to = az[2]!;
+    const ev = dragEvent();
+    (tileEls(elements, from).props.onDragStart as (e: unknown) => void)(ev);
+    (tileEls(elements, to).props.onDrop as (e: unknown) => void)(ev);
+    expect(calls).toEqual([["launcher", encodeLauncherCustom(moveLauncherTile(az, from, to))]]);
+    expect(calls[0]![1].startsWith("custom:")).toBe(true);
+    expect(calls[0]![1]).not.toBe("name-asc");
+  });
+
+  it("a saved custom pref paints that order, and the sort control names Custom order", () => {
+    const custom = [...productOrder].reverse();
+    const html = renderStatic(App({
+      fleets: [SAMPLE],
+      initialTab: "Control",
+      prefs: { launcher: encodeLauncherCustom(custom) },
+    }));
+    expect([...html.matchAll(/data-section="([^"]+)"/g)].map((m) => m[1])).toEqual(custom);
+    expect(html).toContain("Sort launcher (Custom order); click to sort A–Z");
+    expect(html).toContain('data-testid="launcher-sort"');
+    expect(html).toContain("codicon-gripper");
+  });
+
+  it("keyboard navigation reuses tabKey's grammar: Left/Right/Home/End plus Enter/Space activate", () => {
+    const opens: string[] = [];
+    const { elements, html } = renderStaticWithElements(App({
+      fleets: [SAMPLE],
+      initialTab: "Control",
+      dispatch: { global: (_op: string, _hash?: string, sectionId?: string) => { if (sectionId) opens.push(sectionId); } },
+    }));
+    const system = tileEls(elements, "system");
+    expect(system.props.tabindex).toBe(0);
+    expect(tileEls(elements, "inbox").props.tabindex).toBe(-1);
+    expect(typeof system.props.onKeyDown).toBe("function");
+    (system.props.onKeyDown as (e: unknown) => void)(keyEvent("Enter"));
+    expect(opens).toEqual(["system"]);
+    (system.props.onKeyDown as (e: unknown) => void)(keyEvent(" "));
+    expect(opens).toEqual(["system", "system"]);
+    // The handlers exist for the same keys tabKey listens to — two grammars in this file would be worse than none.
+    (system.props.onKeyDown as (e: unknown) => void)(keyEvent("ArrowRight"));
+    (system.props.onKeyDown as (e: unknown) => void)(keyEvent("ArrowLeft"));
+    (system.props.onKeyDown as (e: unknown) => void)(keyEvent("Home"));
+    (system.props.onKeyDown as (e: unknown) => void)(keyEvent("End"));
+    expect(html).toContain('id="ctl-tile-system"');
+  });
+
+  it("reordering mode idle shows Done; tiles stay draggable so the next drop can fire", () => {
+    const { html, elements } = renderStaticWithElements(App({
+      fleets: [SAMPLE],
+      initialTab: "Control",
+      initialReorderMode: true,
+    }));
+    expect(html).toContain('data-reorder="true"');
+    expect(html).toContain('data-testid="launcher-done"');
+    expect(html).toContain("Control sections, rearranging");
+    expect(tileEls(elements, "system").props.draggable).toBe(true);
+  });
+});
+
+describe("t-539851 — the custom pref survives the host and the reload", () => {
+  const live: SidebarPrototypeProvider[] = [];
+  beforeEach(() => {
+    __resetVscodeMock();
+    initializeVsCodeNotifications();
+    for (const p of live.splice(0)) p.dispose();
+  });
+  afterEach(() => { for (const p of live.splice(0)) p.dispose(); });
+
+  function sortHarness(seed: Record<string, unknown> = {}) {
+    const store = new Map<string, unknown>(Object.entries(seed));
+    const memento = {
+      get: <T,>(key: string) => store.get(key) as T | undefined,
+      update: async (key: string, value: unknown) => { store.set(key, value); },
+      keys: () => [...store.keys()],
+    } as unknown as vscode.Memento;
+    const posted: Array<{ type?: string; prefs?: { launcher?: string } }> = [];
+    const handlers: Array<(msg: unknown) => void> = [];
+    const view = {
+      webview: {
+        cspSource: "vscode-resource:",
+        options: undefined,
+        asWebviewUri: (uri: unknown) => uri,
+        postMessage: async (msg: unknown) => { posted.push(msg as { prefs?: { launcher?: string } }); return true; },
+        onDidReceiveMessage: (cb: (msg: unknown) => void) => { handlers.push(cb); return { dispose() {} }; },
+        html: "",
+      },
+      onDidDispose: () => ({ dispose() {} }),
+    } as unknown as vscode.WebviewView;
+    const target = {
+      wsHash: "ws",
+      folderName: "Demo",
+      loadSidebar: async () => SAMPLE,
+    } as never;
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [target], memento);
+    live.push(provider);
+    provider.resolveWebviewView(view);
+    const settle = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
+    return {
+      store,
+      posted,
+      settle,
+      receive: (msg: unknown) => { for (const cb of handlers) cb(msg); },
+      reload: () => {
+        const fresh = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [target], memento);
+        live.push(fresh);
+        fresh.resolveWebviewView(view as unknown as vscode.WebviewView);
+        return fresh;
+      },
+    };
+  }
+  const fleets = (h: { posted: Array<{ type?: string; prefs?: { launcher?: string } }> }) =>
+    h.posted.filter((m) => m.type === "fleet");
+
+  it("Interface × drop path — a custom encoding persists to the memento and rides the FIRST reload push", async () => {
+    const encoded = encodeLauncherCustom(["companion", "system", "inbox"]);
+    const h = sortHarness();
+    await h.settle();
+    h.receive({ type: "setSort", section: "launcher", mode: encoded });
+    await h.settle();
+    expect(h.store.get("tachyon.sidebar.sort")).toEqual({ launcher: encoded });
+    expect(fleets(h).at(-1)?.prefs?.launcher).toBe(encoded);
+
+    h.reload();
+    await h.settle();
+    expect(fleets(h).at(-1)?.prefs?.launcher, "the stored custom order seeds the first push (no flicker)").toBe(encoded);
+  });
+
+  it("garbage custom encodings are refused — the memento does not take them", async () => {
+    const h = sortHarness();
+    await h.settle();
+    h.receive({ type: "setSort", section: "launcher", mode: "custom:" });
+    h.receive({ type: "setSort", section: "launcher", mode: "custom:NOT_VALID" });
+    h.receive({ type: "setSort", section: "agents", mode: encodeLauncherCustom(["system"]) });
+    await h.settle();
+    expect(h.store.get("tachyon.sidebar.sort")).toBeUndefined();
+  });
+});
+

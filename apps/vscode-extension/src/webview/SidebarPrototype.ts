@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { isAgentRow, type FleetVM, type AgentVM, type SidebarBootVM } from "@tachyon/shared/sidebar/types.js";
 import { fleetMessage } from "@tachyon/webview-ui/webview/sidebar/messages";
 import { isSectionId } from "../sections/resolveSection.js";
+import { isPersistedLauncherMode } from "@tachyon/webview-ui/sidebar/launcherOrder.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { shellTachyonFont } from "./shared/tachyonFont.js";
 import type { ActionId } from "@tachyon/webview-ui/sidebar/actions";
@@ -265,12 +266,23 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     }
     // t-50daeb — the launcher is the third sortable section; same door, same persistence, same
     // first-push seeding as the two list sections (an absent launcher pref still means product order).
-    if (m?.type === "setSort" && (m.section === "agents" || m.section === "terminals" || m.section === "launcher") && (m.mode === "name-asc" || m.mode === "name-desc")) {
-      // spec 242 (D9) — update the in-memory cache SYNCHRONOUSLY (before the await) so a second overlapping
-      // setSort reads the new object, then persist + republish (the validated mode never writes garbage).
-      this.sortCache = { ...this.sortPrefs(), [m.section]: m.mode };
-      await this.memento?.update(SORT_PREFS_KEY, this.sortCache);
-      return void this.push();
+    // t-539851 — launcher writes `custom:id,id,…` through this same string (a list of ids, not a
+    // new memento key). Agents/terminals still only accept the two alphabetical modes.
+    if (
+      m?.type === "setSort"
+      && (m.section === "agents" || m.section === "terminals" || m.section === "launcher")
+      && typeof m.mode === "string"
+    ) {
+      const ok = m.section === "launcher"
+        ? isPersistedLauncherMode(m.mode)
+        : m.mode === "name-asc" || m.mode === "name-desc";
+      if (ok) {
+        // spec 242 (D9) — update the in-memory cache SYNCHRONOUSLY (before the await) so a second overlapping
+        // setSort reads the new object, then persist + republish (the validated mode never writes garbage).
+        this.sortCache = { ...this.sortPrefs(), [m.section]: m.mode };
+        await this.memento?.update(SORT_PREFS_KEY, this.sortCache);
+        return void this.push();
+      }
     }
     if (m?.type === "setCollapsed" && Array.isArray(m.keys)) {
       this.collapsedCache = [...new Set(m.keys.filter((key): key is string => typeof key === "string"))];
