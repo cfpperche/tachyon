@@ -109,11 +109,13 @@ export class OnboardingPanelManager {
       // model refresh that follows is what turns the screen's step 2 to done.
       if (action.type === "initialize") { await this.deps.initialize(); return await this.send(session); }
       if (action.type === "openConfig") return this.deps.openConfig();
-      if (action.type === "openAgentStudio") return this.deps.openNewAgentStudio();
+      // t-505f13 round 5 (owner decision, j-7e9fb17b7dc3) — the studio handover IS onboarding's
+      // exit: open Agent Studio and this tab leaves the scene in the same gesture. No confirmation,
+      // no delay — the sidebar's agent-creation path is the normal one from here on. The tab also
+      // never closes on its own anywhere else: whoever reopens it later still gets the
+      // roster-driven refresh (round 2's wiring, which stays).
+      if (action.type === "openAgentStudio") { this.deps.openNewAgentStudio(); return this.manager.close(session.target); }
       if (action.type === "openKeys") return this.deps.openKeys();
-      // t-505f13 round 4 — the finished screen's exit. ALWAYS the user's click: nothing in this
-      // panel ever closes itself, so the tab cannot vanish under someone who is still reading.
-      if (action.type === "close") return this.manager.close(session.target);
     } catch (error) { session.post(errorMessage(safeError(error))); }
   }
 }

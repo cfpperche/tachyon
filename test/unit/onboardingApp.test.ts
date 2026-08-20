@@ -76,21 +76,18 @@ describe("the Onboarding app screen", () => {
   });
 
   /**
-   * t-505f13 round 4 — the finished state OFFERS ITS OWN EXIT. The owner's finding: the screen had a
-   * beginning and a middle and no end — "You're set up" rendered and the tab stayed open forever,
-   * with nothing telling the user the task was over or how to leave. The exit is a USER action in
-   * the banner (never automatic — a tab that vanishes alone is worse than one that stays), and a
-   * mid-flow screen must NOT offer it: "Close this tab" next to a pending step would read as done.
+   * t-505f13 round 5 — the owner's decision REPLACED the round-4 design: onboarding's exit is the
+   * "Open Agent Studio" handover itself (the host closes the tab on that action), and a banner
+   * button of its own is a superseded shape. This pins that the superseded exit stays gone, so it
+   * cannot quietly come back beside the handover the owner chose.
    */
-  it("the allSet banner offers an explicit exit, and only the allSet state does", () => {
+  it("the banner offers no exit of its own — the studio handover IS the exit the owner chose", () => {
     const done = render(fixture("all-set"));
     expect(done).toContain('data-testid="onb-allset"');
-    expect(done).toContain('data-testid="onb-close"');
-    expect(done).toContain("Close this tab");
-    const fresh = render(fixture("fresh"));
-    expect(fresh).not.toContain('data-testid="onb-close"');
-    const firstAgent = render(fixture("first-agent"));
-    expect(firstAgent).not.toContain('data-testid="onb-close"');
+    expect(done).not.toContain('data-testid="onb-close"');
+    for (const name of ["fresh", "first-agent", "missing-cli"]) {
+      expect(render(fixture(name))).not.toContain('data-testid="onb-close"');
+    }
   });
 
   it("exposes the re-check door in every state and the config door once a config exists", () => {

@@ -34,10 +34,10 @@ export type OnboardingAction =
   | { type: "recheck" }
   | { type: "initialize" }
   | { type: "openConfig" }
+  /** t-505f13 round 5 — this action is the screen's EXIT too: the host opens Agent Studio and
+   *  closes the onboarding panel in the same gesture (owner decision, j-7e9fb17b7dc3). */
   | { type: "openAgentStudio" }
-  | { type: "openKeys" }
-  /** t-505f13 round 4 — the finished screen's EXIT. Always the user's click, never automatic. */
-  | { type: "close" };
+  | { type: "openKeys" };
 
 export const readyMessage = () => ({ type: READY } as const);
 export const modelMessage = (model: OnboardingModel) => ({ type: MODEL, model } as const);
