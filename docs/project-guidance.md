@@ -392,6 +392,32 @@ The configuration was right in content and wrong in address. A dead surface the 
 recommends is not clutter — it is an active instruction to do the wrong thing, and the editor's
 autocomplete delivers it. Closed by `t-e050fd`; the sweep for others is `t-ee3d5d`.
 
+## An old decision is not a permanent one
+
+Every decision here was made against a reason, and **the decision binds only while its reason
+holds**. Reading the history is not obedience to it — it is how you find out what the reason was,
+so you can check whether it is still true.
+
+Two failures, and they are opposite:
+
+**Reverting blindly.** Proposing what a recorded decision already rejected, without knowing it was
+rejected. A worktree study proposed grouping projects in a tab the owner had deliberately made
+single-project two weeks earlier (`t-a8f1fd`, item 10); it called the work cheap because it had not
+read the two cards that made it expensive.
+
+**Treating the record as settled.** Refusing to reopen because a decision exists. The Companion
+extraction (`t-a90049`) reverses SDD 485 D10, which had folded Companion into the Settings app —
+and it is right to, because that decision never anticipated Companion growing into 45% of the
+screen. The card says so out loud instead of pretending to be a continuation.
+
+**What legitimately changes a reason:** a new measurement, a constraint that did not exist before,
+or the thing it protected no longer existing. **What does not:** preference, inconvenience, or not
+having read it.
+
+So the move is neither "obey" nor "ignore". Name the decision, name its reason, say what changed,
+then propose. A reversal carrying those four things is ordinary work; one carrying none is how a
+project relitigates itself in circles.
+
 ## A part nothing reaches is not delivered
 
 Five defects in one day had the same shape: the piece was correct, it had a passing test, and
