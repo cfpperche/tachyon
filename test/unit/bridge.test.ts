@@ -219,6 +219,12 @@ describe("Bridge end-to-end over streamable HTTP", () => {
         : { state: "supported", runtime: "fixture", source: "fixture" },
     },
     resolveSecret: async (key) => key === secretStorageKey("zai", "glm-coding-pro") ? "vault-private-value" : undefined,
+    materializeHarness: ({ def }) => {
+      const effort = def.profileNativeConfig?.selectors.reasoningEffort;
+      return effort
+        ? { home: WS, env: {}, args: ["--effort", effort] }
+        : null;
+    },
   });
   const pinsRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-pins-"));
   const pins = new PinStore(pinsRoot);
@@ -1027,6 +1033,39 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(missing.isError).toBe(true);
     expect(JSON.stringify(missing.content)).toContain("missing secret 'MISSING_KEY' (zai/missing)");
     await client.callTool({ name: "kill_agent", arguments: { name: "environment-child" } });
+  });
+
+  it("spawn_agent Temporary Agent projects declared reasoningEffort to the native launch and records it", async () => {
+    const result = await client.callTool({
+      name: "spawn_agent",
+      arguments: {
+        name: "effort-child",
+        cmd: "claude",
+        parent: "claude",
+        reasoningEffort: "high",
+        skip_contract_reason: "reasoning effort launch fixture",
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(launches.get(`tachyon-${HASH}-effort-child`)?.join(" ")).toContain("--effort high");
+    expect(sessionLedger.get("effort-child")?.def?.reasoningEffort).toBe("high");
+    await client.callTool({ name: "kill_agent", arguments: { name: "effort-child" } });
+  });
+
+  it("spawn_agent Temporary Agent without reasoningEffort leaves the native selector absent", async () => {
+    const result = await client.callTool({
+      name: "spawn_agent",
+      arguments: {
+        name: "default-effort-child",
+        cmd: "claude",
+        parent: "claude",
+        skip_contract_reason: "reasoning default launch fixture",
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(launches.get(`tachyon-${HASH}-default-effort-child`)?.join(" ")).not.toContain("--effort");
+    expect(sessionLedger.get("default-effort-child")?.def?.reasoningEffort).toBeUndefined();
+    await client.callTool({ name: "kill_agent", arguments: { name: "default-effort-child" } });
   });
 
   it("spawn_agent projects model preflight failures as structured content", async () => {
