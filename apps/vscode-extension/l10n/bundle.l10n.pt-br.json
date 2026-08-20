@@ -386,6 +386,7 @@
   "Secret references": "Referências a segredos",
   "Select a single workspace in the header to manage Companion settings.": "Selecione um único workspace no cabeçalho para gerir as definições do Companion.",
   "Select a single workspace in the header to manage Companion tab tools.": "Selecione um único workspace no cabeçalho para gerir as tools de aba do Companion.",
+  "This screen needs a single project.": "Esta tela precisa de um único projeto.",
   "Send to agent": "Enviar ao agente",
   "Setup commands (run once on create)": "Comandos de setup (rodam uma vez na criação)",
   "Shared whiteboard (.tachyon/notes.md) — click to open": "Quadro compartilhado (.tachyon/notes.md) — clique para abrir",

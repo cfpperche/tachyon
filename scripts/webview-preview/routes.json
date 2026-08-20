@@ -2082,6 +2082,18 @@
     ]
   },
   {
+    "view": "settings",
+    "fixture": "needs-workspace",
+    "url": "/scripts/webview-preview/index.html?view=settings&fixture=needs-workspace",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
     "view": "companion",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=companion&fixture=default",
