@@ -6,7 +6,7 @@ import { readAgentProfileGrants, workspaceConfigSha256 } from "@tachyon/engine/c
 import type { AgentOwnershipRosterV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 import { parentCwdRefusalFor } from "@tachyon/engine/agents/spawnContract.js";
 import type { Task } from "@tachyon/shared/tasks/types.js";
-import { NO_QUOTA_CHANNEL } from "@tachyon/engine/runtimeOps/runtimeCondition.js";
+import { NO_QUOTA_CHANNEL, NOT_MEASURED_FOR_THIS_PROVIDER } from "@tachyon/engine/runtimeOps/runtimeCondition.js";
 import { validateSpawnContract, composeSpawnContractBrief, notifyParentGuidance, noInteractivePromptGuidance, identityLine, idleSpawnGuidance, normalizeField } from "@tachyon/engine/agents/spawnContract.js";
 import type { SpawnContract } from "@tachyon/engine/agents/spawnContract.js";
 import { decideSpawnTaskClaim } from "../spawnTaskClaim.js";
@@ -598,9 +598,13 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         + `is left right now). A runtime with no live quota source says '${NO_QUOTA_CHANNEL}' by name — it is `
         + "never reported as zero used and never left silent, because an absence that looks like data is "
         + "worse than an absence. A quota read off a surface rendered for a human is labelled best-effort. "
-        + "Every field carries the registry it was derived from; this tool authors no runtime list of its "
-        + "own. Purely cached: it reads what Tachyon already collected and starts no runtime process. You "
-        + "do not have to poll it — when a runtime's slack comes back, Tachyon pokes the coordinator.",
+        + "Quota belongs to a provider ACCOUNT, not to a runtime: an agent caller whose own provider "
+        + `differs from the account a channel reads is told '${NOT_MEASURED_FOR_THIS_PROVIDER}' for its `
+        + "own runtime instead of that account's numbers — real numbers of the wrong account are worse "
+        + "than none. Every field carries the registry it was derived from; this tool authors no runtime "
+        + "list of its own. Purely cached: it reads what Tachyon already collected and starts no runtime "
+        + "process. You do not have to poll it — when a runtime's slack comes back, Tachyon pokes the "
+        + "coordinator.",
       inputSchema: {
         runtime: z
           .string()
@@ -612,7 +616,8 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
     async ({ runtime }) => {
       try {
         if (!deps.runtimeCondition) return fail(new Error("runtime_condition is not available on this Bridge"));
-        const report = deps.runtimeCondition();
+        const callerAgent = deps.caller?.kind === "agent" && deps.caller.name ? deps.caller.name : undefined;
+        const report = deps.runtimeCondition(callerAgent);
         if (!runtime) return ok(JSON.stringify(report, null, 2));
         const selected = report.runtimes.find((entry) => entry.runtime === runtime);
         if (!selected) {

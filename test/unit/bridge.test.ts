@@ -267,6 +267,9 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   let validationChanges = 0;
   let activitySeq = 7;
   const hostActionCalls: unknown[] = [];
+  // t-78f461 — the runtime_condition handler hands the Bridge-resolved caller to the host so the
+  // projection can withhold another provider's account numbers from an agent's own runtime.
+  const runtimeConditionCallers: Array<string | undefined> = [];
   const bridge = new Bridge({
     workspaceRoot: pinsRoot,
     manager,
@@ -328,8 +331,9 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     // t-458497 — the derived runtime-condition projection, built from the same registries the product
     // reads, with a synthetic quota channel inventory: codex has a control-plane source, claude has a
     // rendered-surface one, and grok deliberately has NONE.
-    runtimeCondition: () =>
-      projectRuntimeCondition({
+    runtimeCondition: (callerAgent) => {
+      runtimeConditionCallers.push(callerAgent);
+      return projectRuntimeCondition({
         generatedAt: "2026-08-02T18:00:00.000Z",
         channels: [
           { provider: "codex", source: "cli", channel: { acquisition: "control-plane", mechanism: "app-server" } },
@@ -356,7 +360,11 @@ describe("Bridge end-to-end over streamable HTTP", () => {
             diagnostics: [],
           },
         },
-      }),
+        // t-78f461 — a named agent caller arrives with the provider this fixture attributes to it,
+        // so the refusal path is reachable from the wire, not only from unit inputs.
+        ...(callerAgent ? { caller: { runtime: "claude", provider: "api.z.ai" } } : {}),
+      });
+    },
     runHostAction: async (input) => {
       hostActionCalls.push(input);
       return {
@@ -465,6 +473,11 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     ).runtimes[0];
     expect(codex.configuration.manageable.origin.registry).toBe("SUPPORTED_AGENT_RUNTIMES");
     expect(codex.configuration.measured.origin.registry).toBe("RUNTIME_NATIVE_MEMORY_REGISTRY");
+
+    // t-78f461 — the handler hands the Bridge-resolved caller to the host. This client is legacy,
+    // so no agent name is passed, the report stays unscoped, and the account's numbers above
+    // (observed, 12%) were legitimately visible. An agent caller would have reached the refusal.
+    expect(runtimeConditionCallers.at(-1)).toBeUndefined();
 
     const missing = await client.callTool({ name: "runtime_condition", arguments: { runtime: "nope" } });
     expect(missing.isError).toBe(true);
