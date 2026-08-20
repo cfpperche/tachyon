@@ -92,7 +92,6 @@ export interface CockpitStrings {
   settingsWritesToNothing: string;
   companionTitle: string;
   companionHint: string;
-  companionBody: string;
   companionTabTools: string;
   companionTabToolsHelp: string;
   companionAllowedHosts: string;
@@ -140,10 +139,8 @@ export interface CockpitStrings {
   companionPaired: string;
   companionNotPaired: string;
   companionPickWorkspace: string;
-  companionBaseUrl: string;
   /** SDD 414 — Control pair-code affordance (command palette still works). */
   companionShowPairCode: string;
-  companionCopyBaseUrl: string;
   companionPairCodeLabel: string;
   companionPairUrlLabel: string;
   companionPairExpires: string;

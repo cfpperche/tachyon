@@ -156,8 +156,8 @@ export function CompanionApp({
   return (
     <main class="ds-page companion-root">
       <PageChrome
-        title="Companion"
-        hint="Pair devices, manage access, and keep trusted connections in view."
+        title={s.companionTitle}
+        hint={s.companionHint}
       />
       {needsWorkspacePick ? (
         <EmptyState message={s.companionPickWorkspace} />
@@ -256,7 +256,7 @@ export function CompanionApp({
                         </span>
                         <span class="companion-status">
                           <i class={d.live ? "live" : "offline"} />
-                          {d.live ? s.devicesLive : "Paired · offline"}
+                          {d.live ? s.devicesLive : s.devicesOffline}
                         </span>
                         {d.pairedAt ? (
                           <span>
