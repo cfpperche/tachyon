@@ -17,6 +17,7 @@ import {
   GROK_WITHDRAWN_NATIVE_CONFIG_KEYS,
 } from "@tachyon/engine/config/grokNativeConfigProjection.js";
 import { renderGrokCanonicalConfig } from "@tachyon/engine/harness/HarnessManager.js";
+import { explicitReasoningEffortProjection } from "@tachyon/engine/config/explicitReasoningEffortProjection.js";
 import type { AgentProfileV1 } from "@tachyon/engine/config/agentProfileSchema.js";
 
 const base: ResolvedAgentNativeConfigProjection = { adapter: "grok", selectors: {} };
@@ -59,6 +60,14 @@ deny = ["Bash(rm -rf *)"]
 `;
 
 describe("Grok native configuration admission", () => {
+  it("projects an explicit Temporary effort through the same selector guard", () => {
+    expect(explicitReasoningEffortProjection("grok", "high").selectors.reasoningEffort).toBe("high");
+    expect(() => explicitReasoningEffortProjection("grok", "deep")).toThrow(
+      "Grok reasoningEffort 'deep' is unsupported",
+    );
+    expect(explicitReasoningEffortProjection("codex", "high").selectors.reasoningEffort).toBe("high");
+  });
+
   it("declares global-only sources for the scalar families", () => {
     for (const family of ["permissions", "interface", "featureFlags"] as const) {
       expect(resolveAgentNativeConfigSupport("grok", family, grokScalarNativeConfigPolicy("global")).support)

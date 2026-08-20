@@ -36,6 +36,7 @@ import { ensurePaneTranscriptFile, removePaneTranscript, rotatePaneTranscriptIfN
 import { removeDerivedAgentFiles, writePrivateFileAtomic } from "./derivedFile.js";
 import { persistentInstructionsLaunchArgs } from "./persistentInstructionsLaunch.js";
 import { PI_SESSION_DIR_ENV, piSessionDir } from "./piSession.js";
+import { explicitReasoningEffortProjection } from "../config/explicitReasoningEffortProjection.js";
 import { wrapWithPrimer, renderPrimer } from "./primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
 import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "./briefFile.js";
@@ -522,6 +523,8 @@ export interface SpawnOptions {
   env?: Record<string, string>;
   /** Literal environment values and vault-backed secret references for a Temporary Agent launch. */
   environment?: AgentEntry["environment"];
+  /** Explicit per-spawn native reasoning selector; absent means the runtime default. */
+  reasoningEffort?: string;
   /** spec 230 — tag this Temporary spawn as a pipeline-run node; persisted to SessionDef.pipeline so the generic resume/offer path skips it (the run owns it). */
   pipeline?: { runId: string; nodeId: string };
   /** spec 230 — extra instructions appended to the agent's composed prompt (a pipeline node's task, added AFTER a declared agent's role/instructions so the specialist config is preserved). */
@@ -917,6 +920,7 @@ function temporaryDefinitionFrom(def: NonNullable<SessionRecord["def"]>, worktre
     attention: { enabled: true, silenceSec: 8, patterns: [] },
     restart: "never",
     kind: def.kind,
+    ...(def.reasoningEffort ? { profileNativeConfig: explicitReasoningEffortProjection(def.cmd, def.reasoningEffort) } : {}),
     // spec 210 — a row with a worktree record means this agent runs in a worktree; restore the flag so
     // restart reuses it instead of falling back to the root.
     worktree: !!worktree,
@@ -2597,6 +2601,9 @@ export class AgentManager {
           kind: "agent",
           instructions: opts.instructions,
           environment: opts.environment,
+          ...(opts.reasoningEffort !== undefined
+            ? { profileNativeConfig: explicitReasoningEffortProjection(opts.cmd, opts.reasoningEffort) }
+            : {}),
           // spec 210 — MCP top-level spawn may opt into a separate worktree (uses the default
           // branch tachyon/<name>; ignored for a sub-agent, which inherits the parent's cwd).
           worktree: opts.worktree,
@@ -3050,6 +3057,7 @@ export class AgentManager {
       ...(delegator ? { delegator } : {}), // t-bae303 — persist so rehydrate can restore gated lineage after a reload
       ...(opts?.env ? { env: opts.env } : {}), // spec 230 — persist the node env so a restart re-applies the nonce
       ...(temporary && opts?.environment ? { environment: opts.environment } : {}), // secret refs persist; resolved values never do
+      ...(temporary && opts?.reasoningEffort !== undefined ? { reasoningEffort: opts.reasoningEffort } : {}),
       ...(opts?.pipeline ? { pipeline: opts.pipeline } : {}), // spec 230 — pipeline-owned node (planResume skips it)
       ...(opts?.contract ? { contract: opts.contract } : {}), // spec 246 — structured delegation contract (D8)
       ...(opts?.contractSkipReason ? { contractSkipReason: opts.contractSkipReason } : {}), // spec 246 D6 — auditable bypass
@@ -5403,6 +5411,7 @@ export class AgentManager {
         kind: "agent" as const,
         ...(src.instructions ? { instructions: src.instructions } : {}),
         ...(sourceRecord?.def?.taskBrief ? { taskBrief: sourceRecord.def.taskBrief } : {}),
+        ...(sourceRecord?.def?.reasoningEffort ? { reasoningEffort: sourceRecord.def.reasoningEffort } : {}),
         ...(persistedForkEnv ? { env: persistedForkEnv } : {}),
         ...(src.environment ? { environment: src.environment } : {}),
         fork: true,
