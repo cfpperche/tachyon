@@ -51,6 +51,9 @@ describe("SDD 485 C8 — every launcher tile has a live destination", () => {
     "activity",
     "review",
     "probes",
+    // t-505f13 — no launcher tile: the sidebar's unconfigured state and `tachyon.openOnboarding`
+    // are this app's doors, which is what a direct-command port means here.
+    "onboarding",
   ]);
 
   it("each tile is rendered by Control or backed by a standalone app — never neither", () => {

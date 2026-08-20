@@ -73,7 +73,7 @@ export interface Dispatch {
 // SDD 504 — `retryStart` and `openOutput` are the failed state's two actions. Both are new here
 // because the failed state itself is new: before this change an attach failure fell through to the
 // welcome, so the sidebar offered to CREATE a workspace whose startup had just been rejected.
-export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "retryStart" | "openOutput" | "studio:agents" | "studio:terminals" | "studio:schedules";
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "onboarding" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "retryStart" | "openOutput" | "studio:agents" | "studio:terminals" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/remove etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -1226,13 +1226,17 @@ function BootNotice({ state, boot, dispatch }: { state: SidebarBootState; boot?:
 
   // confirmed-unconfigured — the original welcome, reached only after every folder was checked.
   // No workspace booted → an honest empty state, never SAMPLE (which would show fake, unactionable rows).
+  // t-505f13 — the sidebar DECLARES the state and offers the one door; the work happens in the
+  // Onboarding editor tab (environment check + bootstrap), which this button opens. The claim is
+  // unchanged; the button stopped running Init itself because the app runs that same command with
+  // the checks beside it.
   return (
     <div class="init" data-testid="sidebar-boot-unconfigured">
       <Icon name="rocket" />
       <p>No Tachyon workspace.</p>
-      <p class="dim">Open a folder, then generate a <code>tachyon.yml</code> to manage its fleet here.</p>
-      <Button class="init-btn" onClick={() => dispatch?.global("init")}>
-        <Icon name="add" /><span>Initialize Tachyon</span>
+      <p class="dim">Set up this folder — Tachyon checks tmux, Node and an agent CLI before your first agent.</p>
+      <Button class="init-btn" onClick={() => dispatch?.global("onboarding")}>
+        <Icon name="rocket" /><span>Set up Tachyon</span>
       </Button>
     </div>
   );

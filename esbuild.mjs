@@ -357,7 +357,7 @@ const webviewChunkHygienePlugin = {
  *
  * Entry outputs: `dist/webview/<view>.js` (+ `dist/webview/chunks/app-*.js`, shared across ALL entries).
  */
-const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "terminal-studio-shell", "schedule-studio-shell", "agent-studio-shell", "board", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "system", "worktrees", "keys", "settings", "activity", "probes", "review"];
+const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "terminal-studio-shell", "schedule-studio-shell", "agent-studio-shell", "board", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "system", "worktrees", "keys", "settings", "activity", "probes", "review", "onboarding"];
 const webviewApps = {
   ...sidebar,
   entryPoints: Object.fromEntries(WEBVIEW_APP_VIEWS.map((view) => [view, `packages/webview-ui/src/webview/${view}/main.tsx`])),
@@ -577,6 +577,7 @@ copyFileSync("packages/webview-ui/src/webview/activity/activity.css", "dist/webv
 copyFileSync("packages/webview-ui/src/webview/probes/probes.css", "dist/webview/probes.css"); // spec 279 — probes styles (shared by the webview + the dev preview harness)
 copyFileSync("packages/webview-ui/src/webview/inspector/inspector.css", "dist/webview/inspector.css"); // spec 279 — inspector styles (shared by the webview + the dev preview harness)
 copyFileSync("packages/webview-ui/src/webview/worktrees/worktrees.css", "dist/webview/worktrees.css"); // SDD 485 D6 — standalone Worktrees leaf
+copyFileSync("packages/webview-ui/src/webview/onboarding/onboarding.css", "dist/webview/onboarding.css"); // t-505f13 — standalone Onboarding leaf (shared with the dev preview harness)
 copyFileSync("packages/webview-ui/src/webview/pin-preview/pin-preview.css", "dist/webview/pin-preview.css"); // spec 279 — pin-preview styles (shared by the webview + the dev preview harness)
 copyFileSync("packages/webview-ui/src/webview/agent-pane/agent-pane.css", "dist/webview/agent-pane.css"); // t-610355 — layer-2 agent pane chrome
 copyFileSync("node_modules/@xterm/xterm/css/xterm.css", "dist/webview/xterm.css"); // t-610355 — xterm.js styles

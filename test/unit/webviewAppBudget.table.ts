@@ -24,6 +24,7 @@ export const WEBVIEW_APP_EAGER_BUDGET_BYTES = {
   "system": EAGER_BUDGET_BYTES,
   "worktrees": EAGER_BUDGET_BYTES,
   "keys": EAGER_BUDGET_BYTES,
+  "onboarding": EAGER_BUDGET_BYTES,
   "settings": EAGER_BUDGET_BYTES,
   "activity": EAGER_BUDGET_BYTES,
   "review": EAGER_BUDGET_BYTES,

@@ -35,6 +35,7 @@
   "view.runtimeOpsOverview": "Overview",
   "command.terminalStudio": "Tachyon: Agent Studio (New Terminal)",
   "command.init": "Tachyon: Init (generate tachyon.yml)",
+  "command.openOnboarding": "Tachyon: Onboarding (set up this machine)",
   "command.approveProposalItem": "Approve Schedule",
   "command.rejectProposalItem": "Reject Schedule",
   "command.editScheduleItem": "Edit in tachyon.yml",

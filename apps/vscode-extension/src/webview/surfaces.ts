@@ -228,6 +228,12 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   { viewId: "tachyonHandoff", view: "handoff", hostFile: "apps/vscode-extension/src/webview/HandoffPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonWorktrees", view: "worktrees", hostFile: "apps/vscode-extension/src/webview/WorktreesPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonKeys", view: "keys", hostFile: "apps/vscode-extension/src/webview/KeysPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  // t-505f13 — the Onboarding app: environment checklist + workspace bootstrap, opened from the
+  // sidebar's unconfigured state (and the palette) rather than a launcher tile. `conform`: it mounts
+  // through the shared shell (SectionPanelManager), links design-system.css, and onboarding.css
+  // styles no page frame, mints no `--ds-*` values and gives `#root` no height — a page-scrolling
+  // document like keys/plugins.
+  { viewId: "tachyonOnboarding", view: "onboarding", hostFile: "apps/vscode-extension/src/webview/OnboardingPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonSettings", view: "settings", hostFile: "apps/vscode-extension/src/webview/SettingsPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // SDD 500 (2026-08-09) — System: one row where `tachyonOverview` (D11) and `tachyonEngine` (D5) were
   // two. This does NOT reverse 485's app-count decision by analogy; it is the one case 485's own

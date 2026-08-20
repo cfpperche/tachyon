@@ -194,14 +194,14 @@ describe("t-72ff5a — one project is in focus for the whole sidebar", () => {
     // host has said anything. If the claim of absence ever comes back to this moment, this fails.
     const undiscovered = render({ fleets: [], initialTab: "Agents" });
     expect(undiscovered).not.toContain("No Tachyon workspace.");
-    expect(undiscovered).not.toContain("Initialize Tachyon");
+    expect(undiscovered).not.toContain("Set up Tachyon");
     expect(undiscovered).not.toContain('data-testid="sidebar-workspace-select"');
 
     // …and the same for a discovery still in flight, which is the retained-webview case: a host
     // incarnation that has not answered yet is not a host that answered "none".
     const pending = render({ fleets: [], initialTab: "Agents", boot: { discovered: false, folders: [] } });
     expect(pending).not.toContain("No Tachyon workspace.");
-    expect(pending).not.toContain("Initialize Tachyon");
+    expect(pending).not.toContain("Set up Tachyon");
   });
 
   it("still reaches the honest empty state — once discovery confirms it, not before", () => {
@@ -213,7 +213,7 @@ describe("t-72ff5a — one project is in focus for the whole sidebar", () => {
       boot: { discovered: true, folders: [{ hash: "hash-alpha", name: "Alpha", phase: "unconfigured" }] },
     });
     expect(html).toContain("No Tachyon workspace.");
-    expect(html).toContain("Initialize Tachyon");
+    expect(html).toContain("Set up Tachyon");
     expect(html).not.toContain('data-testid="sidebar-workspace-select"');
   });
 
@@ -226,7 +226,7 @@ describe("t-72ff5a — one project is in focus for the whole sidebar", () => {
     expect(html).toContain("Alpha");
     expect(html).not.toContain("No Tachyon workspace.");
     // The click that would create a second tachyon.yml over a project that already has one.
-    expect(html).not.toContain("Initialize Tachyon");
+    expect(html).not.toContain("Set up Tachyon");
   });
 
   it("resolves a selection that names no attached project, rather than showing nothing", () => {

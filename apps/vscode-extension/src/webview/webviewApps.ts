@@ -203,6 +203,17 @@ const WEBVIEW_APP_ROWS = [
   // exposed, so it is one dashboard per project. It never had a standalone id; use a new one.
   { view: "worktrees", viewId: "tachyonWorktrees", section: "worktrees", host: "section", cardinality: "dashboard" },
   { view: "keys", viewId: "tachyonKeys", section: "keys", host: "section", cardinality: "dashboard" },
+  // t-505f13 — Onboarding, and the third `window` app after the inspector and Runtime Ops. The
+  // cardinality is the card's whole knot: this app EXISTS to open where NO Tachyon workspace is
+  // attached (that is who onboarding is for), so a key made of `viewId | project` would have nothing
+  // to key on — the dashboard pattern keys/plugins use cannot apply. Its subject is the machine's
+  // environment (tmux, Node, agent CLI — window-wide facts) plus this window's open folders.
+  //
+  // No `section`: no Control launcher tile opens it. The sidebar's "Set up Tachyon" button and the
+  // command palette are its doors, so it declares `iconName` on its config — the one shape
+  // `sectionAppIconName` allows for a tile-less app — and the viewType is NEW (no legacy id ever
+  // named this surface; onboarding lived only inside the Init command).
+  { view: "onboarding", viewId: "tachyonOnboarding", host: "section", cardinality: "window" },
   // t-5f2b5b — SDD 485 D7's Fleet app is GONE (owner decision, 2026-08-07: the sidebar Agents tab is the
   // only fleet). Its `tachyonFleet` viewType lives on only in extension.ts's dispose-only serializer loop,
   // which is where a retired id belongs — not here, where a row means "this surface still creates a panel".

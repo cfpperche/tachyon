@@ -53,6 +53,8 @@ import { reviewFixtures } from "./fixtures/review";
 import { reviewMessage } from "@tachyon/webview-ui/webview/review/messages";
 import { modelMessage as keysModelMessage } from "@tachyon/webview-ui/webview/keys/messages";
 import { keysFixtures } from "./fixtures/keys";
+import { modelMessage as onboardingModelMessage } from "@tachyon/webview-ui/webview/onboarding/messages";
+import { onboardingFixtures } from "./fixtures/onboarding";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -420,6 +422,16 @@ export const ROUTES: Record<string, Route> = {
     module: true,
     makeMessage: (vm) => keysModelMessage(vm as never),
   },
+  // t-505f13 — Onboarding: environment checklist + bootstrap. Same sheet set as keys (the app's own
+  // panel links these, IN ORDER — the harness must not invent a second list).
+  onboarding: {
+    bundle: "/dist/webview/onboarding.js",
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/onboarding.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: onboardingFixtures,
+    module: true,
+    makeMessage: (vm) => onboardingModelMessage(vm as never),
+  },
   settings: {
     bundle: "/dist/webview/settings.js",
     cssLinks: [...BASE_STYLESHEETS, "/dist/webview/control-typography.css", "/dist/webview/engine-workspace.css", "/dist/webview/settings.css"],
@@ -518,6 +530,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   system: { title: "System", aliases: ["system", "overview", "engine", "bridge", "control plane", "health"] },
   worktrees: { title: "Worktrees", aliases: ["worktrees", "managed worktrees", "checkout hygiene"] },
   keys: { title: "Keys", aliases: ["keys", "machine keys", "credentials", "secrets"] },
+  onboarding: { title: "Onboarding", aliases: ["onboarding", "setup", "first run", "environment check", "initialize workspace"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },
   "schedule-studio-shell": { title: "Schedule Studio", aliases: ["schedule studio", "new schedule", "edit schedule"] },

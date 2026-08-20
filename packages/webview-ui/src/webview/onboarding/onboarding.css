@@ -1,0 +1,26 @@
+/* t-505f13 — Onboarding styles. Conforms: no page frame, no --ds-* minting, #root keeps no height
+   (page-scrolling document like keys/plugins). Only the step strip, checklist rows and folder rows
+   are bespoke; everything else is .ds-* from design-system.css. */
+.onboarding-root { box-sizing: border-box; width: 100%; max-width: none; margin: 0; color: var(--ds-fg); }
+
+.onb-steps { display: flex; gap: var(--ds-2); list-style: none; margin: 0 0 var(--ds-4); padding: 0; flex-wrap: wrap; }
+.onb-step { display: flex; align-items: center; gap: var(--ds-2); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-2) var(--ds-3); color: var(--ds-muted); background: var(--vscode-editorWidget-background); }
+.onb-step.onb-done { color: var(--ds-fg); }
+.onb-step.onb-current { color: var(--ds-fg); border-color: var(--vscode-focusBorder); }
+.onb-step-dot { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--ds-border); font-size: var(--ds-small); }
+.onb-step.onb-done .onb-step-dot { border-color: transparent; }
+.onb-step-label { font-size: var(--ds-small); }
+
+.onb-section { margin: 0 0 var(--ds-4); }
+.onb-section h2 { font-size: var(--ds-section); letter-spacing: var(--tachyon-tracking-label); text-transform: uppercase; margin: 0 0 var(--ds-2); color: var(--ds-muted); }
+
+.onb-env-list, .onb-folder-list { display: grid; gap: var(--ds-2); }
+.onb-env-row, .onb-folder { border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-3) var(--ds-4); background: var(--vscode-editorWidget-background); }
+.onb-env-head { display: flex; align-items: center; gap: var(--ds-2); min-height: 28px; flex-wrap: wrap; }
+.onb-env-label { font-weight: 600; display: inline-flex; align-items: center; gap: var(--ds-1); }
+.onb-env-head .ds-badge { margin-left: auto; }
+.onb-remedy { margin-top: var(--ds-2); font-size: var(--ds-small); color: var(--ds-fg); display: flex; gap: var(--ds-1); align-items: baseline; }
+.onb-folder-root { font-family: var(--ds-mono); font-size: var(--ds-small); margin-top: var(--ds-1); word-break: break-all; }
+.onb-note { margin-top: var(--ds-2); }
+.onb-agent-launch { display: flex; align-items: center; gap: var(--ds-3); flex-wrap: wrap; }
+.onb-allset { margin: 0 0 var(--ds-4); }

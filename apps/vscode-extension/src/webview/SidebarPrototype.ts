@@ -295,6 +295,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       if (m.op && STUDIO[m.op]) return void vscode.commands.executeCommand(STUDIO[m.op], m.hash);
       if (m.op === "copyBridge") return void vscode.commands.executeCommand("tachyon.copyBridgeUrl", m.hash);
       if (m.op === "init") return void vscode.commands.executeCommand("tachyon.init");
+      // t-505f13 — the unconfigured welcome's button: open the Onboarding tab, where the environment
+      // check and the bootstrap (through `tachyon.init`) live. The sidebar declares; the app works.
+      if (m.op === "onboarding") return void vscode.commands.executeCommand("tachyon.openOnboarding");
       // t-6e2952 — the Control tab's tiles send the section they want. Never trust the webview's string:
       // an unknown id drops to a plain open (overview) instead of reaching the command as-is. The command
       // routes through openCockpit, so an already-open Control NAVIGATES rather than opening a second one.

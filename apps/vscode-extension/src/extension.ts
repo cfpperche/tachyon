@@ -18,6 +18,9 @@ import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/Runtime
 import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanInboxPanel.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesPanel.js";
 import { KEYS_VIEW_TYPE, KeysPanelManager } from "./webview/KeysPanel.js";
+import { ONBOARDING_VIEW_TYPE, OnboardingPanelManager } from "./webview/OnboardingPanel.js";
+import { scanAgentRosterDirectory } from "@tachyon/engine/config/agentRosterDirectory.js";
+import { probeEngineNodeRuntime } from "@tachyon/engine/onboarding/nodeProbe.js";
 import type { WorktreeLandResult } from "@tachyon/webview-ui/webview/worktrees/messages";
 import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "./webview/SettingsPanel.js";
 import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "./webview/SystemPanel.js";
@@ -3088,6 +3091,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     keysPanels.open(ws.wsHash); return true;
   };
 
+  // t-505f13 — Onboarding: a `window` app, so it opens with NO attached workspace (that is its
+  // audience). Every fact is injected: probes are the engine's own doors (doctor, detectInstalledClis,
+  // the engine-runtime Node probe), and the actions forward to commands that already exist —
+  // `tachyon.init` IS the bootstrap, Agent Studio/Keys/openConfig are their own surfaces' doors.
+  const onboardingPanels = new OnboardingPanelManager(context.extensionUri, {
+    folders: () => (vscode.workspace.workspaceFolders ?? []).map((f) => ({ name: f.name, root: f.uri.fsPath })),
+    hasConfig: (root) => hasConfig(root),
+    attachedRoots: () => new Set(workspaces().map((ws) => ws.workspaceRoot)),
+    secretInventory: async () => {
+      const ws = workspaces()[0];
+      return ws ? ws.secretInventory() : undefined;
+    },
+    agentCount: () => {
+      const ws = workspaces()[0];
+      return ws ? scanAgentRosterDirectory(ws.workspaceRoot).members.length : undefined;
+    },
+    checkTmux: () => doctor(),
+    detectClis: () => detectInstalledClis(),
+    checkNode: () => probeEngineNodeRuntime(),
+    initialize: async () => { await vscode.commands.executeCommand("tachyon.init"); },
+    openConfig: () => { void vscode.commands.executeCommand("tachyon.openConfig"); },
+    openAgentStudio: () => { void vscode.commands.executeCommand("tachyon.newAgentStudio"); },
+    openKeys: () => { void vscode.commands.executeCommand("tachyon.openControl", "keys"); },
+  });
+  context.subscriptions.push({ dispose: () => onboardingPanels.dispose() });
+
   // SDD 485 D8 — every read and write is rooted in the immutable dashboard project.
   const runtimeConfigPanels = new RuntimeConfigPanelManager(
     context.extensionUri,
@@ -3140,6 +3169,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<SectionPanelState>(context, SYSTEM_VIEW_TYPE, (panel, state) => systemPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, WORKTREES_VIEW_TYPE, (panel, state) => worktreesPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, KEYS_VIEW_TYPE, (panel, state) => keysPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  // t-505f13 — a `window` app like Runtime Ops: restore is not workspace-bound, so no revive deferral.
+  registerTrustedPanelSerializer<SectionPanelState>(context, ONBOARDING_VIEW_TYPE, (panel, state) => onboardingPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_CONFIG_VIEW_TYPE, (panel, state) => runtimeConfigPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, SETTINGS_VIEW_TYPE, (panel, state) => settingsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
@@ -3587,6 +3618,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // churn three call sites to say the same thing (the same call C5 made for the `board`
     // directory name).
     vscode.commands.registerCommand("tachyon.openControlRuntime", () => { runtimeOpsPanels.open(); }),
+    // t-505f13 — Onboarding opens as its own editor tab, or reveals the one already open. The
+    // sidebar's unconfigured state and the palette both route through here.
+    vscode.commands.registerCommand("tachyon.openOnboarding", () => { onboardingPanels.open(); }),
     // t-75fd3c — deep-link straight to a task's detail subroute (the host-agnostic EngineHost.openTask
     // port calls this by name, same indirection focusPrimaryView() uses for tachyonSidebarPrototype.focus).
     // SDD 485 C4 — the same command name and the same (wsHash, taskId) contract the host-agnostic

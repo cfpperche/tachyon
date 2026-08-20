@@ -157,7 +157,7 @@ describe("SDD 504 — what each state actually puts on screen", () => {
    * the half of this defect that actually costs something.
    */
   const claimsAbsence = (html: string) => html.includes("No Tachyon workspace.");
-  const offersInit = (html: string) => html.includes("Initialize Tachyon");
+  const offersInit = (html: string) => html.includes("Set up Tachyon");
 
   it("says it is checking, and offers nothing, before discovery answers", () => {
     const html = render({ fleets: [], boot: { discovered: false, folders: [] } });

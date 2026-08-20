@@ -1990,6 +1990,86 @@
     ]
   },
   {
+    "view": "onboarding",
+    "fixture": "fresh",
+    "url": "/scripts/webview-preview/index.html?view=onboarding&fixture=fresh",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Onboarding",
+    "aliases": [
+      "onboarding",
+      "setup",
+      "first run",
+      "environment check",
+      "initialize workspace"
+    ]
+  },
+  {
+    "view": "onboarding",
+    "fixture": "missing-cli",
+    "url": "/scripts/webview-preview/index.html?view=onboarding&fixture=missing-cli",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Onboarding",
+    "aliases": [
+      "onboarding",
+      "setup",
+      "first run",
+      "environment check",
+      "initialize workspace"
+    ]
+  },
+  {
+    "view": "onboarding",
+    "fixture": "all-set",
+    "url": "/scripts/webview-preview/index.html?view=onboarding&fixture=all-set",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Onboarding",
+    "aliases": [
+      "onboarding",
+      "setup",
+      "first run",
+      "environment check",
+      "initialize workspace"
+    ]
+  },
+  {
+    "view": "onboarding",
+    "fixture": "first-agent",
+    "url": "/scripts/webview-preview/index.html?view=onboarding&fixture=first-agent",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Onboarding",
+    "aliases": [
+      "onboarding",
+      "setup",
+      "first run",
+      "environment check",
+      "initialize workspace"
+    ]
+  },
+  {
     "view": "settings",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=settings&fixture=default",
