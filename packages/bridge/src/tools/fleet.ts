@@ -1,4 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import fs from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 import { cancelSavedAgentProposal, listSavedAgentProposalDecisions, readLiveSavedAgentProposalQueue, recordSavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposalStore.js";
 import { cancelSavedAgentRemovalProposal, listSavedAgentRemovalProposalDecisions, readLiveSavedAgentRemovalProposalQueue, recordSavedAgentRemovalProposal } from "@tachyon/engine/agents/savedAgentRemovalProposalStore.js";
@@ -1063,6 +1065,60 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
           }),
         );
         return ok(JSON.stringify(enriched, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "interrupted_work",
+    {
+      description:
+        "One read for work interrupted across the latest Tachyon/host restart. Returns only durable agent rows " +
+        "that were absent from the first conclusive startup inventory, joined with resume/dismiss options, " +
+        "managed-worktree hygiene, and the checkout's current node_modules presence. Dismissed rows are absent. " +
+        "Read-only: it never resumes, dismisses, removes, or lands anything.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        if (!deps.managedWorktrees) {
+          return fail(new Error("interrupted_work is not available on this Bridge (no managed-worktree service)"));
+        }
+        const interrupted = (await deps.manager.list()).filter((row) => row.interruptedAtStartup);
+        const audits = await deps.managedWorktrees.listClassified({ kind: "agent" });
+        const auditByAgent = new Map(audits.filter((row) => row.agent).map((row) => [row.agent!, row]));
+        const rows = interrupted.map((row) => {
+          const worktree = auditByAgent.get(row.name);
+          const ledgerWorktree = deps.agentWorktrees?.ledger.get(row.name)?.worktree;
+          const capabilities = outputCapabilities(row, deps);
+          return {
+            agent: row.name,
+            interruptedAtStartup: true,
+            lifetime: row.lifetime,
+            parent: row.parent,
+            actions: {
+              resume: row.resumePolicy === "restartable",
+              dismiss: capabilities.canDismiss,
+              redelegate: true,
+            },
+            worktree: worktree
+              ? {
+                  path: worktree.path,
+                  branch: worktree.branch,
+                  classification: worktree.classification,
+                  ownerPresence: worktree.ownerPresence,
+                  dependencies: {
+                    installed: fs.existsSync(path.join(worktree.path, "node_modules")),
+                    recordedMode: ledgerWorktree?.dependencies?.mode ?? "unknown",
+                    recordedReason: ledgerWorktree?.dependencies?.reason,
+                  },
+                }
+              : null,
+          };
+        });
+        return ok(JSON.stringify({ interrupted: rows.length, agents: rows }, null, 2));
       } catch (err) {
         return fail(err);
       }

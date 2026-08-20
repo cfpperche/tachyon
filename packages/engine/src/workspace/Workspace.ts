@@ -6905,6 +6905,7 @@ export class Workspace {
       // Present = any tmux session for the name (alive or dead pane). Strict running inventory
       // already proved the read was non-ambiguous; `states` is the same inventory after that success.
       const presentAtStartup = new Set(states.keys());
+      this.manager.recordInterruptedAtStartup(liveAtStartup);
       await this.returnTaskClaimsMissingAtStartup(liveAtStartup);
       this.summarizeMissingChildrenAfterReload(liveAtStartup);
       // After the parent summary so auto-collected names still appear in that one honest line.
