@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -21,7 +22,53 @@ afterEach(() => {
 
 const FS_OPS = new Set(["readFileSync", "readdirSync", "readSync"]);
 
+const NEW_SYNC_DOORS = [
+  { op: "mkdirSync", run: (target: string) => fs.mkdirSync(target) },
+  { op: "writeFileSync", run: (target: string) => fs.writeFileSync(target, "probe\n") },
+  { op: "statSync", run: (target: string) => fs.statSync(target) },
+  { op: "renameSync", run: (target: string) => fs.renameSync(target, `${target}.renamed`) },
+  { op: "appendFileSync", run: (target: string) => fs.appendFileSync(target, "probe\n") },
+  { op: "spawnSync", run: (target: string) => spawnSync(target, ["-e", ""]) },
+  { op: "execFileSync", run: (target: string) => execFileSync(target, ["-e", ""]) },
+] as const;
+
 describe("t-17674a host sync I/O probe", () => {
+  it.each(NEW_SYNC_DOORS)("reports $op with its caller site and target path", ({ op, run }) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "t-8a9337-probe-"));
+    const target = op === "spawnSync" || op === "execFileSync"
+      ? process.execPath
+      : path.join(root, op === "mkdirSync" ? "created" : "target");
+    if (!["mkdirSync", "writeFileSync", "spawnSync", "execFileSync"].includes(op)) {
+      fs.writeFileSync(target, "seed\n");
+    }
+    try {
+      startHostSyncIoProbe();
+      takeHostSyncIoHit();
+
+      run(target);
+
+      const hit = takeHostSyncIoHit();
+      expect(hit?.op).toBe(op);
+      expect(hit?.site).toContain("hostSyncIoProbe.test.ts");
+      expect(hit?.path).toBe(target);
+      const line = formatHostLagLog(classifyHostLag({
+        wallLagMs: 5001,
+        hrLagMs: 5001,
+        eluActiveMs: 5000,
+        eluIdleMs: 100,
+        cpuMs: 20,
+        loadavg1: 1,
+        cpuCount: 24,
+        runDelayMs: 0,
+      }), hit);
+      expect(line).toContain(`syncSite=${hit!.site}`);
+      expect(line).toContain(`syncPath=${target}`);
+    } finally {
+      stopHostSyncIoProbe();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("names a blocking readFileSync so a late tick can attribute the wait", () => {
     const file = path.join(os.tmpdir(), `t-17674a-probe-${process.pid}.txt`);
     fs.writeFileSync(file, "probe\n");

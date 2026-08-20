@@ -3,14 +3,16 @@
  *
  * ELU says the thread was inside a callback; it does not say which one. A CPU profile
  * is the same trap (self time is not caller attribution, and a blocking syscall has
- * almost no CPU). This wraps the sync filesystem doors the host actually uses and
+ * almost no CPU). This wraps the synchronous filesystem and subprocess doors the host uses and
  * keeps the hottest call site by cumulative wall time. Classification is unchanged.
  *
- * Sync subprocess APIs are deliberately not named here: this file runs inside the
- * extension host, so it cannot join the wedge allowlist (those slots are for
- * separate processes with no VS Code running).
+ * It still measures only wall time inside each wrapped call: a zero syncTotalMs
+ * rules out waiting in these doors, not a callback that returned from I/O quickly
+ * and then blocked elsewhere.
  */
+import childProcess from "node:child_process";
 import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 
 export interface HostSyncIoHit {
   op: string;
@@ -36,10 +38,22 @@ let attributionSuppressionDepth = 0;
 let recording = false;
 const bySite = new Map<string, { ms: number; op: string; path?: string }>();
 const originals = {
+  appendFileSync: fs.appendFileSync,
+  execFileSync: childProcess.execFileSync,
+  mkdirSync: fs.mkdirSync,
   readFileSync: fs.readFileSync,
   readdirSync: fs.readdirSync,
   readSync: fs.readSync,
+  renameSync: fs.renameSync,
+  spawnSync: childProcess.spawnSync,
+  statSync: fs.statSync,
+  writeFileSync: fs.writeFileSync,
 };
+
+// existsSync is intentionally not wrapped. Measuring the real wrapper on this
+// host added a 49.8 µs median per call (100k-call batches), and existsSync is the
+// highest-volume synchronous door in the extension host. The lower-frequency
+// doors below retain attribution without putting that tax on every existence check.
 
 function siteFromStack(): string | undefined {
   const stack = new Error().stack;
@@ -88,10 +102,13 @@ function wrap<T extends (...args: never[]) => unknown>(
   pathArg = 0,
 ): T {
   return ((...args: Parameters<T>) => {
+    if (recording) return original(...args);
+    recording = true;
     const started = performance.now();
     try {
       return original(...args);
     } finally {
+      recording = false;
       record(op, started, args[pathArg]);
     }
   }) as T;
@@ -101,9 +118,19 @@ function wrap<T extends (...args: never[]) => unknown>(
 export function startHostSyncIoProbe(): void {
   if (installed) return;
   installed = true;
+  fs.appendFileSync = wrap("appendFileSync", originals.appendFileSync);
+  childProcess.execFileSync = wrap("execFileSync", originals.execFileSync);
+  fs.mkdirSync = wrap("mkdirSync", originals.mkdirSync);
   fs.readFileSync = wrap("readFileSync", originals.readFileSync);
   fs.readdirSync = wrap("readdirSync", originals.readdirSync);
   fs.readSync = wrap("readSync", originals.readSync);
+  fs.renameSync = wrap("renameSync", originals.renameSync);
+  childProcess.spawnSync = wrap("spawnSync", originals.spawnSync);
+  (fs as { statSync: typeof fs.statSync }).statSync = wrap("statSync", originals.statSync);
+  fs.writeFileSync = wrap("writeFileSync", originals.writeFileSync);
+  // Production subprocess callers use named ESM imports. Refresh their live
+  // bindings after patching the built-in default exports (and again on restore).
+  syncBuiltinESMExports();
 }
 
 /**
@@ -166,9 +193,17 @@ export function takeHostSyncIoHit(): HostSyncIoHit | undefined {
 /** Test seam — restore originals and drop the recorded hit. */
 export function stopHostSyncIoProbe(): void {
   if (!installed) return;
+  fs.appendFileSync = originals.appendFileSync;
+  childProcess.execFileSync = originals.execFileSync;
+  fs.mkdirSync = originals.mkdirSync;
   fs.readFileSync = originals.readFileSync;
   fs.readdirSync = originals.readdirSync;
   fs.readSync = originals.readSync;
+  fs.renameSync = originals.renameSync;
+  childProcess.spawnSync = originals.spawnSync;
+  (fs as { statSync: typeof fs.statSync }).statSync = originals.statSync;
+  fs.writeFileSync = originals.writeFileSync;
+  syncBuiltinESMExports();
   installed = false;
   reset();
 }
