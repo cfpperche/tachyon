@@ -3013,6 +3013,9 @@ export class HarnessManager {
     }
     const grokNoticeDrain = this.noticeDrainStopHook("grok", noticeDrainAgentArg(agent));
     const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot), pointer, persistence, {
+      // Grok's native SessionStart source is `new`, not Claude's startup/resume vocabulary. An omitted
+      // matcher is the only matcher that reaches both new sessions and future native source values.
+      sessionStartMatcher: null,
       // t-9547a8 — failure visibility belongs to every installed lifecycle hook, not to the optional
       // continuity/Stop persistence pair. Grok had three live hooks whose fail-open errors vanished.
       failureFile: persistenceHookFailureFile(this.workspaceRoot),
