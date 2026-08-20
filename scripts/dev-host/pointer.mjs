@@ -1248,6 +1248,76 @@ export async function reconcileDevHostOccupant(slotRoot, opts = {}) {
 }
 
 /**
+ * Stop the tmux server owned by this checkout's Dev Host.
+ *
+ * TMUX_TMPDIR is the ownership boundary: using it here is what keeps point-clear from
+ * addressing the fleet's shared socket, even though both servers use the name "tachyon".
+ * The socket is checked after kill-server because unlinking the pointer directory alone does
+ * not stop a server (or the agents in its panes).
+ */
+export function stopDevHostTmux(repoRoot, opts = {}) {
+  const tmuxTmpDir = path.resolve(opts.tmuxTmpDir ?? devHostTmuxTmpDir(repoRoot));
+  const uid = process.getuid?.() ?? 0;
+  const socket = path.join(tmuxTmpDir, `tmux-${uid}`, "tachyon");
+  const runTmux = opts.runTmux ?? ((args) => {
+    try {
+      return {
+        ok: true,
+        stdout: execFileSync("tmux", args, {
+          encoding: "utf8",
+          env: { ...process.env, TMUX: undefined, TMUX_PANE: undefined, TMUX_TMPDIR: tmuxTmpDir },
+          stdio: ["ignore", "pipe", "pipe"],
+        }),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        stdout: error?.stdout?.toString?.() ?? "",
+        stderr: error?.stderr?.toString?.() ?? "",
+      };
+    }
+  });
+
+  let socketStat;
+  try {
+    socketStat = fs.lstatSync(socket);
+  } catch (error) {
+    if (error?.code === "ENOENT") return { state: "absent", socket, tmuxTmpDir };
+    throw error;
+  }
+  if (socketStat.isSymbolicLink()) throw new Error(`${SELF}: refusing symlinked private tmux socket ${socket}`);
+  if (!socketStat.isSocket()) throw new Error(`${SELF}: refusing non-socket private tmux path ${socket}`);
+
+  const listSessions = () => {
+    const result = runTmux(["-L", "tachyon", "list-sessions", "-F", "#{session_name}"]);
+    return result.ok
+      ? result.stdout.trim().split("\n").map((name) => name.trim()).filter(Boolean)
+      : null;
+  };
+  const killed = runTmux(["-L", "tachyon", "kill-server"]);
+  if (!killed.ok) {
+    const survivors = listSessions();
+    if (survivors?.length) {
+      throw new Error(`${SELF}: private tmux sessions survived cleanup: ${survivors.join(", ")}`);
+    }
+    // A socket with no answering server is stale. Remove only this exact private socket.
+    fs.rmSync(socket, { force: true });
+    if (fs.existsSync(socket)) throw new Error(`${SELF}: failed to remove stale private tmux socket ${socket}`);
+    return { state: "stopped", socket, tmuxTmpDir };
+  }
+
+  const survivors = listSessions();
+  if (survivors?.length) {
+    throw new Error(`${SELF}: private tmux sessions survived cleanup: ${survivors.join(", ")}`);
+  }
+  if (fs.existsSync(socket)) {
+    fs.rmSync(socket, { force: true });
+    if (fs.existsSync(socket)) throw new Error(`${SELF}: failed to remove stopped private tmux socket ${socket}`);
+  }
+  return { state: "stopped", socket, tmuxTmpDir };
+}
+
+/**
  * Clear one slot (default: active, else default). `--all` / opts.all wipes every slot + base.
  * Never touches worktree or fixture targets.
  */
@@ -1262,9 +1332,10 @@ export async function clear(repoRoot, opts = {}) {
     return { cleared: false, reason: "already clear" };
   }
   assertPointerSessionIdle(base);
+  const tmux = stopDevHostTmux(resolved, opts);
   const reconciled = await reconcileDevHostOccupant(base, opts);
   fs.rmSync(base, { recursive: true, force: true });
-  return { cleared: true, checkout: resolved, reconciled };
+  return { cleared: true, checkout: resolved, reconciled: { tmux, ...reconciled } };
 }
 
 /** Refuse destructive pointer changes while an interactive headless session owns it. */
@@ -1528,6 +1599,7 @@ Dependencies (node_modules, .tachyon/bin) are still borrowed from the primary ch
     const r = await clear(repoRoot);
     console.log(`${SELF}: ${r.cleared ? `cleared dev-host of ${r.checkout}` : r.reason}`);
     if (r.reconciled) {
+      console.log(`  tmux:  ${r.reconciled.tmux?.state ?? r.reconciled.tmux}`);
       console.log(`  engine: ${r.reconciled.engine?.state ?? r.reconciled.engine}`);
       console.log(`  bridge: ${r.reconciled.bridge?.state ?? r.reconciled.bridge}`);
     }

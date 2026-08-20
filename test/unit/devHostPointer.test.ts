@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -21,6 +22,7 @@ const {
   readWorktreeBranchTemplate,
   resolvePrimaryRepoRoot,
   resolveFixturePath,
+  stopDevHostTmux,
   stampDevHostWorktreeBranch,
   status,
 } = pointerMod as any;
@@ -247,11 +249,41 @@ describe("dev-host pointer", () => {
     arm();
     const result = await clear(repo, noopReconcile);
     expect(result.cleared).toBe(true);
-    expect(result.reconciled).toEqual({ engine: { state: "absent" }, bridge: { state: "absent" } });
+    expect(result.reconciled.engine).toEqual({ state: "absent" });
+    expect(result.reconciled.bridge).toEqual({ state: "absent" });
+    expect(result.reconciled.tmux.state).toBe("absent");
     expect(fs.existsSync(path.join(repo, ".tachyon", "dev-host"))).toBe(false);
     expect(fs.existsSync(worktree)).toBe(true);
     expect(fs.existsSync(fixture)).toBe(true);
     expect((await status(repo, noopProbe)).armed).toBe(false);
+  });
+
+  it("point-clear stops only the private tmux server and proves the shared server survives", () => {
+    const privateTmux = path.join(repo, "private-tmux");
+    const sharedTmux = path.join(repo, "shared-tmux");
+    fs.mkdirSync(privateTmux, { recursive: true });
+    fs.mkdirSync(sharedTmux, { recursive: true });
+    const tmuxEnv = (dir: string) => ({ ...process.env, TMUX_TMPDIR: dir });
+    const start = (dir: string, session: string) => spawnSync("tmux", ["-L", "tachyon", "new-session", "-d", "-s", session], {
+      encoding: "utf8",
+      env: tmuxEnv(dir),
+    });
+    const list = (dir: string) => spawnSync("tmux", ["-L", "tachyon", "list-sessions"], {
+      encoding: "utf8",
+      env: tmuxEnv(dir),
+    });
+    try {
+      const privateStart = start(privateTmux, "dev-host-survivor");
+      const sharedStart = start(sharedTmux, "fleet-survivor");
+      if (privateStart.status !== 0 || sharedStart.status !== 0) return;
+
+      expect(stopDevHostTmux(repo, { tmuxTmpDir: privateTmux }).state).toBe("stopped");
+      expect(list(privateTmux).status).not.toBe(0);
+      expect(list(sharedTmux).stdout).toContain("fleet-survivor");
+    } finally {
+      spawnSync("tmux", ["-L", "tachyon", "kill-server"], { env: tmuxEnv(sharedTmux) });
+      spawnSync("tmux", ["-L", "tachyon", "kill-server"], { env: tmuxEnv(privateTmux) });
+    }
   });
 
   it("refuses point and clear while a live interactive session owns the pointer", async () => {
@@ -461,10 +493,11 @@ describe("dev-host pointer", () => {
       const result = await clear(repo, { stopEngine, stopBridge, env: {} });
 
       expect(result.cleared).toBe(true);
-      expect(result.reconciled).toEqual({
-        engine: { state: "stopped", unitName: expectedUnitName },
-        bridge: { state: "stopped" },
+      expect(result.reconciled.engine).toEqual({
+        state: "stopped", unitName: expectedUnitName,
       });
+      expect(result.reconciled.bridge).toEqual({ state: "stopped" });
+      expect(result.reconciled.tmux.state).toBe("absent");
       expect(calls).toEqual([
         { fn: "engine", root: slotRoot, storagePresent: true },
         { fn: "bridge", root: slotRoot, storagePresent: true },
