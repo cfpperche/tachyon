@@ -30,7 +30,11 @@ const schedule = z.union([
 
 export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "schedules.list", "proposals.list",
-  "doctor.report", "bridge.token", "companion.pair-code", "companion.status", "agent.inspect", "agent.session-inspection", "agent.fork-preview", "prompt.catalog", "worktree.review",
+  "doctor.report", "bridge.token", "companion.pair-code", "companion.status",
+  // t-0ba30f — read side of the existing write command. Additive: an engine that predates
+  // it refuses the unknown query by name rather than decoding a changed companion.status.
+  "config.ideBrowser.enabled",
+  "agent.inspect", "agent.session-inspection", "agent.fork-preview", "prompt.catalog", "worktree.review",
   "worktrees.list", "worktrees.classified", "pipeline.inspect", "agent.wait",
   "agent-profile.studio-inspect", "agent-profile.studio-bundle-export", "agent-profile.studio-ownership",
   "agent-profile.forget-plan",
@@ -108,6 +112,8 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("bridge.token") }).strict(),
   z.object({ action: z.literal("companion.pair-code") }).strict(),
   z.object({ action: z.literal("companion.status") }).strict(),
+  /** t-0ba30f — Integrated Browser gate read. Same action name as the write, other method. */
+  z.object({ action: z.literal("config.ideBrowser.enabled") }).strict(),
   z.object({ action: z.literal("agent.inspect"), agent: name }).strict(),
   /** t-283149 — what Tachyon actually handed this agent's runtime. Additive for the same reason
    *  `agent-profile.studio-ownership` is: an engine that predates it refuses the unknown action

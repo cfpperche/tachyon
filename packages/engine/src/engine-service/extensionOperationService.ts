@@ -19,6 +19,7 @@ import {
   setIdeBrowserEnabled,
   setIdleAfterMinutes,
 } from "../config/YamlConfigEditor.js";
+import { isIdeBrowserEnabled } from "../ide-browser/settings.js";
 import { isResumable } from "../resume/sessionRecord.js";
 import { PromptStore } from "../prompts/PromptStore.js";
 import { injectTargets, submitRefuseReason } from "../prompts/injectFlow.js";
@@ -129,12 +130,13 @@ export async function executeExtensionQuery(
         baseUrl: workspace.companionBaseUrl(),
         baseUrls: workspace.companionBaseUrlCandidates(),
         lanAccess: workspace.config?.settings.companion?.lanAccess === true,
-        /** SDD 488 F4 — piggybacked so Settings can show the Integrated Browser gate without a second query. */
-        ideBrowserEnabled: workspace.config?.settings.ideBrowser?.enabled === true,
         engineLabel: path.basename(workspace.workspaceRoot) || "tachyon",
         devices,
       });
     }
+    case "config.ideBrowser.enabled":
+      // t-0ba30f — Settings reads the GA gate here, not off companion.status.
+      return json({ enabled: isIdeBrowserEnabled(workspace.config?.settings) });
     case "companion.pair-code": {
       // SDD 414/422 — short-lived pair code + baseUrl(s) + QR payload for Companion (browser/mobile).
       const issued = workspace.issueCompanionPairCode();
