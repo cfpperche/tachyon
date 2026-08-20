@@ -42,7 +42,11 @@ function workspace(buildSource = "", vitestSource?: string, gates: Record<string
   // failure mode the gate list itself is designed to avoid.
   fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({
     name: "verify-full-fixture",
-    scripts: Object.fromEntries((STATIC_GATES as string[]).map((gate) => [gate, gates[gate] ?? "node -e 0"])),
+    scripts: {
+      ...Object.fromEntries((STATIC_GATES as string[]).map((gate) => [gate, gates[gate] ?? "node -e 0"])),
+      // The production gate also runs the cheap editor-host pointer smoke after the build.
+      "smoke:extension-host": "node -e 0",
+    },
   }));
   fs.mkdirSync(path.join(root, "node_modules/vitest"), { recursive: true });
   fs.writeFileSync(path.join(root, "esbuild.mjs"), buildSource || "console.log('PASSED BUILD NOISE')\n");
