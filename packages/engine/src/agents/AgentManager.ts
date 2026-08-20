@@ -5276,7 +5276,7 @@ export class AgentManager {
       ...(rec.worktree ? { sourceWorktree: rec.worktree } : {}),
       ...(rec.def?.instructions ? { instructions: rec.def.instructions } : {}),
       ...(environmentValues(resolvedSource) ? { env: environmentValues(resolvedSource) } : {}),
-      ...(rec.def?.environment ? { environment: rec.def.environment } : {}),
+      ...((rec.def?.environment ?? sourceDefinition.environment) ? { environment: rec.def?.environment ?? sourceDefinition.environment } : {}),
     };
   }
 
