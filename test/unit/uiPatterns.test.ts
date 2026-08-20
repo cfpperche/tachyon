@@ -1,7 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import ts from "typescript";
 
 describe("shared UI product patterns (STYLEGUIDE)", () => {
+  it("Companion delegates its only page title to PageChrome", () => {
+    const file = "packages/webview-ui/src/webview/companion/App.tsx";
+    const src = readFileSync(file, "utf8");
+    const ast = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    let pageChromeCount = 0;
+    const localHeadings: string[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(ast) === "PageChrome") pageChromeCount += 1;
+      if (ts.isJsxOpeningElement(node)) {
+        const tag = node.tagName.getText(ast);
+        if (tag === "PageChrome") pageChromeCount += 1;
+        if (tag.toLowerCase() === "h1") localHeadings.push(tag);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(ast);
+
+    expect(pageChromeCount, "Companion must render the shared page title").toBe(1);
+    expect(localHeadings, "Companion must not declare another page title below PageChrome").toEqual([]);
+  });
+
   it("exports PageChrome, ListRow, EmptyState from the ui barrel", () => {
     const barrel = readFileSync("packages/webview-ui/src/webview/shared/ui/index.ts", "utf8");
     expect(barrel).toContain("PageChrome");

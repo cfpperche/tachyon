@@ -2,7 +2,6 @@
   max-width: 980px;
   margin: 0 auto;
 }
-.companion-overview,
 .companion-section-heading,
 .companion-pair-heading {
   display: flex;
@@ -10,13 +9,10 @@
   gap: var(--ds-4);
   align-items: flex-start;
 }
-.companion-overview {
-  padding: var(--ds-5) 0;
-  border-bottom: 1px solid var(--ds-border);
-}
-.companion-overview h1 {
-  margin: 0.2rem 0;
-  font-size: var(--ds-title);
+.companion-context {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-2);
 }
 .companion-eyebrow,
 .companion-label {
@@ -151,8 +147,5 @@
   }
   .companion-device button {
     width: 100%;
-  }
-  .companion-overview {
-    flex-direction: column;
   }
 }
