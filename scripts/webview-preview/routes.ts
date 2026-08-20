@@ -437,7 +437,10 @@ export const ROUTES: Record<string, Route> = {
     bundle: "/dist/webview/settings.js",
     cssLinks: [...BASE_STYLESHEETS, "/dist/webview/control-typography.css", "/dist/webview/engine-workspace.css", "/dist/webview/settings.css"],
     frame: { w: 880, h: 900 },
-    fixtures: { default: cockpitFixtures.settings },
+    fixtures: {
+      default: cockpitFixtures.settings,
+      "needs-workspace": cockpitFixtures["settings-needs-workspace"],
+    },
     module: true,
     globals: { __TACHYON_STRINGS__: cockpitStrings },
     makeMessage: (vm) => settingsModelMessage(vm as never),

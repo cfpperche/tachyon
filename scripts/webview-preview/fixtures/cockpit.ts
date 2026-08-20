@@ -139,7 +139,7 @@ export const strings: CockpitStrings & WorktreesStrings = {
   globalSettingsNeedsReopen: "applies the next time Control is opened",
   companionPaired: "Paired",
   companionNotPaired: "Not paired",
-  companionPickWorkspace: "Select a single workspace in Overview to manage Companion settings.",
+  companionPickWorkspace: "This screen needs a single project.",
   companionShowPairCode: "Show pair code",
   companionPairCodeLabel: "Code",
   companionPairUrlLabel: "URL",
@@ -1077,6 +1077,28 @@ export const cockpitFixtures: Record<string, Fixture<SectionsModel>> = {
         fontMono: "tachyon",
       },
     }),
+  },
+  /**
+   * t-dfc1cf — Integrated Browser empty state. `companionNeedsWorkspacePick` no longer falls
+   * out of `buildSectionsModel` (t-72ff5a: multi-root resolves to the first bundle), so this
+   * overlay is the only way the preview can show the sentence that branch still renders.
+   */
+  "settings-needs-workspace": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...buildSectionsModel(bundles, {
+        section: "settings",
+        nowIso: now,
+        globalSettings: {
+          file: "/home/you/.tachyon/settings.json",
+          activityCodeTheme: "auto",
+          agentPaneEnabled: true,
+          gitPath: "",
+          fontMono: "tachyon",
+        },
+      }),
+      companionNeedsWorkspacePick: true,
+    },
   },
   empty: { provenance: "synthetic-edge", vm: buildSectionsModel([], { section: "system", nowIso: now }) },
   // t-d16a39 — the shell workspace selector: visible under "All workspaces" and scoped to one.
