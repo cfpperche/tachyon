@@ -11,7 +11,6 @@
  * separate processes with no VS Code running).
  */
 import fs from "node:fs";
-import path from "node:path";
 
 export interface HostSyncIoHit {
   op: string;
@@ -49,7 +48,7 @@ function siteFromStack(): string | undefined {
     if (SKIP_IN_STACK.test(line)) continue;
     const match = line.match(/\(([^)]+):(\d+):\d+\)/) ?? line.match(/at ([^ ]+):(\d+):\d+/);
     if (!match) continue;
-    return `${path.basename(match[1])}:${match[2]}`;
+    return `${match[1]}:${match[2]}`;
   }
   return undefined;
 }

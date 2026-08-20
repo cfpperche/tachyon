@@ -2,6 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { readFromOwnerA } from "../fixtures/host-sync-io-owner-a/reader.js";
+import { readFromOwnerB } from "../fixtures/host-sync-io-owner-b/reader.js";
 import {
   formatHostLagLog,
   classifyHostLag,
@@ -63,6 +65,28 @@ describe("t-17674a host sync I/O probe", () => {
     readLinuxRunDelayMs();
 
     expect(takeHostSyncIoHit()).toBeUndefined();
+  });
+
+  it("keeps enough caller path to distinguish different extension owners", () => {
+    const file = path.join(os.tmpdir(), `t-17674a-owners-${process.pid}.txt`);
+    fs.writeFileSync(file, "probe\n");
+    try {
+      startHostSyncIoProbe();
+      takeHostSyncIoHit();
+
+      readFromOwnerA(file);
+      const first = takeHostSyncIoHit();
+      readFromOwnerB(file);
+      const second = takeHostSyncIoHit();
+
+      expect(first?.site).toBeDefined();
+      expect(second?.site).toBeDefined();
+      expect(first?.site).not.toBe(second?.site);
+      expect(first?.site).toContain("host-sync-io-owner-a/reader.ts");
+      expect(second?.site).toContain("host-sync-io-owner-b/reader.ts");
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
   });
 
 });
