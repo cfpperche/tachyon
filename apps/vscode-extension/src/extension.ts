@@ -23,6 +23,7 @@ import { scanAgentRosterDirectory } from "@tachyon/engine/config/agentRosterDire
 import { probeEngineNodeRuntime } from "@tachyon/engine/onboarding/nodeProbe.js";
 import type { WorktreeLandResult } from "@tachyon/webview-ui/webview/worktrees/messages";
 import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "./webview/SettingsPanel.js";
+import { COMPANION_VIEW_TYPE, CompanionPanelManager } from "./webview/CompanionPanel.js";
 import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "./webview/SystemPanel.js";
 import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
 import { COLLECT_EVERYTHING, type SectionCollectNeeds, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
@@ -3095,6 +3096,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
     keysPanels.open(ws.wsHash); return true;
   };
+  const openCompanionTab = (hash?: string): boolean => { const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0]; if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; } companionPanels.open(ws.wsHash); return true; };
 
   // t-505f13 — Onboarding: a `window` app, so it opens with NO attached workspace (that is its
   // audience). Every fact is injected: probes are the engine's own doors (doctor, detectInstalledClis,
@@ -3158,6 +3160,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     issueCompanionPairCode: engineHost.issueCompanionPairCode,
   }, undefined, controlWorkspaceScope);
   context.subscriptions.push({ dispose: () => settingsPanels.dispose() });
+  const companionPanels = new CompanionPanelManager(context.extensionUri, {
+    collect: engineHost.collect,
+    setCompanionTabTools: engineHost.setCompanionTabTools,
+    setCompanionAllowedHosts: engineHost.setCompanionAllowedHosts,
+    unpairCompanionDevice: engineHost.unpairCompanionDevice,
+    issueCompanionPairCode: engineHost.issueCompanionPairCode,
+  }, undefined, controlWorkspaceScope);
+  context.subscriptions.push({ dispose: () => companionPanels.dispose() });
   const openSettingsTab = (hash?: string): boolean => {
     const ws = (hash ? byHash(hash) : undefined)
       ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
@@ -3178,6 +3188,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<SectionPanelState>(context, ONBOARDING_VIEW_TYPE, (panel, state) => onboardingPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_CONFIG_VIEW_TYPE, (panel, state) => runtimeConfigPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, SETTINGS_VIEW_TYPE, (panel, state) => settingsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, COMPANION_VIEW_TYPE, (panel, state) => companionPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
   // redirects into Control → the task's subroute; same claimed-singleton guard as Board/tmux above
   // (open() was already unreachable — nothing to "keep working" here beyond this revive path).
@@ -3592,6 +3603,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           openSettingsTab();
           return Promise.resolve();
         }
+        if (resolved === "companion") { openCompanionTab(); return Promise.resolve(); }
         // SDD 500 — `overview` and `engine` reach this arm ALIASED, so there is no branch of their own
         // to read: `resolveSectionDestination` mapped both to `system` above, which is the whole of D1.
         if (resolved === "system") {

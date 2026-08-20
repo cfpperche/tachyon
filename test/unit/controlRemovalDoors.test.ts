@@ -42,11 +42,11 @@ describe("SDD 485 E1 — every former Control door opens an app directly", () =>
   });
 
   it("tachyon.openControl resolves every section without falling through to Control", () => {
-    const block = blockFrom('registerCommand("tachyon.openControl"', 3_800);
+    const block = blockFrom('registerCommand("tachyon.openControl"', 4_000);
     for (const opener of [
       "openBoard", "tmuxPanels.open", "openPluginsTab", "runtimeOpsPanels.open",
       "openHumanInboxTab", "openWorktreesTab",
-      "openRuntimeConfigTab", "openSettingsTab", "openSystemTab",
+      "openRuntimeConfigTab", "openSettingsTab", "openCompanionTab", "openSystemTab",
     ]) expect(block, `${opener} is not reachable from tachyon.openControl`).toContain(opener);
     expect(block).not.toContain("openCockpit(");
     // SDD 500 — `openEngineTab` and `openOverviewTab` left this list because their apps MERGED, and the
@@ -64,7 +64,7 @@ describe("SDD 485 E1 — every former Control door opens an app directly", () =>
   });
 
   it("tachyon.openControl with no section defaults to System", () => {
-    const block = blockFrom('registerCommand("tachyon.openControl"', 3_800);
+    const block = blockFrom('registerCommand("tachyon.openControl"', 4_000);
     expect(block).toMatch(/openSystemTab\(\);\n\s*return Promise\.resolve\(\);\n\s*}\),/);
   });
 

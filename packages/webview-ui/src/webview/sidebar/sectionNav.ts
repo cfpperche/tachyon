@@ -42,6 +42,7 @@ const NAV_BY_ID: ReadonlyMap<SectionId, Omit<ControlSectionNav, "id">> = new Map
   ["tmux", { icon: "terminal-tmux", label: "tmux" }],
   ["plugins", { icon: "extensions", label: "Plugins" }],
   ["settings", { icon: "settings-gear", label: "Settings" }],
+  ["companion", { icon: "pulse", label: "Companion" }],
 ]);
 
 /**
@@ -73,6 +74,7 @@ const LAUNCHER_ORDER: readonly SectionId[] = [
   "tmux",
   "plugins",
   "settings",
+  "companion",
 ];
 
 /** the ids whose tile opens a standalone app instead of navigating Control (SDD 485). */

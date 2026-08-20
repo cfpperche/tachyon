@@ -2082,6 +2082,24 @@
     ]
   },
   {
+    "view": "companion",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=companion&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Companion",
+    "aliases": [
+      "companion",
+      "pairing",
+      "trusted devices"
+    ]
+  },
+  {
     "view": "system",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=system&fixture=default",

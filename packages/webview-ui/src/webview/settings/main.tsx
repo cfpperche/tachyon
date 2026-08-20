@@ -2,12 +2,13 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { GlobalSettingsState, SectionsModel } from "../../sections/model";
 import { applyTachyonFont } from "../shared/applyTachyonFont";
-import { formatCompanionPairClipboard, openGlobalSettingsFileAction, setGlobalSettingsAction, type CockpitAction, type CockpitStrings, type CompanionPairOffer } from "../shared/control/messages";
+import { openGlobalSettingsFileAction, setGlobalSettingsAction, type CockpitAction, type CockpitStrings } from "../shared/control/messages";
 import { Button, PageChrome } from "../shared/ui";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
-import { MODEL, pairOfferMessageType, pollSettingsAction, readyMessage, type SettingsAction } from "./messages";
+import { MODEL, pollSettingsAction, readyMessage, type SettingsAction } from "./messages";
 
+/*
 function usePairCountdown(expiresAt?: string): { label: string; expired: boolean } {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -23,6 +24,7 @@ function usePairCountdown(expiresAt?: string): { label: string; expired: boolean
   const s = totalSec % 60;
   return { label: `${m}:${String(s).padStart(2, "0")}`, expired: false };
 }
+*/
 
 /** Parse host globs from textarea (newlines and commas). */
 export function parseAllowedHostsDraft(raw: string): string[] {
@@ -273,6 +275,8 @@ function IdleNotifyField({
   );
 }
 
+/* Companion moved to its standalone app; pairing controls intentionally live there. */
+/*
 function CompanionAllowedHostsField({
   s,
   wsHash,
@@ -443,15 +447,13 @@ function CompanionPairOfferCard({
     </div>
   );
 }
+*/
 
-
-
-export interface SettingsAppProps { model: SectionsModel; strings: CockpitStrings; pairOffer?: CompanionPairOffer; post: (action: CockpitAction | SettingsAction) => void; }
-export function SettingsApp({ model: m, strings: s, pairOffer, post }: SettingsAppProps) {
-  const p = { onOpenDoctor: () => post({type:"openDoctor"}), onOpenSettings: () => post({type:"openGlobalSettingsFile"}), onOpenConfigFile: (wsHash?: string) => post({type:"openConfigFile",wsHash}), onPost: post, onSetIdleAfterMinutes: (wsHash:string,minutes?:number|"never") => post({type:"setIdleAfterMinutes",wsHash,minutes}), onSetCompanionTabTools:(wsHash:string,enabled:boolean)=>post({type:"setCompanionTabTools",wsHash,enabled}), onSetIdeBrowserEnabled:(wsHash:string,enabled:boolean)=>post({type:"setIdeBrowserEnabled",wsHash,enabled}), onSetCompanionAllowedHosts:(wsHash:string,hosts:string[])=>post({type:"setCompanionAllowedHosts",wsHash,hosts}), onIssueCompanionPairCode:(wsHash:string)=>post({type:"issueCompanionPairCode",wsHash}), onCopyText:(text:string)=>post({type:"copyText",text}), onUnpairCompanionDevice:(wsHash:string,deviceId:string)=>post({type:"unpairCompanionDevice",wsHash,deviceId}), companionPairOffer: pairOffer };
-    const companion = m.companion;
+export interface SettingsAppProps { model: SectionsModel; strings: CockpitStrings; post: (action: CockpitAction | SettingsAction) => void; }
+export function SettingsApp({ model: m, strings: s, post }: SettingsAppProps) {
+  const p = { onOpenDoctor: () => post({type:"openDoctor"}), onOpenSettings: () => post({type:"openGlobalSettingsFile"}), onOpenConfigFile: (wsHash?: string) => post({type:"openConfigFile",wsHash}), onPost: post, onSetIdleAfterMinutes: (wsHash:string,minutes?:number|"never") => post({type:"setIdleAfterMinutes",wsHash,minutes}), onSetIdeBrowserEnabled:(wsHash:string,enabled:boolean)=>post({type:"setIdeBrowserEnabled",wsHash,enabled}) };
     const ideBrowser = m.ideBrowser;
-    const settingsWsHash = companion?.wsHash ?? m.control.workspaces[0]?.wsHash;
+    const settingsWsHash = m.companion?.wsHash ?? m.control.workspaces[0]?.wsHash;
     const settingsWorkspace = m.control.workspaces.find((w) => w.wsHash === settingsWsHash) ?? m.control.workspaces[0];
     // Display path only — openConfigFile still resolves the live file through the host.
     const workspaceSettingsPath = settingsWorkspace
@@ -551,121 +553,6 @@ export function SettingsApp({ model: m, strings: s, pairOffer, post }: SettingsA
             ) : null}
           </div>
 
-          <div class="ck-settings-block" data-testid="control-settings-companion">
-            <h3 class="ck-settings-block-title">{s.companionTitle}</h3>
-            <WritesTo s={s} file="workspace" />
-            <p class="ck-settings-block-hint">{s.companionHint}</p>
-            {m.companionNeedsWorkspacePick ? (
-              <p class="ck-settings-block-body dim">{s.companionPickWorkspace}</p>
-            ) : companion ? (
-              <>
-                <p class="ck-settings-block-body">{s.companionBody}</p>
-                <label class="ck-settings-toggle">
-                  <input
-                    type="checkbox"
-                    checked={companion.tabTools}
-                    data-testid="companion-tab-tools-toggle"
-                    onChange={(e) =>
-                      p.onSetCompanionTabTools(companion.wsHash, (e.target as HTMLInputElement).checked)
-                    }
-                  />
-                  <span>
-                    <strong>{s.companionTabTools}</strong>
-                    <span class="ck-settings-toggle-help">{s.companionTabToolsHelp}</span>
-                  </span>
-                </label>
-                <CompanionAllowedHostsField
-                  s={s}
-                  wsHash={companion.wsHash}
-                  allowedHosts={companion.allowedHosts}
-                  onSave={p.onSetCompanionAllowedHosts}
-                />
-                <div class="ck-settings-status" data-testid="companion-pair-status">
-                  <span class={`ck-badge ${companion.paired ? "ok" : "muted"}`}>
-                    {companion.paired ? s.companionPaired : s.companionNotPaired}
-                  </span>
-                  {companion.baseUrl ? (
-                    <span class="ck-mono" title={s.companionBaseUrl}>
-                      {companion.baseUrl}
-                    </span>
-                  ) : null}
-                  <span class="dim">{companion.folderName}</span>
-                </div>
-
-                <div class="ck-pair-actions" data-testid="companion-pair-actions">
-                  <Button
-                    variant="default"
-                    data-testid="companion-show-pair-code"
-                    onClick={() => p.onIssueCompanionPairCode(companion.wsHash)}
-                  >
-                    {s.companionShowPairCode}
-                  </Button>
-                  {companion.baseUrl ? (
-                    <Button
-                      variant="default"
-                      data-testid="companion-copy-base-url"
-                      onClick={() => p.onCopyText(companion.baseUrl!)}
-                    >
-                      {s.companionCopyBaseUrl}
-                    </Button>
-                  ) : null}
-                </div>
-                {p.companionPairOffer ? (
-                  <CompanionPairOfferCard
-                    s={s}
-                    offer={p.companionPairOffer}
-                    onCopyText={p.onCopyText}
-                    onNewCode={() => p.onIssueCompanionPairCode(companion.wsHash)}
-                  />
-                ) : null}
-
-                <div class="ck-settings-block ck-settings-block-nested" data-testid="control-settings-devices">
-                  <h3 class="ck-settings-block-title">{s.devicesTitle}</h3>
-                  <p class="ck-settings-block-hint">{s.devicesHint}</p>
-                  {companion.devices.length === 0 ? (
-                    <p class="ck-settings-block-body dim" data-testid="companion-devices-empty">
-                      {s.devicesEmpty}
-                    </p>
-                  ) : (
-                    <ul class="ck-device-list">
-                      {companion.devices.map((d) => (
-                        <li key={d.id} class="ck-device-row" data-testid="companion-device-row">
-                          <div class="ck-device-main">
-                            <div class="ck-device-name">
-                              <strong>{d.name}</strong>
-                              {d.version ? <span class="dim"> · {d.version}</span> : null}
-                            </div>
-                            <div class="ck-device-meta">
-                              <span class="dim">
-                                {d.kind === "mobile" ? s.devicesKindMobile : s.devicesKindBrowser}
-                              </span>
-                              <span class={`ck-badge ${d.live ? "ok" : "muted"}`}>
-                                {d.live ? s.devicesLive : s.devicesOffline}
-                              </span>
-                              {d.pairedAt ? (
-                                <span class="dim" title={d.pairedAt}>
-                                  {s.devicesPairedAt} {d.pairedAt.slice(0, 19).replace("T", " ")}
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                          <Button
-                            variant="default"
-                            data-testid="companion-device-unpair"
-                            onClick={() => p.onUnpairCompanionDevice(companion.wsHash, d.id)}
-                          >
-                            {s.devicesUnpair}
-                          </Button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </>
-            ) : (
-              <p class="ck-settings-block-body dim">{s.empty}</p>
-            )}
-          </div>
         </div>
       </div></>
 }
@@ -674,5 +561,5 @@ declare function acquireVsCodeApi(): TachyonVsCodeApi;
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
 persistWebviewState(vscode);
 const post = (message: CockpitAction | SettingsAction) => vscode ? vscode.postMessage(message) : window.postMessage(message, "*");
-export function SettingsRoot() { const [model,setModel]=useState<SectionsModel>(); const [pairOffer,setPairOffer]=useState<CompanionPairOffer>(); const strings=(window as any).__TACHYON_STRINGS__ as CockpitStrings; useEffect(()=>{ const onMessage=(e:MessageEvent)=>{if(e.data?.type===MODEL)setModel(e.data.model);if(e.data?.type===pairOfferMessageType)setPairOffer(e.data.offer)}; window.addEventListener("message",onMessage); post(readyMessage()); const timer=setInterval(()=>post(pollSettingsAction()),3000); return()=>{clearInterval(timer);window.removeEventListener("message",onMessage)}},[]); useEffect(()=>{ if(model?.globalSettings) applyTachyonFont(model.globalSettings.fontMono); },[model?.globalSettings?.fontMono]); return model?<main class="ds-page"><SettingsApp model={model} strings={strings} pairOffer={pairOffer} post={post}/></main>:null; }
+export function SettingsRoot() { const [model,setModel]=useState<SectionsModel>(); const strings=(window as any).__TACHYON_STRINGS__ as CockpitStrings; useEffect(()=>{ const onMessage=(e:MessageEvent)=>{if(e.data?.type===MODEL)setModel(e.data.model)}; window.addEventListener("message",onMessage); post(readyMessage()); const timer=setInterval(()=>post(pollSettingsAction()),3000); return()=>{clearInterval(timer);window.removeEventListener("message",onMessage)}},[]); useEffect(()=>{ if(model?.globalSettings) applyTachyonFont(model.globalSettings.fontMono); },[model?.globalSettings?.fontMono]); return model?<main class="ds-page"><SettingsApp model={model} strings={strings} post={post}/></main>:null; }
 const root=document.getElementById("root"); if(root) render(<ErrorBoundary><SettingsRoot/></ErrorBoundary>,root);

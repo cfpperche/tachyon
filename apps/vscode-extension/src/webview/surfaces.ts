@@ -235,6 +235,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // document like keys/plugins.
   { viewId: "tachyonOnboarding", view: "onboarding", hostFile: "apps/vscode-extension/src/webview/OnboardingPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonSettings", view: "settings", hostFile: "apps/vscode-extension/src/webview/SettingsPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonCompanion", view: "companion", hostFile: "apps/vscode-extension/src/webview/CompanionPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // SDD 500 (2026-08-09) — System: one row where `tachyonOverview` (D11) and `tachyonEngine` (D5) were
   // two. This does NOT reverse 485's app-count decision by analogy; it is the one case 485's own
   // argument never covered, because these two were never two subjects. Overview's counters were read

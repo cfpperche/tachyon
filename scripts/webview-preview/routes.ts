@@ -55,6 +55,7 @@ import { modelMessage as keysModelMessage } from "@tachyon/webview-ui/webview/ke
 import { keysFixtures } from "./fixtures/keys";
 import { modelMessage as onboardingModelMessage } from "@tachyon/webview-ui/webview/onboarding/messages";
 import { onboardingFixtures } from "./fixtures/onboarding";
+import { MODEL as companionModelMessage } from "@tachyon/webview-ui/webview/companion/messages";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -441,6 +442,15 @@ export const ROUTES: Record<string, Route> = {
     globals: { __TACHYON_STRINGS__: cockpitStrings },
     makeMessage: (vm) => settingsModelMessage(vm as never),
   },
+  companion: {
+    bundle: "/dist/webview/companion.js",
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/companion.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: { default: cockpitFixtures.settings },
+    module: true,
+    globals: { __TACHYON_STRINGS__: cockpitStrings },
+    makeMessage: (vm) => ({ type: companionModelMessage, model: { companion: (vm as any).companion } }),
+  },
   // SDD 500 — one route where `overview` and `engine` were two, and three fixtures because the screen
   // has three shapes worth looking at: healthy, failed, and a window with a second root attached that
   // still draws ONE card (the only multi-root shape this product produces — see the fixture's comment).
@@ -531,6 +541,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   worktrees: { title: "Worktrees", aliases: ["worktrees", "managed worktrees", "checkout hygiene"] },
   keys: { title: "Keys", aliases: ["keys", "machine keys", "credentials", "secrets"] },
   onboarding: { title: "Onboarding", aliases: ["onboarding", "setup", "first run", "environment check", "initialize workspace"] },
+  companion: { title: "Companion", aliases: ["companion", "pairing", "trusted devices"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },
   "schedule-studio-shell": { title: "Schedule Studio", aliases: ["schedule studio", "new schedule", "edit schedule"] },

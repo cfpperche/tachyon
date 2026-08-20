@@ -53,7 +53,8 @@ export type SectionId =
   | "runtime-config"
   | "tmux"
   | "plugins"
-  | "settings";
+  | "settings"
+  | "companion";
 
 /**
  * The sections CONTROL ITSELF RENDERS, in product order.
@@ -103,6 +104,7 @@ export const COCKPIT_SECTION_IDS: SectionId[] = [
   "tmux",
   "worktrees",
   "keys",
+  "companion",
   "validations",
 ];
 
