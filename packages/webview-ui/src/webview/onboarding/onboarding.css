@@ -38,4 +38,7 @@
 .onb-folder-root { font-family: var(--ds-mono); font-size: var(--ds-small); margin-top: var(--ds-1); word-break: break-all; }
 .onb-note { margin-top: var(--ds-2); }
 .onb-agent-launch { display: flex; align-items: center; gap: var(--ds-3); flex-wrap: wrap; }
-.onb-allset { margin: 0 0 var(--ds-4); }
+/* t-505f13 round 4 — the banner carries the finished screen's EXIT: message takes the room, the
+   close action sits at the end. Wraps at narrow widths instead of overflowing. */
+.onb-allset { margin: 0 0 var(--ds-4); display: flex; align-items: center; gap: var(--ds-2); flex-wrap: wrap; }
+.onb-allset-text { flex: 1 1 24ch; min-width: 0; }

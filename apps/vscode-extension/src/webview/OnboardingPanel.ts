@@ -111,6 +111,9 @@ export class OnboardingPanelManager {
       if (action.type === "openConfig") return this.deps.openConfig();
       if (action.type === "openAgentStudio") return this.deps.openNewAgentStudio();
       if (action.type === "openKeys") return this.deps.openKeys();
+      // t-505f13 round 4 — the finished screen's exit. ALWAYS the user's click: nothing in this
+      // panel ever closes itself, so the tab cannot vanish under someone who is still reading.
+      if (action.type === "close") return this.manager.close(session.target);
     } catch (error) { session.post(errorMessage(safeError(error))); }
   }
 }

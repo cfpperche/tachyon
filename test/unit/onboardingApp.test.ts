@@ -75,6 +75,24 @@ describe("the Onboarding app screen", () => {
     expect(html).not.toContain('data-testid="onb-allset"');
   });
 
+  /**
+   * t-505f13 round 4 — the finished state OFFERS ITS OWN EXIT. The owner's finding: the screen had a
+   * beginning and a middle and no end — "You're set up" rendered and the tab stayed open forever,
+   * with nothing telling the user the task was over or how to leave. The exit is a USER action in
+   * the banner (never automatic — a tab that vanishes alone is worse than one that stays), and a
+   * mid-flow screen must NOT offer it: "Close this tab" next to a pending step would read as done.
+   */
+  it("the allSet banner offers an explicit exit, and only the allSet state does", () => {
+    const done = render(fixture("all-set"));
+    expect(done).toContain('data-testid="onb-allset"');
+    expect(done).toContain('data-testid="onb-close"');
+    expect(done).toContain("Close this tab");
+    const fresh = render(fixture("fresh"));
+    expect(fresh).not.toContain('data-testid="onb-close"');
+    const firstAgent = render(fixture("first-agent"));
+    expect(firstAgent).not.toContain('data-testid="onb-close"');
+  });
+
   it("exposes the re-check door in every state and the config door once a config exists", () => {
     // The button CLICKS are driven in the preview harness (a browser, real handlers); here the
     // claim is the doors are on screen in the states that own them.

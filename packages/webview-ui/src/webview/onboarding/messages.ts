@@ -35,7 +35,9 @@ export type OnboardingAction =
   | { type: "initialize" }
   | { type: "openConfig" }
   | { type: "openAgentStudio" }
-  | { type: "openKeys" };
+  | { type: "openKeys" }
+  /** t-505f13 round 4 — the finished screen's EXIT. Always the user's click, never automatic. */
+  | { type: "close" };
 
 export const readyMessage = () => ({ type: READY } as const);
 export const modelMessage = (model: OnboardingModel) => ({ type: MODEL, model } as const);

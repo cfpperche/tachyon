@@ -100,7 +100,11 @@ export function App({ model, dispatch }: { model?: OnboardingModel; dispatch: (a
 
     {allSet && (
       <div class="ds-banner onb-allset" data-testid="onb-allset">
-        <Icon name="check" /> You're set up — the fleet lives in the Tachyon sidebar. Create more agents any time in Agent Studio.
+        <span class="onb-allset-text"><Icon name="check" /> You're set up — the fleet lives in the Tachyon sidebar. Create more agents any time in Agent Studio.</span>
+        {/* t-505f13 round 4 — the END this screen used not to have. The exit is the user's click,
+            never automatic: a tab that vanishes alone is worse than one that stays. Lives here, in
+            the banner, rather than a section of its own. */}
+        <Button data-testid="onb-close" onClick={() => dispatch({ type: "close" })}>Close this tab</Button>
       </div>
     )}
 
