@@ -200,6 +200,12 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   // t-772f6b — where the human is in the wizard (create) or the tab row (edit). Reset with the
   // document on every rebinding, same as every other piece of local state below.
   const [step, setStep] = useState(Number.isInteger(PREVIEW_STEP) && PREVIEW_STEP >= 0 ? PREVIEW_STEP : 0);
+  // t-db2f3f — validation still blocks from the first render, but a blank create form has not yet
+  // earned an error announcement. One navigation attempt reveals the step's refusals and keeps
+  // them revealed when an error-summary jump returns here; per-field touched state is unnecessary.
+  const [identityRefusalsRevealed, setIdentityRefusalsRevealed] = useState(
+    Number.isInteger(PREVIEW_STEP) && PREVIEW_STEP > 0,
+  );
   const [editTab, setEditTab] = useState(PREVIEW_TAB ?? "general");
   // t-49f6e8 — the parked half of an error jump: the error's activate handler switches tab/step
   // and parks a DOM query here; the effect after the composition runs it once the destination has
@@ -250,6 +256,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     setBundleAction(undefined); setBundleDestination(""); setBundleImportBase64(undefined);
     setTombstone(undefined);
     setStep(Number.isInteger(PREVIEW_STEP) && PREVIEW_STEP >= 0 ? PREVIEW_STEP : 0);
+    setIdentityRefusalsRevealed(Number.isInteger(PREVIEW_STEP) && PREVIEW_STEP > 0);
     setEditTab(PREVIEW_TAB ?? "general");
     setReady(false);
     dispatch.post(readyMessage({ routeKey, mountNonce }));
@@ -299,6 +306,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setOwnershipDraft(d.entity.ownership ? [...d.entity.ownership.subagents] : undefined);
       setBundleAction(undefined); setBundleDestination(""); setBundleImportBase64(undefined);
       setStep(Number.isInteger(PREVIEW_STEP) && PREVIEW_STEP >= 0 ? PREVIEW_STEP : 0);
+      setIdentityRefusalsRevealed(Number.isInteger(PREVIEW_STEP) && PREVIEW_STEP > 0);
       setEditTab(PREVIEW_TAB ?? "general");
       setReady(true);
     } else if (d.type === "tombstone") {
@@ -492,6 +500,9 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   const commandRefusalError: StudioError | undefined = commandRefusal
     ? { code: "validation/agent-command", message: commandRefusal, source: "validation", blocking: true }
     : undefined;
+  const announceIdentityRefusals = mode !== "new" || identityRefusalsRevealed;
+  const announcedNameRefusalError = announceIdentityRefusals ? nameRefusalError : undefined;
+  const announcedCommandRefusalError = announceIdentityRefusals ? commandRefusalError : undefined;
   // t-d68b8b — the only client-side blocking error this studio raised until t-9aec3e. It has to be
   // here rather than in `AgentStudioAdapter.validate()` (which stays NO_VALIDATION_ERRORS): the host
   // validates on save, and "you cannot create this" is the one answer the human needs BEFORE filling
@@ -511,8 +522,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     : undefined;
   const errors: StudioError[] = [
     ...(hostError ? [hostError] : []),
-    ...(nameRefusalError ? [nameRefusalError] : []),
-    ...(commandRefusalError ? [commandRefusalError] : []),
+    ...(announcedNameRefusalError ? [announcedNameRefusalError] : []),
+    ...(announcedCommandRefusalError ? [announcedCommandRefusalError] : []),
     ...(runtimeRefusalError ? [runtimeRefusalError] : []),
     ...(environmentRefusalError ? [environmentRefusalError] : []),
   ];
@@ -632,8 +643,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
         * same weight, no reason for different widths. */}
       <div class="ash-field">
         <label class="ash-label" for="ash-name">Name</label>
-        <Input id="ash-name" value={fields.name} disabled={canonical && mode === "edit"} aria-invalid={nameRefusalError ? true : undefined} placeholder="frontend, revisor, dev..." onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />
-        {nameRefusal && <div class="hint ash-native-config-risk">{nameRefusal}</div>}
+        <Input id="ash-name" value={fields.name} disabled={canonical && mode === "edit"} aria-invalid={announcedNameRefusalError ? true : undefined} placeholder="frontend, revisor, dev..." onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />
+        {announcedNameRefusalError && <div class="hint ash-native-config-risk">{nameRefusal}</div>}
       </div>
 
       <div class="ash-group">
@@ -642,8 +653,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
           * read "claude · codex · agy · npm run dev", offering by example the two things this
           * door cannot create: an unattested runtime and a generic process. A legacy entry keeps
           * the old text — that form still edits whatever is already written in `agents:`. */}
-        <Input id="ash-cmd" value={fields.cmd} aria-invalid={commandRefusalError || runtimeRefusalError ? true : undefined} placeholder={canonical ? ATTESTED_RUNTIMES.join(" · ") : "claude · codex · agy · npm run dev"} onInput={(e) => set("cmd", (e.currentTarget as HTMLInputElement).value)} />
-        {commandRefusal && <div class="hint ash-native-config-risk">{commandRefusal}</div>}
+        <Input id="ash-cmd" value={fields.cmd} aria-invalid={announcedCommandRefusalError || runtimeRefusalError ? true : undefined} placeholder={canonical ? ATTESTED_RUNTIMES.join(" · ") : "claude · codex · agy · npm run dev"} onInput={(e) => set("cmd", (e.currentTarget as HTMLInputElement).value)} />
+        {announcedCommandRefusalError && <div class="hint ash-native-config-risk">{commandRefusal}</div>}
         {!canonical && <div class="ash-chips">
           {flags.map((flag) => (
             <Chip key={flag} active={fields.cmd.includes(flag)} onClick={() => toggleFlag(flag)}>{flag}</Chip>
@@ -1393,14 +1404,14 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       resolveErrorActivate={(error) => {
         // t-49f6e8 — the errors this form can act on become their own path to the field; host and
         // transport errors have no target and stay plain text.
-        if (error === nameRefusalError) {
+        if (error === announcedNameRefusalError) {
           return () => {
             if (mode === "new") setStep(0);
             else setEditTab("general");
             setPendingFocus({ query: () => document.getElementById("ash-name") });
           };
         }
-        if (error === commandRefusalError) {
+        if (error === announcedCommandRefusalError) {
           return () => {
             if (mode === "new") setStep(0);
             else setEditTab("general");
@@ -1461,7 +1472,10 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 <div class="ash-steps-nav">
                   {safeStep > 0 && <Button onClick={() => setStep(safeStep - 1)}>Back</Button>}
                   {safeStep < wizardSteps.length - 1 && (
-                    <Button variant="primary" onClick={() => setStep(safeStep + 1)}>Next: {wizardSteps[safeStep + 1].label}</Button>
+                    <Button variant="primary" onClick={() => {
+                      if (safeStep === 0) setIdentityRefusalsRevealed(true);
+                      setStep(safeStep + 1);
+                    }}>Next: {wizardSteps[safeStep + 1].label}</Button>
                   )}
                   {safeStep === wizardSteps.length - 1 && !loadFailed && (
                     <Button variant="primary" disabled={!saveEnabled || frozen} onClick={onSave}>
