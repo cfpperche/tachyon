@@ -392,6 +392,34 @@ The configuration was right in content and wrong in address. A dead surface the 
 recommends is not clutter — it is an active instruction to do the wrong thing, and the editor's
 autocomplete delivers it. Closed by `t-e050fd`; the sweep for others is `t-ee3d5d`.
 
+## A part nothing reaches is not delivered
+
+Five defects in one day had the same shape: the piece was correct, it had a passing test, and
+nothing reached it.
+
+- the Keys app shipped with no launcher tile — bundle, panel and `openKeysTab` all present, and no
+  id that could call them (`t-8cdc8a`)
+- `isKeysModel` validated the projection; the only caller was its own test (`t-c4a6d5`)
+- a completed codex plan reached the ledger and stopped there, so the sidebar drew nothing
+  (`t-d16f84`)
+- the extension-host smoke was an npm script nothing invoked — it would not have caught the four
+  blind days it was written for (`t-9e3978`)
+- the reasoning-effort projection correctly reused the profile guard, and the four files that wire
+  it carried no assertion (`t-f4e60c`)
+
+Each shipped green. The part was tested; the junction was not.
+
+**Delivery includes proving something reaches the part.** A validator is asserted from the path
+that runs in production, not from the test. A door is asserted from the surface a person opens. A
+guard is asserted by showing the thing it guards actually invokes it.
+
+This is usually one assertion in a test that already exists, not a new harness — and when the
+junction is hard to assert, that difficulty is itself the finding: a part reachable only by someone
+remembering to reach it is not protected.
+
+Related, and already learned once: **an inventory of what a surface DECLARES cannot see what it
+RENDERS** (SDD 485). The same blindness, one layer up.
+
 ## No new protection without a named actor
 
 We build for capability, not for threats nobody reported. **A guard that protects against an actor
