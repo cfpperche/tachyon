@@ -640,7 +640,7 @@
   }
   .ctl-grid.is-reordering .ctl-tile.ds-btn.is-dragging,
   .ctl-tile.ds-btn.is-dragging {
-    animation: none; opacity: 0.45; transform: scale(1.06) rotate(0); z-index: 1;
+    animation: none; opacity: 0.45; transform: scale(1.06) rotate(0);
     outline: 2px solid var(--ds-focus); outline-offset: 1px;
   }
   @keyframes ctl-jiggle {
