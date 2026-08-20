@@ -6,10 +6,11 @@ import { runTests } from "@vscode/test-electron";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const extensionPath = process.env.TACHYON_EXTENSION_DEVELOPMENT_PATH || path.join(repo, "apps/vscode-extension");
-const fixture = path.join(repo, "test/fixtures/sample-workspace");
 const staging = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-extension-smoke-"));
+const fixture = path.join(staging, "sample-workspace");
 const tmuxDir = path.join(staging, "tmux");
 const settingsHome = path.join(staging, "global-settings-home");
+fs.cpSync(path.join(repo, "test/fixtures/sample-workspace"), fixture, { recursive: true });
 fs.mkdirSync(tmuxDir, { recursive: true, mode: 0o700 });
 fs.mkdirSync(settingsHome, { recursive: true, mode: 0o700 });
 
