@@ -34,6 +34,7 @@ import { ACTIVITY_VIEW_TYPE, ActivityPanelManager, type ActivityPanelState } fro
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
 import { HandoffPanelManager, HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
 import { pendingApprovalRows } from "./webview/approval/viewModel";
+import { readIdeBrowserEnabled } from "./webview/ideBrowserControlState";
 import { validationAwaitsHuman } from "@tachyon/webview-ui/humanInbox/model";
 import { decodeHumanInboxDeepLink } from "./humanInbox/deepLink.js";
 import { approveSavedAgentProposal, type SavedAgentCommitResult } from "./agents/savedAgentProposalCommit.js";
@@ -2479,10 +2480,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
 
         let companion: WorkspaceBundle["companion"];
-        // SDD 488 F4 — shell config is the authority when engine is offline; companion.status may piggyback the bit.
-        let ideBrowser: WorkspaceBundle["ideBrowser"] = {
-          enabled: ws.config?.settings?.ideBrowser?.enabled === true,
-        };
+        // t-0ba30f — Integrated Browser is its own query. companion.status failure must not
+        // silently swap the gate for a different source; shell config is only the offline/old-engine fallback.
+        const ideBrowser = await readIdeBrowserEnabled({
+          query: (input) => extensionQuery(ws, input),
+          shellEnabled: ws.config?.settings?.ideBrowser?.enabled === true,
+        });
         try {
           const st = jsonObject(await extensionQuery(ws, { action: "companion.status" }), "companion.status");
           const devicesRaw = Array.isArray(st.devices) ? st.devices : [];
@@ -2513,11 +2516,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             engineLabel: typeof st.engineLabel === "string" ? st.engineLabel : undefined,
             devices,
           };
-          if (typeof st.ideBrowserEnabled === "boolean") {
-            ideBrowser = { enabled: st.ideBrowserEnabled === true };
-          }
         } catch {
-          /* engine without companion.status (older) or offline — ideBrowser falls back to shell config */
+          /* engine without companion.status (older) or offline */
         }
 
         // spec 444 — the classified engine read is the ONE source for the Worktrees tab. Engine
