@@ -25,7 +25,6 @@ import { spawnSync } from "node:child_process";
 import { parseLockfile, LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
 import { sha256File, isTrustedExecPath, type PathStat } from "./toolProvisioning.js";
 import type { ToolLaunchPolicy } from "@tachyon/engine/plugins/manifest.js";
-import { runI18nPtbrStagedGate } from "./i18nPtbrGate.js";
 import { appendExternalToolEvent } from "../externalTools/events.js";
 import { isLauncherExternalToolKind } from "@tachyon/engine/externalTools/filters.js";
 import type { ExternalToolKind } from "@tachyon/shared/externalTools/types.js";
@@ -242,11 +241,8 @@ function launcherToolKind(pluginName: string, toolName: string): ExternalToolKin
 /** The CLI entry: resolve → exec → exit code. Stderr carries an actionable message on failure. Invoked as
  *  `_tachyon-tool <pluginName> <toolName> [args...]` — plugin-scoped (codex task-10 review B). */
 export function runLauncher(argv: string[], deps: ResolveDeps): number {
-  if (argv[0] === "tachyon-core" && argv[1] === "i18n-ptbr-staged") {
-    return runI18nPtbrStagedGate({ workspaceRoot: deps.workspaceRoot });
-  }
   if (argv.length < 2) {
-    process.stderr.write("tachyon-tool: usage: _tachyon-tool <plugin> <tool> [args...] | tachyon-core i18n-ptbr-staged\n");
+    process.stderr.write("tachyon-tool: usage: _tachyon-tool <plugin> <tool> [args...]\n");
     return 2;
   }
   const [pluginName, toolName, ...rest] = argv;

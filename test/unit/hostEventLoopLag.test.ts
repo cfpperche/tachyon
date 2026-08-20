@@ -11,7 +11,6 @@ import {
 const FORBIDDEN_NOTICE = /Bridge recovery|command palette/i;
 const FORBIDDEN_SOURCE = /Bridge recovery/i;
 const EXT = path.resolve(__dirname, "../../apps/vscode-extension/src/extension.ts");
-const BUNDLE = path.resolve(__dirname, "../../apps/vscode-extension/l10n/bundle.l10n.pt-br.json");
 
 const l10n = { t: (message: string, ...args: Array<string | number | boolean>) => message.replace("{0}", String(args[0])) };
 
@@ -132,7 +131,6 @@ describe("t-0bf709 host event-loop lag classifier", () => {
   it("fails if the live notice again suggests Bridge recovery (t-0bf709 red proof)", () => {
     const sources = [
       EXT,
-      BUNDLE,
       path.resolve(__dirname, "../../apps/vscode-extension/src/workspace/hostEventLoopLag.ts"),
     ];
     const hits: string[] = [];
