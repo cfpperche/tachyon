@@ -74,6 +74,7 @@ describe("container-generated delegation behavior", () => {
       const sessionStart = JSON.parse(fs.readFileSync(path.join(home, ".grok", "hooks", "session-start.json"), "utf8"));
       const stop = JSON.parse(fs.readFileSync(path.join(home, ".grok", "hooks", "stop.json"), "utf8"));
       const startHooks = sessionStart.hooks.SessionStart[0].hooks as Array<{ type: string; command: string }>;
+      expect(sessionStart.hooks.SessionStart[0].matcher).toBeUndefined();
       const stopHook = stop.hooks.Stop[0].hooks[0] as { type: string; command: string };
 
       expect(startHooks.map((h) => h.type)).toEqual(["command", "command"]);

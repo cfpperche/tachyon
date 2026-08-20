@@ -468,6 +468,8 @@ export function buildOwnershipSettings(
   pointer?: { pointerPath: string; handoffPath: string },
   persistence?: { stopRecorderPath: string; stopFile: string; failureFile: string },
   opts: {
+    /** Runtime hook dialects may use different SessionStart source vocabularies. `null` omits the matcher. */
+    sessionStartMatcher?: string | null;
     skipDangerousModePermissionPrompt?: boolean;
     statusLine?: { type: "command"; command: string; padding?: number };
     /** Failure ledger for lifecycle hooks that exist independently of silent persistence. */
@@ -501,7 +503,14 @@ export function buildOwnershipSettings(
     hooks: { SessionStart: OwnershipHookGroup[]; Stop?: OwnershipHookGroup[]; [event: string]: OwnershipHookGroup[] | undefined };
     skipDangerousModePermissionPrompt?: boolean;
     statusLine?: { type: "command"; command: string; padding?: number };
-  } = { hooks: { SessionStart: [{ matcher: "startup|resume|clear|compact", hooks }] } };
+  } = {
+    hooks: {
+      SessionStart: [{
+        ...(opts.sessionStartMatcher === null ? {} : { matcher: opts.sessionStartMatcher ?? "startup|resume|clear|compact" }),
+        hooks,
+      }],
+    },
+  };
   if (opts.skipDangerousModePermissionPrompt) settings.skipDangerousModePermissionPrompt = true;
   if (opts.statusLine) settings.statusLine = { ...opts.statusLine };
   const stopHooks: OwnershipHookGroup["hooks"] = [];
