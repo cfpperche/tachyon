@@ -875,6 +875,50 @@ export function newAgentRuntimeRefusal(fields: AgentStudioFields): string | unde
   );
 }
 
+/**
+ * t-9aec3e — the first row-level refusal this studio raises client-side, for the same reason
+ * `newAgentRuntimeRefusal` exists: "Add value" and "Add secret reference" create rows that are
+ * BORN unnamed, and an unnamed row is a payload key the door refuses — measured on the devhost as
+ * "workspace command is invalid", a message that named neither the field nor the row. The form
+ * has to say which row before Save is worth clicking.
+ *
+ * Deliberately refuses ONLY what the door itself refuses: a blank value/secret name (the envelope
+ * refused exactly this) and a secret id of "" (the mutation schema requires `id` min 1). A secret
+ * with a blank provider is NOT refused here — the door accepts it, and a stricter client rule
+ * would strand a hand-authored profile this form did not write.
+ */
+export function environmentRowProblem(fields: AgentStudioFields): string | undefined {
+  const environment = fields.canonical?.environment;
+  if (!environment) return undefined;
+  const values = Object.entries(environment.values ?? {});
+  const valueIndex = values.findIndex(([name]) => name.trim().length === 0);
+  if (valueIndex >= 0) return `Environment value ${valueIndex + 1} needs a variable name before saving.`;
+  const secrets = Object.entries(environment.secrets ?? {});
+  const nameIndex = secrets.findIndex(([name]) => name.trim().length === 0);
+  if (nameIndex >= 0) return `Secret reference ${nameIndex + 1} needs a variable name before saving.`;
+  const coordinateIndex = secrets.findIndex(([, reference]) => reference.id.trim().length === 0);
+  if (coordinateIndex >= 0) return `Secret reference ${coordinateIndex + 1} needs a Keys coordinate (provider and id) before saving.`;
+  return undefined;
+}
+
+/**
+ * t-9aec3e — the payload never carries a half-created row: blank-named values and secrets
+ * without an id are dropped here, mirroring exactly the rows `environmentRowProblem` blocks
+ * Save on. The blocking error is the loud half (the human is told); this is the quiet half
+ * (the streamed patch and the save snapshot stay shapes the door accepts even mid-editing).
+ */
+function serializedEnvironment(environment: NonNullable<AgentStudioCanonicalContext["environment"]>): NonNullable<AgentStudioCanonicalContext["environment"]> {
+  const values = Object.fromEntries(
+    Object.entries(environment.values ?? {}).filter(([name]) => name.trim().length > 0),
+  );
+  const secrets = Object.fromEntries(
+    Object.entries(environment.secrets ?? {})
+      .filter(([name, reference]) => name.trim().length > 0 && reference.id.trim().length > 0)
+      .map(([name, reference]) => [name, structuredClone(reference)]),
+  );
+  return { values, secrets };
+}
+
 export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): AgentStudioPatch | undefined {
   if (!dirty) return undefined;
   if (!fields.canonical) return fields;
@@ -921,7 +965,7 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
       // meaningful value here, not an omission: it is how the binding is cleared.
       instructions: fields.instructions,
       isolation: fields.isolate ? "transcript" : "",
-      environment: structuredClone(fields.canonical.environment),
+      environment: serializedEnvironment(fields.canonical.environment),
       nativeConfig,
       capabilities: structuredClone(fields.canonical.capabilities),
     },

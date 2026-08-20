@@ -16,6 +16,7 @@ import {
   agentStudioTitleFor,
   blankAgentFields,
   canonicalAgentFields,
+  environmentRowProblem,
   nativeConfigChoice,
   nativeConfigSourceChoices,
   nativeConfigAuthorized,
@@ -472,17 +473,29 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     );
   }
 
-  // t-d68b8b — the only client-side blocking error this studio raises. It has to be here rather than
-  // in `AgentStudioAdapter.validate()` (which stays NO_VALIDATION_ERRORS): the host validates on save,
-  // and "you cannot create this" is the one answer the human needs BEFORE filling the rest of the form.
+  // t-d68b8b — the only client-side blocking error this studio raised until t-9aec3e. It has to be
+  // here rather than in `AgentStudioAdapter.validate()` (which stays NO_VALIDATION_ERRORS): the host
+  // validates on save, and "you cannot create this" is the one answer the human needs BEFORE filling
+  // the rest of the form.
   const runtimeRefusal = newAgentRuntimeRefusal(fields);
   const runtimeRefusalError: StudioError | undefined = runtimeRefusal
     ? { code: "validation/agent-runtime-not-attested", message: runtimeRefusal, source: "validation", blocking: true }
     : undefined;
-  const errors: StudioError[] = [...(hostError ? [hostError] : []), ...(runtimeRefusalError ? [runtimeRefusalError] : [])];
+  // t-9aec3e — the row-level sibling: a blank environment row must block Save AND say which row it
+  // is, because the door's answer ("workspace command is invalid") named nothing and the owner had
+  // no way to find the culprit. Same limits the door enforces, answered while they are still typing.
+  const environmentRefusal = environmentRowProblem(fields);
+  const environmentRefusalError: StudioError | undefined = environmentRefusal
+    ? { code: "validation/agent-environment-row", message: environmentRefusal, source: "validation", blocking: true }
+    : undefined;
+  const errors: StudioError[] = [
+    ...(hostError ? [hostError] : []),
+    ...(runtimeRefusalError ? [runtimeRefusalError] : []),
+    ...(environmentRefusalError ? [environmentRefusalError] : []),
+  ];
   const canSave = computeCanSave({
     dirty,
-    blockingErrorCount: (hostError?.blocking ? 1 : 0) + (runtimeRefusalError ? 1 : 0),
+    blockingErrorCount: (hostError?.blocking ? 1 : 0) + (runtimeRefusalError ? 1 : 0) + (environmentRefusalError ? 1 : 0),
     saveInFlight,
     concurrencyStale: false,
   });
@@ -586,12 +599,12 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
 
   const nameCommandBlock = (
     <>
-      <div class="ash-grid ash-grid-compact">
-        <div class="ash-field">
-          <label class="ash-label" for="ash-name">Name</label>
-          <Input id="ash-name" value={fields.name} disabled={canonical && mode === "edit"} placeholder="frontend, revisor, dev..." onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />
-        </div>
-
+      {/* t-9aec3e — full width, like Command below it. This used to sit in a two-column
+        * `ash-grid-compact`, so NAME ended mid-screen while COMMAND ran to the edge: same column,
+        * same weight, no reason for different widths. */}
+      <div class="ash-field">
+        <label class="ash-label" for="ash-name">Name</label>
+        <Input id="ash-name" value={fields.name} disabled={canonical && mode === "edit"} placeholder="frontend, revisor, dev..." onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />
       </div>
 
       <div class="ash-group">
@@ -610,10 +623,23 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     </>
   );
 
+  // t-9aec3e — rows are keyed by POSITION, never by the name being edited: a row keyed by its
+  // name remounts on every keystroke and the focus goes with it, which is the devhost defect that
+  // made typing `sdk` cost three clicks. Position is a stable identity here because rows are
+  // append-only — there is no delete and no reorder control. (The one residual edge: an all-digit
+  // name is an integer-like object key, which JavaScript orders before string keys, so typing "1"
+  // moves that row to the top for as long as the name is all digits. Env names do not start
+  // digit-only in practice, and the cost is one reorder, not per-keystroke focus loss.)
   const environmentBlock = canonical && (
     <section class="ash-native-config-editor" aria-label="Environment">
       <div class="ash-label">Environment values</div>
-      {Object.entries(fields.canonical!.environment.values ?? {}).map(([name, value]) => <div class="ash-native-config-editor-row" key={`env-${name}`}>
+      {/* t-9aec3e — column heads: every box below answers to a label in the house grammar, same
+        * as the rest of the screen. One head for all rows, aligned to the row grid. */}
+      <div class="ash-env-head">
+        <span class="ash-label">Variable name</span>
+        <span class="ash-label">Value</span>
+      </div>
+      {Object.entries(fields.canonical!.environment.values ?? {}).map(([name, value], index) => <div class="ash-native-config-editor-row" key={`env-${index}`}>
         <Input aria-label="Environment variable name" value={name} onInput={(event) => {
           const next = (event.currentTarget as HTMLInputElement).value;
           updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: Object.fromEntries(Object.entries(current.canonical.environment.values ?? {}).map(([key, item]) => [key === name ? next : key, item])) } } }) : current);
@@ -622,11 +648,16 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       </div>)}
       <Button onClick={() => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: { ...current.canonical.environment.values, "": "" } } } }) : current)}>Add value</Button>
       <div class="ash-label ash-label-break">Secret references</div>
-      {Object.entries(fields.canonical!.environment.secrets ?? {}).map(([name, reference]) => {
+      <div class="ash-env-head ash-env-head-triple">
+        <span class="ash-label">Variable name</span>
+        <span class="ash-label">Keys coordinate</span>
+        <span class="ash-label">Purpose</span>
+      </div>
+      {Object.entries(fields.canonical!.environment.secrets ?? {}).map(([name, reference], index) => {
         const stored = entity?.secretInventory?.stored ?? [];
         const current = `${reference.provider}\0${reference.id}`;
         const options = stored.some((item) => `${item.provider}\0${item.id}` === current) ? stored : [{ provider: reference.provider, id: reference.id }, ...stored];
-        return <div class="ash-native-config-editor-row" key={`secret-${name}`}>
+        return <div class="ash-native-config-editor-row ash-native-config-editor-row-triple" key={`secret-${index}`}>
           <Input aria-label="Secret environment variable name" value={name} onInput={(event) => {
             const next = (event.currentTarget as HTMLInputElement).value;
             updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: Object.fromEntries(Object.entries(state.canonical.environment.secrets ?? {}).map(([key, item]) => [key === name ? next : key, item])) } } }) : state);
@@ -635,7 +666,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
             const [provider, ...id] = (event.currentTarget as HTMLSelectElement).value.split("\0");
             updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: { ...state.canonical.environment.secrets, [name]: { ...reference, provider, id: id.join("\0") } } } } }) : state);
           }}>{options.map((item) => <option value={`${item.provider}\0${item.id}`} key={`${item.provider}\0${item.id}`}>{item.provider} / {item.id}{stored.some((key) => key.provider === item.provider && key.id === item.id) ? "" : " (missing from Keys)"}</option>)}</Select>
-          <Input aria-label={`Purpose for ${name}`} value={reference.purpose} placeholder="Purpose" onInput={(event) => updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: { ...state.canonical.environment.secrets, [name]: { ...reference, purpose: (event.currentTarget as HTMLInputElement).value } } } } }) : state)} />
+          <Input aria-label={`Purpose for ${name}`} value={reference.purpose} placeholder="GitHub API access" onInput={(event) => updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: { ...state.canonical.environment.secrets, [name]: { ...reference, purpose: (event.currentTarget as HTMLInputElement).value } } } } }) : state)} />
         </div>;
       })}
       <Button onClick={() => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, secrets: { ...current.canonical.environment.secrets, "": { provider: "", id: "", purpose: "" } } } } }) : current)}>Add secret reference</Button>
