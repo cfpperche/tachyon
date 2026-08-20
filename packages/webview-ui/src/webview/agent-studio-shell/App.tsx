@@ -1,7 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { decodeStudioMessage, type StudioDispatch } from "../shared/studio/protocol";
-import { StudioFrame } from "../shared/studio/StudioFrame";
+import { DEFAULT_STUDIO_LABELS, StudioFrame } from "../shared/studio/StudioFrame";
 import { StudioTombstone } from "../shared/studio/StudioTombstone";
 import { StudioLoadError } from "../shared/studio/StudioLoadError";
 import { readTombstoneMessage, type StudioTombstoneInfo } from "../shared/studio/tombstone";
@@ -17,6 +17,8 @@ import {
   blankAgentFields,
   canonicalAgentFields,
   environmentRowIssue,
+  newAgentCommandRefusal,
+  newAgentNameRefusal,
   nativeConfigChoice,
   nativeConfigSourceChoices,
   nativeConfigAuthorized,
@@ -479,6 +481,17 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     );
   }
 
+  // t-093a0d — name and command are required by the create door and live on step 1. They used to
+  // be silent: Save greys via the dirty gate, so a pristine New Agent (worktree ON by default)
+  // showed a dead button with no sentence, and unchecking worktree lit Save on an incomplete form.
+  const nameRefusal = newAgentNameRefusal(fields);
+  const nameRefusalError: StudioError | undefined = nameRefusal
+    ? { code: "validation/agent-name", message: nameRefusal, source: "validation", blocking: true }
+    : undefined;
+  const commandRefusal = newAgentCommandRefusal(fields);
+  const commandRefusalError: StudioError | undefined = commandRefusal
+    ? { code: "validation/agent-command", message: commandRefusal, source: "validation", blocking: true }
+    : undefined;
   // t-d68b8b — the only client-side blocking error this studio raised until t-9aec3e. It has to be
   // here rather than in `AgentStudioAdapter.validate()` (which stays NO_VALIDATION_ERRORS): the host
   // validates on save, and "you cannot create this" is the one answer the human needs BEFORE filling
@@ -498,12 +511,18 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     : undefined;
   const errors: StudioError[] = [
     ...(hostError ? [hostError] : []),
+    ...(nameRefusalError ? [nameRefusalError] : []),
+    ...(commandRefusalError ? [commandRefusalError] : []),
     ...(runtimeRefusalError ? [runtimeRefusalError] : []),
     ...(environmentRefusalError ? [environmentRefusalError] : []),
   ];
   const canSave = computeCanSave({
     dirty,
-    blockingErrorCount: (hostError?.blocking ? 1 : 0) + (runtimeRefusalError ? 1 : 0) + (environmentRefusalError ? 1 : 0),
+    blockingErrorCount: (hostError?.blocking ? 1 : 0)
+      + (nameRefusalError ? 1 : 0)
+      + (commandRefusalError ? 1 : 0)
+      + (runtimeRefusalError ? 1 : 0)
+      + (environmentRefusalError ? 1 : 0),
     saveInFlight,
     concurrencyStale: false,
   });
@@ -563,6 +582,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   const persistentInstructionsProblem = persistentInstructionsRefusal(fields.instructions);
   const savedAgent = entity.name;
   const withheldDocuments = canonicalSnapshot?.bindings.withheldDocuments ?? [];
+  const saveEnabled = canSave && withheldDocuments.length === 0;
   const mutationDisabled = !savedAgent || frozen || withheldDocuments.length > 0;
   const canonicalLifecycleDisabled = !canonicalSnapshot || !!profileBusy || dirty || frozen || profileRetired;
   // Declared + still-declarable, so a checked row can always be UNCHECKED even after the target
@@ -612,7 +632,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
         * same weight, no reason for different widths. */}
       <div class="ash-field">
         <label class="ash-label" for="ash-name">Name</label>
-        <Input id="ash-name" value={fields.name} disabled={canonical && mode === "edit"} placeholder="frontend, revisor, dev..." onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />
+        <Input id="ash-name" value={fields.name} disabled={canonical && mode === "edit"} aria-invalid={nameRefusalError ? true : undefined} placeholder="frontend, revisor, dev..." onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />
+        {nameRefusal && <div class="hint ash-native-config-risk">{nameRefusal}</div>}
       </div>
 
       <div class="ash-group">
@@ -621,7 +642,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
           * read "claude · codex · agy · npm run dev", offering by example the two things this
           * door cannot create: an unattested runtime and a generic process. A legacy entry keeps
           * the old text — that form still edits whatever is already written in `agents:`. */}
-        <Input id="ash-cmd" value={fields.cmd} placeholder={canonical ? ATTESTED_RUNTIMES.join(" · ") : "claude · codex · agy · npm run dev"} onInput={(e) => set("cmd", (e.currentTarget as HTMLInputElement).value)} />
+        <Input id="ash-cmd" value={fields.cmd} aria-invalid={commandRefusalError || runtimeRefusalError ? true : undefined} placeholder={canonical ? ATTESTED_RUNTIMES.join(" · ") : "claude · codex · agy · npm run dev"} onInput={(e) => set("cmd", (e.currentTarget as HTMLInputElement).value)} />
+        {commandRefusal && <div class="hint ash-native-config-risk">{commandRefusal}</div>}
         {!canonical && <div class="ash-chips">
           {flags.map((flag) => (
             <Chip key={flag} active={fields.cmd.includes(flag)} onClick={() => toggleFlag(flag)}>{flag}</Chip>
@@ -1363,13 +1385,28 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       dirty={dirty}
       saveInFlight={saveInFlight}
       loadFailed={loadFailed}
-      canSave={canSave && withheldDocuments.length === 0}
+      canSave={saveEnabled}
+      omitHeaderSave={mode === "new"}
       frozen={frozen}
       onSave={onSave}
       onCancel={() => post(cancelMessage())}
       resolveErrorActivate={(error) => {
         // t-49f6e8 — the errors this form can act on become their own path to the field; host and
         // transport errors have no target and stay plain text.
+        if (error === nameRefusalError) {
+          return () => {
+            if (mode === "new") setStep(0);
+            else setEditTab("general");
+            setPendingFocus({ query: () => document.getElementById("ash-name") });
+          };
+        }
+        if (error === commandRefusalError) {
+          return () => {
+            if (mode === "new") setStep(0);
+            else setEditTab("general");
+            setPendingFocus({ query: () => document.getElementById("ash-cmd") });
+          };
+        }
         if (error === environmentRefusalError && environmentIssue) {
           return () => {
             if (mode === "new") {
@@ -1425,6 +1462,11 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                   {safeStep > 0 && <Button onClick={() => setStep(safeStep - 1)}>Back</Button>}
                   {safeStep < wizardSteps.length - 1 && (
                     <Button variant="primary" onClick={() => setStep(safeStep + 1)}>Next: {wizardSteps[safeStep + 1].label}</Button>
+                  )}
+                  {safeStep === wizardSteps.length - 1 && !loadFailed && (
+                    <Button variant="primary" disabled={!saveEnabled || frozen} onClick={onSave}>
+                      {saveInFlight ? DEFAULT_STUDIO_LABELS.saving : DEFAULT_STUDIO_LABELS.save}
+                    </Button>
                   )}
                 </div>
               </>
