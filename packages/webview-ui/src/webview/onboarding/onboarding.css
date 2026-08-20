@@ -16,9 +16,19 @@
 
 .onb-env-list, .onb-folder-list { display: grid; gap: var(--ds-2); }
 .onb-env-row, .onb-folder { border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-3) var(--ds-4); background: var(--vscode-editorWidget-background); }
-.onb-env-head { display: flex; align-items: center; gap: var(--ds-2); min-height: 28px; flex-wrap: wrap; }
-.onb-env-label { font-weight: 600; display: inline-flex; align-items: center; gap: var(--ds-1); }
-.onb-env-head .ds-badge { margin-left: auto; }
+/* t-505f13 (owner validation) — the head is a THREE-COLUMN grid, not a flex line: label | status |
+   actions. The actions column exists on EVERY row (rendered empty when there is nothing to do), so
+   the badge's right edge is one constant across both sections instead of floating wherever the
+   button leaves room — `margin-left: auto` did exactly that, measured 847 vs 615/698 at 880. */
+.onb-env-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 232px); align-items: center; column-gap: var(--ds-2); min-height: 28px; }
+.onb-env-head .ds-badge { justify-self: end; }
+.onb-head-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--ds-1); }
+/* Narrow width: the action drops to its own row, right-aligned; the badge keeps a constant edge
+   (the row's own right) in this layout too. */
+@media (max-width: 620px) {
+  .onb-env-head { grid-template-columns: minmax(0, 1fr) auto; }
+  .onb-head-actions { grid-column: 1 / -1; grid-row: 2; }
+}
 .onb-remedy { margin-top: var(--ds-2); font-size: var(--ds-small); color: var(--ds-fg); display: flex; gap: var(--ds-1); align-items: baseline; }
 .onb-folder-root { font-family: var(--ds-mono); font-size: var(--ds-small); margin-top: var(--ds-1); word-break: break-all; }
 .onb-note { margin-top: var(--ds-2); }

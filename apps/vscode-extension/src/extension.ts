@@ -1795,6 +1795,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       for (const manager of Object.values(studioPanels)) manager.refreshReferenceData();
     }
     if (view === "agents") void applyWorktreeFolderReveal(); // spec 210/263 — onSpawned/onStopping/onKilled fire this
+    // t-505f13 (owner validation, devhost) — the roster changed: the Onboarding tab's step 3 counts
+    // roster members, so a VISIBLE panel re-sends the model now and a HIDDEN one journals the refresh
+    // and rebuilds on reveal (SectionPanelManager's gate). Without this line the step never closed
+    // after the first agent was created — the method existed and nothing called it.
+    if (view === "agents") onboardingPanels.refresh();
     sidebarProto.refresh();
   };
   const refreshAll = () => {

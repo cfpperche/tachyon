@@ -24,8 +24,12 @@ function EnvRow({ item, dispatch }: { item: OnboardingModel["environment"]["item
       <div class="onb-env-head">
         <span class="onb-env-label">{item.label}</span>
         <Badge tone={tone}><Icon name={icon} /> {item.status === "ok" ? "ok" : item.status === "missing" ? "missing" : "later"}</Badge>
-        {item.id === "credential" && item.status === "missing"
-          && <Button data-testid="onb-open-keys" onClick={() => dispatch({ type: "openKeys" })}>Open Keys</Button>}
+        {/* The actions slot is rendered on EVERY row, empty when there is nothing to do: that is what
+            keeps the badge above it a column with one constant right edge (owner validation, devhost). */}
+        <span class="onb-head-actions">
+          {item.id === "credential" && item.status === "missing"
+            && <Button data-testid="onb-open-keys" onClick={() => dispatch({ type: "openKeys" })}>Open Keys</Button>}
+        </span>
       </div>
       <div class="ds-dim">{item.detail}</div>
       {item.status === "missing" && item.remedy && <div class="onb-remedy"><Icon name="lightbulb" /> {item.remedy}</div>}
@@ -41,11 +45,13 @@ function FolderRow({ folder, environmentReady, dispatch }: { folder: OnboardingF
         {folder.configured
           ? <Badge tone="ok"><Icon name="check" /> tachyon.yml present</Badge>
           : <Badge tone="warn"><Icon name="warning" /> not initialized</Badge>}
-        {folder.configured
-          ? <Button data-testid="onb-open-config" onClick={() => dispatch({ type: "openConfig" })}>Open tachyon.yml</Button>
-          : <Button variant="primary" icon="rocket" disabled={!environmentReady} data-testid="onb-initialize"
-              title={environmentReady ? "Generate a starter tachyon.yml in this workspace" : "Fix the missing environment items first"}
-              onClick={() => dispatch({ type: "initialize" })}>Initialize this workspace</Button>}
+        <span class="onb-head-actions">
+          {folder.configured
+            ? <Button data-testid="onb-open-config" onClick={() => dispatch({ type: "openConfig" })}>Open tachyon.yml</Button>
+            : <Button variant="primary" icon="rocket" disabled={!environmentReady} data-testid="onb-initialize"
+                title={environmentReady ? "Generate a starter tachyon.yml in this workspace" : "Fix the missing environment items first"}
+                onClick={() => dispatch({ type: "initialize" })}>Initialize this workspace</Button>}
+        </span>
       </div>
       <div class="ds-dim onb-folder-root">{folder.root}</div>
     </article>
