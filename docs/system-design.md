@@ -74,7 +74,7 @@ Four buckets, not two:
   watching, optional terminal presentation, settings, storage/secrets and workspace-change events.
   Two-way editor interactions are explicit shell/UI requests, not hidden window calls in engine code.
 - **Shell** (owns `vscode`, never imported by the engine): activation + command registry, the sidebar tree
-  + webviews (Studio/Inspector), editor terminals, `vscode.diff` / settings UI / walkthroughs / clipboard /
+  + webviews (Studio/Inspector/Onboarding), editor terminals, `vscode.diff` / settings UI / clipboard /
   open-document.
 
 The dependency direction is mechanically enforced: `@tachyon/bridge` declares `@tachyon/engine`, while
@@ -200,7 +200,7 @@ Watch: token path / version storage, config reload + watch behavior, and termina
 - Replacing or re-architecting the Bridge (it's already the runtime-neutral seam).
 - Rewriting the managers (they're already `vscode`-free — this is extraction, not a rewrite).
 - Publishing an `@tachyon/engine` package before a second host proves its value.
-- Abstracting editor-only commands (`vscode.diff`, settings UI, walkthroughs, clipboard, webviews) — those
+- Abstracting editor-only commands (`vscode.diff`, settings UI, clipboard, webviews including Onboarding) — those
   are shell concerns, never engine capabilities.
 
 ---
