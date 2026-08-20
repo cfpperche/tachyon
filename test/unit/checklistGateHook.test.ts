@@ -335,6 +335,24 @@ describe("t-685a0c — the locks that are not per-runtime", () => {
     expect(spawnSync("node", [script, JSON.stringify({ runtime: "claude", planRoot: claudeTasksRoot(), failureFile: "", reason: "reason" })], { input: escape, encoding: "utf8" }).status).toBe(0);
   });
 
+  it("subagents bypass the primary agent's checklist, while the primary agent remains gated", () => {
+    const script = checklistGateScriptPath(fixture.root);
+    const config = JSON.stringify({ runtime: "codex", planRoot: codexToolHookFile(fixture.root), failureFile: "", reason: "reason" });
+    const primary = JSON.stringify({ session_id: SESSION, tool_name: "Bash", tool_input: {} });
+    const subagent = JSON.stringify({ session_id: SESSION, agent_id: "subagent-1", agent_type: "Explore", tool_name: "Bash", tool_input: {} });
+
+    fs.rmSync(codexToolHookFile(fixture.root), { force: true });
+    expect(spawnSync("node", [script, config], { input: subagent, encoding: "utf8" }).status).toBe(0);
+    expect(spawnSync("node", [script, config], { input: primary, encoding: "utf8" }).status).toBe(2);
+
+    fs.mkdirSync(path.dirname(codexToolHookFile(fixture.root)), { recursive: true });
+    fs.writeFileSync(
+      codexToolHookFile(fixture.root),
+      `${JSON.stringify({ sessionId: SESSION, toolName: "update_plan" })}\n`,
+    );
+    expect(spawnSync("node", [script, config], { input: primary, encoding: "utf8" }).status).toBe(0);
+  });
+
   it("the refusal is ONE line — grok keeps only the first, so a second line would be lost", () => {
     for (const runtime of ["claude", "codex", "grok"] as const) {
       const refusal = checklistGateRefusal(runtime);

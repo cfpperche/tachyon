@@ -316,6 +316,10 @@ function decide() {
   let payload = {};
   try { payload = JSON.parse(raw || "{}"); } catch (_e) { return 0; }
   if (!payload || typeof payload !== "object") return 0;
+  // The checklist is a requirement for the primary agent, which can create the plan. A native
+  // subagent is identified by agent_id, but cannot create the plan or see the parent's checklist;
+  // requiring inherited session state would make its mutating tools depend on an unsatisfiable gate.
+  if (Object.prototype.hasOwnProperty.call(payload, "agent_id")) return 0;
   const toolName = payload.tool_name || payload.toolName || "";
   if (!MUTATING_TOOLS.has(toolName)) return 0;
   const sessionId = payload.session_id || payload.sessionId || "";
