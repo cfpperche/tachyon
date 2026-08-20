@@ -6,40 +6,17 @@ export function cockpitStrings(): CockpitStrings {
   return {
     title: t("Control"),
     subtitle: t("Project sysadmin"),
-    navFleet: t("Fleet"),
-    navInbox: t("Inbox"),
-    navApprovals: t("Approvals"),
-    navMission: t("Board"),
-    navValidations: t("Validations"),
-    navHandoff: t("Handoff"),
-    navWorktrees: t("Worktrees"),
-    navRuntime: t("Runtime Ops"),
-    navRuntimeConfig: t("Runtime Config"),
-    navTmux: t("tmux"),
-    navPlugins: t("Plugins"),
-    navSettings: t("Settings"),
     back: t("Back"),
     refresh: t("Refresh"),
     auto: t("Auto-refresh"),
     empty: t("No Tachyon workspace attached in this window."),
     copyDiagnostics: t("Copy diagnostics"),
-    openBoard: t("Open Board"),
-    openSettings: t("Open Settings"),
     openDoctor: t("Run Doctor"),
-    copied: t("Diagnostics copied"),
     // SDD 500 — the hint answers the question spec.md says System exists to answer, in the reader's
     // words. Overview's old hint pointed at two OTHER screens (Fleet, Board); this one points at what
     // is on this one.
     systemTitle: t("System"),
     systemHint: t("Is Tachyon up and healthy, and if not, where?"),
-    fleetTitle: t("Fleet"),
-    fleetHint: t("Agents (runtime) — start, stop, terminal, activity. Work items are on the Board."),
-    approvalsTitle: t("Approvals"),
-    approvalsHint: t("Human gates that block the fleet (embedded)."),
-    missionTitle: t("Board"),
-    missionHint: t("Work queue — tasks and lanes. Agents live in the sidebar Fleet."),
-    validationsTitle: t("Validations"),
-    validationsHint: t("Validation queue — close dogfoods and checks (not on the Board)."),
     settingsTitle: t("Settings"),
     settingsHint: t("Personal machine preferences and shared project policy — two files, two authorities."),
     workspaces: t("Workspaces"),
@@ -70,10 +47,6 @@ export function cockpitStrings(): CockpitStrings {
     hash: t("Hash"),
     running: t("running"),
     stopped: t("stopped"),
-    checkedAt: t("Checked"),
-    navLoading: t("Loading…"),
-    navStalled: t("This is taking longer than expected."),
-    navRetry: t("Retry"),
     open: t("Open"),
     noneListed: t("Nothing listed for this workspace yet."),
     kind: t("Kind"),
@@ -82,12 +55,6 @@ export function cockpitStrings(): CockpitStrings {
     phase: t("Phase"),
     path: t("Path"),
     name: t("Name"),
-    start: t("Start"),
-    stop: t("Stop"),
-    openTerminal: t("Terminal"),
-    openActivity: t("Activity"),
-    openProbes: t("Probes"),
-    editAgent: t("Edit"),
     continueTask: t("Continue task in…"),
     continueTaskPickTitle: t("Continue task from {0} in…"),
     continueTaskPickSubtitle: t(
@@ -98,10 +65,8 @@ export function cockpitStrings(): CockpitStrings {
     continueTaskDestStopped: t("stopped"),
     continueTaskDestRunning: t("running — stop first"),
     continueTaskDestDetail: t("New session with focused handoff from {0}"),
-    continueTaskNoDest: t("No other declared agent to continue into (need a stopped destination)."),
     reveal: t("Reveal"),
     copyPath: t("Copy path"),
-    copyId: t("Copy id"),
     openConfig: t("Open workspace settings"),
     // t-7b4bb5 — two authorities, named so the dual open buttons do not look like a split mind.
     settingsBody: t(
@@ -177,8 +142,6 @@ export function cockpitStrings(): CockpitStrings {
     globalSettingsSave: t("Save"),
     globalSettingsLive: t("takes effect immediately"),
     globalSettingsNeedsReopen: t("applies the next time Control is opened"),
-    workspaceSettingsTitle: t("This project's settings"),
-    workspaceSettingsHint: t("Agent limit, memory cap, task notifications and worktree reveal live in tachyon.yml, so they travel with the repo and the whole team gets them."),
     companionAllowedHostsSave: t("Save allowed hosts"),
     companionPaired: t("Paired"),
     companionNotPaired: t("Not paired"),
@@ -199,8 +162,6 @@ export function cockpitStrings(): CockpitStrings {
     companionPairQrHint: t(
       "Scan with your phone camera — opens Companion Mobile and pairs automatically. PC and phone must be on the same Tailscale tailnet (settings.companion.lanAccess: true).",
     ),
-    companionPairCandidatesLabel: t("URL"),
-    companionCopyPayload: t("Copy QR payload"),
     companionLanAccessHint: t(
       "Mobile uses Tailscale only (not raw Wi‑Fi IPs). Install Tailscale on PC + phone, same account/tailnet, then generate a code.",
     ),
@@ -222,8 +183,6 @@ export function cockpitStrings(): CockpitStrings {
     // across the shell and engine. What IS still frozen, deliberately, is the narrow set that crosses
     // a boundary — the sidebar's legacy species flag, the handoff mode discriminant, and the
     // ledger's persisted shape. Those are renamed only with a protocol bump, never as nomenclature.
-    saved: t("Saved"),
-    temporary: t("Temporary"),
     agent: t("agent"),
     change: t("change"),
   };

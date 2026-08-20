@@ -7,19 +7,6 @@ export const MODEL = "model" as const;
 export interface CockpitStrings {
   title: string;
   subtitle: string;
-  navFleet: string;
-  /** t-e76acc — the unified Human Inbox tab (approvals + validations, one navigation). */
-  navInbox: string;
-  navApprovals: string;
-  navMission: string;
-  navValidations: string;
-  navHandoff: string;
-  navWorktrees: string;
-  navRuntime: string;
-  navRuntimeConfig: string;
-  navTmux: string;
-  navPlugins: string;
-  navSettings: string;
   /** t-610705 (Phase D, D3) — pin's breadcrumb generic label, for a returnRoute kind with no fixed
    *  nav-tab name of its own (agent-activity/agent-probes/workspace-probes — every OTHER studio's
    *  breadcrumb already has a specific label: the parent section's own nav name, or "Board" for
@@ -29,22 +16,11 @@ export interface CockpitStrings {
   auto: string;
   empty: string;
   copyDiagnostics: string;
-  openBoard: string;
-  openSettings: string;
   openDoctor: string;
-  copied: string;
   /** SDD 500 — the merged screen's own title and hint; `overviewTitle`/`overviewHint`/`engineTitle`
    *  went with the two surfaces they named. */
   systemTitle: string;
   systemHint: string;
-  fleetTitle: string;
-  fleetHint: string;
-  approvalsTitle: string;
-  approvalsHint: string;
-  missionTitle: string;
-  missionHint: string;
-  validationsTitle: string;
-  validationsHint: string;
   settingsTitle: string;
   settingsHint: string;
   workspaces: string;
@@ -79,11 +55,6 @@ export interface CockpitStrings {
   hash: string;
   running: string;
   stopped: string;
-  checkedAt: string;
-  /** t-ac79a7 — navigation feedback: progress label, stalled banner, and its retry. */
-  navLoading: string;
-  navStalled: string;
-  navRetry: string;
   open: string;
   noneListed: string;
   kind: string;
@@ -92,12 +63,6 @@ export interface CockpitStrings {
   phase: string;
   path: string;
   name: string;
-  start: string;
-  stop: string;
-  openTerminal: string;
-  openActivity: string;
-  openProbes: string;
-  editAgent: string;
   /** SDD 443 — continue unfinished task on another agent (new session + handoff). */
   continueTask: string;
   /** QuickPicker title: "Continue task from {0} in…" */
@@ -109,10 +74,8 @@ export interface CockpitStrings {
   continueTaskDestStopped: string;
   continueTaskDestRunning: string;
   continueTaskDestDetail: string;
-  continueTaskNoDest: string;
   reveal: string;
   copyPath: string;
-  copyId: string;
   openConfig: string;
   settingsBody: string;
   /** t-7b4bb5 — dual-scope explainer cards at the top of Control → Settings. */
@@ -172,8 +135,6 @@ export interface CockpitStrings {
   globalSettingsSave: string;
   globalSettingsLive: string;
   globalSettingsNeedsReopen: string;
-  workspaceSettingsTitle: string;
-  workspaceSettingsHint: string;
   companionAllowedHostsPlaceholder: string;
   companionAllowedHostsSave: string;
   companionPaired: string;
@@ -194,8 +155,6 @@ export interface CockpitStrings {
   companionPairUnavailable: string;
   companionPairQrLabel: string;
   companionPairQrHint: string;
-  companionPairCandidatesLabel: string;
-  companionCopyPayload: string;
   companionLanAccessHint: string;
   devicesTitle: string;
   devicesHint: string;
@@ -206,8 +165,6 @@ export interface CockpitStrings {
   devicesKindBrowser: string;
   devicesKindMobile: string;
   devicesPairedAt: string;
-  saved: string;
-  temporary: string;
   agent: string;
   change: string;
 }
