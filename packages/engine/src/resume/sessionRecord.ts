@@ -18,6 +18,8 @@ export interface SessionDef {
   kind: EntryKind;
   instructions?: string;
   taskBrief?: string;
+  /** Explicit Temporary-agent native reasoning selector, retained for audit and reload. */
+  reasoningEffort?: string;
   parent?: string; // lineage — who spawned it
   /** spec 362 — the Bridge-resolved requester of a GATED delegation (t-bae303). Gated spawns force
    *  `parent` undefined and record this instead; persisted here so it survives a reload — rehydrate

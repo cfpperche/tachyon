@@ -311,6 +311,7 @@ function parseDef(d: unknown): SessionDef | undefined {
     kind,
     ...(typeof o.instructions === "string" ? { instructions: o.instructions } : {}),
     ...(typeof o.taskBrief === "string" ? { taskBrief: o.taskBrief } : {}),
+    ...(typeof o.reasoningEffort === "string" ? { reasoningEffort: o.reasoningEffort } : {}),
     ...(typeof o.parent === "string" ? { parent: o.parent } : {}),
     ...(typeof o.delegator === "string" ? { delegator: o.delegator } : {}),
     ...(isStringMap(o.env) ? { env: o.env as Record<string, string> } : {}),
