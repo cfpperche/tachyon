@@ -29,7 +29,10 @@ class FakeGrokProcess extends EventEmitter {
   private input = "";
   private closed = false;
 
-  constructor(private readonly billing: unknown) {
+  constructor(
+    private readonly billing: unknown,
+    private readonly onRequest?: (request: Record<string, unknown>, process: FakeGrokProcess) => void,
+  ) {
     super();
     this.stdin.setEncoding("utf8");
     this.stdin.on("data", (chunk: string) => {
@@ -41,6 +44,10 @@ class FakeGrokProcess extends EventEmitter {
         if (!line) continue;
         const request = JSON.parse(line) as Record<string, unknown>;
         this.requests.push(request);
+        if (this.onRequest) {
+          this.onRequest(request, this);
+          continue;
+        }
         if (request.method === "initialize") this.reply(request.id as number, { protocolVersion: 1 });
         if (request.method === "_x.ai/billing") this.reply(request.id as number, this.billing);
       }
@@ -70,11 +77,14 @@ class FakeGrokProcess extends EventEmitter {
   }
 }
 
-function sourceFor(billing: unknown): { source: GrokUsageObservationSource; process: FakeGrokProcess; spawn: ReturnType<typeof vi.fn<GrokUsageSpawn>> } {
-  const process = new FakeGrokProcess(billing);
+function sourceFor(
+  billing: unknown,
+  options: { onRequest?: (request: Record<string, unknown>, process: FakeGrokProcess) => void; timeoutMs?: number } = {},
+): { source: GrokUsageObservationSource; process: FakeGrokProcess; spawn: ReturnType<typeof vi.fn<GrokUsageSpawn>> } {
+  const process = new FakeGrokProcess(billing, options.onRequest);
   const spawn = vi.fn<GrokUsageSpawn>(() => process.asChild());
   return {
-    source: new GrokUsageObservationSource({ spawn, now: () => new Date(NOW) }),
+    source: new GrokUsageObservationSource({ spawn, timeoutMs: options.timeoutMs, now: () => new Date(NOW) }),
     process,
     spawn,
   };
@@ -129,5 +139,66 @@ describe("GrokUsageObservationSource", () => {
     const envelope = await h.source.observe({ scope: SCOPE, grant: { state: "disabled" } });
     expect(envelope.facts[0]).toMatchObject({ kind: "provider-unavailable", reason: "source-disabled" });
     expect(h.spawn).not.toHaveBeenCalled();
+  });
+
+  it("classifies an unauthenticated ACP billing error in the existing provider-error bucket", async () => {
+    const h = sourceFor({}, {
+      onRequest: (request, process) => {
+        if (request.method === "initialize") process.reply(request.id as number, { protocolVersion: 1 });
+        if (request.method === "_x.ai/billing") {
+          process.stdout.write(`${JSON.stringify({
+            jsonrpc: "2.0",
+            id: request.id,
+            error: { code: 401, message: "authentication required" },
+          })}\n`);
+        }
+      },
+    });
+    const envelope = await h.source.observe({ scope: SCOPE, grant: GRANT });
+    expect(envelope.facts[0]).toMatchObject({ kind: "provider-unavailable", reason: "provider-error" });
+    expect(envelope.diagnostics[0]).toMatchObject({ code: "SOURCE_UNAVAILABLE" });
+    expect(JSON.stringify(envelope)).not.toContain("authentication required");
+  });
+
+  it("times out the exchange and terminates the child", async () => {
+    const h = sourceFor({}, { timeoutMs: 5, onRequest: () => undefined });
+    const envelope = await h.source.observe({ scope: SCOPE, grant: GRANT });
+    expect(envelope.facts[0]).toMatchObject({ kind: "provider-unavailable", reason: "timeout" });
+    expect(envelope.diagnostics[0]).toMatchObject({ code: "SOURCE_TIMEOUT" });
+    expect(h.process.signals).toEqual(["SIGTERM"]);
+  });
+
+  it("cancels an in-flight billing read and terminates the child", async () => {
+    const controller = new AbortController();
+    const h = sourceFor({}, {
+      onRequest: (request, process) => {
+        if (request.method === "initialize") process.reply(request.id as number, { protocolVersion: 1 });
+        if (request.method === "_x.ai/billing") controller.abort();
+      },
+    });
+    const envelope = await h.source.observe({ scope: SCOPE, grant: GRANT, signal: controller.signal });
+    expect(envelope.facts[0]).toMatchObject({ kind: "provider-unavailable", reason: "cancelled" });
+    expect(envelope.diagnostics[0]).toMatchObject({ code: "SOURCE_CANCELLED" });
+    expect(h.process.signals).toEqual(["SIGTERM"]);
+  });
+
+  it("maps a spawn failure to provider-error without leaking the thrown error", async () => {
+    const spawn = vi.fn<GrokUsageSpawn>(() => { throw new Error("MUST_NOT_CROSS_SPAWN_PATH"); });
+    const source = new GrokUsageObservationSource({ spawn, now: () => new Date(NOW) });
+    const envelope = await source.observe({ scope: SCOPE, grant: GRANT });
+    expect(envelope.facts[0]).toMatchObject({ kind: "provider-unavailable", reason: "provider-error" });
+    expect(envelope.diagnostics[0]).toMatchObject({ code: "SOURCE_UNAVAILABLE" });
+    expect(JSON.stringify(envelope)).not.toContain("MUST_NOT_CROSS_SPAWN_PATH");
+  });
+
+  it("fails closed when the ACP initialize protocol drifts", async () => {
+    const h = sourceFor({}, {
+      onRequest: (request, process) => {
+        if (request.method === "initialize") process.reply(request.id as number, { protocolVersion: 2 });
+      },
+    });
+    const envelope = await h.source.observe({ scope: SCOPE, grant: GRANT });
+    expect(envelope.facts[0]).toMatchObject({ kind: "provider-unavailable", reason: "invalid-payload" });
+    expect(envelope.diagnostics[0]).toMatchObject({ code: "INVALID_PAYLOAD" });
   });
 });
