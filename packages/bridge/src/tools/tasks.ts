@@ -1,4 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import fs from "node:fs";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { projectTaskListRow, type TaskListFields } from "@tachyon/engine/tasks/TaskStore.js";
 import { TASK_AUTHORING_LIMITS } from "@tachyon/engine/tasks/taskAuthoring.js";
@@ -466,7 +469,80 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
     },
   );
 
+  mcp.registerTool(
+    "search_tasks",
+    {
+      description:
+        "Search Task titles and bodies with SQLite FTS5 query syntax. Pass a lexical FTS5 expression, " +
+        "not a natural-language question: words are implicitly ANDed; use OR, NOT, quoted phrases, " +
+        "prefixes such as comp*, or NEAR(term1 term2). Matching is case-insensitive and ignores diacritics " +
+        "(for example, sessao matches sessão). Returns only id, status, title, and a short highlighted snippet; " +
+        "use get_task to read a result in full.",
+      inputSchema: {
+        query: z.string().trim().min(1).max(500).describe("raw SQLite FTS5 query expression; not a natural-language question"),
+        limit: z.number().int().min(1).max(50).default(10),
+      },
+    },
+    async ({ query, limit = 10 }) => {
+      let db: DatabaseSync | undefined;
+      try {
+        db = new DatabaseSync(":memory:");
+        db.exec(
+          "CREATE VIRTUAL TABLE task_search USING fts5(" +
+            "id UNINDEXED, title, body, status UNINDEXED, tokenize='unicode61 remove_diacritics 2'" +
+          ")",
+        );
+        const insert = db.prepare("INSERT INTO task_search (id, title, body, status) VALUES (?, ?, ?, ?)");
+        db.exec("BEGIN");
+        try {
+          for (const task of readTaskSearchRows(deps.workspaceRoot)) {
+            insert.run(task.id, task.title, task.body ?? "", task.status);
+          }
+          db.exec("COMMIT");
+        } catch (error) {
+          db.exec("ROLLBACK");
+          throw error;
+        }
+        const rows = db.prepare(
+          "SELECT id, status, title, " +
+            "snippet(task_search, 2, char(91), char(93), char(46,46,46), 12) AS snippet " +
+          "FROM task_search WHERE task_search MATCH ? ORDER BY bm25(task_search, 0.0, 10.0, 1.0, 0.0), id LIMIT ?",
+        ).all(query, limit);
+        return ok(JSON.stringify(rows, null, 2));
+      } catch (err) {
+        return fail(err);
+      } finally {
+        db?.close();
+      }
+    },
+  );
+
   // t-a4ac02 — Bridge tool `next_task` removed. The pure function nextTask() in src/tasks/nextTask.ts
   // still computes Board spotlight via boardSnapshot; agents claim work through
   // spawn_agent(claim_task:) or update_task CAS, not an advisory pull tool.
+}
+
+type TaskSearchRow = { id: string; title: string; body?: string; status: string };
+
+function readTaskSearchRows(workspaceRoot: string): TaskSearchRow[] {
+  const dir = path.join(workspaceRoot, ".tachyon", "tasks");
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const rows: TaskSearchRow[] = [];
+  for (const name of names) {
+    if (!/^t-[0-9a-f]{6}\.json$/.test(name)) continue;
+    try {
+      const value = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")) as Partial<TaskSearchRow>;
+      if (typeof value.title !== "string" || !TASK_STATUS.safeParse(value.status).success) continue;
+      rows.push({ id: name.slice(0, -5), title: value.title, status: value.status!, ...(typeof value.body === "string" ? { body: value.body } : {}) });
+    } catch {
+      // Match TaskStore listings: one unservable task must not make the rest of the board unreadable.
+    }
+  }
+  return rows;
 }
