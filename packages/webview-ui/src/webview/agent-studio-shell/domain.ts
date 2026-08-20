@@ -865,14 +865,48 @@ function newAgentAdapter(fields: AgentStudioFields): string {
 export function newAgentRuntimeRefusal(fields: AgentStudioFields): string | undefined {
   if (!fields.canonical || fields.canonical.expectedRevision) return undefined;
   const adapter = newAgentAdapter(fields);
-  // An empty command is "you have not chosen yet", which the save path already reports as its own
-  // missing-field error; answering it here would put a runtime refusal on a blank form.
+  // An empty command is "you have not chosen yet"; `newAgentCommandRefusal` is the sentence for
+  // that. Answering it here would put a runtime-attestation refusal on a blank form.
   if (adapter.length === 0 || isAttestedRuntime(adapter)) return undefined;
   return (
     `Tachyon cannot create an agent for '${adapter}' yet: canonical agent creation covers only the `
     + `runtimes it attests (${ATTESTED_RUNTIMES.join(", ")}). This is a limit of the creation path, `
     + "not a verdict on the runtime — the block lifts as soon as the runtime is attested."
   );
+}
+
+/** Matches `agentProfileStudioMutationSchemaV1.agentName` — the door New Agent save goes through. */
+const STUDIO_AGENT_NAME = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/;
+
+/**
+ * t-093a0d — why a NEW agent may not be saved yet, or `undefined` when the identity is acceptable.
+ * Blocking, live, same family as `newAgentRuntimeRefusal`. The door refuses an empty or illegal
+ * name; the form used to only grey Save via the dirty gate, so a pristine create (worktree ON by
+ * default) showed a dead button with no sentence, and unchecking worktree lit Save on an unnamed
+ * agent.
+ *
+ * Silent about an EXISTING profile (`expectedRevision`) and about a legacy entry (no `canonical`):
+ * neither is a creation. Edit locks the name field.
+ */
+export function newAgentNameRefusal(fields: AgentStudioFields): string | undefined {
+  if (!fields.canonical || fields.canonical.expectedRevision) return undefined;
+  const name = fields.name.trim();
+  if (name.length === 0) return "This agent needs a name before saving.";
+  if (!STUDIO_AGENT_NAME.test(name)) {
+    return "Name must start with a letter and use only letters, numbers, hyphens, and underscores.";
+  }
+  return undefined;
+}
+
+/**
+ * t-093a0d — the command half of the same answer. The door requires `runtime.executable` min 1.
+ * `newAgentRuntimeRefusal` stays silent on an empty command; this is the sentence that used to be
+ * missing. A non-empty unattested command still belongs to `newAgentRuntimeRefusal`.
+ */
+export function newAgentCommandRefusal(fields: AgentStudioFields): string | undefined {
+  if (!fields.canonical || fields.canonical.expectedRevision) return undefined;
+  if (fields.cmd.trim().length === 0) return "This agent needs a runtime command before saving.";
+  return undefined;
 }
 
 /**

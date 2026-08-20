@@ -50,6 +50,12 @@ export interface StudioFrameProps {
   saveInFlight: boolean;
   concurrencyStale?: boolean;
   loadFailed?: boolean;
+  /**
+   * t-7e4225 — when the terminal action lives in the document (New Agent's last wizard step),
+   * omit the header Save. Cancel stays: it is valid on every step. `loadFailed` already omits
+   * Save for a different reason (no document).
+   */
+  omitHeaderSave?: boolean;
   /** precomputed by the caller via dirtyGating.canSave — see the module doc above. */
   canSave: boolean;
   onSave: () => void;
@@ -95,7 +101,7 @@ export function StudioFrame(props: StudioFrameProps) {
             that does not exist. canSave={false} only greys the control; it still claims "there is
             something to save once conditions improve".
           */}
-          {!props.loadFailed && (
+          {!props.loadFailed && !props.omitHeaderSave && (
             <Button variant="primary" disabled={!props.canSave || props.frozen} onClick={props.onSave}>
               {props.saveInFlight ? labels.saving : labels.save}
             </Button>
