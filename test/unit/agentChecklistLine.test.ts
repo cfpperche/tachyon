@@ -58,12 +58,14 @@ describe("t-281339 — projectAgentChecklistLine", () => {
     });
   });
 
-  it("occupies no line when every step is completed", () => {
+  it("keeps the final completed step visible as n/n", () => {
     const snap = snapshotOf([
       { text: "one", status: "completed" },
       { text: "two", status: "completed" },
     ]);
-    expect(projectAgentChecklistLine(snap, COM)).toBeUndefined();
+    expect(projectAgentChecklistLine(snap, COM)).toEqual({
+      kind: "step", text: "two", position: 2, total: 2,
+    });
   });
 
   it("marks absent and does not show a leftover snapshot as current work", () => {

@@ -25,10 +25,16 @@ export function currentChecklistStep(snapshot: InternalChecklistRead):
   const currentIndex = index >= 0
     ? index
     : snapshot.items.findIndex((item) => item.status === "pending");
-  if (currentIndex < 0) return undefined;
+  // Keep a completed plan visible as `(n/n)`. A snapshot is still useful after
+  // the turn closes: disappearing the line made a finished checklist
+  // indistinguishable from one that had never been recorded.
+  const completedIndex = currentIndex < 0 && snapshot.items.every((item) => item.status === "completed")
+    ? snapshot.items.length - 1
+    : currentIndex;
+  if (completedIndex < 0) return undefined;
   return {
-    text: snapshot.items[currentIndex]!.text,
-    position: currentIndex + 1,
+    text: snapshot.items[completedIndex]!.text,
+    position: completedIndex + 1,
     total: snapshot.items.length,
   };
 }
