@@ -28,7 +28,9 @@ describe("webview preview route catalog (spec 278)", () => {
       // their output path is never a literal in esbuild.mjs; `buildsWebviewEntry` knows both build shapes.
       const view = /^\/dist\/webview\/(.+)\.js$/.exec(route.bundle)?.[1] ?? "";
       expect(buildsWebviewEntry(esbuild, view), `no esbuild entry for ${route.bundle}`).toBe(true);
-      expect(e.url).toBe(`/scripts/webview-preview/index.html?view=${e.view}&fixture=${e.fixture}`);
+      // t-772f6b — a fixture may name the tab/step it exists to show (`link`); the catalog URL is
+      // still exactly one formula, now with that suffix appended.
+      expect(e.url).toBe(`/scripts/webview-preview/index.html?view=${e.view}&fixture=${e.fixture}${route.fixtures[e.fixture].link ? `&${route.fixtures[e.fixture].link}` : ""}`);
       expect(e.frame).toEqual(route.frame);
     }
   });
