@@ -56,7 +56,9 @@ describe("t-a1ba6c studio worktree sections are in-flow fields (not sideActions 
     expect(src).not.toContain("<details");
     expect(src).not.toContain("<summary");
     expect(src).toContain('class="ash-static-section" aria-labelledby="ash-persistent-instructions-title"');
-    expect(src).toContain('class="ash-static-section" aria-labelledby="ash-worktree-title"');
+    // t-772f6b — the worktree section keeps its name for assistive tech but as `aria-label`: the
+    // visible heading used to repeat, one line above, what the section's own checkbox already said.
+    expect(src).toContain('class="ash-static-section" aria-label="Separate git checkout + branch"');
     expect(css).toContain(".ash-static-section");
     expect(css).not.toContain(".ash-fields details");
   });

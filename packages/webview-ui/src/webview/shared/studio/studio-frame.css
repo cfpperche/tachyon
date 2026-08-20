@@ -20,6 +20,13 @@
 .sf-errors { padding: var(--ds-2) var(--ds-4); display: grid; gap: var(--ds-1); }
 .sf-error-blocking { color: var(--ds-err); font-size: var(--ds-small); }
 .sf-error-nonblocking { color: var(--ds-warn); font-size: var(--ds-small); }
+/* t-49f6e8 — the summary's heading (count + cost, GOV.UK shape) and the jump control an error
+   becomes when the studio can name its field. The jump reads as the error text itself, made
+   actionable — not a second visual grammar, the same sentence underlined. */
+.sf-error-title { color: var(--ds-err); font-size: var(--ds-small); font-weight: var(--tachyon-weight-semibold); }
+.sf-error-jump { padding: 0; border: none; background: none; color: var(--ds-err); font-size: var(--ds-small); text-align: left; text-decoration: underline; cursor: pointer; }
+.sf-error-jump:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 2px; }
+.sf-error-warnings-label { color: var(--ds-muted); font-size: var(--ds-small); font-weight: var(--tachyon-weight-semibold); }
 .sf-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--ds-4); max-width: 1180px; width: 100%; margin: 0 auto; padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom); box-sizing: border-box; }
 /* spec 350 Amendment 4 — region-aware: fields spans the full width as a top band so richDoc + preview split
    into the two columns below when a studio uses all three regions together (Task Studio). A no-op for a

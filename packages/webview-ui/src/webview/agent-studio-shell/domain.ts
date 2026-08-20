@@ -439,7 +439,6 @@ export interface AgentProfileLabels {
   saveFirst: string;
   newAgentSetupHelp: string;
   provenanceTitle: string;
-  provenanceHelp: string;
   authoredProfile: string;
   hostAuthority: string;
   runtimeProjection: string;
@@ -477,7 +476,6 @@ export interface AgentProfileLabels {
   nativeConfigFullAccessLabel: string;
   nativeConfigFullAccessRisk: string;
   runtimeSelectorsTitle: string;
-  runtimeSelectorsHelp: string;
   runtimeModel: string;
   runtimeProvider: string;
   runtimeReasoningEffort: string;
@@ -497,10 +495,10 @@ export type AgentStudioTranslate = (message: string, ...args: (string | number |
 export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => message): AgentProfileLabels {
   return {
     lifecycleTitle: t("Agent lifecycle"),
-    lifecycleHelp: t("Operational actions use the loaded profile revision and stay separate from form save."),
+    lifecycleHelp: t("Runs against the saved profile, not unsaved form changes."),
     runtimeReadinessTitle: t("Canonical runtime readiness"),
     runtimeReady: t("Ready"), runtimeLimited: t("Limited"),
-    runtimeReadinessHelp: t("This is the effective canonical baseline for this runtime. Limitations remain in effect when you enable or start the agent."),
+    runtimeReadinessHelp: t("Limitations stay in effect when the agent runs."),
     runtimeLimitationBaselineUnverified: t("This runtime has no verified canonical baseline yet."),
     runtimeLimitationForkUnavailable: t("Native session fork is unavailable for this runtime."),
     runtimeLimitationPermissionPolicyPartial: t("Native permission-policy projection is not fully verified."),
@@ -511,17 +509,13 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     enableAgent: t("Enable agent"), disableAgent: t("Disable agent"), refresh: t("Refresh"), retryRefresh: t("Refresh and retry"),
     rename: t("Rename…"), forget: t("Forget…"), export: t("Export"), clone: t("Clone…"), import: t("Import…"),
     ownershipTitle: t("Declared subagents"),
-    ownershipHelp: t("Declared ownership groups these agents under this one in the sidebar. It does not change who actually spawns them, and it does not start anything."),
+    ownershipHelp: t("Groups these agents under this one in the sidebar; changes no spawning."),
     ownershipNone: t("This agent declares no subagents."),
     ownershipOwnedBy: t("This agent is already declared as a subagent of {0}, so it cannot own others."),
     ownershipNoCandidates: t("No other agent is available to declare. A candidate must be an agent that no one else owns and that declares no subagents of its own."),
     ownershipApply: t("Save declared subagents"),
     proposeGrantTitle: t("Saved Agent proposals"),
-    proposeGrantHelp: t(
-      "Lets this agent ASK you to create a new Saved Agent. It never creates one: every proposal waits"
-      + " in the Human Inbox for your review. Approving creates the agent enabled; starting it stays a"
-      + " separate action.",
-    ),
+    proposeGrantHelp: t("Lets this agent propose new Saved Agents; every proposal waits in the Human Inbox for your review."),
     proposeGrantRisk: t(
       "Grant this only to an agent you trust to spend your attention. It can propose repeatedly, and each"
       + " proposal is a decision you have to make. A proposed agent can never receive this same"
@@ -533,14 +527,13 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     saveFirst: t("Save or discard form changes before a lifecycle action."),
     newAgentSetupHelp: t("Save this agent to create its canonical profile. Then choose pre-authorized MCP servers, skills, and hooks in Runtime tooling."),
     provenanceTitle: t("Profile sources and authority"),
-    provenanceHelp: t("Only authored profile values are editable. Authority and runtime projection are read-only."),
     authoredProfile: t("Authored profile"), hostAuthority: t("Host authority"), runtimeProjection: t("Runtime projection"),
     writable: t("Writable"), readOnly: t("Read-only"), scope: t("Scope"), profileScope: t("Agent profile"), hostScope: t("Host"), runtimeScope: t("Runtime"),
     present: t("Present"), absent: t("Absent"), active: t("Active"), inactive: t("Inactive"), grants: t("Grants"),
     bindingsTitle: t("Bound profile data"), environmentValues: t("Environment values"), secrets: t("Secret references"),
     externalReferences: t("External references"), capabilities: t("Capabilities"), promptInputs: t("Prompt inputs"), profileIdentity: t("Profile identity"),
     nativeConfigTitle: t("Native configuration"),
-    nativeConfigHelp: t("Supported choices are projected into the agent's private runtime home. Raw runtime files and credentials are never shown here."),
+    nativeConfigHelp: t("Projected into the agent's private runtime home."),
     nativeConfigEmpty: t("No native configuration policy is authored for this agent."),
     nativeConfigPermissions: t("Permissions"),
     nativeConfigInterface: t("Interface"),
@@ -564,7 +557,6 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
       + " Only the agents you authorize here are affected — the setting is never inherited on its own.",
     ),
     runtimeSelectorsTitle: t("Runtime selectors"),
-    runtimeSelectorsHelp: t("Selectors are projected through measured native runtime arguments. Unsupported fields are not authored."),
     runtimeModel: t("Model"),
     runtimeProvider: t("Provider"),
     runtimeReasoningEffort: t("Reasoning effort"),
@@ -883,6 +875,96 @@ export function newAgentRuntimeRefusal(fields: AgentStudioFields): string | unde
   );
 }
 
+/**
+ * t-9aec3e — the first row-level refusal this studio raises client-side, for the same reason
+ * `newAgentRuntimeRefusal` exists: "Add value" and "Add secret reference" create rows that are
+ * BORN unnamed, and an unnamed row is a payload key the door refuses — measured on the devhost as
+ * "workspace command is invalid", a message that named neither the field nor the row. The form
+ * has to say which row before Save is worth clicking.
+ *
+ * Deliberately refuses ONLY what the door itself refuses: a blank value/secret name (the envelope
+ * refused exactly this) and a secret id of "" (the mutation schema requires `id` min 1). A secret
+ * with a blank provider is NOT refused here — the door accepts it, and a stricter client rule
+ * would strand a hand-authored profile this form did not write.
+ *
+ * t-49f6e8 — the STRUCTURED half of the same answer: naming the row precisely is only useful when
+ * the human can act on it, so the issue carries the section and position the UI needs to mark the
+ * guilty row and jump to it (WCAG G139), plus the short inline wording NN/g wants next to the
+ * field itself.
+ */
+export interface AgentEnvironmentRowIssue {
+  section: "values" | "secrets";
+  /** zero-based position within its section's rows. */
+  index: number;
+  /** which control of the row carries `aria-invalid`. */
+  field: "name" | "coordinate";
+  message: string;
+  short: string;
+}
+
+export function environmentRowIssue(fields: AgentStudioFields): AgentEnvironmentRowIssue | undefined {
+  const environment = fields.canonical?.environment;
+  if (!environment) return undefined;
+  const values = Object.entries(environment.values ?? {});
+  const valueIndex = values.findIndex(([name]) => name.trim().length === 0);
+  if (valueIndex >= 0) {
+    return { section: "values", index: valueIndex, field: "name", message: `Environment value ${valueIndex + 1} needs a variable name before saving.`, short: "Needs a variable name." };
+  }
+  const secrets = Object.entries(environment.secrets ?? {});
+  const nameIndex = secrets.findIndex(([name]) => name.trim().length === 0);
+  if (nameIndex >= 0) {
+    return { section: "secrets", index: nameIndex, field: "name", message: `Secret reference ${nameIndex + 1} needs a variable name before saving.`, short: "Needs a variable name." };
+  }
+  const coordinateIndex = secrets.findIndex(([, reference]) => reference.id.trim().length === 0);
+  if (coordinateIndex >= 0) {
+    return { section: "secrets", index: coordinateIndex, field: "coordinate", message: `Secret reference ${coordinateIndex + 1} needs a Keys coordinate (provider and id) before saving.`, short: "Needs a Keys coordinate." };
+  }
+  return undefined;
+}
+
+export function environmentRowProblem(fields: AgentStudioFields): string | undefined {
+  return environmentRowIssue(fields)?.message;
+}
+
+/**
+ * t-49f6e8 — a row the user can create must be destructible. `Add value`/`Add secret reference`
+ * used to birth rows with no remove control at all, so one stray click blocked Save until the
+ * human invented a name for a field they did not want — measured on the devhost: 0 remove
+ * controls against 2 add ones. Removal is by the row's CURRENT name (object keys cannot collide,
+ * so a name identifies exactly one row; the blank row "" included).
+ */
+export function removeEnvironmentValueRow(fields: AgentStudioFields, name: string): AgentStudioFields {
+  if (!fields.canonical) return fields;
+  const values = { ...(fields.canonical.environment.values ?? {}) };
+  delete values[name];
+  return { ...fields, canonical: { ...fields.canonical, environment: { ...fields.canonical.environment, values } } };
+}
+
+export function removeSecretReferenceRow(fields: AgentStudioFields, name: string): AgentStudioFields {
+  if (!fields.canonical) return fields;
+  const secrets = { ...(fields.canonical.environment.secrets ?? {}) };
+  delete secrets[name];
+  return { ...fields, canonical: { ...fields.canonical, environment: { ...fields.canonical.environment, secrets } } };
+}
+
+/**
+ * t-9aec3e — the payload never carries a half-created row: blank-named values and secrets
+ * without an id are dropped here, mirroring exactly the rows `environmentRowProblem` blocks
+ * Save on. The blocking error is the loud half (the human is told); this is the quiet half
+ * (the streamed patch and the save snapshot stay shapes the door accepts even mid-editing).
+ */
+function serializedEnvironment(environment: NonNullable<AgentStudioCanonicalContext["environment"]>): NonNullable<AgentStudioCanonicalContext["environment"]> {
+  const values = Object.fromEntries(
+    Object.entries(environment.values ?? {}).filter(([name]) => name.trim().length > 0),
+  );
+  const secrets = Object.fromEntries(
+    Object.entries(environment.secrets ?? {})
+      .filter(([name, reference]) => name.trim().length > 0 && reference.id.trim().length > 0)
+      .map(([name, reference]) => [name, structuredClone(reference)]),
+  );
+  return { values, secrets };
+}
+
 export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): AgentStudioPatch | undefined {
   if (!dirty) return undefined;
   if (!fields.canonical) return fields;
@@ -929,7 +1011,7 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
       // meaningful value here, not an omission: it is how the binding is cleared.
       instructions: fields.instructions,
       isolation: fields.isolate ? "transcript" : "",
-      environment: structuredClone(fields.canonical.environment),
+      environment: serializedEnvironment(fields.canonical.environment),
       nativeConfig,
       capabilities: structuredClone(fields.canonical.capabilities),
     },

@@ -835,7 +835,7 @@
   {
     "view": "agent-studio-shell",
     "fixture": "withheld-document",
-    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=withheld-document",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=withheld-document&ashTab=lifecycle",
     "frame": {
       "w": 900,
       "h": 900
@@ -889,7 +889,7 @@
   {
     "view": "agent-studio-shell",
     "fixture": "canonical-claude-bypass-off",
-    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=canonical-claude-bypass-off",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=canonical-claude-bypass-off&ashTab=runtime",
     "frame": {
       "w": 900,
       "h": 900
@@ -907,7 +907,7 @@
   {
     "view": "agent-studio-shell",
     "fixture": "canonical-claude-bypass-on",
-    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=canonical-claude-bypass-on",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=canonical-claude-bypass-on&ashTab=runtime",
     "frame": {
       "w": 900,
       "h": 900
@@ -925,7 +925,7 @@
   {
     "view": "agent-studio-shell",
     "fixture": "canonical-codex-danger-off",
-    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=canonical-codex-danger-off",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=canonical-codex-danger-off&ashTab=runtime",
     "frame": {
       "w": 900,
       "h": 900
@@ -943,7 +943,7 @@
   {
     "view": "agent-studio-shell",
     "fixture": "canonical-codex-danger-on",
-    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=canonical-codex-danger-on",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=canonical-codex-danger-on&ashTab=runtime",
     "frame": {
       "w": 900,
       "h": 900
@@ -961,7 +961,7 @@
   {
     "view": "agent-studio-shell",
     "fixture": "forget-plan",
-    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=forget-plan",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=forget-plan&ashTab=lifecycle",
     "frame": {
       "w": 900,
       "h": 900
@@ -979,7 +979,7 @@
   {
     "view": "agent-studio-shell",
     "fixture": "forget-plan-blocked",
-    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=forget-plan-blocked",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=forget-plan-blocked&ashTab=lifecycle",
     "frame": {
       "w": 900,
       "h": 900
