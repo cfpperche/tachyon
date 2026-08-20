@@ -670,7 +670,7 @@ would open as an ordinary folder and the scenario would silently test less than 
 | Dev-host | `<checkout>/.tachyon/dev-host/` (gitignored) — one per checkout |
 | Extension bits | this checkout via `--extensionDevelopmentPath=…/extension` |
 | Opened folder | mirror of the isolated **fixture** (never a repo root); multi-root opens `…/dev-host/workspace.code-workspace` over the same mirror |
-| Dependencies | Install with `npm ci` in the checkout when `node_modules` is absent; F5 refuses a missing dependency tree |
+| Dependencies | F5 creates the `node_modules` link only when its source belongs to the same checkout as the pointed extension; otherwise it refuses the cross-checkout setup. Install with `npm ci` in the checkout when no local dependency entry exists. |
 
 **To dogfood:** open VS Code **on that checkout** and press **F5** → **Tachyon: Dev Host**. Drive only
 the EDH window. If dependencies are missing, run `npm ci` in that checkout before pressing F5 again.
