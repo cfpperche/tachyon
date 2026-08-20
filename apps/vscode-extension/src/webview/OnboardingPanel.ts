@@ -25,7 +25,13 @@ export interface OnboardingDeps {
   /** Roots with a booted Tachyon workspace in this window. */
   attachedRoots(): Set<string>;
   /** The attached workspace's credential inventory, or resolves undefined when none is attached. */
-  secretInventory?(): Promise<{ stored: Array<{ provider: string; id: string }>; required: Array<{ agent: string; name: string; provider: string; id: string; purpose: string; present: boolean }> } | undefined>;
+  secretInventory?(): Promise<
+    | {
+        stored: Array<{ provider: string; id: string }>;
+        required: Array<{ agent: string; name: string; provider: string; id: string; purpose: string; present: boolean }>;
+      }
+    | undefined
+  >;
   /** Agent entries of the attached workspace, or undefined when none is attached. */
   agentCount(): number | undefined;
   checkTmux(): Promise<DoctorResult>;
@@ -33,7 +39,12 @@ export interface OnboardingDeps {
   checkNode(): Promise<NodeCheckResult>;
   initialize(): Promise<void>;
   openConfig(): void;
-  openAgentStudio(): void;
+  /**
+   * Open the agent-creation surface. Named for the DOOR (`tachyon.newAgentStudio`), not the retired
+   * five-tab AgentForm opener that `studioCutoverRouting.test.ts` keeps out of extension.ts — the
+   * dep's name must not collide with that retired symbol or the guard fires on a text scan.
+   */
+  openNewAgentStudio(): void;
   openKeys(): void;
 }
 
@@ -98,7 +109,7 @@ export class OnboardingPanelManager {
       // model refresh that follows is what turns the screen's step 2 to done.
       if (action.type === "initialize") { await this.deps.initialize(); return await this.send(session); }
       if (action.type === "openConfig") return this.deps.openConfig();
-      if (action.type === "openAgentStudio") return this.deps.openAgentStudio();
+      if (action.type === "openAgentStudio") return this.deps.openNewAgentStudio();
       if (action.type === "openKeys") return this.deps.openKeys();
     } catch (error) { session.post(errorMessage(safeError(error))); }
   }

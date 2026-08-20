@@ -3112,7 +3112,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     checkNode: () => probeEngineNodeRuntime(),
     initialize: async () => { await vscode.commands.executeCommand("tachyon.init"); },
     openConfig: () => { void vscode.commands.executeCommand("tachyon.openConfig"); },
-    openAgentStudio: () => { void vscode.commands.executeCommand("tachyon.newAgentStudio"); },
+    openNewAgentStudio: () => { void vscode.commands.executeCommand("tachyon.newAgentStudio"); },
     openKeys: () => { void vscode.commands.executeCommand("tachyon.openControl", "keys"); },
   });
   context.subscriptions.push({ dispose: () => onboardingPanels.dispose() });
