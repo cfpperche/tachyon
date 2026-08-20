@@ -439,7 +439,6 @@ export interface AgentProfileLabels {
   saveFirst: string;
   newAgentSetupHelp: string;
   provenanceTitle: string;
-  provenanceHelp: string;
   authoredProfile: string;
   hostAuthority: string;
   runtimeProjection: string;
@@ -477,7 +476,6 @@ export interface AgentProfileLabels {
   nativeConfigFullAccessLabel: string;
   nativeConfigFullAccessRisk: string;
   runtimeSelectorsTitle: string;
-  runtimeSelectorsHelp: string;
   runtimeModel: string;
   runtimeProvider: string;
   runtimeReasoningEffort: string;
@@ -497,10 +495,10 @@ export type AgentStudioTranslate = (message: string, ...args: (string | number |
 export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => message): AgentProfileLabels {
   return {
     lifecycleTitle: t("Agent lifecycle"),
-    lifecycleHelp: t("Operational actions use the loaded profile revision and stay separate from form save."),
+    lifecycleHelp: t("Runs against the saved profile, not unsaved form changes."),
     runtimeReadinessTitle: t("Canonical runtime readiness"),
     runtimeReady: t("Ready"), runtimeLimited: t("Limited"),
-    runtimeReadinessHelp: t("This is the effective canonical baseline for this runtime. Limitations remain in effect when you enable or start the agent."),
+    runtimeReadinessHelp: t("Limitations stay in effect when the agent runs."),
     runtimeLimitationBaselineUnverified: t("This runtime has no verified canonical baseline yet."),
     runtimeLimitationForkUnavailable: t("Native session fork is unavailable for this runtime."),
     runtimeLimitationPermissionPolicyPartial: t("Native permission-policy projection is not fully verified."),
@@ -511,17 +509,13 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     enableAgent: t("Enable agent"), disableAgent: t("Disable agent"), refresh: t("Refresh"), retryRefresh: t("Refresh and retry"),
     rename: t("Rename…"), forget: t("Forget…"), export: t("Export"), clone: t("Clone…"), import: t("Import…"),
     ownershipTitle: t("Declared subagents"),
-    ownershipHelp: t("Declared ownership groups these agents under this one in the sidebar. It does not change who actually spawns them, and it does not start anything."),
+    ownershipHelp: t("Groups these agents under this one in the sidebar; changes no spawning."),
     ownershipNone: t("This agent declares no subagents."),
     ownershipOwnedBy: t("This agent is already declared as a subagent of {0}, so it cannot own others."),
     ownershipNoCandidates: t("No other agent is available to declare. A candidate must be an agent that no one else owns and that declares no subagents of its own."),
     ownershipApply: t("Save declared subagents"),
     proposeGrantTitle: t("Saved Agent proposals"),
-    proposeGrantHelp: t(
-      "Lets this agent ASK you to create a new Saved Agent. It never creates one: every proposal waits"
-      + " in the Human Inbox for your review. Approving creates the agent enabled; starting it stays a"
-      + " separate action.",
-    ),
+    proposeGrantHelp: t("Lets this agent propose new Saved Agents; every proposal waits in the Human Inbox for your review."),
     proposeGrantRisk: t(
       "Grant this only to an agent you trust to spend your attention. It can propose repeatedly, and each"
       + " proposal is a decision you have to make. A proposed agent can never receive this same"
@@ -533,14 +527,13 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     saveFirst: t("Save or discard form changes before a lifecycle action."),
     newAgentSetupHelp: t("Save this agent to create its canonical profile. Then choose pre-authorized MCP servers, skills, and hooks in Runtime tooling."),
     provenanceTitle: t("Profile sources and authority"),
-    provenanceHelp: t("Only authored profile values are editable. Authority and runtime projection are read-only."),
     authoredProfile: t("Authored profile"), hostAuthority: t("Host authority"), runtimeProjection: t("Runtime projection"),
     writable: t("Writable"), readOnly: t("Read-only"), scope: t("Scope"), profileScope: t("Agent profile"), hostScope: t("Host"), runtimeScope: t("Runtime"),
     present: t("Present"), absent: t("Absent"), active: t("Active"), inactive: t("Inactive"), grants: t("Grants"),
     bindingsTitle: t("Bound profile data"), environmentValues: t("Environment values"), secrets: t("Secret references"),
     externalReferences: t("External references"), capabilities: t("Capabilities"), promptInputs: t("Prompt inputs"), profileIdentity: t("Profile identity"),
     nativeConfigTitle: t("Native configuration"),
-    nativeConfigHelp: t("Supported choices are projected into the agent's private runtime home. Raw runtime files and credentials are never shown here."),
+    nativeConfigHelp: t("Projected into the agent's private runtime home."),
     nativeConfigEmpty: t("No native configuration policy is authored for this agent."),
     nativeConfigPermissions: t("Permissions"),
     nativeConfigInterface: t("Interface"),
@@ -564,7 +557,6 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
       + " Only the agents you authorize here are affected — the setting is never inherited on its own.",
     ),
     runtimeSelectorsTitle: t("Runtime selectors"),
-    runtimeSelectorsHelp: t("Selectors are projected through measured native runtime arguments. Unsupported fields are not authored."),
     runtimeModel: t("Model"),
     runtimeProvider: t("Provider"),
     runtimeReasoningEffort: t("Reasoning effort"),

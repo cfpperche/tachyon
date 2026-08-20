@@ -8,8 +8,9 @@ import { readTombstoneMessage, type StudioTombstoneInfo } from "../shared/studio
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import { useStudioFreeze } from "../shared/studio/useStudioFreeze";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
-import { Button, Chip, Input, Select, Textarea } from "../shared/ui";
+import { Button, Chip, Input, Select, Tabs, Textarea } from "../shared/ui";
 import { KitFilePicker } from "../shared/ui/kit";
+import { cx } from "../shared/ui/cx";
 import {
   AGENT_STUDIO_HOST_MESSAGE_NAMES,
   agentStudioTitleFor,
@@ -74,6 +75,16 @@ import { persistentInstructionsRefusal } from "@tachyon/shared/config/agentInstr
  * Working directory — t-a1ba6c) instead of the old hand-rolled chrome. Faithful port of the fields
  * — same field names — just no kind tabs (this studio only ever creates/edits `kind: "agent"`).
  *
+ * t-772f6b — the single column is gone. CREATE is a three-step wizard (Runtime → Workspace →
+ * Advanced; a numbered strip in the ds-tab grammar, past steps clickable, future steps only via
+ * Next — Baymard's 1:1 indicator + NN/g's sequential order); EDIT is tabs (General / Runtime /
+ * Environment / Tooling / Lifecycle — the shared Tabs component, one-word labels), because someone
+ * editing knows what they came for and should not walk the rest. A legacy entry (no canonical
+ * profile) has only the General content, so it renders FLAT — one section is not a tab. Every
+ * step and tab body stays MOUNTED (inactive ones `hidden`): the ids are load-bearing for the
+ * preview fixtures, the browser suite and the dev-host parity walk, none of which click before
+ * they read.
+ *
  * t-aa06a8 — the "Isolated harness" section is GONE, and with it `harnessRuntimeOfCmd`. It rendered
  * under `showHarness && !canonical`, and `canonical` is true for every agent this studio can load
  * (`AgentStudioAdapter.load` only reaches its `storage: "legacy"` arm for an agent-kind entry with
@@ -128,6 +139,25 @@ function ProfileBundlePicker({ onCancel, onSelect }: { onCancel(): void; onSelec
     }} />;
 }
 
+/**
+ * t-772f6b — preview deep link. The shipped webview has an empty `location.search`, so this only
+ * ever fires inside the preview harness: `…&fixture=forget-plan&ashTab=lifecycle` opens that
+ * fixture on the tab it exists to show, which is how the per-fixture catalog routes stay
+ * addressable without driving a click (the same property the forget-plan fixture was built for).
+ */
+function previewSurfaceParam(name: string): string | undefined {
+  if (typeof location === "undefined" || !location.search) return undefined;
+  const value = new URLSearchParams(location.search).get(name);
+  return value ?? undefined;
+}
+
+const PREVIEW_TAB = previewSurfaceParam("ashTab");
+/** 1-based in the URL — it sits next to the numbered strip, so `ashStep=1` is "1 Runtime". */
+const PREVIEW_STEP = (() => {
+  const asked = Number(previewSurfaceParam("ashStep") ?? Number.NaN);
+  return Number.isInteger(asked) && asked >= 1 ? asked - 1 : 0;
+})();
+
 export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: AgentStudioAppProps) {
   // t-5498a6 — candidate lists live outside `fields`: they are workspace state, not a profile edit,
   // and must never mark the form dirty. `undefined` means "not asked yet", which renders as Loading
@@ -160,8 +190,12 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   const [ownershipDraft, setOwnershipDraft] = useState<string[] | undefined>(undefined);
   const [bundleAction, setBundleAction] = useState<"clone" | "import" | undefined>();
   const [bundleDestination, setBundleDestination] = useState("");
-  const [bundleImportBase64, setBundleImportBase64] = useState<string | undefined>();
+  const [bundleImportBase64, setBundleImportBase64] = useState<string | undefined>(undefined);
   const bundleCancelButtonRef = useRef<HTMLButtonElement>(null);
+  // t-772f6b — where the human is in the wizard (create) or the tab row (edit). Reset with the
+  // document on every rebinding, same as every other piece of local state below.
+  const [step, setStep] = useState(Number.isInteger(PREVIEW_STEP) && PREVIEW_STEP >= 0 ? PREVIEW_STEP : 0);
+  const [editTab, setEditTab] = useState(PREVIEW_TAB ?? "general");
   const [ready, setReady] = useState(false);
   const entityRef = useRef<AgentStudioEntity | undefined>(undefined);
   const fieldsRef = useRef(fields);
@@ -206,6 +240,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     setOwnershipDraft(undefined);
     setBundleAction(undefined); setBundleDestination(""); setBundleImportBase64(undefined);
     setTombstone(undefined);
+    setStep(Number.isInteger(PREVIEW_STEP) && PREVIEW_STEP >= 0 ? PREVIEW_STEP : 0);
+    setEditTab(PREVIEW_TAB ?? "general");
     setReady(false);
     dispatch.post(readyMessage({ routeKey, mountNonce }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -253,6 +289,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setOwnership(d.entity.ownership);
       setOwnershipDraft(d.entity.ownership ? [...d.entity.ownership.subagents] : undefined);
       setBundleAction(undefined); setBundleDestination(""); setBundleImportBase64(undefined);
+      setStep(Number.isInteger(PREVIEW_STEP) && PREVIEW_STEP >= 0 ? PREVIEW_STEP : 0);
+      setEditTab(PREVIEW_TAB ?? "general");
       setReady(true);
     } else if (d.type === "tombstone") {
       setTombstone(readTombstoneMessage(d));
@@ -481,6 +519,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   const canonicalRuntime = canonical
     ? (mode === "edit" ? fields.canonical!.runtime.adapter : firstToken(fields.cmd).split(/[\\/]/).pop())
     : undefined;
+  const selectorsRuntime = canonical && (canonicalRuntime === "codex" || canonicalRuntime === "claude" || canonicalRuntime === "grok");
   const canonicalSnapshot = entity.profile;
   const profileLabels = entity.profileLabels ?? createAgentProfileLabels();
   const canonicalReadinessLimitationLabel = (limitation: NonNullable<typeof canonicalSnapshot>["readiness"]["limitations"][number]) => ({
@@ -525,6 +564,729 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     post(saveMessage());
   };
 
+  // ── t-772f6b section blocks ─────────────────────────────────────────────────────────────────
+  // Every control of the old single column, as named blocks. CREATE composes them into wizard
+  // steps, EDIT into tabs; a legacy edit (no canonical profile) has only the General blocks and
+  // renders them flat. Nothing was removed here — see the task journal's AFTER inventory for the
+  // item-by-item mapping.
+
+  const quickAddBlock = (
+    <div class="ash-group">
+      <div class="ash-label">Quick add</div>
+      <div class="ash-chips" role="group" aria-label="Quick add">
+        {entity.chips.map((c) => (
+          <Chip key={c.bin} class={c.detected ? "ash-runtime-chip ash-runtime-chip-detected" : "ash-runtime-chip"} active={fields.cmd === c.bin} disabled={!c.detected} onClick={() => c.detected && pickChip(c.bin)} title={c.installHint}>
+            <RuntimeLogo id={c.bin} />
+            {c.label}
+          </Chip>
+        ))}
+      </div>
+    </div>
+  );
+
+  const nameCommandBlock = (
+    <>
+      <div class="ash-grid ash-grid-compact">
+        <div class="ash-field">
+          <label class="ash-label" for="ash-name">Name</label>
+          <Input id="ash-name" value={fields.name} disabled={canonical && mode === "edit"} placeholder="frontend, revisor, dev..." onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />
+        </div>
+
+      </div>
+
+      <div class="ash-group">
+        <label class="ash-label" for="ash-cmd">Command</label>
+        {/* t-d68b8b — a canonical agent's placeholder is the attested list itself. It used to
+          * read "claude · codex · agy · npm run dev", offering by example the two things this
+          * door cannot create: an unattested runtime and a generic process. A legacy entry keeps
+          * the old text — that form still edits whatever is already written in `agents:`. */}
+        <Input id="ash-cmd" value={fields.cmd} placeholder={canonical ? ATTESTED_RUNTIMES.join(" · ") : "claude · codex · agy · npm run dev"} onInput={(e) => set("cmd", (e.currentTarget as HTMLInputElement).value)} />
+        {!canonical && <div class="ash-chips">
+          {flags.map((flag) => (
+            <Chip key={flag} active={fields.cmd.includes(flag)} onClick={() => toggleFlag(flag)}>{flag}</Chip>
+          ))}
+        </div>}
+      </div>
+    </>
+  );
+
+  const environmentBlock = canonical && (
+    <section class="ash-native-config-editor" aria-label="Environment">
+      <div class="ash-label">Environment values</div>
+      {Object.entries(fields.canonical!.environment.values ?? {}).map(([name, value]) => <div class="ash-native-config-editor-row" key={`env-${name}`}>
+        <Input aria-label="Environment variable name" value={name} onInput={(event) => {
+          const next = (event.currentTarget as HTMLInputElement).value;
+          updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: Object.fromEntries(Object.entries(current.canonical.environment.values ?? {}).map(([key, item]) => [key === name ? next : key, item])) } } }) : current);
+        }} />
+        <Input aria-label={`Value for ${name}`} value={value} onInput={(event) => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: { ...current.canonical.environment.values, [name]: (event.currentTarget as HTMLInputElement).value } } } }) : current)} />
+      </div>)}
+      <Button onClick={() => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: { ...current.canonical.environment.values, "": "" } } } }) : current)}>Add value</Button>
+      <div class="ash-label ash-label-break">Secret references</div>
+      {Object.entries(fields.canonical!.environment.secrets ?? {}).map(([name, reference]) => {
+        const stored = entity?.secretInventory?.stored ?? [];
+        const current = `${reference.provider}\0${reference.id}`;
+        const options = stored.some((item) => `${item.provider}\0${item.id}` === current) ? stored : [{ provider: reference.provider, id: reference.id }, ...stored];
+        return <div class="ash-native-config-editor-row" key={`secret-${name}`}>
+          <Input aria-label="Secret environment variable name" value={name} onInput={(event) => {
+            const next = (event.currentTarget as HTMLInputElement).value;
+            updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: Object.fromEntries(Object.entries(state.canonical.environment.secrets ?? {}).map(([key, item]) => [key === name ? next : key, item])) } } }) : state);
+          }} />
+          <Select aria-label={`Secret coordinate for ${name}`} value={current} onChange={(event) => {
+            const [provider, ...id] = (event.currentTarget as HTMLSelectElement).value.split("\0");
+            updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: { ...state.canonical.environment.secrets, [name]: { ...reference, provider, id: id.join("\0") } } } } }) : state);
+          }}>{options.map((item) => <option value={`${item.provider}\0${item.id}`} key={`${item.provider}\0${item.id}`}>{item.provider} / {item.id}{stored.some((key) => key.provider === item.provider && key.id === item.id) ? "" : " (missing from Keys)"}</option>)}</Select>
+          <Input aria-label={`Purpose for ${name}`} value={reference.purpose} placeholder="Purpose" onInput={(event) => updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: { ...state.canonical.environment.secrets, [name]: { ...reference, purpose: (event.currentTarget as HTMLInputElement).value } } } } }) : state)} />
+        </div>;
+      })}
+      <Button onClick={() => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, secrets: { ...current.canonical.environment.secrets, "": { provider: "", id: "", purpose: "" } } } } }) : current)}>Add secret reference</Button>
+    </section>
+  );
+
+  const selectorsBlock = selectorsRuntime && (
+    <section class="ash-native-config-editor" aria-labelledby="ash-runtime-selectors-title">
+      <div class="ash-label" id="ash-runtime-selectors-title">{profileLabels.runtimeSelectorsTitle}</div>
+      <div class="ash-grid ash-grid-compact">
+        <div class="ash-field">
+          <label class="ash-label" for="ash-runtime-model">{profileLabels.runtimeModel}</label>
+          <Input
+            id="ash-runtime-model"
+            value={fields.canonical!.runtime.model ?? ""}
+            placeholder={profileLabels.runtimeDefault}
+            onInput={(event) => updateFields((current) => current.canonical ? ({
+              ...current,
+              canonical: {
+                ...current.canonical,
+                runtime: {
+                  ...current.canonical.runtime,
+                  model: (event.currentTarget as HTMLInputElement).value || undefined,
+                },
+              },
+            }) : current)}
+          />
+        </div>
+        <div class="ash-field">
+          <label class="ash-label" for="ash-runtime-effort">{profileLabels.runtimeReasoningEffort}</label>
+          {canonicalRuntime === "claude" || canonicalRuntime === "grok" ? (
+            <Select
+              id="ash-runtime-effort"
+              value={fields.canonical!.runtime.reasoningEffort ?? ""}
+              onChange={(event) => updateFields((current) => current.canonical ? ({
+                ...current,
+                canonical: {
+                  ...current.canonical,
+                  runtime: {
+                    ...current.canonical.runtime,
+                    reasoningEffort: (event.currentTarget as HTMLSelectElement).value || undefined,
+                  },
+                },
+              }) : current)}
+            >
+              <option value="">{profileLabels.runtimeDefault}</option>
+              {/* t-26f508 — Grok's canonical levels add `none`/`minimal`; per-model menu ids
+                  are deliberately absent because they only resolve against one model. */}
+              {(canonicalRuntime === "grok"
+                ? ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+                : ["low", "medium", "high", "xhigh", "max"]
+              ).map((effort) => <option value={effort}>{effort}</option>)}
+            </Select>
+          ) : (
+            <Input
+              id="ash-runtime-effort"
+              value={fields.canonical!.runtime.reasoningEffort ?? ""}
+              placeholder={profileLabels.runtimeDefault}
+              onInput={(event) => updateFields((current) => current.canonical ? ({
+                ...current,
+                canonical: {
+                  ...current.canonical,
+                  runtime: {
+                    ...current.canonical.runtime,
+                    reasoningEffort: (event.currentTarget as HTMLInputElement).value || undefined,
+                  },
+                },
+              }) : current)}
+            />
+          )}
+        </div>
+        {canonicalRuntime === "codex" && (
+          <>
+            <div class="ash-field">
+              <label class="ash-label" for="ash-runtime-provider">{profileLabels.runtimeProvider}</label>
+              <Input
+                id="ash-runtime-provider"
+                value={fields.canonical!.runtime.provider ?? ""}
+                placeholder={profileLabels.runtimeDefault}
+                onInput={(event) => updateFields((current) => current.canonical ? ({
+                  ...current,
+                  canonical: {
+                    ...current.canonical,
+                    runtime: {
+                      ...current.canonical.runtime,
+                      provider: (event.currentTarget as HTMLInputElement).value || undefined,
+                    },
+                  },
+                }) : current)}
+              />
+            </div>
+            <div class="ash-field">
+              <label class="ash-label" for="ash-runtime-service-tier">{profileLabels.runtimeServiceTier}</label>
+              <Input
+                id="ash-runtime-service-tier"
+                value={fields.canonical!.runtime.serviceTier ?? ""}
+                placeholder={profileLabels.runtimeDefault}
+                onInput={(event) => updateFields((current) => current.canonical ? ({
+                  ...current,
+                  canonical: {
+                    ...current.canonical,
+                    runtime: {
+                      ...current.canonical.runtime,
+                      serviceTier: (event.currentTarget as HTMLInputElement).value || undefined,
+                    },
+                  },
+                }) : current)}
+              />
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
+
+  const nativeConfigBlock = selectorsRuntime && (
+    <section class="ash-native-config-editor" aria-labelledby="ash-native-config-editor-title">
+      <div>
+        <div class="ash-label" id="ash-native-config-editor-title">{profileLabels.nativeConfigTitle}</div>
+        <div class="hint">{profileLabels.nativeConfigHelp}</div>
+      </div>
+      {([
+        ["permissions", profileLabels.nativeConfigPermissions],
+        ["interface", profileLabels.nativeConfigInterface],
+        ["featureFlags", profileLabels.nativeConfigFeatureFlags],
+      ] as const).map(([family, label]) => (
+        <div class="ash-native-config-editor-row" key={family}>
+          <label for={`ash-native-config-${family}`}>{label}</label>
+          <Select
+            id={`ash-native-config-${family}`}
+            value={nativeConfigChoice(fields, family)}
+            onChange={(event) => updateFields((current) => setNativeConfigChoice(
+              current,
+              family,
+              (event.currentTarget as HTMLSelectElement).value as "exclude" | "global" | "workspace",
+            ))}
+          >
+            <option value="exclude">{profileLabels.nativeConfigExclude}</option>
+            {/* Only the sources this runtime actually honors are offered (t-26f508). */}
+            {nativeConfigSourceChoices(fields).map((source) => (
+              <option value={source} key={source}>
+                {source === "global" ? profileLabels.nativeConfigGlobal : profileLabels.nativeConfigWorkspace}
+              </option>
+            ))}
+          </Select>
+        </div>
+      ))}
+      {permissionAuthorizationChoices(fields).map((member) => {
+        const copy = permissionAuthorizationCopy(profileLabels, member);
+        return (
+          <div class="ash-native-config-authorization" key={member}>
+            <label class="check">
+              <input
+                type="checkbox"
+                id={`ash-native-config-authorize-${member}`}
+                checked={nativeConfigAuthorized(fields, member)}
+                onChange={(event) => updateFields((current) => setNativeConfigAuthorized(
+                  current,
+                  member,
+                  (event.currentTarget as HTMLInputElement).checked,
+                ))}
+              />
+              {" "}{copy.label}
+            </label>
+            <div class="hint ash-native-config-risk">{copy.risk}</div>
+          </div>
+        );
+      })}
+    </section>
+  );
+
+  // t-d48775 — this field was `disabled={canonical}` with an inviting placeholder and a hint
+  // reading "not editable in this form yet". `canonical` is true for every agent this studio
+  // can load (see the header), so it was disabled for everyone, and the binding the hint
+  // pointed at had no writer anywhere in the product. Both halves are gone: the text is
+  // authored here and published as a pinned document in the same transaction as the rest of
+  // the form, and the hint now says where it goes.
+  const instructionsBlock = (
+    <section class="ash-static-section" aria-labelledby="ash-persistent-instructions-title">
+      <div class="ash-label" id="ash-persistent-instructions-title">Persistent instructions</div>
+      {/*
+        * The placeholder is dropped on the read-only branch, and that is the SECOND half of
+        * this defect rather than a detail. A placeholder is an invitation to type; measured
+        * on the Visual QA capture, a disabled box carrying one is indistinguishable at a
+        * glance from the editable field below it, and the sentence that disqualifies it sits
+        * one line lower — where the eye only goes after trying. Empty is honest: nothing
+        * invites, and the hint carries the whole message.
+        */}
+      <Textarea disabled={foreignPersistentInstructions} rows={4} value={fields.instructions} placeholder={foreignPersistentInstructions ? "" : "you are a code reviewer; read the diff and flag correctness issues…"} onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
+      <div class="hint">{foreignPersistentInstructions
+        ? "This agent's instructions are published by another owner, not by this profile — they are shown read-only so a save cannot overwrite them."
+        : canonical
+          ? "Delivered at the start of every session for this agent. Saved in the profile as instructions.md and re-read on restart; clear the box to remove them."
+          : entity.persistentInstructionsHelp}</div>
+      {persistentInstructionsProblem && <div class="hint ash-native-config-risk">{persistentInstructionsProblem}</div>}
+    </section>
+  );
+
+  // t-bd14d8 — there is deliberately NO "Watch patterns" field in the block below, and re-adding
+  // one is a regression rather than a feature. A watch restarts the PROCESS when files change,
+  // and `Workspace.rebuildWatches` runs that restart as `{ stop: "force", session: "new" }` —
+  // "not resume", in the comment's own words. For `bun run dev` that is the feature; for an
+  // LLM agent it force-kills the session and opens a fresh one because somebody saved a file,
+  // discarding transcript and work in progress with no human gesture. Terminal Studio keeps
+  // its `Watch files` field, and that is where the capability lives.
+  const checksBlock = (
+    <div class="checks ash-check-grid">
+      <label><input type="checkbox" checked={fields.autostart} onChange={(e) => set("autostart", (e.currentTarget as HTMLInputElement).checked)} /> Auto-start</label>
+      <label><input type="checkbox" checked={fields.restartOnCrash} onChange={(e) => set("restartOnCrash", (e.currentTarget as HTMLInputElement).checked)} /> Restart on crash</label>
+      <label><input type="checkbox" checked={fields.attention} onChange={(e) => set("attention", (e.currentTarget as HTMLInputElement).checked)} /> Attention detection</label>
+    </div>
+  );
+
+  // t-da80ed — a worktree agent's working directory IS its worktree, and the runtime
+  // already overwrites this field's value with the worktree path. Leaving it editable let a
+  // human type a path, save without error, and get nothing. Disabled, and the placeholder
+  // states the directory that will actually be used instead of the workspace root.
+  const cwdBlock = (
+    <div class="ash-group">
+      <label class="ash-label" for="ash-cwd">Working directory</label>
+      <div class="ash-row">
+        <Input
+          id="ash-cwd"
+          disabled={fields.worktree}
+          value={fields.worktree ? "" : fields.cwd}
+          placeholder={fields.worktree ? "(its own git worktree — see below)" : `(workspace root: ${entity.defaultCwd})`}
+          onInput={(e) => set("cwd", (e.currentTarget as HTMLInputElement).value)}
+        />
+        <Button disabled={fields.worktree} onClick={() => post(browseMessage())}>Browse</Button>
+      </div>
+      {fields.worktree && <div class="hint">This agent runs in its own git worktree, which is its working directory. Turn the separate checkout off below to choose a directory.</div>}
+      {canonical && <div class="hint">{profileLabels.canonicalTrustHelp}</div>}
+    </div>
+  );
+
+  // t-a1ba6c — the worktree block lives in the main fields column (natural document flow
+  // under Working directory). t-772f6b — the section keeps its name for assistive tech
+  // (`aria-label`) but no longer repeats it as a visible heading right above a checkbox that
+  // says the same thing.
+  const worktreeBlock = (
+    <section class="ash-static-section" aria-label="Separate git checkout + branch">
+      <div class="hint">Sets the working directory; it does not confine writes.</div>
+      {/* t-da80ed — turning the separate checkout ON clears the working directory in the same gesture.
+        * Without this, a profile that already carried a cwd would disable the field while
+        * keeping its value, and the save would then refuse over something the human can
+        * neither see nor edit. */}
+      <label class="check"><input type="checkbox" checked={fields.worktree} onChange={(e) => {
+        const enabled = (e.currentTarget as HTMLInputElement).checked;
+        updateFields((current) => ({ ...current, worktree: enabled, ...(enabled ? { cwd: "" } : {}) }));
+      }} /> Run in its own git worktree + branch</label>
+      <label class="ash-label" for="ash-branch">Branch (blank = tachyon/&lt;name&gt;)</label>
+      <Input id="ash-branch" value={fields.branch} placeholder="feature/auth-redesign" onInput={(e) => set("branch", (e.currentTarget as HTMLInputElement).value)} />
+      <label class="ash-label" for="ash-base-ref">{profileLabels.worktreeBaseRefLabel}</label>
+      <Input id="ash-base-ref" value={fields.baseRef ?? ""} placeholder={profileLabels.worktreeBaseRefPlaceholder} onInput={(e) => set("baseRef", (e.currentTarget as HTMLInputElement).value)} />
+      {/* t-afc86e — setup is published as a pinned profile-local document in the same
+        * transaction as the save. It stays read-only when another owner published it. */}
+      <label class="ash-label" for="ash-setup">Setup commands (run once on create)</label>
+      <Textarea id="ash-setup" disabled={foreignWorkspaceCommands} rows={3} value={fields.worktreeSetup} placeholder="python -m venv .venv&#10;pip install -e . (one per line)" onInput={(e) => set("worktreeSetup", (e.currentTarget as HTMLTextAreaElement).value)} />
+      {foreignWorkspaceCommands && <div class="hint">This agent's setup is published by the workspace, not by this profile — it is shown read-only so a save cannot overwrite it.</div>}
+    </section>
+  );
+
+  // t-772f6b — the LIFECYCLE tab: operating an existing agent. The notice strip used to live at
+  // the bottom of this section; it is hoisted above the tab row now (see noticeBlock) so a
+  // result arrives visibly no matter which tab the human is on.
+  const identityBlock = canonicalSnapshot && mode === "edit" && (
+    <section class="ash-identity" aria-labelledby="ash-lifecycle-title">
+      <div class="ash-identity-heading">
+        <div>
+          <div class="ash-label" id="ash-lifecycle-title">{profileLabels.lifecycleTitle}</div>
+          <div class="hint">{profileLabels.lifecycleHelp}</div>
+        </div>
+        <span class={`ash-profile-state ${canonicalSnapshot?.enabled ? "ash-profile-state-active" : ""}`}>
+          {profileRetired ? profileLabels.closed : profileConflict ? profileLabels.conflict : profileNotice?.kind === "error" ? profileLabels.degraded : canonicalSnapshot?.enabled ? profileLabels.enabled : profileLabels.disabled}
+        </span>
+      </div>
+      <div class="ash-identity-actions" role="group" aria-label="Agent lifecycle actions">
+        <Button
+          variant={canonicalSnapshot?.enabled ? "default" : "primary"}
+          disabled={canonicalLifecycleDisabled}
+          onClick={() => canonicalSnapshot && runCanonicalLifecycle(
+            canonicalSnapshot.enabled ? "Disabling agent" : "Enabling agent",
+            setAgentProfileEnabledMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, !canonicalSnapshot.enabled),
+          )}
+        >{canonicalSnapshot?.enabled ? profileLabels.disableAgent : profileLabels.enableAgent}</Button>
+        <Button disabled={canonicalLifecycleDisabled} onClick={() => canonicalSnapshot && runCanonicalLifecycle(
+          "Refreshing profile",
+          refreshAgentProfileMessage(canonicalSnapshot.agentName),
+        )}>{profileLabels.refresh}</Button>
+        <Button disabled={canonicalLifecycleDisabled} onClick={() => {
+          setRenameValue(canonicalSnapshot?.agentName ?? "");
+          setRenameConfirmOpen(true);
+          setForgetConfirmOpen(false);
+        }}>{profileLabels.rename}</Button>
+        <Button variant="danger" disabled={canonicalLifecycleDisabled} onClick={() => {
+          // ONE click computes the plan. Nothing destructive is armed by this button any
+          // more — it opens a panel that is empty until the engine answers what it would do.
+          setForgetValue("");
+          setForgetPlan(undefined);
+          setForgetConfirmOpen(true);
+          setRenameConfirmOpen(false);
+          if (canonicalSnapshot) post(planAgentProfileForgetMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision));
+        }}>{profileLabels.forget}</Button>
+        <Button disabled={canonicalLifecycleDisabled} onClick={() => canonicalSnapshot && runCanonicalLifecycle("Exporting profile", exportSavedAgentProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision))}>{profileLabels.export}</Button>
+        <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("clone"); setBundleDestination(""); setBundleImportBase64(undefined); }}>{profileLabels.clone}</Button>
+        <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("import"); setBundleDestination(""); setBundleImportBase64(undefined); }}>{profileLabels.import}</Button>
+      </div>
+      {withheldDocuments.map((document) => (
+        <div class="ash-native-config-row ash-profile-withheld-document" key={`document:${document.referenceId}`}>
+          <code>{document.name}</code>
+          <span class="hint">{document.kind} · {document.path} · {profileLabels.withheldDocumentChanged}</span>
+          <Button
+            disabled={canonicalLifecycleDisabled}
+            onClick={() => canonicalSnapshot && runCanonicalLifecycle(
+              `Reauthorizing ${document.name}`,
+              reauthorizeProfileDocumentMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, document.referenceId),
+            )}
+          >{profileLabels.reauthorize}</Button>
+        </div>
+      ))}
+      {canonicalSnapshot && (
+        <div class="ash-runtime-readiness" aria-labelledby="ash-runtime-readiness-title">
+          <div class="ash-runtime-readiness-heading">
+            <div>
+              <div class="ash-label" id="ash-runtime-readiness-title">{profileLabels.runtimeReadinessTitle}</div>
+              <div class="hint">{profileLabels.runtimeReadinessHelp}</div>
+            </div>
+            <span class={`ash-profile-state ${canonicalSnapshot.readiness.state === "ready" ? "ash-profile-state-active" : "ash-runtime-readiness-limited"}`}>
+              {canonicalSnapshot.readiness.state === "ready" ? profileLabels.runtimeReady : profileLabels.runtimeLimited}
+            </span>
+          </div>
+          {canonicalSnapshot.readiness.limitations.length > 0 && (
+            <ul>{canonicalSnapshot.readiness.limitations.map((limitation) => <li key={limitation}>{canonicalReadinessLimitationLabel(limitation)}</li>)}</ul>
+          )}
+        </div>
+      )}
+      {canonicalSnapshot && ownership && (
+        <div class="ash-ownership" aria-labelledby="ash-ownership-title">
+          <div class="ash-label" id="ash-ownership-title">{profileLabels.ownershipTitle}</div>
+          <div class="hint">{profileLabels.ownershipHelp}</div>
+          {ownership.ownedBy !== undefined
+            ? <div class="ash-profile-status">{profileLabels.ownershipOwnedBy.replace("{0}", ownership.ownedBy)}</div>
+            : ownershipRows.length === 0
+              ? <div class="ash-profile-status">{profileLabels.ownershipNoCandidates}</div>
+              : (
+                <>
+                  <ul class="ash-ownership-list">
+                    {ownershipRows.map((child) => {
+                      const checked = (ownershipDraft ?? []).includes(child);
+                      return (
+                        <li key={child}>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={canonicalLifecycleDisabled}
+                              onChange={() => setOwnershipDraft((draft) => {
+                                const next = new Set(draft ?? []);
+                                if (next.has(child)) next.delete(child);
+                                else next.add(child);
+                                return [...next].sort();
+                              })}
+                            />
+                            <span>{child}</span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {ownership.subagents.length === 0 && <div class="hint">{profileLabels.ownershipNone}</div>}
+                  <div class="ash-profile-replace-confirm-actions">
+                    <Button
+                      variant="primary"
+                      disabled={canonicalLifecycleDisabled || !ownershipDirty}
+                      onClick={() => runCanonicalLifecycle(
+                        "Saving declared subagents",
+                        setAgentProfileSubagentsMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, [...(ownershipDraft ?? [])]),
+                      )}
+                    >{profileLabels.ownershipApply}</Button>
+                  </div>
+                </>
+              )}
+        </div>
+      )}
+      {canonicalSnapshot && (
+        <div class="ash-ownership" aria-labelledby="ash-propose-grant-title">
+          <div class="ash-label" id="ash-propose-grant-title">{profileLabels.proposeGrantTitle}</div>
+          <div class="hint">{profileLabels.proposeGrantHelp}</div>
+          <label class="check">
+            <input
+              type="checkbox"
+              id="ash-propose-grant"
+              checked={canonicalSnapshot.bindings.grants.proposeSavedAgent}
+              disabled={canonicalLifecycleDisabled}
+              onChange={(event) => runCanonicalLifecycle(
+                (event.currentTarget as HTMLInputElement).checked
+                  ? "Granting Saved Agent proposals"
+                  : "Revoking Saved Agent proposals",
+                setAgentProfileProposeGrantMessage(
+                  canonicalSnapshot.agentName,
+                  canonicalSnapshot.revision,
+                  (event.currentTarget as HTMLInputElement).checked,
+                ),
+              )}
+            />
+            {" "}{profileLabels.proposeGrantLabel}
+          </label>
+          <div class="hint ash-native-config-risk">{profileLabels.proposeGrantRisk}</div>
+          <div class="ash-profile-status">
+            {canonicalSnapshot.bindings.grants.proposeSavedAgent
+              ? profileLabels.proposeGrantOn
+              : profileLabels.proposeGrantOff}
+          </div>
+        </div>
+      )}
+      {dirty && <div class="ash-profile-status">{profileLabels.saveFirst}</div>}
+      {renameConfirmOpen && canonicalSnapshot && (
+        <div class="ash-profile-replace-confirm" aria-labelledby="ash-rename-confirm-title">
+          <div class="ash-profile-replace-confirm-title" id="ash-rename-confirm-title">Rename this agent?</div>
+          <label class="ash-label" for="ash-rename-value">New name</label>
+          <Input id="ash-rename-value" value={renameValue} onInput={(event) => setRenameValue((event.currentTarget as HTMLInputElement).value)} />
+          <div class="ash-profile-replace-confirm-actions">
+            <Button ref={renameCancelButtonRef} onClick={() => setRenameConfirmOpen(false)}>Cancel</Button>
+            <Button variant="primary" disabled={renameValue === canonicalSnapshot.agentName || !/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(renameValue)} onClick={() => runCanonicalLifecycle(
+              "Renaming agent",
+              renameAgentProfileMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, renameValue),
+            )}>Rename agent</Button>
+          </div>
+        </div>
+      )}
+      {forgetConfirmOpen && canonicalSnapshot && (
+        <div class="ash-profile-delete-confirm" aria-labelledby="ash-forget-confirm-title">
+          <div class="ash-profile-delete-confirm-title" id="ash-forget-confirm-title">Forget {canonicalSnapshot.agentName}</div>
+          <ForgetPlanView result={forgetPlan} />
+          {forgetPlan?.kind === "plan" && forgetPlan.plan.executable && (
+            <>
+              <div>Type <strong>{canonicalSnapshot.agentName}</strong> to approve the plan above.</div>
+              <Input aria-label="Agent name confirmation" value={forgetValue} onInput={(event) => setForgetValue((event.currentTarget as HTMLInputElement).value)} />
+            </>
+          )}
+          <div class="ash-profile-delete-confirm-actions">
+            <Button ref={forgetCancelButtonRef} onClick={() => { setForgetConfirmOpen(false); setForgetPlan(undefined); }}>Cancel</Button>
+            <Button
+              variant="danger"
+              disabled={forgetPlan?.kind !== "plan" || !forgetPlan.plan.executable || forgetValue !== canonicalSnapshot.agentName}
+              onClick={() => forgetPlan?.kind === "plan" && runCanonicalLifecycle(
+                "Forgetting agent",
+                // The plan's revision, not the snapshot's: the human approved THAT reading of
+                // the workspace, and if the profile moved since, the engine must refuse rather
+                // than execute a plan nobody was shown.
+                forgetAgentProfileMessage(canonicalSnapshot.agentName, forgetPlan.plan.revision, forgetValue),
+              )}
+            >Approve and execute</Button>
+          </div>
+        </div>
+      )}
+      {bundleAction === "import" && !bundleImportBase64 && (
+        <ProfileBundlePicker onCancel={() => setBundleAction(undefined)} onSelect={setBundleImportBase64} />
+      )}
+      {bundleAction && (bundleAction === "clone" || bundleImportBase64) && canonicalSnapshot && (
+        <div class="ash-profile-replace-confirm" aria-labelledby="ash-bundle-action-title">
+          <div class="ash-profile-replace-confirm-title" id="ash-bundle-action-title">{bundleAction === "clone" ? "Clone portable profile" : "Import portable profile"}</div>
+          <div>Creates a new disabled agent. Secrets, grants and workspace bindings must be authorized again.</div>
+          <label class="ash-label" for="ash-bundle-destination">New agent name</label>
+          <Input id="ash-bundle-destination" value={bundleDestination} onInput={(event) => setBundleDestination((event.currentTarget as HTMLInputElement).value)} />
+          <div class="ash-profile-replace-confirm-actions">
+            <Button ref={bundleCancelButtonRef} onClick={() => { setBundleAction(undefined); setBundleImportBase64(undefined); }}>Cancel</Button>
+            <Button variant="primary" disabled={!/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(bundleDestination)} onClick={() => runCanonicalLifecycle(
+              bundleAction === "clone" ? "Cloning profile" : "Importing profile",
+              bundleAction === "clone"
+                ? cloneSavedAgentProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, bundleDestination)
+                : importSavedAgentProfileBundleMessage(canonicalSnapshot.agentName, bundleDestination, bundleImportBase64!),
+            )}>{bundleAction === "clone" ? "Clone agent" : "Import agent"}</Button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+
+  // t-772f6b — the TOOLING tab: what the profile references and is authorized to use. The
+  // provenance cards, bindings counts and read-only native-config table moved here from the top
+  // of the old column — they are diagnostics of the same subject the tooling rows describe.
+  const sourcesBlock = canonicalSnapshot && mode === "edit" && (
+    <section class="ash-profile-sources" aria-labelledby="ash-profile-sources-title">
+      <div>
+        <div class="ash-label" id="ash-profile-sources-title">{profileLabels.provenanceTitle}</div>
+      </div>
+      <div class="ash-profile-source-grid">
+        <ProfileSourceCard title={profileLabels.authoredProfile} access={profileLabels.writable} scope={profileLabels.profileScope} state={canonicalSnapshot.provenance.canonical.sha256.slice(0, 12) + "…"} />
+        <ProfileSourceCard title={profileLabels.hostAuthority} access={profileLabels.readOnly} scope={profileLabels.hostScope} state={`${profileLabels.grants}: ${canonicalSnapshot.provenance.authority.grants}`} />
+        <ProfileSourceCard title={profileLabels.runtimeProjection} access={profileLabels.readOnly} scope={profileLabels.runtimeScope} state={canonicalSnapshot.provenance.projection.active ? profileLabels.active : profileLabels.inactive} />
+      </div>
+      <div class="ash-profile-bindings">
+        <div class="ash-label">{profileLabels.bindingsTitle}</div>
+        <span>{profileLabels.environmentValues}: {canonicalSnapshot.bindings.environmentValueNames.length}</span>
+        <span>{profileLabels.secrets}: {canonicalSnapshot.bindings.secretNames.length}</span>
+        <span>{profileLabels.externalReferences}: {canonicalSnapshot.bindings.externalReferences}</span>
+        <span>{profileLabels.capabilities}: {Object.values(canonicalSnapshot.bindings.capabilities).reduce((sum, count) => sum + count, 0)}</span>
+        <span>{profileLabels.promptInputs}: {Object.entries(canonicalSnapshot.bindings.prompt).filter(([key, value]) => key !== "memoryPolicy" && value === true).length}</span>
+        <span>{profileLabels.profileIdentity}: <code>{canonicalSnapshot.agentId.slice(0, 8)}…</code></span>
+      </div>
+      <div class="ash-native-config">
+        <div class="ash-label">{profileLabels.nativeConfigTitle}</div>
+        {(canonicalSnapshot.provenance.nativeConfig ?? []).length === 0
+          ? <div class="ash-native-config-empty">{profileLabels.nativeConfigEmpty}</div>
+          : canonicalSnapshot.provenance.nativeConfig!.map((entry) => (
+            <div class="ash-native-config-row" key={entry.family}>
+              <code>{entry.family}</code>
+              <span>{entry.source} · {entry.treatment} · {entry.refresh}</span>
+              <span>{entry.lifecycle.join(", ")}</span>
+              <span class={`ash-native-config-${entry.support}`} title={entry.reason}>
+                {entry.support === "supported" ? profileLabels.supported : profileLabels.unsupported}
+              </span>
+            </div>
+          ))}
+      </div>
+      <div class="ash-native-config">
+        <div class="ash-label">Runtime tooling</div>
+        <div class="hint">Only pre-authorized references can be enabled here.</div>
+        {(["skills", "mcp", "hooks"] as const).map((family) => canonicalSnapshot.bindings.tooling[family].map((item) => {
+          const enabled = fields.canonical?.capabilities[family].includes(item.id) ?? false;
+          return <label class="check" key={`${family}:${item.id}`}>
+            <input type="checkbox" checked={enabled} disabled={mutationDisabled} onChange={(event) => updateFields((current) => {
+              if (!current.canonical) return current;
+              const selected = new Set(current.canonical.capabilities[family]);
+              if ((event.currentTarget as HTMLInputElement).checked) selected.add(item.id);
+              else selected.delete(item.id);
+              return { ...current, canonical: {
+                ...current.canonical,
+                capabilities: { ...current.canonical.capabilities, [family]: [...selected].sort() },
+              } };
+            })} />
+            <code>{item.id}</code> <span class="hint">{family} · {item.scope}</span>
+          </label>;
+        }))}
+        {Object.values(canonicalSnapshot.bindings.tooling).every((items) => items.length === 0) && <div class="ash-native-config-empty">No pre-authorized tooling references are available for this profile.</div>}
+        {/* t-5498a6 — the two selectors. Kept separate because a skill installed by a
+          * Tachyon plugin and one written by hand here are different things: the plugin is
+          * versioned and pinned at its own tree, the hand-written one has only its content.
+          * The discriminator is the plugin LOCKFILE, never a content comparison — a plugin
+          * skill edited by hand diverges and is still the plugin's. */}
+        <div class="ash-label ash-label-break">Workspace skills (not from a plugin)</div>
+        <div class="hint">Authorize also enables it; untick above to disable without withdrawing authorization.</div>
+        {candidates === undefined
+          ? <div class="ash-native-config-empty">Loading…</div>
+          : candidates.workspaceSkills.length === 0
+            ? <div class="ash-native-config-empty">No hand-written skills in this workspace for this runtime.</div>
+            : candidates.workspaceSkills.map((skill) => (
+              <div class="ash-native-config-row" key={`ws:${skill.name}`}>
+                <code>{skill.name}</code>
+                <span class="hint">{skill.path}{skill.authorized?.stale ? " · content changed since you authorized it" : ""}</span>
+                {/* t-4a2a6f — three states, three renders. An already-authorized skill used
+                  * to render exactly like a new one, so the only control offered was the one
+                  * the core correctly refuses to honour silently. */}
+                {skill.authorized === undefined
+                  ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizeSkillMessage(entity.name, skill.name, false))}>Authorize</Button>
+                  : skill.authorized.stale
+                    ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizeSkillMessage(entity.name, skill.name, true))}>Reauthorize</Button>
+                    : <span class="hint">Authorized</span>}
+              </div>
+            ))}
+
+        <div class="ash-label ash-label-break">Tachyon plugins</div>
+        <div class="hint">Authorize grants everything the plugin exposes for this runtime, enabled; a plugin with ungrantable parts is refused whole.</div>
+        {candidates === undefined
+          ? <div class="ash-native-config-empty">Loading…</div>
+          : candidates.plugins.length === 0
+            ? <div class="ash-native-config-empty">No Tachyon plugins are installed in this workspace.</div>
+            : candidates.plugins.map((plugin) => (
+              <div class="ash-native-config-row" key={`plugin:${plugin.name}`}>
+                <code>{plugin.name}@{plugin.version}</code>
+                {/* t-4a2a6f — the version delta, not two digests. "authorized at 2.1.2, now
+                  * 3.0.0" is the sentence that connects the refusal to the plugin update
+                  * that caused it; `expected e468…, consumed 6f27…` never did. */}
+                <span class="hint">
+                  {plugin.skills.length > 0 ? plugin.skills.join(", ") : "—"}
+                  {plugin.authorized?.stale
+                    ? plugin.authorized.version && plugin.authorized.version !== plugin.version
+                      ? ` · authorized at ${plugin.authorized.version}, now ${plugin.version}`
+                      : " · content changed since you authorized it"
+                    : ""}
+                </span>
+                {/* An unauthorizable plugin is SHOWN with its reason rather than hidden: a
+                  * hidden option is indistinguishable from one that is not installed. */}
+                {!plugin.authorizable
+                  ? <span class="hint" title={plugin.reason}>{plugin.reason}</span>
+                  : plugin.authorized === undefined
+                    ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizePluginMessage(entity.name, plugin.name, false))}>Authorize</Button>
+                    : plugin.authorized.stale
+                      ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizePluginMessage(entity.name, plugin.name, true))}>Reauthorize</Button>
+                      : <span class="hint">Authorized</span>}
+              </div>
+            ))}
+        {/* t-c01f91 — git-hook plugins act on the CHECKOUT, not on an agent: `core.hooksPath`
+          * is repository-level and shared by every worktree, so they already apply and
+          * there is nothing to authorize. Named rather than dropped silently — listing one
+          * as "installs nothing" would read as absence while the gate is working. */}
+        {candidates && candidates.checkoutOnlyPlugins.length > 0 && (
+          <div class="hint">Already active on this checkout via git hooks, not agent capabilities: {candidates.checkoutOnlyPlugins.join(", ")}.</div>
+        )}
+      </div>
+    </section>
+  );
+
+  // t-772f6b — hoisted out of the lifecycle section: a lifecycle/tooling result has to be
+  // visible from EVERY tab, not only the one whose button produced it.
+  const noticeBlock = (profileBusy || profileNotice) && mode === "edit" && (
+    <div class={`ash-profile-notice ${profileNotice?.kind === "error" ? "ash-profile-notice-error" : ""}`} role="status" aria-live="polite">
+      {profileBusy ? `${profileBusy}…` : profileNotice?.text}
+      {profileNotice?.kind === "error" && canonicalSnapshot && !profileBusy && <Button onClick={() => runCanonicalLifecycle(
+        "Refreshing profile",
+        refreshAgentProfileMessage(canonicalSnapshot.agentName),
+      )}>{profileLabels.retryRefresh}</Button>}
+    </div>
+  );
+
+  // ── composition ────────────────────────────────────────────────────────────────────────────
+
+  const generalBlocks = (
+    <>
+      {quickAddBlock}
+      {nameCommandBlock}
+      {instructionsBlock}
+      {checksBlock}
+      {cwdBlock}
+      {worktreeBlock}
+    </>
+  );
+
+  // CREATE — the wizard. Three steps for a canonical creation (the third collapses away only
+  // for a restored legacy patch, which carries none of the advanced sections).
+  const wizardSteps = [
+    { label: "Runtime", body: <>{quickAddBlock}{nameCommandBlock}</> },
+    { label: "Workspace", body: <>{instructionsBlock}{checksBlock}{cwdBlock}{worktreeBlock}</> },
+    ...(canonical ? [{ label: "Advanced", body: <>{environmentBlock}{selectorsBlock}{nativeConfigBlock}</> }] : []),
+  ];
+  const safeStep = Math.min(step, wizardSteps.length - 1);
+
+  // EDIT — the tab row. Tabs exist only where their content does: Runtime/Environment need a
+  // canonical profile (and Runtime additionally one of the three selector runtimes), Tooling and
+  // Lifecycle need a loaded profile snapshot. A legacy entry ends with a single section and
+  // renders flat.
+  const editTabDefs = [
+    { id: "general", label: "General", body: generalBlocks },
+    ...(selectorsRuntime ? [{ id: "runtime", label: "Runtime", body: <>{selectorsBlock}{nativeConfigBlock}</> }] : []),
+    ...(canonical ? [{ id: "environment", label: "Environment", body: environmentBlock }] : []),
+    ...(canonicalSnapshot && mode === "edit" ? [{ id: "tooling", label: "Tooling", body: sourcesBlock }] : []),
+    ...(canonicalSnapshot && mode === "edit" ? [{ id: "lifecycle", label: "Lifecycle", body: identityBlock }] : []),
+  ];
+  const activeTabId = editTabDefs.some((t) => t.id === editTab) ? editTab : editTabDefs[0].id;
+
   return (
     <StudioFrame
       title={agentStudioTitleFor(mode, entityId, entity)}
@@ -540,674 +1302,50 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       regions={{
         fields: (
           <div class="ash-fields">
-            {canonical && mode === "edit" && (
-              <section class="ash-identity" aria-labelledby="ash-lifecycle-title">
-                <div class="ash-identity-heading">
-                  <div>
-                    <div class="ash-label" id="ash-lifecycle-title">{profileLabels.lifecycleTitle}</div>
-                    <div class="hint">{profileLabels.lifecycleHelp}</div>
-                  </div>
-                  <span class={`ash-profile-state ${canonicalSnapshot?.enabled ? "ash-profile-state-active" : ""}`}>
-                    {profileRetired ? profileLabels.closed : profileConflict ? profileLabels.conflict : profileNotice?.kind === "error" ? profileLabels.degraded : canonicalSnapshot?.enabled ? profileLabels.enabled : profileLabels.disabled}
-                  </span>
-                </div>
-                <div class="ash-identity-actions" role="group" aria-label="Agent lifecycle actions">
-                  <Button
-                    variant={canonicalSnapshot?.enabled ? "default" : "primary"}
-                    disabled={canonicalLifecycleDisabled}
-                    onClick={() => canonicalSnapshot && runCanonicalLifecycle(
-                      canonicalSnapshot.enabled ? "Disabling agent" : "Enabling agent",
-                      setAgentProfileEnabledMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, !canonicalSnapshot.enabled),
-                    )}
-                  >{canonicalSnapshot?.enabled ? profileLabels.disableAgent : profileLabels.enableAgent}</Button>
-                  <Button disabled={canonicalLifecycleDisabled} onClick={() => canonicalSnapshot && runCanonicalLifecycle(
-                    "Refreshing profile",
-                    refreshAgentProfileMessage(canonicalSnapshot.agentName),
-                  )}>{profileLabels.refresh}</Button>
-                  <Button disabled={canonicalLifecycleDisabled} onClick={() => {
-                    setRenameValue(canonicalSnapshot?.agentName ?? "");
-                    setRenameConfirmOpen(true);
-                    setForgetConfirmOpen(false);
-                  }}>{profileLabels.rename}</Button>
-                  <Button variant="danger" disabled={canonicalLifecycleDisabled} onClick={() => {
-                    // ONE click computes the plan. Nothing destructive is armed by this button any
-                    // more — it opens a panel that is empty until the engine answers what it would do.
-                    setForgetValue("");
-                    setForgetPlan(undefined);
-                    setForgetConfirmOpen(true);
-                    setRenameConfirmOpen(false);
-                    if (canonicalSnapshot) post(planAgentProfileForgetMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision));
-                  }}>{profileLabels.forget}</Button>
-                  <Button disabled={canonicalLifecycleDisabled} onClick={() => canonicalSnapshot && runCanonicalLifecycle("Exporting profile", exportSavedAgentProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision))}>{profileLabels.export}</Button>
-                  <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("clone"); setBundleDestination(""); setBundleImportBase64(undefined); }}>{profileLabels.clone}</Button>
-                  <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("import"); setBundleDestination(""); setBundleImportBase64(undefined); }}>{profileLabels.import}</Button>
-                </div>
-                {withheldDocuments.map((document) => (
-                  <div class="ash-native-config-row ash-profile-withheld-document" key={`document:${document.referenceId}`}>
-                    <code>{document.name}</code>
-                    <span class="hint">{document.kind} · {document.path} · {profileLabels.withheldDocumentChanged}</span>
-                    <Button
-                      disabled={canonicalLifecycleDisabled}
-                      onClick={() => canonicalSnapshot && runCanonicalLifecycle(
-                        `Reauthorizing ${document.name}`,
-                        reauthorizeProfileDocumentMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, document.referenceId),
-                      )}
-                    >{profileLabels.reauthorize}</Button>
-                  </div>
-                ))}
-                {canonicalSnapshot && (
-                  <div class="ash-runtime-readiness" aria-labelledby="ash-runtime-readiness-title">
-                    <div class="ash-runtime-readiness-heading">
-                      <div>
-                        <div class="ash-label" id="ash-runtime-readiness-title">{profileLabels.runtimeReadinessTitle}</div>
-                        <div class="hint">{profileLabels.runtimeReadinessHelp}</div>
-                      </div>
-                      <span class={`ash-profile-state ${canonicalSnapshot.readiness.state === "ready" ? "ash-profile-state-active" : "ash-runtime-readiness-limited"}`}>
-                        {canonicalSnapshot.readiness.state === "ready" ? profileLabels.runtimeReady : profileLabels.runtimeLimited}
-                      </span>
-                    </div>
-                    {canonicalSnapshot.readiness.limitations.length > 0 && (
-                      <ul>{canonicalSnapshot.readiness.limitations.map((limitation) => <li key={limitation}>{canonicalReadinessLimitationLabel(limitation)}</li>)}</ul>
-                    )}
-                  </div>
-                )}
-                {canonicalSnapshot && ownership && (
-                  <div class="ash-ownership" aria-labelledby="ash-ownership-title">
-                    <div class="ash-label" id="ash-ownership-title">{profileLabels.ownershipTitle}</div>
-                    <div class="hint">{profileLabels.ownershipHelp}</div>
-                    {ownership.ownedBy !== undefined
-                      ? <div class="ash-profile-status">{profileLabels.ownershipOwnedBy.replace("{0}", ownership.ownedBy)}</div>
-                      : ownershipRows.length === 0
-                        ? <div class="ash-profile-status">{profileLabels.ownershipNoCandidates}</div>
-                        : (
-                          <>
-                            <ul class="ash-ownership-list">
-                              {ownershipRows.map((child) => {
-                                const checked = (ownershipDraft ?? []).includes(child);
-                                return (
-                                  <li key={child}>
-                                    <label>
-                                      <input
-                                        type="checkbox"
-                                        checked={checked}
-                                        disabled={canonicalLifecycleDisabled}
-                                        onChange={() => setOwnershipDraft((draft) => {
-                                          const next = new Set(draft ?? []);
-                                          if (next.has(child)) next.delete(child);
-                                          else next.add(child);
-                                          return [...next].sort();
-                                        })}
-                                      />
-                                      <span>{child}</span>
-                                    </label>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                            {ownership.subagents.length === 0 && <div class="hint">{profileLabels.ownershipNone}</div>}
-                            <div class="ash-profile-replace-confirm-actions">
-                              <Button
-                                variant="primary"
-                                disabled={canonicalLifecycleDisabled || !ownershipDirty}
-                                onClick={() => runCanonicalLifecycle(
-                                  "Saving declared subagents",
-                                  setAgentProfileSubagentsMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, [...(ownershipDraft ?? [])]),
-                                )}
-                              >{profileLabels.ownershipApply}</Button>
-                            </div>
-                          </>
-                        )}
-                  </div>
-                )}
-                {canonicalSnapshot && (
-                  <div class="ash-ownership" aria-labelledby="ash-propose-grant-title">
-                    <div class="ash-label" id="ash-propose-grant-title">{profileLabels.proposeGrantTitle}</div>
-                    <div class="hint">{profileLabels.proposeGrantHelp}</div>
-                    <label class="check">
-                      <input
-                        type="checkbox"
-                        id="ash-propose-grant"
-                        checked={canonicalSnapshot.bindings.grants.proposeSavedAgent}
-                        disabled={canonicalLifecycleDisabled}
-                        onChange={(event) => runCanonicalLifecycle(
-                          (event.currentTarget as HTMLInputElement).checked
-                            ? "Granting Saved Agent proposals"
-                            : "Revoking Saved Agent proposals",
-                          setAgentProfileProposeGrantMessage(
-                            canonicalSnapshot.agentName,
-                            canonicalSnapshot.revision,
-                            (event.currentTarget as HTMLInputElement).checked,
-                          ),
-                        )}
-                      />
-                      {" "}{profileLabels.proposeGrantLabel}
-                    </label>
-                    <div class="hint ash-native-config-risk">{profileLabels.proposeGrantRisk}</div>
-                    <div class="ash-profile-status">
-                      {canonicalSnapshot.bindings.grants.proposeSavedAgent
-                        ? profileLabels.proposeGrantOn
-                        : profileLabels.proposeGrantOff}
-                    </div>
-                  </div>
-                )}
-                {dirty && <div class="ash-profile-status">{profileLabels.saveFirst}</div>}
-                {renameConfirmOpen && canonicalSnapshot && (
-                  <div class="ash-profile-replace-confirm" aria-labelledby="ash-rename-confirm-title">
-                    <div class="ash-profile-replace-confirm-title" id="ash-rename-confirm-title">Rename this agent?</div>
-                    <label class="ash-label" for="ash-rename-value">New name</label>
-                    <Input id="ash-rename-value" value={renameValue} onInput={(event) => setRenameValue((event.currentTarget as HTMLInputElement).value)} />
-                    <div class="ash-profile-replace-confirm-actions">
-                      <Button ref={renameCancelButtonRef} onClick={() => setRenameConfirmOpen(false)}>Cancel</Button>
-                      <Button variant="primary" disabled={renameValue === canonicalSnapshot.agentName || !/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(renameValue)} onClick={() => runCanonicalLifecycle(
-                        "Renaming agent",
-                        renameAgentProfileMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, renameValue),
-                      )}>Rename agent</Button>
-                    </div>
-                  </div>
-                )}
-                {forgetConfirmOpen && canonicalSnapshot && (
-                  <div class="ash-profile-delete-confirm" aria-labelledby="ash-forget-confirm-title">
-                    <div class="ash-profile-delete-confirm-title" id="ash-forget-confirm-title">Forget {canonicalSnapshot.agentName}</div>
-                    <ForgetPlanView result={forgetPlan} />
-                    {forgetPlan?.kind === "plan" && forgetPlan.plan.executable && (
-                      <>
-                        <div>Type <strong>{canonicalSnapshot.agentName}</strong> to approve the plan above.</div>
-                        <Input aria-label="Agent name confirmation" value={forgetValue} onInput={(event) => setForgetValue((event.currentTarget as HTMLInputElement).value)} />
-                      </>
-                    )}
-                    <div class="ash-profile-delete-confirm-actions">
-                      <Button ref={forgetCancelButtonRef} onClick={() => { setForgetConfirmOpen(false); setForgetPlan(undefined); }}>Cancel</Button>
-                      <Button
-                        variant="danger"
-                        disabled={forgetPlan?.kind !== "plan" || !forgetPlan.plan.executable || forgetValue !== canonicalSnapshot.agentName}
-                        onClick={() => forgetPlan?.kind === "plan" && runCanonicalLifecycle(
-                          "Forgetting agent",
-                          // The plan's revision, not the snapshot's: the human approved THAT reading of
-                          // the workspace, and if the profile moved since, the engine must refuse rather
-                          // than execute a plan nobody was shown.
-                          forgetAgentProfileMessage(canonicalSnapshot.agentName, forgetPlan.plan.revision, forgetValue),
-                        )}
-                      >Approve and execute</Button>
-                    </div>
-                  </div>
-                )}
-                {bundleAction === "import" && !bundleImportBase64 && (
-                  <ProfileBundlePicker onCancel={() => setBundleAction(undefined)} onSelect={setBundleImportBase64} />
-                )}
-                {bundleAction && (bundleAction === "clone" || bundleImportBase64) && canonicalSnapshot && (
-                  <div class="ash-profile-replace-confirm" aria-labelledby="ash-bundle-action-title">
-                    <div class="ash-profile-replace-confirm-title" id="ash-bundle-action-title">{bundleAction === "clone" ? "Clone portable profile" : "Import portable profile"}</div>
-                    <div>Creates a new disabled agent. Secrets, grants and workspace bindings must be authorized again.</div>
-                    <label class="ash-label" for="ash-bundle-destination">New agent name</label>
-                    <Input id="ash-bundle-destination" value={bundleDestination} onInput={(event) => setBundleDestination((event.currentTarget as HTMLInputElement).value)} />
-                    <div class="ash-profile-replace-confirm-actions">
-                      <Button ref={bundleCancelButtonRef} onClick={() => { setBundleAction(undefined); setBundleImportBase64(undefined); }}>Cancel</Button>
-                      <Button variant="primary" disabled={!/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(bundleDestination)} onClick={() => runCanonicalLifecycle(
-                        bundleAction === "clone" ? "Cloning profile" : "Importing profile",
-                        bundleAction === "clone"
-                          ? cloneSavedAgentProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, bundleDestination)
-                          : importSavedAgentProfileBundleMessage(canonicalSnapshot.agentName, bundleDestination, bundleImportBase64!),
-                      )}>{bundleAction === "clone" ? "Clone agent" : "Import agent"}</Button>
-                    </div>
-                  </div>
-                )}
-                {(profileBusy || profileNotice) && (
-                  <div class={`ash-profile-notice ${profileNotice?.kind === "error" ? "ash-profile-notice-error" : ""}`} role="status" aria-live="polite">
-                    {profileBusy ? `${profileBusy}…` : profileNotice?.text}
-                    {profileNotice?.kind === "error" && canonicalSnapshot && !profileBusy && <Button onClick={() => runCanonicalLifecycle(
-                      "Refreshing profile",
-                      refreshAgentProfileMessage(canonicalSnapshot.agentName),
-                    )}>{profileLabels.retryRefresh}</Button>}
-                  </div>
-                )}
-              </section>
-            )}
-            {canonicalSnapshot && mode === "edit" && (
-              <section class="ash-profile-sources" aria-labelledby="ash-profile-sources-title">
-                <div>
-                  <div class="ash-label" id="ash-profile-sources-title">{profileLabels.provenanceTitle}</div>
-                  <div class="hint">{profileLabels.provenanceHelp}</div>
-                </div>
-                <div class="ash-profile-source-grid">
-                  <ProfileSourceCard title={profileLabels.authoredProfile} access={profileLabels.writable} scope={profileLabels.profileScope} state={canonicalSnapshot.provenance.canonical.sha256.slice(0, 12) + "…"} />
-                  <ProfileSourceCard title={profileLabels.hostAuthority} access={profileLabels.readOnly} scope={profileLabels.hostScope} state={`${profileLabels.grants}: ${canonicalSnapshot.provenance.authority.grants}`} />
-                  <ProfileSourceCard title={profileLabels.runtimeProjection} access={profileLabels.readOnly} scope={profileLabels.runtimeScope} state={canonicalSnapshot.provenance.projection.active ? profileLabels.active : profileLabels.inactive} />
-                </div>
-                <div class="ash-profile-bindings">
-                  <div class="ash-label">{profileLabels.bindingsTitle}</div>
-                  <span>{profileLabels.environmentValues}: {canonicalSnapshot.bindings.environmentValueNames.length}</span>
-                  <span>{profileLabels.secrets}: {canonicalSnapshot.bindings.secretNames.length}</span>
-                  <span>{profileLabels.externalReferences}: {canonicalSnapshot.bindings.externalReferences}</span>
-                  <span>{profileLabels.capabilities}: {Object.values(canonicalSnapshot.bindings.capabilities).reduce((sum, count) => sum + count, 0)}</span>
-                  <span>{profileLabels.promptInputs}: {Object.entries(canonicalSnapshot.bindings.prompt).filter(([key, value]) => key !== "memoryPolicy" && value === true).length}</span>
-                  <span>{profileLabels.profileIdentity}: <code>{canonicalSnapshot.agentId.slice(0, 8)}…</code></span>
-                </div>
-                <div class="ash-native-config">
-                  <div class="ash-label">{profileLabels.nativeConfigTitle}</div>
-                  <div class="hint">{profileLabels.nativeConfigHelp}</div>
-                  {(canonicalSnapshot.provenance.nativeConfig ?? []).length === 0
-                    ? <div class="ash-native-config-empty">{profileLabels.nativeConfigEmpty}</div>
-                    : canonicalSnapshot.provenance.nativeConfig!.map((entry) => (
-                      <div class="ash-native-config-row" key={entry.family}>
-                        <code>{entry.family}</code>
-                        <span>{entry.source} · {entry.treatment} · {entry.refresh}</span>
-                        <span>{entry.lifecycle.join(", ")}</span>
-                        <span class={`ash-native-config-${entry.support}`} title={entry.reason}>
-                          {entry.support === "supported" ? profileLabels.supported : profileLabels.unsupported}
-                        </span>
-                      </div>
-                    ))}
-                </div>
-                <div class="ash-native-config">
-                  <div class="ash-label">Runtime tooling</div>
-                  <div class="hint">Only pre-authorized profile references can be enabled here. Commands, source files, credentials and runtime trust state are never shown.</div>
-                  {(["skills", "mcp", "hooks"] as const).map((family) => canonicalSnapshot.bindings.tooling[family].map((item) => {
-                    const enabled = fields.canonical?.capabilities[family].includes(item.id) ?? false;
-                    return <label class="check" key={`${family}:${item.id}`}>
-                      <input type="checkbox" checked={enabled} disabled={mutationDisabled} onChange={(event) => updateFields((current) => {
-                        if (!current.canonical) return current;
-                        const selected = new Set(current.canonical.capabilities[family]);
-                        if ((event.currentTarget as HTMLInputElement).checked) selected.add(item.id);
-                        else selected.delete(item.id);
-                        return { ...current, canonical: {
-                          ...current.canonical,
-                          capabilities: { ...current.canonical.capabilities, [family]: [...selected].sort() },
-                        } };
-                      })} />
-                      <code>{item.id}</code> <span class="hint">{family} · {item.scope}</span>
-                    </label>;
-                  }))}
-                  {Object.values(canonicalSnapshot.bindings.tooling).every((items) => items.length === 0) && <div class="ash-native-config-empty">No pre-authorized tooling references are available for this profile.</div>}
-                  {/* t-5498a6 — the two selectors. Kept separate because a skill installed by a
-                    * Tachyon plugin and one written by hand here are different things: the plugin is
-                    * versioned and pinned at its own tree, the hand-written one has only its content.
-                    * The discriminator is the plugin LOCKFILE, never a content comparison — a plugin
-                    * skill edited by hand diverges and is still the plugin's. */}
-                  <div class="ash-label ash-label-break">Workspace skills (not from a plugin)</div>
-                  <div class="hint">Authorize gives this agent the skill and enables it. Untick it above to turn it off without withdrawing the authorization — the pinned digest survives, so turning it back on needs no fresh approval.</div>
-                  {candidates === undefined
-                    ? <div class="ash-native-config-empty">Loading…</div>
-                    : candidates.workspaceSkills.length === 0
-                      ? <div class="ash-native-config-empty">No hand-written skills in this workspace for this runtime.</div>
-                      : candidates.workspaceSkills.map((skill) => (
-                        <div class="ash-native-config-row" key={`ws:${skill.name}`}>
-                          <code>{skill.name}</code>
-                          <span class="hint">{skill.path}{skill.authorized?.stale ? " · content changed since you authorized it" : ""}</span>
-                          {/* t-4a2a6f — three states, three renders. An already-authorized skill used
-                            * to render exactly like a new one, so the only control offered was the one
-                            * the core correctly refuses to honour silently. */}
-                          {skill.authorized === undefined
-                            ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizeSkillMessage(entity.name, skill.name, false))}>Authorize</Button>
-                            : skill.authorized.stale
-                              ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizeSkillMessage(entity.name, skill.name, true))}>Reauthorize</Button>
-                              : <span class="hint">Authorized</span>}
-                        </div>
-                      ))}
-
-                  <div class="ash-label ash-label-break">Tachyon plugins</div>
-                  <div class="hint">Authorize gives this agent everything the plugin exposes for this runtime, enabled. A plugin that also installs something no capability grant can carry is refused whole — half a plugin reported as success would be worse than a refusal.</div>
-                  {candidates === undefined
-                    ? <div class="ash-native-config-empty">Loading…</div>
-                    : candidates.plugins.length === 0
-                      ? <div class="ash-native-config-empty">No Tachyon plugins are installed in this workspace.</div>
-                      : candidates.plugins.map((plugin) => (
-                        <div class="ash-native-config-row" key={`plugin:${plugin.name}`}>
-                          <code>{plugin.name}@{plugin.version}</code>
-                          {/* t-4a2a6f — the version delta, not two digests. "authorized at 2.1.2, now
-                            * 3.0.0" is the sentence that connects the refusal to the plugin update
-                            * that caused it; `expected e468…, consumed 6f27…` never did. */}
-                          <span class="hint">
-                            {plugin.skills.length > 0 ? plugin.skills.join(", ") : "—"}
-                            {plugin.authorized?.stale
-                              ? plugin.authorized.version && plugin.authorized.version !== plugin.version
-                                ? ` · authorized at ${plugin.authorized.version}, now ${plugin.version}`
-                                : " · content changed since you authorized it"
-                              : ""}
-                          </span>
-                          {/* An unauthorizable plugin is SHOWN with its reason rather than hidden: a
-                            * hidden option is indistinguishable from one that is not installed. */}
-                          {!plugin.authorizable
-                            ? <span class="hint" title={plugin.reason}>{plugin.reason}</span>
-                            : plugin.authorized === undefined
-                              ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizePluginMessage(entity.name, plugin.name, false))}>Authorize</Button>
-                              : plugin.authorized.stale
-                                ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizePluginMessage(entity.name, plugin.name, true))}>Reauthorize</Button>
-                                : <span class="hint">Authorized</span>}
-                        </div>
-                      ))}
-                  {/* t-c01f91 — git-hook plugins act on the CHECKOUT, not on an agent: `core.hooksPath`
-                    * is repository-level and shared by every worktree, so they already apply and
-                    * there is nothing to authorize. Named rather than dropped silently — listing one
-                    * as "installs nothing" would read as absence while the gate is working. */}
-                  {candidates && candidates.checkoutOnlyPlugins.length > 0 && (
-                    <div class="hint">Already active on this checkout via git hooks, not agent capabilities: {candidates.checkoutOnlyPlugins.join(", ")}.</div>
-                  )}
-                </div>
-              </section>
-            )}
-            <div class="ash-group">
-              <div class="ash-label">Quick add (detected on this machine)</div>
-              <div class="ash-chips" role="group" aria-label="Quick add">
-                {entity.chips.map((c) => (
-                  <Chip key={c.bin} class={c.detected ? "ash-runtime-chip ash-runtime-chip-detected" : "ash-runtime-chip"} active={fields.cmd === c.bin} disabled={!c.detected} onClick={() => c.detected && pickChip(c.bin)} title={c.installHint}>
-                    <RuntimeLogo id={c.bin} />
-                    {c.label}
-                  </Chip>
-                ))}
-              </div>
-            </div>
-
-            <div class="ash-grid ash-grid-compact">
-              <div class="ash-field">
-                <label class="ash-label" for="ash-name">Name</label>
-                <Input id="ash-name" value={fields.name} disabled={canonical && mode === "edit"} placeholder="frontend, revisor, dev..." onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />
-              </div>
-
-            </div>
-
-            <div class="ash-group">
-              <label class="ash-label" for="ash-cmd">Command</label>
-              {/* t-d68b8b — a canonical agent's placeholder is the attested list itself. It used to
-                * read "claude · codex · agy · npm run dev", offering by example the two things this
-                * door cannot create: an unattested runtime and a generic process. A legacy entry keeps
-                * the old text — that form still edits whatever is already written in `agents:`. */}
-              <Input id="ash-cmd" value={fields.cmd} placeholder={canonical ? ATTESTED_RUNTIMES.join(" · ") : "claude · codex · agy · npm run dev"} onInput={(e) => set("cmd", (e.currentTarget as HTMLInputElement).value)} />
-              {!canonical && <div class="ash-chips">
-                {flags.map((flag) => (
-                  <Chip key={flag} active={fields.cmd.includes(flag)} onClick={() => toggleFlag(flag)}>{flag}</Chip>
-                ))}
-              </div>}
-            </div>
-
-            {canonical && (
-              <section class="ash-native-config-editor" aria-labelledby="ash-environment-title">
-                <div class="ash-label" id="ash-environment-title">Environment</div>
-                <div class="hint">Literal values are passed to the runtime. Secret references are selected from Keys; secret values never appear in Agent Studio.</div>
-                <div class="ash-label">Environment values</div>
-                {Object.entries(fields.canonical!.environment.values ?? {}).map(([name, value]) => <div class="ash-native-config-editor-row" key={`env-${name}`}>
-                  <Input aria-label="Environment variable name" value={name} onInput={(event) => {
-                    const next = (event.currentTarget as HTMLInputElement).value;
-                    updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: Object.fromEntries(Object.entries(current.canonical.environment.values ?? {}).map(([key, item]) => [key === name ? next : key, item])) } } }) : current);
-                  }} />
-                  <Input aria-label={`Value for ${name}`} value={value} onInput={(event) => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: { ...current.canonical.environment.values, [name]: (event.currentTarget as HTMLInputElement).value } } } }) : current)} />
-                </div>)}
-                <Button onClick={() => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: { ...current.canonical.environment.values, "": "" } } } }) : current)}>Add value</Button>
-                <div class="ash-label">Secret references</div>
-                {Object.entries(fields.canonical!.environment.secrets ?? {}).map(([name, reference]) => {
-                  const stored = entity?.secretInventory?.stored ?? [];
-                  const current = `${reference.provider}\0${reference.id}`;
-                  const options = stored.some((item) => `${item.provider}\0${item.id}` === current) ? stored : [{ provider: reference.provider, id: reference.id }, ...stored];
-                  return <div class="ash-native-config-editor-row" key={`secret-${name}`}>
-                    <Input aria-label="Secret environment variable name" value={name} onInput={(event) => {
-                      const next = (event.currentTarget as HTMLInputElement).value;
-                      updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: Object.fromEntries(Object.entries(state.canonical.environment.secrets ?? {}).map(([key, item]) => [key === name ? next : key, item])) } } }) : state);
-                    }} />
-                    <Select aria-label={`Secret coordinate for ${name}`} value={current} onChange={(event) => {
-                      const [provider, ...id] = (event.currentTarget as HTMLSelectElement).value.split("\0");
-                      updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: { ...state.canonical.environment.secrets, [name]: { ...reference, provider, id: id.join("\0") } } } } }) : state);
-                    }}>{options.map((item) => <option value={`${item.provider}\0${item.id}`} key={`${item.provider}\0${item.id}`}>{item.provider} / {item.id}{stored.some((key) => key.provider === item.provider && key.id === item.id) ? "" : " (missing from Keys)"}</option>)}</Select>
-                    <Input aria-label={`Purpose for ${name}`} value={reference.purpose} placeholder="Purpose" onInput={(event) => updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: { ...state.canonical.environment.secrets, [name]: { ...reference, purpose: (event.currentTarget as HTMLInputElement).value } } } } }) : state)} />
-                  </div>;
-                })}
-                <Button onClick={() => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, secrets: { ...current.canonical.environment.secrets, "": { provider: "", id: "", purpose: "" } } } } }) : current)}>Add secret reference</Button>
-              </section>
-            )}
-
-            {canonical && (canonicalRuntime === "codex" || canonicalRuntime === "claude" || canonicalRuntime === "grok") && (
-              <section class="ash-native-config-editor" aria-labelledby="ash-runtime-selectors-title">
-                <div>
-                  <div class="ash-label" id="ash-runtime-selectors-title">{profileLabels.runtimeSelectorsTitle}</div>
-                  <div class="hint">{profileLabels.runtimeSelectorsHelp}</div>
-                </div>
-                <div class="ash-grid ash-grid-compact">
-                  <div class="ash-field">
-                    <label class="ash-label" for="ash-runtime-model">{profileLabels.runtimeModel}</label>
-                    <Input
-                      id="ash-runtime-model"
-                      value={fields.canonical!.runtime.model ?? ""}
-                      placeholder={profileLabels.runtimeDefault}
-                      onInput={(event) => updateFields((current) => current.canonical ? ({
-                        ...current,
-                        canonical: {
-                          ...current.canonical,
-                          runtime: {
-                            ...current.canonical.runtime,
-                            model: (event.currentTarget as HTMLInputElement).value || undefined,
-                          },
-                        },
-                      }) : current)}
-                    />
-                  </div>
-                  <div class="ash-field">
-                    <label class="ash-label" for="ash-runtime-effort">{profileLabels.runtimeReasoningEffort}</label>
-                    {canonicalRuntime === "claude" || canonicalRuntime === "grok" ? (
-                      <Select
-                        id="ash-runtime-effort"
-                        value={fields.canonical!.runtime.reasoningEffort ?? ""}
-                        onChange={(event) => updateFields((current) => current.canonical ? ({
-                          ...current,
-                          canonical: {
-                            ...current.canonical,
-                            runtime: {
-                              ...current.canonical.runtime,
-                              reasoningEffort: (event.currentTarget as HTMLSelectElement).value || undefined,
-                            },
-                          },
-                        }) : current)}
-                      >
-                        <option value="">{profileLabels.runtimeDefault}</option>
-                        {/* t-26f508 — Grok's canonical levels add `none`/`minimal`; per-model menu ids
-                            are deliberately absent because they only resolve against one model. */}
-                        {(canonicalRuntime === "grok"
-                          ? ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
-                          : ["low", "medium", "high", "xhigh", "max"]
-                        ).map((effort) => <option value={effort}>{effort}</option>)}
-                      </Select>
-                    ) : (
-                      <Input
-                        id="ash-runtime-effort"
-                        value={fields.canonical!.runtime.reasoningEffort ?? ""}
-                        placeholder={profileLabels.runtimeDefault}
-                        onInput={(event) => updateFields((current) => current.canonical ? ({
-                          ...current,
-                          canonical: {
-                            ...current.canonical,
-                            runtime: {
-                              ...current.canonical.runtime,
-                              reasoningEffort: (event.currentTarget as HTMLInputElement).value || undefined,
-                            },
-                          },
-                        }) : current)}
-                      />
-                    )}
-                  </div>
-                  {canonicalRuntime === "codex" && (
-                    <>
-                      <div class="ash-field">
-                        <label class="ash-label" for="ash-runtime-provider">{profileLabels.runtimeProvider}</label>
-                        <Input
-                          id="ash-runtime-provider"
-                          value={fields.canonical!.runtime.provider ?? ""}
-                          placeholder={profileLabels.runtimeDefault}
-                          onInput={(event) => updateFields((current) => current.canonical ? ({
-                            ...current,
-                            canonical: {
-                              ...current.canonical,
-                              runtime: {
-                                ...current.canonical.runtime,
-                                provider: (event.currentTarget as HTMLInputElement).value || undefined,
-                              },
-                            },
-                          }) : current)}
-                        />
-                      </div>
-                      <div class="ash-field">
-                        <label class="ash-label" for="ash-runtime-service-tier">{profileLabels.runtimeServiceTier}</label>
-                        <Input
-                          id="ash-runtime-service-tier"
-                          value={fields.canonical!.runtime.serviceTier ?? ""}
-                          placeholder={profileLabels.runtimeDefault}
-                          onInput={(event) => updateFields((current) => current.canonical ? ({
-                            ...current,
-                            canonical: {
-                              ...current.canonical,
-                              runtime: {
-                                ...current.canonical.runtime,
-                                serviceTier: (event.currentTarget as HTMLInputElement).value || undefined,
-                              },
-                            },
-                          }) : current)}
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
-              </section>
-            )}
-
-            {canonical && (canonicalRuntime === "codex" || canonicalRuntime === "claude" || canonicalRuntime === "grok") && (
-              <section class="ash-native-config-editor" aria-labelledby="ash-native-config-editor-title">
-                <div>
-                  <div class="ash-label" id="ash-native-config-editor-title">{profileLabels.nativeConfigTitle}</div>
-                  <div class="hint">{profileLabels.nativeConfigHelp}</div>
-                </div>
-                {([
-                  ["permissions", profileLabels.nativeConfigPermissions],
-                  ["interface", profileLabels.nativeConfigInterface],
-                  ["featureFlags", profileLabels.nativeConfigFeatureFlags],
-                ] as const).map(([family, label]) => (
-                  <div class="ash-native-config-editor-row" key={family}>
-                    <label for={`ash-native-config-${family}`}>{label}</label>
-                    <Select
-                      id={`ash-native-config-${family}`}
-                      value={nativeConfigChoice(fields, family)}
-                      onChange={(event) => updateFields((current) => setNativeConfigChoice(
-                        current,
-                        family,
-                        (event.currentTarget as HTMLSelectElement).value as "exclude" | "global" | "workspace",
-                      ))}
+            {mode === "new" ? (
+              <>
+                {/* The step strip reuses the ds-tab grammar; numbers keep the 1:1 indicator
+                  * honest (Baymard). Past steps are clickable, future ones only via Next. */}
+                <div class="ds-tabs ash-steps" role="tablist" aria-label="Create agent steps">
+                  {wizardSteps.map((s, i) => (
+                    <button
+                      key={s.label}
+                      type="button"
+                      role="tab"
+                      aria-selected={i === safeStep}
+                      class={cx("ds-tab", i === safeStep && "active", i > safeStep && "locked")}
+                      disabled={i > safeStep}
+                      onClick={() => i < safeStep && setStep(i)}
                     >
-                      <option value="exclude">{profileLabels.nativeConfigExclude}</option>
-                      {/* Only the sources this runtime actually honors are offered (t-26f508). */}
-                      {nativeConfigSourceChoices(fields).map((source) => (
-                        <option value={source} key={source}>
-                          {source === "global" ? profileLabels.nativeConfigGlobal : profileLabels.nativeConfigWorkspace}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
+                      <span class="ash-step-num">{i + 1}</span>{s.label}
+                    </button>
+                  ))}
+                </div>
+                {wizardSteps.map((s, i) => (
+                  <div class="ash-step" key={s.label} hidden={i !== safeStep}>{s.body}</div>
                 ))}
-                {permissionAuthorizationChoices(fields).map((member) => {
-                  const copy = permissionAuthorizationCopy(profileLabels, member);
-                  return (
-                    <div class="ash-native-config-authorization" key={member}>
-                      <label class="check">
-                        <input
-                          type="checkbox"
-                          id={`ash-native-config-authorize-${member}`}
-                          checked={nativeConfigAuthorized(fields, member)}
-                          onChange={(event) => updateFields((current) => setNativeConfigAuthorized(
-                            current,
-                            member,
-                            (event.currentTarget as HTMLInputElement).checked,
-                          ))}
-                        />
-                        {" "}{copy.label}
-                      </label>
-                      <div class="hint ash-native-config-risk">{copy.risk}</div>
-                    </div>
-                  );
-                })}
-              </section>
-            )}
-
-            {/*
-              * t-d48775 — this field was `disabled={canonical}` with an inviting placeholder and a hint
-              * reading "not editable in this form yet". `canonical` is true for every agent this studio
-              * can load (see the header), so it was disabled for everyone, and the binding the hint
-              * pointed at had no writer anywhere in the product. Both halves are gone: the text is
-              * authored here and published as a pinned document in the same transaction as the rest of
-              * the form, and the hint now says where it goes.
-              */}
-            <section class="ash-static-section" aria-labelledby="ash-persistent-instructions-title">
-              <div class="ash-label" id="ash-persistent-instructions-title">Persistent instructions</div>
-              {/*
-                * The placeholder is dropped on the read-only branch, and that is the SECOND half of
-                * this defect rather than a detail. A placeholder is an invitation to type; measured
-                * on the Visual QA capture, a disabled box carrying one is indistinguishable at a
-                * glance from the editable field below it, and the sentence that disqualifies it sits
-                * one line lower — where the eye only goes after trying. Empty is honest: nothing
-                * invites, and the hint carries the whole message.
-                */}
-              <Textarea disabled={foreignPersistentInstructions} rows={4} value={fields.instructions} placeholder={foreignPersistentInstructions ? "" : "you are a code reviewer; read the diff and flag correctness issues…"} onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
-              <div class="hint">{foreignPersistentInstructions
-                ? "This agent's instructions are published by another owner, not by this profile — they are shown read-only so a save cannot overwrite them."
-                : canonical
-                  ? "Delivered at the start of every session for this agent. Saved in the profile as instructions.md and re-read on restart; clear the box to remove them."
-                  : entity.persistentInstructionsHelp}</div>
-              {persistentInstructionsProblem && <div class="hint ash-native-config-risk">{persistentInstructionsProblem}</div>}
-            </section>
-
-            <><div class="checks ash-check-grid">
-              <label><input type="checkbox" checked={fields.autostart} onChange={(e) => set("autostart", (e.currentTarget as HTMLInputElement).checked)} /> Auto-start</label>
-              <label><input type="checkbox" checked={fields.restartOnCrash} onChange={(e) => set("restartOnCrash", (e.currentTarget as HTMLInputElement).checked)} /> Restart on crash</label>
-              <label><input type="checkbox" checked={fields.attention} onChange={(e) => set("attention", (e.currentTarget as HTMLInputElement).checked)} /> Attention detection</label>
-            </div>
-
-            {/* t-bd14d8 — there is deliberately NO "Watch patterns" field here, and re-adding one is a
-              * regression rather than a feature. A watch restarts the PROCESS when files change, and
-              * `Workspace.rebuildWatches` runs that restart as `{ stop: "force", session: "new" }` —
-              * "not resume", in the comment's own words. For `bun run dev` that is the feature; for an
-              * LLM agent it force-kills the session and opens a fresh one because somebody saved a file,
-              * discarding transcript and work in progress with no human gesture. Terminal Studio keeps
-              * its `Watch files` field, and that is where the capability lives. */}
-
-            {/* t-da80ed — a worktree agent's working directory IS its worktree, and the runtime
-             * already overwrites this field's value with the worktree path. Leaving it editable let a
-             * human type a path, save without error, and get nothing. Disabled, and the placeholder
-             * states the directory that will actually be used instead of the workspace root. */}
-            <div class="ash-group">
-              <label class="ash-label" for="ash-cwd">Working directory</label>
-              <div class="ash-row">
-                <Input
-                  id="ash-cwd"
-                  disabled={fields.worktree}
-                  value={fields.worktree ? "" : fields.cwd}
-                  placeholder={fields.worktree ? "(its own git worktree — see below)" : `(workspace root: ${entity.defaultCwd})`}
-                  onInput={(e) => set("cwd", (e.currentTarget as HTMLInputElement).value)}
+                <div class="ash-steps-nav">
+                  {safeStep > 0 && <Button onClick={() => setStep(safeStep - 1)}>Back</Button>}
+                  {safeStep < wizardSteps.length - 1 && (
+                    <Button variant="primary" onClick={() => setStep(safeStep + 1)}>Next: {wizardSteps[safeStep + 1].label}</Button>
+                  )}
+                </div>
+              </>
+            ) : editTabDefs.length > 1 ? (
+              <>
+                {noticeBlock}
+                <Tabs
+                  items={editTabDefs.map(({ id, label }) => ({ id, label }))}
+                  active={activeTabId}
+                  onSelect={setEditTab}
                 />
-                <Button disabled={fields.worktree} onClick={() => post(browseMessage())}>Browse</Button>
-              </div>
-              {fields.worktree && <div class="hint">This agent runs in its own git worktree, which is its working directory. Turn the separate checkout off below to choose a directory.</div>}
-              {canonical && <div class="hint">{profileLabels.canonicalTrustHelp}</div>}
-            </div>
-
-            {/* t-a1ba6c — advanced sections live in the main fields column (natural document flow
-             * under Working directory). StudioFrame's sideActions slot sits AFTER flex:1 main and
-             * was pinning these as a lonely bottom footer with a huge empty void on short forms. */}
-            <section class="ash-static-section" aria-labelledby="ash-worktree-title">
-              <div class="ash-label" id="ash-worktree-title">Separate git checkout + branch</div>
-              <div class="hint">Run this agent in a dedicated branch and worktree, with optional setup commands. This chooses its working directory; it does not confine writes.</div>
-              {/* t-da80ed — turning the separate checkout ON clears the working directory in the same gesture.
-                * Without this, a profile that already carried a cwd would disable the field while
-                * keeping its value, and the save would then refuse over something the human can
-                * neither see nor edit. */}
-              <label class="check"><input type="checkbox" checked={fields.worktree} onChange={(e) => {
-                const enabled = (e.currentTarget as HTMLInputElement).checked;
-                updateFields((current) => ({ ...current, worktree: enabled, ...(enabled ? { cwd: "" } : {}) }));
-              }} /> Run in its own git worktree + branch</label>
-              <label class="ash-label" for="ash-branch">Branch (blank = tachyon/&lt;name&gt;)</label>
-              <Input id="ash-branch" value={fields.branch} placeholder="feature/auth-redesign" onInput={(e) => set("branch", (e.currentTarget as HTMLInputElement).value)} />
-              <label class="ash-label" for="ash-base-ref">{profileLabels.worktreeBaseRefLabel}</label>
-              <Input id="ash-base-ref" value={fields.baseRef ?? ""} placeholder={profileLabels.worktreeBaseRefPlaceholder} onInput={(e) => set("baseRef", (e.currentTarget as HTMLInputElement).value)} />
-              {/* t-afc86e — setup is published as a pinned profile-local document in the same
-                * transaction as the save. It stays read-only when another owner published it. */}
-              <label class="ash-label" for="ash-setup">Setup commands (run once on create)</label>
-              <Textarea id="ash-setup" disabled={foreignWorkspaceCommands} rows={3} value={fields.worktreeSetup} placeholder="python -m venv .venv&#10;pip install -e . (one per line)" onInput={(e) => set("worktreeSetup", (e.currentTarget as HTMLTextAreaElement).value)} />
-              {foreignWorkspaceCommands && <div class="hint">This agent's setup is published by the workspace, not by this profile — it is shown read-only so a save cannot overwrite it.</div>}
-            </section>
-
-            </>
+                {editTabDefs.map((t) => (
+                  <div class="ash-tab" key={t.id} hidden={t.id !== activeTabId}>{t.body}</div>
+                ))}
+              </>
+            ) : (
+              generalBlocks
+            )}
           </div>
         ),
       }}

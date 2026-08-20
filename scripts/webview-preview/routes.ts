@@ -60,6 +60,14 @@ export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-h
 export interface Fixture<VM = unknown> {
   provenance: Provenance;
   vm: VM;
+  /**
+   * t-772f6b — extra query params the catalog URL appends for THIS fixture (e.g.
+   * `ashTab=lifecycle`). Since Agent Studio split into tabs/steps, a fixture whose whole point
+   * is one panel (the forget plan, the bypass authorization) has to say WHERE that panel lives,
+   * or the catalog route opens on the General tab with the panel mounted but hidden. The
+   * surface reads the param itself; the harness only passes it through.
+   */
+  link?: string;
 }
 
 export interface Route<VM = unknown> {
@@ -538,7 +546,7 @@ export function buildCatalog(base = "/scripts/webview-preview/index.html"): Cata
     const meta = VIEW_META[view];
     for (const [fixture, fx] of Object.entries(route.fixtures)) {
       out.push({
-        view, fixture, url: `${base}?view=${view}&fixture=${fixture}`, frame: route.frame, tags: [fx.provenance],
+        view, fixture, url: `${base}?view=${view}&fixture=${fixture}${fx.link ? `&${fx.link}` : ""}`, frame: route.frame, tags: [fx.provenance],
         ...(meta ? { title: meta.title, aliases: meta.aliases } : {}),
       });
     }

@@ -414,19 +414,22 @@ export const agentStudioShellFixtures: Record<string, Fixture<AgentStudioShellFi
   "new-unattested-runtime": { provenance: "synthetic-edge", vm: { entity: unattestedRuntimeEntity } },
   "dense-edit": { provenance: "synthetic-edge", vm: { entity: denseEntity } },
   "canonical-disabled": { provenance: "synthetic-edge", vm: { entity: canonicalEntity } },
-  "withheld-document": { provenance: "synthetic-edge", vm: { entity: withheldDocumentEntity } },
+  // t-772f6b — `link` opens the fixture on the tab whose panel is the fixture's whole point;
+  // without it the catalog route would land on General with the panel mounted but hidden.
+  "withheld-document": { provenance: "synthetic-edge", vm: { entity: withheldDocumentEntity }, link: "ashTab=lifecycle" },
   "foreign-workspace-commands": { provenance: "synthetic-edge", vm: { entity: foreignWorkspaceCommandsEntity } },
   "foreign-persistent-instructions": { provenance: "synthetic-edge", vm: { entity: foreignPersistentInstructionsEntity } },
-  "canonical-claude-bypass-off": { provenance: "synthetic-edge", vm: { entity: claudeCanonicalEntity() } },
-  "canonical-claude-bypass-on": { provenance: "synthetic-edge", vm: { entity: claudeCanonicalEntity(["bypassPermissions"]) } },
-  "canonical-codex-danger-off": { provenance: "synthetic-edge", vm: { entity: codexCanonicalEntity() } },
+  "canonical-claude-bypass-off": { provenance: "synthetic-edge", vm: { entity: claudeCanonicalEntity() }, link: "ashTab=runtime" },
+  "canonical-claude-bypass-on": { provenance: "synthetic-edge", vm: { entity: claudeCanonicalEntity(["bypassPermissions"]) }, link: "ashTab=runtime" },
+  "canonical-codex-danger-off": { provenance: "synthetic-edge", vm: { entity: codexCanonicalEntity() }, link: "ashTab=runtime" },
   "canonical-codex-danger-on": {
     provenance: "synthetic-edge",
     vm: { entity: codexCanonicalEntity(["neverAskForApproval", "dangerFullAccess"]) },
+    link: "ashTab=runtime",
   },
   // t-e722ce — the plan a human approves, in both of its shapes.
-  "forget-plan": { provenance: "synthetic-edge", vm: { entity: canonicalEntity, forgetPlan: executableForgetPlan } },
-  "forget-plan-blocked": { provenance: "synthetic-edge", vm: { entity: canonicalEntity, forgetPlan: blockedForgetPlan } },
+  "forget-plan": { provenance: "synthetic-edge", vm: { entity: canonicalEntity, forgetPlan: executableForgetPlan }, link: "ashTab=lifecycle" },
+  "forget-plan-blocked": { provenance: "synthetic-edge", vm: { entity: canonicalEntity, forgetPlan: blockedForgetPlan }, link: "ashTab=lifecycle" },
   /**
    * The `entity` here is inert: `agentStudioShellMakeMessage` returns the error envelope ALONE and
    * never sends `load`, so this route measures the client's no-entity error path and nothing else.
