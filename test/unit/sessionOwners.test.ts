@@ -8,6 +8,8 @@ import { promisify } from "node:util";
 import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, CODEX_TOOL_HOOK_RECORDER_SOURCE, CODEX_UPDATE_PLAN_HOOK_MATCHER, PERSISTENCE_STOP_RECORDER_SOURCE, RUNTIME_STATUS_PUBLISHER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, appendOwnerRow, compactSessionOwnerRows, compactSpawnSettings, persistenceHookFailureFile, prunePersistenceLedger, readSessionOwners, removeSessionOwnerRows, removeSpawnSettings, resolveRotationFollow, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";
 import { AGENT_TOKEN_ENV_VAR, URL_ENV_VAR } from "@tachyon/shared/bridge/env.js";
 import { URL_ENV_VAR as spawnUrlEnvVar, AGENT_TOKEN_ENV_VAR as spawnTokenEnvVar } from "@tachyon/bridge/token.js";
+import { CHECKLIST_GATE_SCRIPT_SOURCE, planChecklistGateHooks } from "@tachyon/engine/runtime/checklistGateHook.js";
+import { NOTICE_DRAIN_SCRIPT_SOURCE, noticeDrainHookCommand } from "@tachyon/engine/runtime/noticeDrainHook.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("sessionOwners — pure ledger helpers (spec 243)", () => {
@@ -335,6 +337,61 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     expect(SESSION_OWNER_RECORDER_SOURCE).toContain("appendFileSync");
     expect(PERSISTENCE_STOP_RECORDER_SOURCE).toContain("turnId");
     expect(CODEX_TOOL_HOOK_RECORDER_SOURCE).toContain("toolInput");
+  });
+
+  it("t-8f0ff8: all materialized writers accept exactly one JSON configuration argument", () => {
+    const writers = [
+      ["session-owner-record", SESSION_OWNER_RECORDER_SOURCE],
+      ["handoff-pointer", SESSION_HANDOFF_POINTER_SOURCE],
+      ["persistence-stop-record", PERSISTENCE_STOP_RECORDER_SOURCE],
+      ["codex-tool-hook-record", CODEX_TOOL_HOOK_RECORDER_SOURCE],
+      ["runtime-status-publish", RUNTIME_STATUS_PUBLISHER_SOURCE],
+      ["notice-drain", NOTICE_DRAIN_SCRIPT_SOURCE],
+      ["checklist-gate", CHECKLIST_GATE_SCRIPT_SOURCE],
+    ] as const;
+    for (const [name, source] of writers) {
+      expect(source.match(/process\.argv\[(\d+)\]/g), name).toEqual(["process.argv[2]"]);
+      expect(source.match(/JSON\.parse\(process\.argv\[2\]/g), name).toHaveLength(1);
+    }
+
+    const commands = [
+      ...buildOwnershipSettings(
+        "/activity/session-owner-record.cjs",
+        "agent",
+        "/activity/session-owners.jsonl",
+        { pointerPath: "/activity/handoff-pointer.cjs", handoffPath: "/HANDOFF.md" },
+        { stopRecorderPath: "/activity/persistence-stop-record.cjs", stopFile: "/activity/persistence-stop.jsonl", failureFile: "/activity/failures.jsonl" },
+        {},
+        { publisherPath: "/activity/runtime-status-publish.cjs", runtime: "claude" },
+      ).hooks.SessionStart.flatMap((group) => group.hooks.map((hook) => hook.command)),
+      ...buildOwnershipSettings(
+        "/activity/session-owner-record.cjs",
+        "agent",
+        "/activity/session-owners.jsonl",
+        undefined,
+        { stopRecorderPath: "/activity/persistence-stop-record.cjs", stopFile: "/activity/persistence-stop.jsonl", failureFile: "/activity/failures.jsonl" },
+        {},
+        { publisherPath: "/activity/runtime-status-publish.cjs", runtime: "claude" },
+      ).hooks.Stop!.flatMap((group) => group.hooks.map((hook) => hook.command)),
+      noticeDrainHookCommand({ agentArg: "agent", workspaceRoot: "/ws", scriptPath: "/activity/notice-drain.cjs" }),
+      planChecklistGateHooks({ runtime: "claude", requireIn: ["chore"], taskKind: "chore", scriptPath: "/activity/checklist-gate.cjs" })!
+        .PreToolUse![0]!.hooks[0]!.command,
+    ];
+    for (const command of commands) {
+      expect(command, command).toMatch(/^node '[^']+' '(?:[^']|'\\''?)*'$/);
+    }
+
+    const codex = buildCodexSessionStartHookConfig(
+      "/activity/session-owner-record.cjs",
+      "/activity/session-owners.jsonl",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { recorderPath: "/activity/codex-tool-hook-record.cjs", file: "/activity/codex-tool-hooks.jsonl", failureFile: "/activity/failures.jsonl" },
+    ) as string[];
+    expect(codex.join("\n")).toMatch(/codex-tool-hook-record\.cjs' '\{[^']+\}'/);
+    expect(codex.join("\n")).not.toMatch(/codex-tool-hook-record\.cjs' '\{[^']+\}'\s+'[^']+'/);
   });
 
   it("t-628ee7: materialized Codex writers resolve the agent from the environment in persisted rows", () => {

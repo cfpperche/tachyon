@@ -670,8 +670,8 @@ process.stdin.on("end", () => {
   const agent = config.agent === "$TACHYON_AGENT_NAME"
     ? process.env.TACHYON_AGENT_NAME || ""
     : config.agent || "";
-  const out = config.out || process.argv[3] || "";
-  const failureFile = config.failureFile || process.argv[4] || "";
+  const out = config.out || "";
+  const failureFile = config.failureFile || "";
   try {
     if (!agent || !out) return;
     const p = JSON.parse(raw || "{}");
@@ -728,8 +728,8 @@ let config = {};
 let agent = "";
 try {
   try { config = JSON.parse(process.argv[2] || "{}"); } catch (_e) {}
-  const p = config.path || process.argv[2];
-  const failureFile = config.failureFile || process.argv[3] || "";
+  const p = config.path || "";
+  const failureFile = config.failureFile || "";
   agent = config.agent === "$TACHYON_AGENT_NAME" ? process.env.TACHYON_AGENT_NAME || "" : config.agent || "";
   if (p) {
     const raw = fs.readFileSync(p, "utf8");
@@ -745,7 +745,7 @@ try {
   }
 } catch (e) {
   if (e && e.code === "ENOENT") process.exit(0);
-  logFailure(config.failureFile || process.argv[3] || "", { agent, event: "SessionStart", script: "handoff-pointer", path: config.path || process.argv[2] || "", reason: sanitizeReason(e) });
+  logFailure(config.failureFile || "", { agent, event: "SessionStart", script: "handoff-pointer", path: config.path || "", reason: sanitizeReason(e) });
   /* no handoff / unreadable → no pointer */
 }
 `;
@@ -777,8 +777,8 @@ process.stdin.on("end", () => {
   const agent = config.agent === "$TACHYON_AGENT_NAME"
     ? process.env.TACHYON_AGENT_NAME || ""
     : config.agent || "";
-  const out = config.out || process.argv[3] || "";
-  const failureFile = config.failureFile || process.argv[4] || "";
+  const out = config.out || "";
+  const failureFile = config.failureFile || "";
   try {
     if (!agent || !out) return;
     let payload = {};
@@ -828,8 +828,8 @@ process.stdin.on("end", () => {
   const agent = config.agent === "$TACHYON_AGENT_NAME"
     ? process.env.TACHYON_AGENT_NAME || ""
     : config.agent || "";
-  const out = config.out || process.argv[3] || "";
-  const failureFile = config.failureFile || process.argv[4] || "";
+  const out = config.out || "";
+  const failureFile = config.failureFile || "";
   try {
     if (!agent || !out) return;
     let payload = {};
@@ -867,9 +867,9 @@ const url = process.env.${URL_ENV_VAR} || "";
 const token = process.env.${AGENT_TOKEN_ENV_VAR} || "";
 let config = {};
 try { config = JSON.parse(process.argv[2] || "{}"); } catch (_e) {}
-const runtime = config.runtime || process.argv[2] || "";
-const failureFile = config.failureFile || process.argv[3] || "";
-const agent = (config.agent === "$TACHYON_AGENT_NAME" ? process.env.TACHYON_AGENT_NAME : config.agent) || process.argv[4] || "";
+const runtime = config.runtime || "";
+const failureFile = config.failureFile || "";
+const agent = (config.agent === "$TACHYON_AGENT_NAME" ? process.env.TACHYON_AGENT_NAME : config.agent) || "";
 ${PERSISTENCE_LEDGER_RETENTION_SOURCE}
 function sanitizeReason(e) {
   const msg = e && typeof e.message === "string" ? e.message : String(e || "unknown error");
