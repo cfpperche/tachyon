@@ -132,7 +132,7 @@ describe("the canonical/ad-hoc species is gone from product language", () => {
    * the comments left naming identifiers that t-eb4b30 and this task deleted.
    */
   it("no user-facing string calls an instance ad-hoc", () => {
-    expect(grepFiles("ad-hoc agent|adhoc agent", ["src", "l10n", "apps/vscode-extension/package.nls.json", "apps/vscode-extension/package.nls.pt-br.json"]))
+    expect(grepFiles("ad-hoc agent|adhoc agent", ["src", "l10n", "apps/vscode-extension/package.nls.json"]))
       .toEqual([]);
   });
 });

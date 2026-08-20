@@ -67,16 +67,9 @@ describe("Tachyon contributes no settings", () => {
     }
   });
 
-  it("both localization bundles dropped every config.* string", () => {
-    for (const bundle of ["apps/vscode-extension/package.nls.json", "apps/vscode-extension/package.nls.pt-br.json"]) {
-      const orphans = Object.keys(readJson(bundle)).filter((key) => key.startsWith("config."));
-      expect(orphans, `${bundle} has orphan localization strings`).toEqual([]);
-    }
-  });
-
-  it("the two bundles still declare the same keys", () => {
-    expect(Object.keys(readJson("apps/vscode-extension/package.nls.pt-br.json")).sort())
-      .toEqual(Object.keys(readJson("apps/vscode-extension/package.nls.json")).sort());
+  it("the localization bundle dropped every config.* string", () => {
+    const orphans = Object.keys(readJson("apps/vscode-extension/package.nls.json")).filter((key) => key.startsWith("config."));
+    expect(orphans, "package.nls.json has orphan localization strings").toEqual([]);
   });
 });
 

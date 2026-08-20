@@ -493,10 +493,8 @@ describe("t-4662e9 — rename is not reachable from the sidebar surface at any l
     for (const [menu, items] of Object.entries(manifest.contributes.menus)) {
       expect(items.map((i) => i.command), `${menu} still lists it`).not.toContain("tachyon.renameAgentItem");
     }
-    // A stale %command.renameAgentItem% key would survive silently in both locales.
-    for (const nls of ["apps/vscode-extension/package.nls.json", "apps/vscode-extension/package.nls.pt-br.json"]) {
-      expect(Object.keys(JSON.parse(read(nls)) as Record<string, string>), nls).not.toContain("command.renameAgentItem");
-    }
+    // A stale %command.renameAgentItem% key would survive silently in the nls catalog.
+    expect(Object.keys(JSON.parse(read("apps/vscode-extension/package.nls.json")) as Record<string, string>)).not.toContain("command.renameAgentItem");
   });
 
   it("registers no handler and leaves the sidebar command map without a rename entry", () => {

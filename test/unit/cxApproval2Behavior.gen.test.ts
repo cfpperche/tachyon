@@ -139,7 +139,6 @@ describe("container-generated delegation behavior", () => {
       };
     };
     const en = JSON.parse(fs.readFileSync(path.join(process.cwd(), "apps/vscode-extension/package.nls.json"), "utf8")) as Record<string, string>;
-    const ptBr = JSON.parse(fs.readFileSync(path.join(process.cwd(), "apps/vscode-extension/package.nls.pt-br.json"), "utf8")) as Record<string, string>;
 
     expect(pkg.contributes.commands.find((entry) => entry.command === "tachyon.openApprovals")).toEqual({
       command: "tachyon.openApprovals",
@@ -150,7 +149,6 @@ describe("container-generated delegation behavior", () => {
       (entry) => entry.command === "tachyon.openApprovals" && entry.when === "false",
     ) ?? false).toBe(false);
     expect(en["command.openApprovals"]).toBe("Tachyon: Open Human Approvals");
-    expect(ptBr["command.openApprovals"]).toBe("Tachyon: Abrir aprovações humanas");
   });
 
   it("wires the persistent Workspace composition to the tested approval route", () => {

@@ -506,7 +506,8 @@ shape here: the logic lands in the engine and the only door stays in the editor.
 
 ## UI text
 
-- Human-facing VS Code strings use `vscode.l10n.t(...)` (or the injected equivalent) and update
-  bundles. Model/orchestration protocol text remains plain.
+- Human-facing VS Code strings use `vscode.l10n.t(...)` (or the injected equivalent). Contribution
+  titles go in `package.nls.json`. The product language is English; there is no translation bundle
+  (`t-92bf17`). Model/orchestration protocol text remains plain.
 - Product interface text is English even when the task contract is Portuguese; `t-ce1de8` showed the
   review webview inheriting the contract language when this convention was unstated.
