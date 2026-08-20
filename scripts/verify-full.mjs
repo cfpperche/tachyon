@@ -655,6 +655,7 @@ export async function main() {
   chmodSync(root, 0o700);
   const staticLog = path.join(root, "static.log");
   const buildLog = path.join(root, "build.log");
+  const extensionSmokeLog = path.join(root, "extension-host-smoke.log");
   const testLog = path.join(root, "vitest.log");
   const reportFile = path.join(root, "vitest-report.json");
   const active = { child: undefined };
@@ -684,6 +685,14 @@ export async function main() {
     if (build.code !== 0 || build.signal || receivedSignal) {
       process.stderr.write(`${formatFailure({ phase: "build", fallback: await readTail(buildLog), logDir: root, exit: describeChildExit(build) })}\n`);
       return receivedSignal === "SIGINT" ? 130 : receivedSignal === "SIGTERM" ? 143 : build.code || 1;
+    }
+    // t-9e3978 — prove the editor-host suite points at Tachyon before spending the unit suite.
+    // This is deliberately only the cheap identity/activation smoke; the integration suite stays
+    // out of verify:full because its multi-root fixture is not yet isolated (t-25d2f1).
+    const extensionSmoke = await runChild("xvfb-run", ["-a", "npm", "run", "--silent", "smoke:extension-host"], extensionSmokeLog, active);
+    if (extensionSmoke.code !== 0 || extensionSmoke.signal || receivedSignal) {
+      process.stderr.write(`${formatFailure({ phase: "extension-host smoke", fallback: await readTail(extensionSmokeLog), logDir: root, exit: describeChildExit(extensionSmoke) })}\n`);
+      return receivedSignal === "SIGINT" ? 130 : receivedSignal === "SIGTERM" ? 143 : extensionSmoke.code || 1;
     }
     const vitestEntry = path.resolve("node_modules/vitest/vitest.mjs");
     // t-3ad4af — no `--maxWorkers` here any more. A CLI flag OVERRIDES the config, so passing one
