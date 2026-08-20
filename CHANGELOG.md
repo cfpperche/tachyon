@@ -4,6 +4,73 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.26 — o produto fala inglês, a interface para de documentar, e o board ganha busca
+
+> Nota: o CHANGELOG estava parado na 0.93.11. As versões 0.93.12 a 0.93.25 saíram sem entrada aqui.
+> Esta entrada cobre o que entrou depois da 0.93.25; o buraco continua aberto e visível de propósito.
+
+### O português sai do produto
+
+O Tachyon carregava dois catálogos de tradução pt-BR — 875 linhas — e duas guardas para protegê-los.
+Nada disso foi pedido: a tradução entrou em junho a partir de uma pergunta ("i18n? escolha de
+idioma?") que virou escopo, e o idioma do projeto sempre foi inglês.
+
+Os dois catálogos saíram, junto com um gate de pre-commit que existia completo e **nunca foi ligado a
+hook nenhum**. A arquitetura de idioma fica: as chamadas `l10n.t()` continuam, o manifesto continua
+apontando para `l10n/`, e os títulos de comando continuam no catálogo em inglês. Quando tradução
+voltar, ela volta sem reconstruir nada.
+
+Fica registrado no lugar onde quem retomar vai olhar: **304 strings do produto são invisíveis para
+qualquer extração por regex**, porque passam por um apelido de `vscode.l10n.t`. As duas guardas que
+diziam proteger a tradução usavam exatamente esse regex — e passavam verdes com 156 strings sem
+traduzir. Uma guarda que passa prova que o filtro dela não achou nada.
+
+### O launcher do Control ordena A–Z
+
+A aba Control ganhou o mesmo controle de ordenação que a aba Agents já tinha, com a mesma
+persistência. A ordem de produto continua sendo o padrão: sem preferência salva, os ladrilhos ficam
+onde as decisões de posição os colocaram — alfabético é opção, nunca default.
+
+### O onboarding é a única porta, e o walkthrough do editor sai
+
+O passo a passo nativo do VS Code foi removido. Ele renderizava na tela de boas-vindas do editor, com
+o vocabulário do editor, e estava mentindo em três pontos: mandava instalar tmux por Homebrew num
+sistema que o README declara sem suporte, prometia abrir sozinho numa instalação nova sem código que
+fizesse isso, e não citava o Agent Studio, que é onde agente nasce.
+
+O app de Onboarding, que entrou nesta mesma leva, é a porta agora.
+
+### O Companion e o Agent Studio
+
+O Companion tinha dois cabeçalhos e um ícone sem relação com a função. Agora tem um cabeçalho, e o
+ícone diz o que ele faz.
+
+No Agent Studio, o botão Save do formulário de novo agente ficava cinza sem dizer por quê — e, pior,
+acendia quando você desligava a worktree, num agente ainda sem nome. Agora o formulário nomeia o que
+falta, e o Save mora no último passo do fluxo, não no cabeçalho.
+
+O Settings perdeu 173 linhas comentadas que sobraram quando o Companion virou app próprio, e uma
+frase que mandava o usuário para uma tela que não existe mais.
+
+### Busca no board
+
+Responder "já existe cartão sobre X?" custava ler mil cartões e ainda terminar sem certeza. Uma
+exploração real gastou 316 mil tokens para chegar a "provavelmente não" — e a resposta certa existia.
+
+Agora há uma ferramenta de busca textual sobre os 1.674 cartões. Ela parte do zero a cada consulta,
+em 136 ms, e devolve o trecho que casou junto com o cartão — a razão, sem abrir o cartão. Não há
+índice guardado em disco: um índice que se reconstrói em 136 ms nunca está desatualizado.
+
+### Consertos de desenvolvimento
+
+O smoke do extension host abria uma janela real do VS Code na tela de quem estivesse trabalhando. A
+proteção existia, mas morava no chamador: quem rodasse o comando direto ganhava a janela. Agora o
+próprio script sobe headless.
+
+E a sonda que investiga travamentos do extension host olhava três portas de I/O enquanto o host usa
+dez. Agora olha as dez, ao custo medido de 0,85 ms por ativação — e o número está escrito no código,
+onde o próximo vai procurar.
+
 ## 0.93.11 — dois consertos no que a versão anterior acabou de entregar
 
 ### Review Changes deixa de mostrar a história inteira do projeto
