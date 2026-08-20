@@ -207,6 +207,58 @@ describe("RuntimeSlackMonitor", () => {
     expect(f.delivered.map((d) => d.agent).sort()).toEqual(["claude-coordinator", "second-root"]);
   });
 
+  describe("t-59022c: the reset clause follows the dates, not the mere presence of resetsAt", () => {
+    it("observedAt after resetsAt asserts that this reading is after the named reset", async () => {
+      const f = fixture();
+      f.observe("codex", PRESSURED, [{
+        name: "weekly",
+        usedPercent: 97,
+        resetsAt: "2026-08-02T18:00:00.000Z",
+      }]);
+      await f.monitor.tick();
+      f.observe("codex", RELIEVED, [{ name: "weekly", usedPercent: 29 }]);
+      await f.monitor.tick();
+
+      expect(f.delivered).toHaveLength(1);
+      expect(f.delivered[0].line).toContain(
+        "the channel named 2026-08-02T18:00:00.000Z as the reset and this reading is after it",
+      );
+      expect(f.delivered[0].line).not.toContain("observed change");
+    });
+
+    it("observedAt before resetsAt is an observed change and does not claim the reset happened", async () => {
+      // Live 2026-08-20 incident: 29% at 16:53, named reset 2026-08-24, four days later.
+      const f = fixture();
+      f.observe("codex", "2026-08-20T16:52:51.000Z", [{
+        name: "weekly",
+        usedPercent: 97,
+        resetsAt: "2026-08-24T08:28:21.000Z",
+      }]);
+      await f.monitor.tick();
+      f.observe("codex", "2026-08-20T16:53:52.000Z", [{ name: "weekly", usedPercent: 29 }]);
+      await f.monitor.tick();
+
+      expect(f.delivered).toHaveLength(1);
+      expect(f.delivered[0].line).toContain("this is an observed change and not a predicted one");
+      expect(f.delivered[0].line).not.toContain("this reading is after it");
+      expect(f.delivered[0].line).not.toContain("as the reset");
+    });
+
+    it("no resetsAt keeps the observed-change wording unchanged", async () => {
+      const f = fixture();
+      f.observe("claude", PRESSURED, [{ name: "session", usedPercent: 97, windowMinutes: 300 }]);
+      await f.monitor.tick();
+      f.observe("claude", RELIEVED, [{ name: "session", usedPercent: 29, windowMinutes: 300 }]);
+      await f.monitor.tick();
+
+      expect(f.delivered).toHaveLength(1);
+      expect(f.delivered[0].line).toContain(
+        "this channel names no reset time, so this is an observed change and not a predicted one",
+      );
+      expect(f.delivered[0].line).not.toContain("as the reset");
+    });
+  });
+
   it("a window the channel stops reporting is dropped, never announced as relieved", async () => {
     const f = fixture();
     f.observe("codex", PRESSURED, [{ name: "session", usedPercent: 100 }, { name: "weekly", usedPercent: 95 }]);

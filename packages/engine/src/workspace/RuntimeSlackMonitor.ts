@@ -17,9 +17,10 @@ import type {
  *
  * It speaks ONLY from observations. A window it watched go under pressure, and then observed back
  * with room, is one line. A reset time a channel never gave is never invented into an announcement:
- * where the channel names one (Codex does), the line quotes it as corroboration; where it does not,
- * the line says so and reports the observed change instead of a predicted one. Nothing here schedules
- * a timer against a boundary Tachyon guessed.
+ * where the channel names one (Codex does) AND this reading is after it, the line quotes that as
+ * corroboration; a named reset still in the future, or a channel that named none, is reported as an
+ * observed change rather than a predicted one. Naming a reset is not proof it has occurred
+ * (t-59022c). Nothing here schedules a timer against a boundary Tachyon guessed.
  *
  * ## Repetition
  *
@@ -167,9 +168,7 @@ function reliefLine(
   integrity: "firm" | "best-effort",
 ): string {
   const scope = window.windowMinutes ? `${window.name} (${describeMinutes(window.windowMinutes)})` : window.name;
-  const reset = armed.resetsAt
-    ? `the channel named ${armed.resetsAt} as the reset and this reading is after it`
-    : "this channel names no reset time, so this is an observed change and not a predicted one";
+  const reset = resetClause(armed.resetsAt, observedAt);
   const label = integrity === "best-effort" ? " (best-effort channel)" : "";
   return (
     `[tachyon] runtime '${runtime}' has slack again — its ${scope} quota window reads `
@@ -177,6 +176,23 @@ function reliefLine(
     + `${armed.observedAt}; ${reset}${label}. Delegation to '${runtime}' is no longer quota-blocked — `
     + "runtime_condition has the full picture."
   );
+}
+
+const OBSERVED_CHANGE = "this is an observed change and not a predicted one";
+
+function resetClause(resetsAt: string | null, observedAt: string): string {
+  if (resetsAt && readingIsAfter(observedAt, resetsAt)) {
+    return `the channel named ${resetsAt} as the reset and this reading is after it`;
+  }
+  if (resetsAt) return OBSERVED_CHANGE;
+  return `this channel names no reset time, so ${OBSERVED_CHANGE}`;
+}
+
+function readingIsAfter(observedAt: string, resetsAt: string): boolean {
+  const observed = Date.parse(observedAt);
+  const reset = Date.parse(resetsAt);
+  if (!Number.isFinite(observed) || !Number.isFinite(reset)) return false;
+  return observed > reset;
 }
 
 function describeMinutes(minutes: number): string {
