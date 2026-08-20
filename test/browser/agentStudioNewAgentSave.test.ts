@@ -45,6 +45,8 @@ function readSave(surface: { evaluate: (fn: () => unknown) => Promise<unknown> }
       headerSave: saveIn(".sf-actions"),
       navSave: saveIn(".ash-steps-nav"),
       refusals: [...document.querySelectorAll(".sf-error-blocking")].map((e) => text(e)),
+      inlineRefusals: [...document.querySelectorAll(".ash-native-config-risk")].map((e) => text(e)),
+      invalidIdentityFields: document.querySelectorAll('#ash-name[aria-invalid="true"], #ash-cmd[aria-invalid="true"]').length,
       worktreeOn: (document.querySelector('input[type="checkbox"]') as HTMLInputElement | null)?.checked ?? null,
     };
   }) as Promise<{
@@ -53,12 +55,14 @@ function readSave(surface: { evaluate: (fn: () => unknown) => Promise<unknown> }
     headerSave: { present: boolean; disabled: boolean | null };
     navSave: { present: boolean; disabled: boolean | null };
     refusals: string[];
+    inlineRefusals: string[];
+    invalidIdentityFields: number;
     worktreeOn: boolean | null;
   }>;
 }
 
 describe("t-093a0d / t-7e4225 — New Agent Save placement and reasons", () => {
-  it("on step 1, header has Cancel not Save, and the missing name and command are named", async () => {
+  it("on untouched step 1, Save stays unavailable without announcing errors until Next", async () => {
     const page = await browser.newPage();
     try {
       await page.bringToFront();
@@ -71,8 +75,26 @@ describe("t-093a0d / t-7e4225 — New Agent Save placement and reasons", () => {
       expect(read.headerSave.present, "create must not put Save in the header").toBe(false);
       expect(read.headerButtons).toContain("Cancel");
       expect(read.navSave.present, "Save must not appear before the last step").toBe(false);
-      expect(read.refusals.join(" | ")).toMatch(/name before saving/i);
-      expect(read.refusals.join(" | ")).toMatch(/runtime command before saving/i);
+      expect(read.refusals, "an untouched form must not mount an alert summary").toEqual([]);
+      expect(read.inlineRefusals, "an untouched form must not mark either identity field").toEqual([]);
+      expect(read.invalidIdentityFields).toBe(0);
+
+      await surface.evaluate(() => {
+        const next = [...document.querySelectorAll("button")].find((b) => (b.textContent ?? "").trim().startsWith("Next"));
+        (next as HTMLButtonElement | undefined)?.click();
+      });
+      await surface.waitForSelector(".sf-error-blocking", { timeout: 5_000 });
+      const afterAdvance = await readSave(surface);
+      expect(afterAdvance.refusals.join(" | ")).toMatch(/name before saving/i);
+      expect(afterAdvance.refusals.join(" | ")).toMatch(/runtime command before saving/i);
+
+      await surface.evaluate(() => {
+        const jump = document.querySelector(".sf-error-blocking button") as HTMLButtonElement | null;
+        jump?.click();
+      });
+      await surface.waitForFunction(() => document.activeElement?.id === "ash-name", { timeout: 5_000 });
+      const afterJump = await readSave(surface);
+      expect(afterJump.inlineRefusals.join(" | "), "the jump must return to a still-explained field").toMatch(/name before saving/i);
     } finally {
       await page.close();
     }
