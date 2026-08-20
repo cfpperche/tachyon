@@ -16,7 +16,7 @@ import {
   agentStudioTitleFor,
   blankAgentFields,
   canonicalAgentFields,
-  environmentRowProblem,
+  environmentRowIssue,
   nativeConfigChoice,
   nativeConfigSourceChoices,
   nativeConfigAuthorized,
@@ -26,6 +26,8 @@ import {
   computeAgentDirty,
   createAgentProfileLabels,
   newAgentRuntimeRefusal,
+  removeEnvironmentValueRow,
+  removeSecretReferenceRow,
   serializeAgentPatch,
   setNativeConfigChoice,
   validateAgentStudioHostDomainMessage,
@@ -197,6 +199,10 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   // document on every rebinding, same as every other piece of local state below.
   const [step, setStep] = useState(Number.isInteger(PREVIEW_STEP) && PREVIEW_STEP >= 0 ? PREVIEW_STEP : 0);
   const [editTab, setEditTab] = useState(PREVIEW_TAB ?? "general");
+  // t-49f6e8 — the parked half of an error jump: the error's activate handler switches tab/step
+  // and parks a DOM query here; the effect after the composition runs it once the destination has
+  // landed, then focuses and centers the guilty field (WCAG G139's "jump to errors").
+  const [pendingFocus, setPendingFocus] = useState<{ query(): HTMLElement | null } | undefined>();
   const [ready, setReady] = useState(false);
   const entityRef = useRef<AgentStudioEntity | undefined>(undefined);
   const fieldsRef = useRef(fields);
@@ -484,7 +490,9 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   // t-9aec3e — the row-level sibling: a blank environment row must block Save AND say which row it
   // is, because the door's answer ("workspace command is invalid") named nothing and the owner had
   // no way to find the culprit. Same limits the door enforces, answered while they are still typing.
-  const environmentRefusal = environmentRowProblem(fields);
+  // t-49f6e8 — the structured issue also drives the row marking and the error→field jump.
+  const environmentIssue = environmentRowIssue(fields);
+  const environmentRefusal = environmentIssue?.message;
   const environmentRefusalError: StudioError | undefined = environmentRefusal
     ? { code: "validation/agent-environment-row", message: environmentRefusal, source: "validation", blocking: true }
     : undefined;
@@ -634,39 +642,54 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     <section class="ash-native-config-editor" aria-label="Environment">
       <div class="ash-label">Environment values</div>
       {/* t-9aec3e — column heads: every box below answers to a label in the house grammar, same
-        * as the rest of the screen. One head for all rows, aligned to the row grid. */}
+        * as the rest of the screen. One head for all rows, aligned to the row grid. The trailing
+        * empty track (t-49f6e8) keeps the heads over their columns now that rows carry a Remove. */}
       <div class="ash-env-head">
         <span class="ash-label">Variable name</span>
         <span class="ash-label">Value</span>
+        <span aria-hidden="true"></span>
       </div>
-      {Object.entries(fields.canonical!.environment.values ?? {}).map(([name, value], index) => <div class="ash-native-config-editor-row" key={`env-${index}`}>
-        <Input aria-label="Environment variable name" value={name} onInput={(event) => {
-          const next = (event.currentTarget as HTMLInputElement).value;
-          updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: Object.fromEntries(Object.entries(current.canonical.environment.values ?? {}).map(([key, item]) => [key === name ? next : key, item])) } } }) : current);
-        }} />
-        <Input aria-label={`Value for ${name}`} value={value} onInput={(event) => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: { ...current.canonical.environment.values, [name]: (event.currentTarget as HTMLInputElement).value } } } }) : current)} />
-      </div>)}
+      {Object.entries(fields.canonical!.environment.values ?? {}).map(([name, value], index) => {
+        // t-49f6e8 — the guilty row is marked where the human is looking (NN/g: inline, next to
+        // the field), not only in the summary at the top.
+        const issue = environmentIssue?.section === "values" && environmentIssue.index === index ? environmentIssue : undefined;
+        return <div class={`ash-native-config-editor-row${issue ? " ash-row-invalid" : ""}`} key={`env-${index}`}>
+          <Input aria-label="Environment variable name" aria-invalid={issue?.field === "name" || undefined} value={name} onInput={(event) => {
+            const next = (event.currentTarget as HTMLInputElement).value;
+            updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: Object.fromEntries(Object.entries(current.canonical.environment.values ?? {}).map(([key, item]) => [key === name ? next : key, item])) } } }) : current);
+          }} />
+          <Input aria-label={`Value for ${name}`} value={value} onInput={(event) => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: { ...current.canonical.environment.values, [name]: (event.currentTarget as HTMLInputElement).value } } } }) : current)} />
+          <Button aria-label={`Remove value row ${index + 1}`} title={name === "" ? "Remove this unnamed row" : `Remove ${name}`} onClick={() => updateFields((current) => removeEnvironmentValueRow(current, name))}>Remove</Button>
+          {issue && <div class="hint ash-native-config-risk ash-row-hint">{issue.short}</div>}
+        </div>;
+      })}
       <Button onClick={() => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, values: { ...current.canonical.environment.values, "": "" } } } }) : current)}>Add value</Button>
       <div class="ash-label ash-label-break">Secret references</div>
       <div class="ash-env-head ash-env-head-triple">
         <span class="ash-label">Variable name</span>
         <span class="ash-label">Keys coordinate</span>
         <span class="ash-label">Purpose</span>
+        <span aria-hidden="true"></span>
       </div>
       {Object.entries(fields.canonical!.environment.secrets ?? {}).map(([name, reference], index) => {
         const stored = entity?.secretInventory?.stored ?? [];
         const current = `${reference.provider}\0${reference.id}`;
         const options = stored.some((item) => `${item.provider}\0${item.id}` === current) ? stored : [{ provider: reference.provider, id: reference.id }, ...stored];
-        return <div class="ash-native-config-editor-row ash-native-config-editor-row-triple" key={`secret-${index}`}>
-          <Input aria-label="Secret environment variable name" value={name} onInput={(event) => {
+        // t-49f6e8 — same marking as the value rows; the coordinate select is the guilty control
+        // when the name is already fine.
+        const issue = environmentIssue?.section === "secrets" && environmentIssue.index === index ? environmentIssue : undefined;
+        return <div class={`ash-native-config-editor-row ash-native-config-editor-row-triple${issue ? " ash-row-invalid" : ""}`} key={`secret-${index}`}>
+          <Input aria-label="Secret environment variable name" aria-invalid={issue?.field === "name" || undefined} value={name} onInput={(event) => {
             const next = (event.currentTarget as HTMLInputElement).value;
             updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: Object.fromEntries(Object.entries(state.canonical.environment.secrets ?? {}).map(([key, item]) => [key === name ? next : key, item])) } } }) : state);
           }} />
-          <Select aria-label={`Secret coordinate for ${name}`} value={current} onChange={(event) => {
+          <Select aria-label={`Secret coordinate for ${name}`} aria-invalid={issue?.field === "coordinate" || undefined} value={current} onChange={(event) => {
             const [provider, ...id] = (event.currentTarget as HTMLSelectElement).value.split("\0");
             updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: { ...state.canonical.environment.secrets, [name]: { ...reference, provider, id: id.join("\0") } } } } }) : state);
           }}>{options.map((item) => <option value={`${item.provider}\0${item.id}`} key={`${item.provider}\0${item.id}`}>{item.provider} / {item.id}{stored.some((key) => key.provider === item.provider && key.id === item.id) ? "" : " (missing from Keys)"}</option>)}</Select>
           <Input aria-label={`Purpose for ${name}`} value={reference.purpose} placeholder="GitHub API access" onInput={(event) => updateFields((state) => state.canonical ? ({ ...state, canonical: { ...state.canonical, environment: { ...state.canonical.environment, secrets: { ...state.canonical.environment.secrets, [name]: { ...reference, purpose: (event.currentTarget as HTMLInputElement).value } } } } }) : state)} />
+          <Button aria-label={`Remove secret reference row ${index + 1}`} title={name === "" ? "Remove this unnamed row" : `Remove ${name}`} onClick={() => updateFields((current) => removeSecretReferenceRow(current, name))}>Remove</Button>
+          {issue && <div class="hint ash-native-config-risk ash-row-hint">{issue.short}</div>}
         </div>;
       })}
       <Button onClick={() => updateFields((current) => current.canonical ? ({ ...current, canonical: { ...current.canonical, environment: { ...current.canonical.environment, secrets: { ...current.canonical.environment.secrets, "": { provider: "", id: "", purpose: "" } } } } }) : current)}>Add secret reference</Button>
@@ -1318,6 +1341,20 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   ];
   const activeTabId = editTabDefs.some((t) => t.id === editTab) ? editTab : editTabDefs[0].id;
 
+  // t-49f6e8 — run the parked jump query once its destination tab/step has landed, so the field is
+  // VISIBLE when focus moves to it; then clear it. Also re-fires on later navigation while parked,
+  // which cannot outlive its first success.
+  useEffect(() => {
+    if (!pendingFocus) return;
+    const el = pendingFocus.query();
+    if (el) {
+      el.focus();
+      el.scrollIntoView({ block: "center" });
+    }
+    setPendingFocus(undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFocus, safeStep, activeTabId]);
+
   return (
     <StudioFrame
       title={agentStudioTitleFor(mode, entityId, entity)}
@@ -1330,6 +1367,35 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       frozen={frozen}
       onSave={onSave}
       onCancel={() => post(cancelMessage())}
+      resolveErrorActivate={(error) => {
+        // t-49f6e8 — the errors this form can act on become their own path to the field; host and
+        // transport errors have no target and stay plain text.
+        if (error === environmentRefusalError && environmentIssue) {
+          return () => {
+            if (mode === "new") {
+              const advanced = wizardSteps.findIndex((s) => s.label === "Advanced");
+              if (advanced >= 0) setStep(advanced);
+            } else {
+              setEditTab("environment");
+            }
+            // GOV.UK: the link goes to the field IN ERROR — the coordinate select when the name is
+            // fine, the name input otherwise. The coordinate labels are per-row, so match a prefix.
+            const attr = environmentIssue.section === "values" || environmentIssue.field === "name"
+              ? environmentIssue.section === "values" ? "Environment variable name" : "Secret environment variable name"
+              : "Secret coordinate for";
+            const index = environmentIssue.index;
+            setPendingFocus({ query: () => [...document.querySelectorAll<HTMLElement>(`[aria-label^="${attr}"]`)][index] ?? null });
+          };
+        }
+        if (error === runtimeRefusalError) {
+          return () => {
+            if (mode === "new") setStep(0);
+            else setEditTab("general");
+            setPendingFocus({ query: () => document.getElementById("ash-cmd") });
+          };
+        }
+        return undefined;
+      }}
       regions={{
         fields: (
           <div class="ash-fields">

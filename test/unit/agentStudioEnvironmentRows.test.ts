@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   canonicalAgentFields,
+  environmentRowIssue,
   environmentRowProblem,
+  removeEnvironmentValueRow,
+  removeSecretReferenceRow,
   serializeAgentPatch,
   type AgentStudioFields,
 } from "@tachyon/webview-ui/webview/agent-studio-shell/domain";
@@ -74,5 +77,34 @@ describe("t-9aec3e — environment rows", () => {
     if (!named || named.kind !== "agent-instance") throw new Error("expected an agent-instance patch");
     expect(named.editable.environment?.values).toEqual({ SDK: "x" });
     expect(environmentRowProblem(fields)).toBeUndefined();
+  });
+
+  it("t-49f6e8 — the issue says which section, row and control is guilty", () => {
+    expect(environmentRowIssue(withEnvironment({ values: { OK: "x", "": "" }, secrets: {} })))
+      .toMatchObject({ section: "values", index: 1, field: "name", short: "Needs a variable name." });
+    expect(environmentRowIssue(withEnvironment({
+      values: {},
+      secrets: { TOKEN: { provider: "", id: "", purpose: "" } },
+    }))).toMatchObject({ section: "secrets", index: 0, field: "coordinate", short: "Needs a Keys coordinate." });
+  });
+
+  it("t-49f6e8 — a created row can be destroyed, and destroying it clears the refusal", () => {
+    const fields = withEnvironment({
+      values: { SDK: "x", "": "" },
+      secrets: { KEEP: { provider: "github", id: "tok", purpose: "p" }, "": { provider: "", id: "", purpose: "" } },
+    });
+    expect(environmentRowProblem(fields)).toContain("Environment value 2");
+    const removedValue = removeEnvironmentValueRow(fields, "");
+    expect(environmentRowProblem(removedValue)).toContain("Secret reference 2");
+    const removedSecret = removeSecretReferenceRow(removedValue, "");
+    expect(environmentRowProblem(removedSecret)).toBeUndefined();
+    // the rows the human kept are untouched
+    expect(removedSecret.canonical!.environment).toMatchObject({
+      values: { SDK: "x" },
+      secrets: { KEEP: { provider: "github", id: "tok", purpose: "p" } },
+    });
+    // a SAVED row is destructible too — removal is a real edit, not a blank-row escape hatch
+    const removedSaved = removeEnvironmentValueRow(removedSecret, "SDK");
+    expect(removedSaved.canonical!.environment.values).toEqual({});
   });
 });

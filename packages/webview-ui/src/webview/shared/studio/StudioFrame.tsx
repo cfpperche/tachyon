@@ -63,6 +63,14 @@ export interface StudioFrameProps {
   headerActions?: ComponentChildren;
   /** t-bf3498 — the route's "← Parent" back-link, rendered as a compact line under the title. */
   backLink?: ComponentChildren;
+  /**
+   * t-49f6e8 — optional error→field resolver, WEBVIEW-side only (the engine's StudioError stays
+   * pure data; a function field there would drag callbacks across the adapter boundary). When a
+   * studio can lead the human to the field an error names, returning an activate handler here
+   * renders that error as the jump control WCAG G139 asks for; errors without one stay plain
+   * text. Host/transport errors have no target and therefore no button.
+   */
+  resolveErrorActivate?: (error: StudioError) => (() => void) | undefined;
   regions: StudioFrameRegions;
 }
 
@@ -108,15 +116,41 @@ export function StudioFrame(props: StudioFrameProps) {
           )}
         </div>
       )}
-      {props.errors.length > 0 && (
-        <div class="sf-errors" role="alert">
-          {props.errors.map((e) => (
-            <div key={e.code} class={e.blocking ? "sf-error-blocking" : "sf-error-nonblocking"}>
-              {e.message}
-            </div>
-          ))}
-        </div>
-      )}
+      {/*
+        * t-49f6e8 — the error area is a SUMMARY, not loose sentences (owner's word for the old
+        * state: "ruim"). GOV.UK's error-summary shape: a heading that counts the problems and
+        * states their cost, blocking items first, warnings under their own label, and — where the
+        * studio can name the field — each item IS the path to it (WCAG G139). The region keeps
+        * role="alert" (ARIA19): it announces without moving focus, and focus only moves when the
+        * human asks by clicking the jump control.
+        */}
+      {props.errors.length > 0 && (() => {
+        const blocking = props.errors.filter((e) => e.blocking);
+        const warnings = props.errors.filter((e) => !e.blocking);
+        return (
+          <div class="sf-errors" role="alert">
+            {blocking.length > 0 && (
+              <div class="sf-error-title">{blocking.length === 1 ? "1 problem blocks saving" : `${blocking.length} problems block saving`}</div>
+            )}
+            {blocking.map((e) => {
+              const activate = props.resolveErrorActivate?.(e);
+              return (
+                <div key={e.code} class="sf-error-blocking">
+                  {activate ? <button type="button" class="sf-error-jump" onClick={activate}>{e.message}</button> : e.message}
+                </div>
+              );
+            })}
+            {warnings.length > 0 && (
+              <div class="sf-error-warnings-label">
+                {blocking.length > 0 ? "Warnings" : warnings.length === 1 ? "1 warning" : `${warnings.length} warnings`}
+              </div>
+            )}
+            {warnings.map((e) => (
+              <div key={e.code} class="sf-error-nonblocking">{e.message}</div>
+            ))}
+          </div>
+        );
+      })()}
 
       <main class="sf-body">
         {props.regions.fields !== undefined && <section class="sf-region-fields">{props.regions.fields}</section>}

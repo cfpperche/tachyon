@@ -886,19 +886,65 @@ export function newAgentRuntimeRefusal(fields: AgentStudioFields): string | unde
  * refused exactly this) and a secret id of "" (the mutation schema requires `id` min 1). A secret
  * with a blank provider is NOT refused here — the door accepts it, and a stricter client rule
  * would strand a hand-authored profile this form did not write.
+ *
+ * t-49f6e8 — the STRUCTURED half of the same answer: naming the row precisely is only useful when
+ * the human can act on it, so the issue carries the section and position the UI needs to mark the
+ * guilty row and jump to it (WCAG G139), plus the short inline wording NN/g wants next to the
+ * field itself.
  */
-export function environmentRowProblem(fields: AgentStudioFields): string | undefined {
+export interface AgentEnvironmentRowIssue {
+  section: "values" | "secrets";
+  /** zero-based position within its section's rows. */
+  index: number;
+  /** which control of the row carries `aria-invalid`. */
+  field: "name" | "coordinate";
+  message: string;
+  short: string;
+}
+
+export function environmentRowIssue(fields: AgentStudioFields): AgentEnvironmentRowIssue | undefined {
   const environment = fields.canonical?.environment;
   if (!environment) return undefined;
   const values = Object.entries(environment.values ?? {});
   const valueIndex = values.findIndex(([name]) => name.trim().length === 0);
-  if (valueIndex >= 0) return `Environment value ${valueIndex + 1} needs a variable name before saving.`;
+  if (valueIndex >= 0) {
+    return { section: "values", index: valueIndex, field: "name", message: `Environment value ${valueIndex + 1} needs a variable name before saving.`, short: "Needs a variable name." };
+  }
   const secrets = Object.entries(environment.secrets ?? {});
   const nameIndex = secrets.findIndex(([name]) => name.trim().length === 0);
-  if (nameIndex >= 0) return `Secret reference ${nameIndex + 1} needs a variable name before saving.`;
+  if (nameIndex >= 0) {
+    return { section: "secrets", index: nameIndex, field: "name", message: `Secret reference ${nameIndex + 1} needs a variable name before saving.`, short: "Needs a variable name." };
+  }
   const coordinateIndex = secrets.findIndex(([, reference]) => reference.id.trim().length === 0);
-  if (coordinateIndex >= 0) return `Secret reference ${coordinateIndex + 1} needs a Keys coordinate (provider and id) before saving.`;
+  if (coordinateIndex >= 0) {
+    return { section: "secrets", index: coordinateIndex, field: "coordinate", message: `Secret reference ${coordinateIndex + 1} needs a Keys coordinate (provider and id) before saving.`, short: "Needs a Keys coordinate." };
+  }
   return undefined;
+}
+
+export function environmentRowProblem(fields: AgentStudioFields): string | undefined {
+  return environmentRowIssue(fields)?.message;
+}
+
+/**
+ * t-49f6e8 — a row the user can create must be destructible. `Add value`/`Add secret reference`
+ * used to birth rows with no remove control at all, so one stray click blocked Save until the
+ * human invented a name for a field they did not want — measured on the devhost: 0 remove
+ * controls against 2 add ones. Removal is by the row's CURRENT name (object keys cannot collide,
+ * so a name identifies exactly one row; the blank row "" included).
+ */
+export function removeEnvironmentValueRow(fields: AgentStudioFields, name: string): AgentStudioFields {
+  if (!fields.canonical) return fields;
+  const values = { ...(fields.canonical.environment.values ?? {}) };
+  delete values[name];
+  return { ...fields, canonical: { ...fields.canonical, environment: { ...fields.canonical.environment, values } } };
+}
+
+export function removeSecretReferenceRow(fields: AgentStudioFields, name: string): AgentStudioFields {
+  if (!fields.canonical) return fields;
+  const secrets = { ...(fields.canonical.environment.secrets ?? {}) };
+  delete secrets[name];
+  return { ...fields, canonical: { ...fields.canonical, environment: { ...fields.canonical.environment, secrets } } };
 }
 
 /**

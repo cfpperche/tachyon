@@ -55,17 +55,24 @@
 .ash-profile-bindings .ash-label { flex-basis: 100%; margin: 0; }
 .ash-native-config { display: grid; gap: var(--ds-spacing-size80); padding-top: var(--ds-spacing-size80); border-top: 1px solid var(--ds-border); }
 .ash-native-config-editor { display: grid; gap: var(--ds-spacing-size120); width: 100%; box-sizing: border-box; padding: var(--ds-spacing-size120); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--ds-card); }
-.ash-native-config-editor-row { display: grid; grid-template-columns: minmax(9rem, 1fr) minmax(14rem, 1.5fr); align-items: center; gap: var(--ds-spacing-size120); }
+.ash-native-config-editor-row { display: grid; grid-template-columns: minmax(9rem, 1fr) minmax(14rem, 1.5fr) auto; align-items: center; gap: var(--ds-spacing-size120); }
 .ash-native-config-editor-row label { font-weight: 600; }
 /* t-9aec3e — the secret row carries three controls (name, coordinate, purpose), so it takes the
-   three-column track its column heads announce; values keep the two-column row above. */
-.ash-native-config-editor-row-triple { grid-template-columns: minmax(7rem, 1fr) minmax(11rem, 1.2fr) minmax(7rem, 1fr); }
+   three-column track its column heads announce; values keep the two-column row above.
+   t-49f6e8 — both carry a trailing Remove control (a row the user can create must be
+   destructible), hence the `auto` last track on every row and head. */
+.ash-native-config-editor-row-triple { grid-template-columns: minmax(7rem, 1fr) minmax(11rem, 1.2fr) minmax(7rem, 1fr) auto; }
 /* t-9aec3e — column heads for the environment editors: every box below answers to a visible
    uppercase label, once per column, on the same grid the rows use so the labels sit over their
    own column at every width. */
-.ash-env-head { display: grid; grid-template-columns: minmax(9rem, 1fr) minmax(14rem, 1.5fr); gap: var(--ds-spacing-size120); }
-.ash-env-head-triple { grid-template-columns: minmax(7rem, 1fr) minmax(11rem, 1.2fr) minmax(7rem, 1fr); }
+.ash-env-head { display: grid; grid-template-columns: minmax(9rem, 1fr) minmax(14rem, 1.5fr) auto; gap: var(--ds-spacing-size120); }
+.ash-env-head-triple { grid-template-columns: minmax(7rem, 1fr) minmax(11rem, 1.2fr) minmax(7rem, 1fr) auto; }
 .ash-env-head .ash-label { margin: 0; }
+/* t-49f6e8 — the guilty row, marked where the human is looking (NN/g: inline, beside the field):
+   a semitransparent error wash rather than a border, so the marked row keeps the column rhythm.
+   The short hint spans the whole row beneath the controls. */
+.ash-row-invalid { background: color-mix(in srgb, var(--ds-err) 8%, transparent); border-radius: var(--ds-radius); padding: var(--ds-spacing-size40); }
+.ash-row-hint { grid-column: 1 / -1; }
 @media (max-width: 560px) {
   .ash-native-config-editor-row { grid-template-columns: 1fr; gap: var(--ds-spacing-size40); }
   .ash-native-config-editor-row-triple, .ash-env-head, .ash-env-head-triple { grid-template-columns: 1fr; gap: var(--ds-spacing-size40); }
