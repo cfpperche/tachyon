@@ -95,9 +95,9 @@ a { color: var(--ds-link); }
   min-width: 28px;
   padding: 0;
 }
-.ds-btn .codicon, .ds-tab .codicon, .ds-chip .codicon { font-size: var(--ds-small); line-height: 1; flex: none; }
+.ds-btn .codicon, .ds-tab .codicon, .ds-chip .codicon, .ds-badge .codicon { font-size: var(--ds-small); line-height: 1; flex: none; }
 /* ── badges ── */
-.ds-badge { font-size: var(--ds-micro); line-height: 1.6; padding: 1px 9px; border-radius: 10px; border: 1px solid var(--ds-border); color: var(--ds-muted); white-space: nowrap; }
+.ds-badge { display: inline-flex; align-items: center; gap: var(--ds-icon-gap); font-size: var(--ds-micro); line-height: 1.6; padding: 1px 9px; border-radius: 10px; border: 1px solid var(--ds-border); color: var(--ds-muted); white-space: nowrap; }
 .ds-badge.ok   { color: var(--ds-ok);   border-color: color-mix(in srgb, var(--ds-ok) 55%, transparent); }
 .ds-badge.warn { color: var(--ds-warn); border-color: color-mix(in srgb, var(--ds-warn) 55%, transparent); }
 .ds-badge.err  { color: var(--ds-err);  border-color: color-mix(in srgb, var(--ds-err) 55%, transparent); }
