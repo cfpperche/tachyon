@@ -317,7 +317,7 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
     fleets?: FleetVM[];
     initialTab?: TabId;
     prefs?: { agents?: string; terminals?: string; launcher?: string };
-    dispatch?: { setSort?: (section: string, mode: string) => void; global?: (...args: unknown[]) => void };
+    dispatch?: { setSort?: (section: string, mode: string) => void; global?: (op: string, hash?: string, sectionId?: string) => void };
     initialReorderMode?: boolean;
   };
   let App: (props: AppProps) => unknown;
@@ -417,7 +417,7 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
     const { elements, html } = renderStaticWithElements(App({
       fleets: [SAMPLE],
       initialTab: "Control",
-      dispatch: { global: (_op: unknown, _hash: unknown, sectionId?: string) => { if (sectionId) opens.push(sectionId); } },
+      dispatch: { global: (_op: string, _hash?: string, sectionId?: string) => { if (sectionId) opens.push(sectionId); } },
     }));
     const system = tileEls(elements, "system");
     expect(system.props.tabindex).toBe(0);

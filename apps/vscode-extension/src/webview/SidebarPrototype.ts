@@ -268,10 +268,15 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     // first-push seeding as the two list sections (an absent launcher pref still means product order).
     // t-539851 — launcher writes `custom:id,id,…` through this same string (a list of ids, not a
     // new memento key). Agents/terminals still only accept the two alphabetical modes.
-    if (m?.type === "setSort" && typeof m.mode === "string") {
-      const listOk = (m.section === "agents" || m.section === "terminals") && (m.mode === "name-asc" || m.mode === "name-desc");
-      const launcherOk = m.section === "launcher" && isPersistedLauncherMode(m.mode);
-      if (listOk || launcherOk) {
+    if (
+      m?.type === "setSort"
+      && (m.section === "agents" || m.section === "terminals" || m.section === "launcher")
+      && typeof m.mode === "string"
+    ) {
+      const ok = m.section === "launcher"
+        ? isPersistedLauncherMode(m.mode)
+        : m.mode === "name-asc" || m.mode === "name-desc";
+      if (ok) {
         // spec 242 (D9) — update the in-memory cache SYNCHRONOUSLY (before the await) so a second overlapping
         // setSort reads the new object, then persist + republish (the validated mode never writes garbage).
         this.sortCache = { ...this.sortPrefs(), [m.section]: m.mode };
