@@ -42,7 +42,7 @@ const NAV_BY_ID: ReadonlyMap<SectionId, Omit<ControlSectionNav, "id">> = new Map
   ["tmux", { icon: "terminal-tmux", label: "tmux" }],
   ["plugins", { icon: "extensions", label: "Plugins" }],
   ["settings", { icon: "settings-gear", label: "Settings" }],
-  ["companion", { icon: "pulse", label: "Companion" }],
+  ["companion", { icon: "device-mobile", label: "Companion" }],
 ]);
 
 /**

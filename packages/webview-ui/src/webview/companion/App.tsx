@@ -158,6 +158,14 @@ export function CompanionApp({
       <PageChrome
         title={s.companionTitle}
         hint={s.companionHint}
+        actions={companion ? (
+          <div class="companion-context">
+            <span class="companion-eyebrow">{companion.folderName}</span>
+            <Badge>
+              {companion.paired ? s.companionPaired : s.companionNotPaired}
+            </Badge>
+          </div>
+        ) : undefined}
       />
       {needsWorkspacePick ? (
         <EmptyState message={s.companionPickWorkspace} />
@@ -165,18 +173,6 @@ export function CompanionApp({
         <EmptyState message={s.empty} />
       ) : (
         <>
-          <section class="companion-overview">
-            <div>
-              <p class="companion-eyebrow">{companion.folderName}</p>
-              <h1>Companion access</h1>
-              <p class="companion-muted">
-                Pair a phone or browser to use Tachyon from your local network.
-              </p>
-            </div>
-            <Badge>
-              {companion.paired ? s.companionPaired : s.companionNotPaired}
-            </Badge>
-          </section>
           <section class="companion-settings">
             <div class="companion-setting-copy">
               <strong>{s.companionTabTools}</strong>
