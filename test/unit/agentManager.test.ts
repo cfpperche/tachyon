@@ -1961,6 +1961,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       resolveCaptureId?: (rt: string, cwd: string, configHome?: string) => Promise<string | null>;
       resolveCaptureSession?: (rt: string, cwd: string, configHome?: string, id?: string) => Promise<{ id: string; path: string } | null>;
       resolveCurrentSession?: (rt: string, cwd: string) => Promise<string | null>;
+      resolveSecret?: (key: string) => Promise<string | undefined>;
       homeDir?: () => string;
       defaultClaudeConfigHome?: string;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2113,6 +2114,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       resolveCaptureId: opts.resolveCaptureId,
       resolveCaptureSession: opts.resolveCaptureSession,
       resolveCurrentSession: opts.resolveCurrentSessionFull ?? opts.resolveCurrentSession,
+      resolveSecret: opts.resolveSecret,
       homeDir: opts.homeDir,
       defaultClaudeConfigHome: opts.defaultClaudeConfigHome,
       resolveSpawnCwd: opts.resolveSpawnCwd,
@@ -3632,20 +3634,27 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("claude-fork-1")?.def?.env).toEqual({ ANTHROPIC_BASE_URL: "https://api.glm.example" });
   });
 
-  it("commitFork copies environment.values but never a canonical secret reference", async () => {
-    const { manager, ledger, newSessionArgs } = resumeHarness("agents:\n  claude:\n    cmd: claude\n    env:\n      MODE: review\n", {
+  it("commitFork persists references without resolved secret values", async () => {
+    const { manager, ledger, newSessionArgs } = resumeHarness("agents:\n  source:\n    cmd: claude\n", {
       resolveCurrentSession: async () => UUID,
+      resolveSecret: async (key) => key === "profile-secret/host-store/fork-secret" ? "do-not-clone-this-value" : undefined,
     });
-    asAgent(manager.defOf("claude"))!.environment!.secrets = {
-      API_TOKEN: { provider: "host-store", id: "do-not-clone-this-handle", purpose: "model access" },
-    };
 
-    await manager.spawn("claude");
-    await manager.commitFork(await manager.planFork("claude"));
+    await manager.spawn("source", {
+      cmd: "claude",
+      environment: {
+        values: { MODE: "review" },
+        secrets: { API_TOKEN: { provider: "host-store", id: "fork-secret", purpose: "model access" } },
+      },
+    });
+    await manager.commitFork(await manager.planFork("source"));
 
-    expect(ledger.get("claude-fork-1")?.def?.env).toEqual({ MODE: "review" });
-    expect(JSON.stringify(ledger.get("claude-fork-1"))).not.toContain("do-not-clone-this-handle");
-    expect(newSessionArgs.flat().join(" ")).not.toContain("do-not-clone-this-handle");
+    expect(ledger.get("source-fork-1")?.def?.environment).toEqual({
+      values: { MODE: "review" },
+      secrets: { API_TOKEN: { provider: "host-store", id: "fork-secret", purpose: "model access" } },
+    });
+    expect(JSON.stringify(ledger.get("source-fork-1"))).not.toContain("do-not-clone-this-value");
+    expect(newSessionArgs.flat().join(" ")).toContain("API_TOKEN=do-not-clone-this-value");
   });
 
   it("SDD 369 T3 passes a fork's inherited explicit Claude config home to capture materialization", async () => {
