@@ -73,19 +73,23 @@ describe("t-d68b8b — the Agent form offers only what it can create", () => {
       try {
         await page.bringToFront();
         const surface = await openPreview(page, server.origin, {
-          query: { view: "agent-studio-shell", fixture: "new-unattested-runtime" },
+          query: { view: "agent-studio-shell", fixture: "new-unattested-runtime", ashStep: 3 },
           width,
           waitFor: ".sf-region-fields",
         });
-        const read: { refusals: string[]; saveDisabled: boolean | null } = await surface.evaluate(() => {
-          const save = [...document.querySelectorAll("button")].find((b) => (b.textContent || "").trim() === "Save");
+        const read: { refusals: string[]; saveDisabled: boolean | null; headerHasSave: boolean } = await surface.evaluate(() => {
+          const text = (el: Element | null) => (el?.textContent || "").trim();
+          const save = [...document.querySelectorAll(".ash-steps-nav button")].find((b) => text(b) === "Save") as HTMLButtonElement | undefined;
+          const headerHasSave = [...document.querySelectorAll(".sf-actions button")].some((b) => text(b) === "Save");
           return {
-            refusals: [...document.querySelectorAll(".sf-error-blocking")].map((e) => (e.textContent || "").trim()),
+            refusals: [...document.querySelectorAll(".sf-error-blocking")].map((e) => text(e)),
             saveDisabled: save ? save.disabled : null,
+            headerHasSave,
           };
         });
 
-        expect(read.saveDisabled, "no Save button in the shipped frame").toBe(true);
+        expect(read.headerHasSave, "create Save must not return to the header").toBe(false);
+        expect(read.saveDisabled, "no Save button in the last-step nav").toBe(true);
         const refusal = read.refusals.join(" | ");
         expect(refusal).toContain("opencode");
         expect(refusal).toContain(ATTESTED_RUNTIMES.join(", "));
