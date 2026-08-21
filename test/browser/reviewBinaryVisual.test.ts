@@ -32,7 +32,7 @@ describe("t-3be62b — Review binary families", () => {
     page.on("request", listener);
     await openPreview(page, server.origin, { query: { view: "review", fixture: "default" }, waitFor: ".review-diff" });
     page.off("request", listener);
-    expect(requested.some((url) => /app-(?:pdf|model-viewer)-/.test(url))).toBe(false);
+    expect(requested.some((url) => /review-(?:pdf|model-viewer)\.js$/.test(url))).toBe(false);
     expect(requested.some((url) => url.endsWith("pdf.worker.min.mjs"))).toBe(false);
   });
 

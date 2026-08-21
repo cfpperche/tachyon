@@ -3,12 +3,35 @@ import { Button } from "../shared/ui";
 import { sanitizeMarkup } from "../activity/markdown";
 import type { ReviewBinaryAsset, ReviewBinarySide } from "./messages";
 
-declare global { interface Window { PDFJS_WORKER_URI?: string } }
+declare global {
+  interface Window {
+    PDFJS_WORKER_URI?: string;
+    PDFJS_VIEWER_URI?: string;
+    MODEL_VIEWER_URI?: string;
+    __tachyonPdfjs?: typeof import("pdfjs-dist");
+  }
+}
 
 // Markdown's URI allow-list also rejects every non-URI SVG value (dimensions,
 // paths, transforms). Extend the same allowed schemes with colon-free SVG
 // attribute values; protocol-bearing command/data/file/javascript values stay blocked.
 const SVG_ALLOWED_URI_REGEXP = /^(?:https?:|mailto:|#|[^:]*$)/i;
+
+const scripts = new Map<string, Promise<void>>();
+function loadScript(src: string): Promise<void> {
+  const prior = scripts.get(src);
+  if (prior) return prior;
+  const pending = new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+  scripts.set(src, pending);
+  pending.catch(() => scripts.delete(src));
+  return pending;
+}
 
 function Raster({ side }: { side: ReviewBinarySide }) {
   return <img class="review-binary-image" src={side.uri} alt={`${side.label} image`} />;
@@ -42,7 +65,10 @@ function Pdf({ side }: { side: ReviewBinarySide }) {
   useEffect(() => {
     let cancelled = false;
     let task: { destroy(): Promise<void> } | undefined;
-    void import("pdfjs-dist").then(async (pdfjs) => {
+    const viewerUri = window.PDFJS_VIEWER_URI;
+    void (viewerUri ? loadScript(viewerUri) : Promise.reject(new Error("PDF viewer unavailable"))).then(async () => {
+      const pdfjs = window.__tachyonPdfjs;
+      if (!pdfjs) throw new Error("PDF viewer failed to initialize");
       if (window.PDFJS_WORKER_URI) pdfjs.GlobalWorkerOptions.workerSrc = window.PDFJS_WORKER_URI;
       const loading = pdfjs.getDocument({ url: side.uri });
       task = loading;
@@ -76,7 +102,9 @@ function Model({ side }: { side: ReviewBinarySide }) {
   const [ready, setReady] = useState(false);
   useEffect(() => {
     let alive = true;
-    void import("@google/model-viewer").then(() => { if (alive) setReady(true); });
+    const viewerUri = window.MODEL_VIEWER_URI;
+    void (viewerUri ? loadScript(viewerUri) : Promise.reject(new Error("3D viewer unavailable")))
+      .then(() => { if (alive) setReady(true); });
     return () => { alive = false; };
   }, []);
   if (!ready) return <p class="review-empty">Loading 3D viewer…</p>;

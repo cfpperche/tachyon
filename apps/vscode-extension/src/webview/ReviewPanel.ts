@@ -141,7 +141,11 @@ export class ReviewPanelManager {
       title: (target) => vscode.l10n.t("Review — {0}", target.identity ?? ""),
       iconName: "note",
       csp: { imgBlob: true, connectSrc: true, workerSrc: "blob" },
-      bootstrapGlobals: (_target, uri) => ({ PDFJS_WORKER_URI: uri("pdf.worker.min.mjs") }),
+      bootstrapGlobals: (_target, uri) => ({
+        PDFJS_WORKER_URI: uri("pdf.worker.min.mjs"),
+        PDFJS_VIEWER_URI: uri("review-pdf.js"),
+        MODEL_VIEWER_URI: uri("review-model-viewer.js"),
+      }),
       extraLocalResourceRoots: (target) => {
         const session = this.cacheSessions.get(this.manager.keyFor(target));
         return session ? [vscode.Uri.file(session)] : [];

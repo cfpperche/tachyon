@@ -2293,6 +2293,82 @@
     ]
   },
   {
+    "view": "review",
+    "fixture": "raster",
+    "url": "/scripts/webview-preview/index.html?view=review&fixture=raster",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Review",
+    "aliases": [
+      "review",
+      "diff review",
+      "worktree review",
+      "tachyon review"
+    ]
+  },
+  {
+    "view": "review",
+    "fixture": "svg",
+    "url": "/scripts/webview-preview/index.html?view=review&fixture=svg",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Review",
+    "aliases": [
+      "review",
+      "diff review",
+      "worktree review",
+      "tachyon review"
+    ]
+  },
+  {
+    "view": "review",
+    "fixture": "pdf",
+    "url": "/scripts/webview-preview/index.html?view=review&fixture=pdf",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Review",
+    "aliases": [
+      "review",
+      "diff review",
+      "worktree review",
+      "tachyon review"
+    ]
+  },
+  {
+    "view": "review",
+    "fixture": "model",
+    "url": "/scripts/webview-preview/index.html?view=review&fixture=model",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Review",
+    "aliases": [
+      "review",
+      "diff review",
+      "worktree review",
+      "tachyon review"
+    ]
+  },
+  {
     "view": "section-app-fixture",
     "fixture": "document",
     "url": "/scripts/webview-preview/index.html?view=section-app-fixture&fixture=document",

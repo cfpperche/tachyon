@@ -459,6 +459,29 @@ const katex = {
   logLevel: "info",
 };
 
+// t-3be62b — heavyweight Review viewers are independent on-demand resources. Keeping them
+// outside review.js's reachable graph makes the text-only path pay for neither library.
+const reviewPdf = {
+  entryPoints: ["packages/webview-ui/src/webview/review/pdf-entry.ts"],
+  bundle: true,
+  outfile: "dist/webview/review-pdf.js",
+  platform: "browser",
+  format: "iife",
+  target: "es2020",
+  minify: true,
+  logLevel: "info",
+};
+const reviewModelViewer = {
+  entryPoints: ["packages/webview-ui/src/webview/review/model-viewer-entry.ts"],
+  bundle: true,
+  outfile: "dist/webview/review-model-viewer.js",
+  platform: "browser",
+  format: "iife",
+  target: "es2020",
+  minify: true,
+  logLevel: "info",
+};
+
 // spec 278 — the dev-only preview-harness glue (reads ?view=&fixture=, loads a real webview bundle, injects a
 // fixture). Output lives OUTSIDE dist/webview and is excluded from the vsix (.vscodeignore); never shipped.
 const preview = {
@@ -616,7 +639,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, internalSeams, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate]
+const targets = [extension, internalSeams, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, reviewPdf, reviewModelViewer, preview, previewShell, uiGate]
   .map((target) => ({
     ...target,
     ...(target.outfile ? { outfile: outputPath(target.outfile) } : {}),
