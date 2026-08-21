@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { contained } from "@tachyon/engine/files/contained.js";
 import type { ChangedFile } from "@tachyon/engine/worktree/review.js";
 import type { ReviewBinaryAsset, ReviewBinaryFamily, ReviewBinarySide } from "@tachyon/webview-ui/webview/review/messages";
 
@@ -15,13 +16,6 @@ const SUPPORTED = new Map<string, ReviewBinaryFamily>([
 
 function familyOf(file: string): ReviewBinaryFamily | undefined {
   return SUPPORTED.get(path.extname(file).toLowerCase());
-}
-
-function contained(root: string, relative: string): string | undefined {
-  if (!relative || path.isAbsolute(relative)) return undefined;
-  const target = path.resolve(root, relative);
-  const prefix = `${path.resolve(root)}${path.sep}`;
-  return target.startsWith(prefix) ? target : undefined;
 }
 
 async function gitBlob(cwd: string, ref: string, relative: string): Promise<Buffer> {
