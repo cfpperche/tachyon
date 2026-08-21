@@ -75,7 +75,7 @@ interface CwdProcessScan {
 }
 
 function underRoot(cwd: string, root: string): boolean {
-  return cwd === root || cwd.startsWith(`${root}${path.sep}`);
+  return cwd === root || cwd.startsWith(root === path.parse(root).root ? root : `${root}${path.sep}`);
 }
 
 /**

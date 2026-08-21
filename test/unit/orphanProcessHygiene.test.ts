@@ -31,6 +31,12 @@ function procFixture(entries: Record<string, { cwd?: string; command?: string }>
 }
 
 describe("worktree orphan process hygiene", () => {
+  it("can use the filesystem root for a process-kind-filtered whole-host scan", () => {
+    expect(scanOrphanedWorktreeProcesses("/", "/proc", procFixture({
+      "41": { cwd: "/tmp/gone (deleted)", command: "tachyon-engine:\n" },
+    })).orphanedProcesses).toEqual([{ pid: 41, cwd: "/tmp/gone", command: "tachyon-engine:" }]);
+  });
+
   it("reports deleted cwd processes under this workspace without relying on process lineage", () => {
     const root = "/cache/tachyon/worktrees/ws123";
     const report = scanOrphanedWorktreeProcesses(root, "/proc", procFixture({
