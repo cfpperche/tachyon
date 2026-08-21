@@ -10,6 +10,10 @@
  * comments tell the user to adjust.
  */
 
+import { CREDENTIAL_CLASS_PREFIXES, PROJECTED_TOOLING_RELS } from "@tachyon/engine/plugins/worktreeProjection.js";
+import { WORKSPACE_DESTS } from "@tachyon/engine/plugins/agentDest.js";
+import { CONFIG_LKG_FILENAME } from "@tachyon/engine/config/configLkg.js";
+
 export interface DetectedProject {
   /** manifest files present at the workspace root */
   files: string[];
@@ -104,10 +108,46 @@ function pickAgent(installed: string[]): { bin: string; detected: boolean } {
  * kind-tagged set as agents: — it just reads more naturally for non-AI processes.
  */
 /**
+ * t-4290d0 — a gitignore pattern covering a credential-class prefix. Gitignore matches whole path
+ * SEGMENTS, not string prefixes: the raw engine prefix `.tachyon/secrets` would NOT cover
+ * `.tachyon/secrets.env` — the measured hole (t-508c85). Appending `*` covers the bare name AND its
+ * suffixed siblings; a prefix already ending in `/` already means "this directory".
+ */
+export function gitIgnorePatternFor(prefix: string): string {
+  return prefix.endsWith("/") ? prefix : `${prefix}*`;
+}
+
+/**
+ * t-4290d0 — plugin materialization writes into per-runtime workspace paths (`WORKSPACE_DESTS`), and
+ * installing reproduces them from the lockfile, so a fresh workspace must not commit them. Each dest
+ * contributes its top-level entry: the directory for paths under one, the file itself when bare
+ * (`.mcp.json`). Reproduces exactly what this repository's own .gitignore ignores by hand.
+ */
+function runtimeMaterializationEntries(): string[] {
+  const tops = new Set<string>();
+  for (const dest of Object.values(WORKSPACE_DESTS)) {
+    for (const rel of [dest.settingsRel, dest.skillsRel, dest.mcpRel]) {
+      if (!rel) continue;
+      const slash = rel.indexOf("/");
+      tops.add(slash === -1 ? rel : `${rel.slice(0, slash)}/`);
+    }
+  }
+  return [...tops];
+}
+
+/**
  * Machine-local Tachyon state that must never be committed. pins.json is
  * deliberately ABSENT — it's the shared checklist, meant to travel with the
  * repo. sessions.json carries a per-machine resume ledger (session ids +
  * absolute cwd), so it stays local.
+ *
+ * t-4290d0 — the credential-class block DERIVES from the engine's own enumeration
+ * (`CREDENTIAL_CLASS_PREFIXES`, which `NEVER_PROJECT_PREFIXES` also derives from), and the rest from
+ * constants that already claim the "gitignored" property (`PROJECTED_TOOLING_RELS`,
+ * `CONFIG_LKG_FILENAME`, `WORKSPACE_DESTS`). No third hand-maintained list over the same knowledge —
+ * hand-copying entry by entry is how the original hole opened. The lockfile
+ * (`.tachyon/plugins.lock.json`, on NEVER_PROJECT_PREFIXES) stays shareable ON PURPOSE: spec 250
+ * commits it as the re-hydration recipe for a clone.
  */
 // spec 245 — the canonical .tachyon/HANDOFF.md is intentionally NOT ignored (it's the durable, committed
 // project handoff); only the transient pending-notes lane is machine-local.
@@ -122,6 +162,12 @@ export const TACHYON_GITIGNORE_ENTRIES = [
   ".tachyon/handoff-notes.jsonl",
   ".tachyon/pins/",
   ".tachyon/probes/", // spec 257 — captured probe artifacts (sensitive-by-default, machine-local)
+  // t-4290d0 — derived from CREDENTIAL_CLASS_PREFIXES (never projected, so never committed either)
+  ...CREDENTIAL_CLASS_PREFIXES.map(gitIgnorePatternFor),
+  // derived from constants that already claim to be git-ignored but which Init never delivered
+  ...PROJECTED_TOOLING_RELS.map(gitIgnorePatternFor),
+  `.tachyon/${CONFIG_LKG_FILENAME}`,
+  ...runtimeMaterializationEntries(),
 ];
 
 /**
