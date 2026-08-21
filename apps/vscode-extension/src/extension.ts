@@ -3595,6 +3595,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           openKeysTab();
           return Promise.resolve();
         }
+        if (resolved === "design-mode") {
+          const ws = (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+          if (!ws) {
+            notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn");
+            return Promise.resolve();
+          }
+          if (ws.config?.settings?.ideBrowser?.enabled !== true) {
+            settingsPanels.openIdeBrowser(ws.wsHash);
+            return Promise.resolve();
+          }
+          // Owner dogfood, 2026-08-20: armed iff the browser is open. `designModeOn` owns browser
+          // creation/navigation as well as arming, and closing that browser disposes CDP → OFF.
+          return vscode.commands.executeCommand("tachyon.ideBrowserBridge.designModeOn");
+        }
         if (resolved === "runtime-config") {
           openRuntimeConfigTab();
           return Promise.resolve();

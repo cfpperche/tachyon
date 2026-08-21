@@ -43,9 +43,12 @@ porque o estado vive no engine, e sobrevive ao reload porque a projeção é rem
   dono viu é literalmente *"erased on a timer"*. Um rodapé que apaga sozinho reintroduz o problema com
   outra pintura.
 
-- **Os dois ícones do IDE Browser vão juntos para o rodapé** — `ide-browser-bridge/register.ts` exige
-  no próprio comentário que fiquem **adjacentes**; a regra viaja com eles. Rejeitado *deixá-los na
-  status bar nativa*, que deixaria o produto falando em dois lugares — o defeito pela metade.
+- **Fatia 4 substituída por t-53f20d (decisão do dono, 2026-08-20).** Os dois ícones não vão para o
+  rodapé. `StatusNoticeFooter` não renderiza nada sem aviso para preservar a altura da lista; controles
+  permanentes quebrariam essa guarda, e controles condicionados a um aviso apareceriam e sumiriam.
+  O dogfood do dono substituiu o app por uma ação do ladrilho: gate desligado abre e destaca Settings;
+  gate ligado arma e abre o browser; fechar o browser desarma. URL e CDP vivem no System. O rodapé
+  continua sendo uma superfície de mensagem, não uma toolbar.
 
 - **Nada de centro de notificações** — o rodapé mostra a atual e o histórico recente. O Human Inbox já
   é o lugar do que exige ação. Rejeitado *fila com badge de não lidos*: máquina é último recurso, e o
@@ -71,10 +74,10 @@ porque o estado vive no engine, e sobrevive ao reload porque a projeção é rem
 - `packages/webview-ui/src/webview/sidebar/sidebar.css` — escala herdada do host, como a 0.93.7
   estabeleceu; nada de valor escolhido nesta tela.
 
-**Os ícones persistentes:**
+**Fatia 4 substituída (não pertence a esta implementação):**
 
-- `apps/vscode-extension/src/webview/ide-browser-bridge/register.ts` — os dois `StatusBarItem` saem;
-  a afordância passa para o rodapé, adjacentes.
+- t-53f20d remove os dois `StatusBarItem`; a afordância passa para a ação Design Mode do launcher,
+  enquanto URL e CDP passam para o System. Nenhum controle do IDE Browser entra no rodapé.
 
 ## Risks & unknowns
 
@@ -116,4 +119,5 @@ visível ao mesmo tempo que a lista de agentes.
   at the operational authority, never in the editor shell."*
 - `apps/vscode-extension/src/webview/SidebarPrototype.ts:79,219` — o `postMessage` que entrega.
 - `scripts/check-engine-boundary.sh` — spec 233.
-- Medição: 288 pontos alcançam `notify()`; 1 `setStatusBarMessage`; 2 `StatusBarItem` persistentes.
+- Medição original: 288 pontos alcançam `notify()`; 1 `setStatusBarMessage`; 2 `StatusBarItem`
+  persistentes. t-53f20d removeu os dois pela superfície substituta descrita acima.

@@ -2094,6 +2094,18 @@
     ]
   },
   {
+    "view": "settings",
+    "fixture": "ide-browser-focus",
+    "url": "/scripts/webview-preview/index.html?view=settings&fixture=ide-browser-focus",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
     "view": "companion",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=companion&fixture=default",

@@ -20,6 +20,10 @@ import { WEBVIEW_APPS } from "../../apps/vscode-extension/src/webview/webviewApp
  */
 describe("SDD 485 C8 — every launcher tile has a live destination", () => {
   const appSections = new Set(WEBVIEW_APPS.filter((a) => a.host === "section").map((a) => a.view));
+  // t-53f20d owner dogfood: this tile is deliberately neither a Control section nor an app. The
+  // existing launcher command hands it to the host, which opens highlighted Settings or arms and
+  // opens the Integrated Browser depending on the gate.
+  const HOST_ACTIONS = new Set(["design-mode"]);
   /**
    * `mission` (the Board) is the app whose bundle dir is `board`; the manifest keys on the
    * bundle dir, the launcher on the section id, so the seam needs an explicit mapping rather than a
@@ -60,6 +64,7 @@ describe("SDD 485 C8 — every launcher tile has a live destination", () => {
     const rendered = new Set<string>(COCKPIT_SECTION_ORDER);
     const dead = CONTROL_SECTION_NAV
       .filter((tile) => {
+        if (HOST_ACTIONS.has(tile.id)) return false;
         if (rendered.has(tile.id)) return false;
         const view = SECTION_TO_APP_VIEW[tile.id] ?? tile.id;
         return !appSections.has(view);
@@ -94,7 +99,7 @@ describe("SDD 485 C8 — every launcher tile has a live destination", () => {
     // inventory that ties the app to the tile and lets the host route the id. Falling back to the
     // view name here would let an app (such as Keys) be present in the bundle while remaining
     // unreachable.
-    const unbacked = routed.filter((id) => !appSections.has(COMPATIBILITY_VIEW[id] ?? SECTION_TO_APP_VIEW[id] ?? ""));
+    const unbacked = routed.filter((id) => !HOST_ACTIONS.has(id) && !appSections.has(COMPATIBILITY_VIEW[id] ?? SECTION_TO_APP_VIEW[id] ?? ""));
     expect(unbacked, `tachyon.openControl routes these ids to an app, but WEBVIEW_APPS declares no such app: ${unbacked.join(", ")}`).toEqual([]);
 
     // and the other direction: an id moved to an app but never routed still opens Control, silently.

@@ -21,9 +21,8 @@ describe("Design Mode overlay cutover structure", () => {
     expect(bundle).not.toMatch(/\.\/chunks\//);
   });
 
-  it("has no Design Mode panel, chat app, composer, or reply tool after cutover", () => {
+  it("keeps every Design Mode panel/app retired; the launcher gesture is host-only", () => {
     expect(fs.existsSync(path.join(root, "packages/webview-ui/src/webview/DesignModePanel.ts"))).toBe(false);
-    // t-69f737 — the cutover deleted the directory; gone is the stronger claim, and readdirSync threw ENOENT.
     expect(fs.existsSync(path.join(root, "packages/webview-ui/src/webview/design-mode"))).toBe(false);
     expect(read("esbuild.mjs")).not.toMatch(/WEBVIEW_APP_VIEWS\s*=\s*\[[^\]]*"design-mode"/);
     expect(read("apps/vscode-extension/src/webview/webviewApps.ts")).not.toContain('view: "design-mode"');

@@ -7,4 +7,6 @@ export const MODEL = "settingsModel" as const;
 export const pairOfferMessageType = "companionPairOffer" as const;
 export type SettingsAction = ReadyMessage | { type: typeof POLL };
 export const pollSettingsAction = (): SettingsAction => ({ type: POLL });
-export const settingsModelMessage = (model: SectionsModel) => ({ type: MODEL, model } as const);
+export const settingsModelMessage = (model: SectionsModel, ideBrowserFocusNonce?: number) => (
+  { type: MODEL, model, ...(ideBrowserFocusNonce === undefined ? {} : { ideBrowserFocusNonce }) } as const
+);

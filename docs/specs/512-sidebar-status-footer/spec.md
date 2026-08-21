@@ -74,7 +74,10 @@ provedor, não varrer 288 chamadas.
   - **When** ela é emitida
   - **Then** o dono continua conseguindo escolher a ação; a ação **nunca** vira texto sem controle
 
-- [ ] Os dois `StatusBarItem` persistentes do IDE Browser saem da status bar do VS Code
+- [x] Os dois `StatusBarItem` persistentes do IDE Browser saem da status bar do VS Code. A fatia 4
+  foi substituída por t-53f20d: o ladrilho Design Mode é uma ação do host — gate desligado abre e
+  destaca Settings; gate ligado arma e abre o browser; fechar o browser desarma. URL e CDP vivem no
+  System. O rodapé continua reservado a avisos.
 - [ ] `vscode.window.setStatusBarMessage` deixa de existir no produto
 - [ ] `packages/webview-ui/src` segue com **zero** import de `vscode` — a fronteira do spec 233 não é tocada
 - [ ] Nenhuma das ~288 chamadas de `notify()` precisa mudar

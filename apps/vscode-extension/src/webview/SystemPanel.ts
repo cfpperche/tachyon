@@ -15,6 +15,7 @@ import {
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
 import { POLL, READY, systemErrorMessage, systemModelMessage } from "@tachyon/webview-ui/webview/system/messages";
+import { readIdeBrowserUiState } from "./ide-browser-bridge/register.js";
 
 /**
  * SDD 500 D2 — a NEW viewType, and both ids it replaces are RETIRED rather than reused.
@@ -107,6 +108,7 @@ export class SystemPanelManager {
       session.post(
         systemModelMessage(
           buildSectionsModel(bundles, { section: "system", wsHash: session.target.project }),
+          readIdeBrowserUiState(),
         ),
       );
     } catch (e) {

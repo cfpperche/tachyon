@@ -440,10 +440,14 @@ export const ROUTES: Record<string, Route> = {
     fixtures: {
       default: cockpitFixtures.settings,
       "needs-workspace": cockpitFixtures["settings-needs-workspace"],
+      "ide-browser-focus": {
+        provenance: "synthetic-edge",
+        vm: { ...(cockpitFixtures.settings.vm as object), __ideBrowserFocus: true },
+      },
     },
     module: true,
     globals: { __TACHYON_STRINGS__: cockpitStrings },
-    makeMessage: (vm) => settingsModelMessage(vm as never),
+    makeMessage: (vm) => settingsModelMessage(vm as never, (vm as { __ideBrowserFocus?: boolean }).__ideBrowserFocus ? 1 : undefined),
   },
   companion: {
     bundle: "/dist/webview/companion.js",
@@ -468,7 +472,7 @@ export const ROUTES: Record<string, Route> = {
     },
     module: true,
     globals: { __TACHYON_STRINGS__: cockpitStrings },
-    makeMessage: (vm) => systemModelMessage(vm as never),
+    makeMessage: (vm) => systemModelMessage(vm as never, { url: "http://127.0.0.1:5173/dashboard", cdp: "connected" }),
   },
   handoff: {
     bundle: "/dist/webview/handoff.js",

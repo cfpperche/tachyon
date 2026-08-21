@@ -114,6 +114,17 @@
   min-width: 0;
 }
 
+.ck-settings-highlight {
+  outline: 2px solid var(--vscode-focusBorder, var(--ds-focus));
+  outline-offset: var(--ds-spacing-size40);
+  animation: ck-settings-highlight 2.4s ease-out;
+}
+
+@keyframes ck-settings-highlight {
+  0%, 35% { background: color-mix(in srgb, var(--vscode-focusBorder, var(--ds-focus)) 14%, transparent); }
+  100% { background: transparent; }
+}
+
 .ck-settings-block-title {
   margin: 0 0 var(--ds-spacing-size40);
   font-size: var(--ds-operator-label1);
@@ -374,5 +385,4 @@
   gap: var(--ds-spacing-size60);
   margin-top: var(--ds-spacing-size80);
 }
-
 
