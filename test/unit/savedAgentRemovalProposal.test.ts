@@ -466,6 +466,8 @@ describe("Bridge tools — identity and grant", () => {
           { name: "temp", kind: "agent", lifetime: "temporary", running: false },
         ],
         session: () => "sess",
+        parentOf: () => undefined,
+        declaredOwnerOf: () => undefined,
       },
       caller,
       inspectSavedAgentProfile: async (name: string) =>
@@ -516,7 +518,9 @@ describe("Bridge tools — identity and grant", () => {
 
   it("dismiss_agent still refuses Saved Agents and names the new door", async () => {
     const root = workspace();
-    const tools = harness(root, { kind: "agent", name: "boss" });
+    // Human-operation token: the lifetime check, not lineage. A peer agent caller is refused by
+    // t-bb1775's scope guard before this door can name propose_saved_agent_removal.
+    const tools = harness(root, { kind: "legacy" });
     const dismiss = tools.get("dismiss_agent")!.handler;
     const result = await dismiss({ name: "target" });
     expect(result.isError).toBe(true);

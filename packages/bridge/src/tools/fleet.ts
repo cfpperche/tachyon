@@ -534,7 +534,10 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         "home under .tachyon/bridge-mcp (Grok/Hermes, with a receipt naming its size), plus the file-shaped configs there for Claude/OpenCode. A harness home under " +
         ".tachyon/harness keeps its runtime-native caches, which are not a uniform archive. Declared tachyon.yml agents " +
         "cannot be dismissed through the Bridge. For each card the agent owned, the result reports whether delivery is " +
-        "reachable from main and suggests close when proved; dismissal never closes a card itself.",
+        "reachable from main and suggests close when proved; dismissal never closes a card itself. " +
+        "GOVERNANCE: as an agent you may dismiss only yourself, an agent below you in your own lineage, or a Saved Agent you own " +
+        "in the roster — never a sibling, a parent, or an unrelated fleet member. An out-of-scope target is refused with a structured error naming " +
+        "the target's owner.",
       inputSchema: {
         name: AGENT_NAME,
         confirmLiveProcesses: z.boolean().optional().describe("remove the owned worktree even if processes still have cwd under it; does not kill them"),
@@ -542,6 +545,10 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ name, confirmLiveProcesses }) => {
       try {
+        // Ahead of every side effect, including the worktree cascade below: an out-of-scope caller
+        // must not be able to reach the teardown, and must not learn from a refusal whether it ran.
+        const denied = lifecycleScopeGuard(deps, "dismiss_agent", name);
+        if (denied) return fail(new Error(denied));
         const info = await managedEntry(deps, name);
         if (!info) return fail(new Error(`agent '${name}' not found`));
         // t-849277 — `saved` is a lifetime, not an entity kind. Both profile-backed agents and

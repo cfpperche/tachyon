@@ -4,6 +4,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { Bridge } from "@tachyon/bridge/Bridge.js";
 import { CallerIdentityRegistry } from "@tachyon/bridge/callerIdentity.js";
 import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
+import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
 import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 import { PinStore } from "@tachyon/engine/pins/PinStore.js";
@@ -14,11 +15,12 @@ import os from "node:os";
 import path from "node:path";
 
 /**
- * t-bec361 — the three lifecycle/input doors that address by NAME (`kill_agent`, `restart_agent`,
- * `write_input`) must ask WHO is calling. The identity was already resolved (spec 351) and simply
- * never consulted here, so any agent could stop, restart or drive any other agent in the fleet —
- * and for a Temporary that owns a checkout, `kill_agent` cascades into removing the worktree and
- * branch (t-a76aed), which turns a wrong call from an interruption into a deletion.
+ * t-bec361 — the by-name lifecycle/input doors (`kill_agent`, `restart_agent`, `write_input`, and
+ * since t-bb1775 `dismiss_agent`) must ask WHO is calling. The identity was already resolved
+ * (spec 351) and simply never consulted here, so any agent could stop, restart, drive or (for a
+ * stopped Temporary) dismiss any other agent in the fleet — and for a Temporary that owns a
+ * checkout, `kill_agent` and `dismiss_agent` cascade into removing the worktree and branch
+ * (t-a76aed / t-1cf3c5), which turns a wrong call from an interruption into a deletion.
  *
  * The rule under test, stated as ACTOR × TRIGGER because that is what the doors differ by:
  *  - Agent (resolved token) → itself, an agent BELOW it in its own lineage, or a Saved Agent it
@@ -29,7 +31,10 @@ import path from "node:path";
  *    `manager.kill`/`manager.restart` directly and never pass through these tools at all.
  */
 
-const WS = "/repo-lifecycle-scope";
+// t-eb4b30 — a REAL directory: Temporary listing is the ledger row, so a stopped pane that we
+// delete from the fake tmux must still be addressable by dismiss_agent. A string path is enough
+// for kill/restart (the session is live) and was the original fixture; dismiss needs the row.
+const WS = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-lifecycle-scope-ws-"));
 const HASH = workspaceHash(WS);
 const MASTER = "e".repeat(64);
 const EXTERNAL = "f".repeat(64);
@@ -81,7 +86,8 @@ describe("lifecycle caller scope (t-bec361)", () => {
     "    cmd: claude\n",
   ).config;
   const tmux = new TmuxService(exec);
-  const manager = new AgentManager({ windowMs: 0, tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config });
+  const ledger = new SessionLedger(WS);
+  const manager = new AgentManager({ windowMs: 0, tmux, wsHash: HASH, workspaceRoot: WS, ledger, getConfig: () => config });
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-lifecycle-scope-"));
   const registry = new CallerIdentityRegistry(Buffer.from("a".repeat(64), "hex"));
   const bossToken = registry.mint("boss", SCOPE);
@@ -132,6 +138,7 @@ describe("lifecycle caller scope (t-bec361)", () => {
     await strangerClient.close();
     await bridge.dispose();
     fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(WS, { recursive: true, force: true });
   });
 
   const text = (result: unknown): string => JSON.stringify((result as { content?: unknown }).content);
@@ -226,6 +233,87 @@ describe("lifecycle caller scope (t-bec361)", () => {
 
     await manager.spawn("victim-external", { cmd: "claude" });
     const external = await externalClient.callTool({ name: "kill_agent", arguments: { name: "victim-external" } });
+    expect(external.isError).toBeFalsy();
+  });
+
+  it("dismiss_agent: stranger and sibling cannot dismiss a stopped Temporary, and the row remains", async () => {
+    const spawnedVictim = await bossClient.callTool({
+      name: "spawn_agent",
+      arguments: { name: "dismiss-victim", cmd: "claude", skip_contract_reason: "test fixture" },
+    });
+    expect(spawnedVictim.isError).toBeFalsy();
+    const spawnedSibling = await bossClient.callTool({
+      name: "spawn_agent",
+      arguments: { name: "dismiss-sib", cmd: "claude", skip_contract_reason: "test fixture" },
+    });
+    expect(spawnedSibling.isError).toBeFalsy();
+    expect(manager.parentOf("dismiss-victim")).toBe("boss");
+    expect(manager.parentOf("dismiss-sib")).toBe("boss");
+
+    // t-1cf3c5 / t-28bf8f — stop the pane without collecting the row, the state a sibling actually
+    // reaches: listed, Temporary, not running, still dismissable.
+    sessions.delete(manager.session("dismiss-victim"));
+
+    const sibToken = registry.mint("dismiss-sib", SCOPE);
+    const sibClient = await connect("dismiss-sib", sibToken);
+    try {
+      const sibling = await sibClient.callTool({ name: "dismiss_agent", arguments: { name: "dismiss-victim" } });
+      expect(sibling.isError).toBe(true);
+      expect(text(sibling)).toContain("dismiss_agent refused");
+      expect(text(sibling)).toContain("dismiss-sib");
+      expect(text(sibling)).toContain("boss");
+      expect(text(sibling)).toContain("lifecycle-scoped");
+      // Own enum name — t-bb1775 forbids the retask_agent replaceAll("restart_agent", ...) hack.
+      expect(text(sibling)).not.toContain("restart_agent");
+      expect(text(sibling)).not.toContain("may restart");
+    } finally {
+      await sibClient.close();
+    }
+
+    const stranger = await strangerClient.callTool({ name: "dismiss_agent", arguments: { name: "dismiss-victim" } });
+    expect(stranger.isError).toBe(true);
+    expect(text(stranger)).toContain("dismiss_agent refused");
+    expect(text(stranger)).toContain("stranger");
+    expect(text(stranger)).not.toContain("restart_agent");
+
+    expect((await manager.list()).map((agent) => agent.name)).toContain("dismiss-victim");
+  });
+
+  it("dismiss_agent: self and ancestor still dismiss; human-operation tokens stay unrestricted", async () => {
+    const spawned = await bossClient.callTool({
+      name: "spawn_agent",
+      arguments: { name: "dismiss-child", cmd: "claude", skip_contract_reason: "test fixture" },
+    });
+    expect(spawned.isError).toBeFalsy();
+    sessions.delete(manager.session("dismiss-child"));
+    const ancestor = await bossClient.callTool({ name: "dismiss_agent", arguments: { name: "dismiss-child" } });
+    expect(ancestor.isError).toBeFalsy();
+    expect((await manager.list()).map((agent) => agent.name)).not.toContain("dismiss-child");
+
+    const spawnedSelf = await bossClient.callTool({
+      name: "spawn_agent",
+      arguments: { name: "dismiss-self", cmd: "claude", skip_contract_reason: "test fixture" },
+    });
+    expect(spawnedSelf.isError).toBeFalsy();
+    sessions.delete(manager.session("dismiss-self"));
+    const selfToken = registry.mint("dismiss-self", SCOPE);
+    const selfClient = await connect("dismiss-self", selfToken);
+    try {
+      const self = await selfClient.callTool({ name: "dismiss_agent", arguments: { name: "dismiss-self" } });
+      expect(self.isError).toBeFalsy();
+    } finally {
+      await selfClient.close();
+    }
+    expect((await manager.list()).map((agent) => agent.name)).not.toContain("dismiss-self");
+
+    await manager.spawn("dismiss-legacy", { cmd: "claude" });
+    sessions.delete(manager.session("dismiss-legacy"));
+    const legacy = await masterClient.callTool({ name: "dismiss_agent", arguments: { name: "dismiss-legacy" } });
+    expect(legacy.isError).toBeFalsy();
+
+    await manager.spawn("dismiss-external", { cmd: "claude" });
+    sessions.delete(manager.session("dismiss-external"));
+    const external = await externalClient.callTool({ name: "dismiss_agent", arguments: { name: "dismiss-external" } });
     expect(external.isError).toBeFalsy();
   });
 
