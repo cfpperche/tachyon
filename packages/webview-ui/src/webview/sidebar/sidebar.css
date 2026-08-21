@@ -40,8 +40,7 @@
  * them to `--ds-spacing-size*` would unalign the name column (28→24) or run the focus
  * line under the 22×22 hits (72→32). They now live as named custom properties on `.row`
  * (`--sidebar-name-col` 28, `--sidebar-child-name-col` 13, `--sidebar-focus-trail` =
- * `--action-gutter` − size80 = 72). Computed pixels are unchanged. `.row-checklist`
- * (t-281339) still writes the same 28/72/13 literals — do not retouch that block.
+ * `--action-gutter` − size80 = 72). Computed pixels are unchanged.
  *
  * Hex: leftovers stay as vscode-var / --ds-* fallbacks so the gate exception row is not stale and
  * is not edited. Raw peek/focus-source syntax colors with no --ds role (#c586c0 memory, #dcdcaa
@@ -353,17 +352,17 @@
      .sdot.throttled. */
   .row-checklist {
     display: flex; align-items: baseline; gap: var(--ds-spacing-size60);
-    padding: var(--ds-spacing-size20) 72px var(--ds-spacing-size20) 28px; min-width: 0;
+    padding: var(--ds-spacing-size20) var(--sidebar-focus-trail) var(--ds-spacing-size20) var(--sidebar-name-col); min-width: 0;
     color: var(--ds-muted); font-size: var(--ds-operator-label2); line-height: 1.3;
   }
   .row.child .row-checklist {
-    padding-left: 13px;
+    padding-left: var(--sidebar-child-name-col);
   }
   .row-checklist .checklist-position {
     flex: none; color: var(--ds-muted);
   }
   .row-checklist .checklist-text {
-    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: var(--ds-fg);
   }
   .row-checklist.absent .checklist-mark {
