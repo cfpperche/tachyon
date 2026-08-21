@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +9,8 @@ import type { LifecycleOwnershipSource } from "@tachyon/bridge/lifecycleScope.js
 import { executeExtensionCommand } from "@tachyon/engine/engine-service/extensionOperationService.js";
 import type { WorktreeRecord } from "@tachyon/engine/worktree/worktreeRecord.js";
 import type { WorktreeRemovalResult } from "@tachyon/engine/worktree/WorktreeManager.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 /**
  * t-d06da3 (spec 484) — the two lifecycle doors that open once a Temporary child may own a worktree.
@@ -78,6 +80,8 @@ function dismissWorld(opts: {
   worktree?: WorktreeRecord;
   /** When set, git-remove returns this instead of claiming success. */
   removeResult?: WorktreeRemovalResult;
+  tasks?: TaskStore;
+  workspaceRoot?: string;
 } = {}): DismissWorld {
   const record = opts.worktree ?? RECORD;
   const events: string[] = [];
@@ -128,6 +132,8 @@ function dismissWorld(opts: {
     dismissTemporary: () => { events.push("dismiss-row"); ledger.delete("child"); },
   };
   const mcp = new ToolCapture();
+  const workspaceRoot = opts.workspaceRoot ?? makeTempDir("dismiss-world-");
+  const tasks = opts.tasks ?? new TaskStore(workspaceRoot);
   const agentWorktrees = {
     manager,
     ledger: {
@@ -147,10 +153,11 @@ function dismissWorld(opts: {
     },
   };
   registerTools(mcp as never, {
-    workspaceRoot: "/repo",
+    workspaceRoot,
     caller: { kind: "agent", name: "ada" },
     notify: (message: string, level: string) => { notices.push({ message, level }); },
     manager,
+    tasks,
     agentWorktrees,
   } as never);
   return {
@@ -217,6 +224,47 @@ describe("t-46554c — Temporary end-of-life doors prove their worktree effects"
     expect(world.ledger.has("child")).toBe(false);
     expect(world.registry.get("child")).toBeNull();
     expect(result.content[0]?.text).toContain("branch 'tachyon/child' was deleted");
+  });
+});
+
+describe("t-cac10c — dismiss_agent offers close only for delivery reachable from main", () => {
+  it("returns landedIn for a main commit and null for an unmerged worktree commit without closing either task", async () => {
+    const root = makeTempDir("dismiss-landed-suggestions-");
+    const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+    git("init", "-b", "main");
+    git("config", "user.name", "Test");
+    git("config", "user.email", "test@example.com");
+    fs.writeFileSync(path.join(root, "delivered.txt"), "delivered\n");
+    git("add", "delivered.txt");
+    git("commit", "-m", "feat(t-aa1111): delivered");
+    const landedIn = git("rev-parse", "HEAD");
+    git("switch", "-c", "agent-work");
+    fs.writeFileSync(path.join(root, "unmerged.txt"), "unmerged\n");
+    git("add", "unmerged.txt");
+    git("commit", "-m", "feat(t-bb2222): still in worktree");
+    const unmerged = git("rev-parse", "HEAD");
+    git("switch", "main");
+
+    const tasks = new TaskStore(root);
+    for (const id of ["t-aa1111", "t-bb2222"]) {
+      await tasks.create({ id, title: id, author: "test" });
+      await tasks.update(id, { status: "triaged", actor: "test" });
+      await tasks.update(id, { status: "active", assignee: "child", actor: "test" });
+    }
+    tasks.journal.append("t-bb2222", { author: "child", text: `implementation commit ${unmerged}` });
+
+    const world = dismissWorld({ owns: false, tasks, workspaceRoot: root });
+    const result = await world.dismiss({ name: "child" });
+    const payload = JSON.parse(result.content[0]!.text) as {
+      tasks: Array<{ task: string; landedIn: string | null; suggestion?: string }>;
+    };
+
+    expect(payload.tasks).toEqual([
+      { task: "t-aa1111", landedIn, suggestion: "close" },
+      { task: "t-bb2222", landedIn: null },
+    ]);
+    expect(tasks.get("t-aa1111").status).toBe("active");
+    expect(tasks.get("t-bb2222").status).toBe("active");
   });
 });
 

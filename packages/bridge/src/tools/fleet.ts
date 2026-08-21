@@ -14,6 +14,7 @@ import type { SpawnContract } from "@tachyon/engine/agents/spawnContract.js";
 import { decideSpawnTaskClaim } from "../spawnTaskClaim.js";
 import type { SpawnTaskClaimDecision } from "../spawnTaskClaim.js";
 import { collectAgentTouchedFiles } from "@tachyon/engine/worktree/agentTouchedFiles.js";
+import { landedEvidenceForTask } from "@tachyon/engine/tasks/reconcileLanded.js";
 import { admitAgentRuntimeCommand, SUPPORTED_AGENT_RUNTIME_NAMES } from "@tachyon/shared/agents/agentRuntimeAdmission.js";
 import { type BridgeDeps, AGENT_NAME, TASK_ID, dismissOwnedWorktree, dismissReceipt, emitTaskNotification, fail, lifecycleScopeGuard, managedEntry, ok, outputCapabilities, releaseSpawnClaim, resolveDeclaredActor, taskNotificationActor } from "./shared.js";
 
@@ -34,6 +35,23 @@ const spawnEnvironmentSchema = z.object({
 });
 
 export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
+
+  async function dismissalTaskSuggestions(name: string) {
+    const owned = deps.tasks.listRaw()
+      .filter((task) => task.assignee === name)
+      .sort((left, right) => left.id.localeCompare(right.id));
+    return Promise.all(owned.map(async (task) => {
+      const landedIn = await landedEvidenceForTask(deps.tasks, deps.workspaceRoot, task.id) ?? null;
+      return landedIn
+        ? { task: task.id, landedIn, suggestion: "close" as const }
+        : { task: task.id, landedIn };
+    }));
+  }
+
+  function dismissalResult(name: string, receipt: string, tasks: Awaited<ReturnType<typeof dismissalTaskSuggestions>>) {
+    if (tasks.length === 0) return ok(receipt);
+    return ok(JSON.stringify({ agent: name, receipt, tasks }, null, 2));
+  }
 
   mcp.registerTool(
     "retask_agent",
@@ -514,7 +532,8 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         "a running Temporary instance. Tachyon activity and pane transcripts are deleted, and so is the private runtime " +
         "home under .tachyon/bridge-mcp (Grok/Hermes, with a receipt naming its size), plus the file-shaped configs there for Claude/OpenCode. A harness home under " +
         ".tachyon/harness keeps its runtime-native caches, which are not a uniform archive. Declared tachyon.yml agents " +
-        "cannot be dismissed through the Bridge.",
+        "cannot be dismissed through the Bridge. For each card the agent owned, the result reports whether delivery is " +
+        "reachable from main and suggests close when proved; dismissal never closes a card itself.",
       inputSchema: {
         name: AGENT_NAME,
         confirmLiveProcesses: z.boolean().optional().describe("remove the owned worktree even if processes still have cwd under it; does not kill them"),
@@ -541,20 +560,23 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
           ));
         }
         if (info.running) return fail(new Error(`agent '${name}' is still running; use kill_agent first, then dismiss_agent if it remains listed`));
+        // Capture and prove the cards while the row still owns them. Dismissal releases ownership,
+        // but never applies the close suggestion returned here.
+        const taskSuggestions = await dismissalTaskSuggestions(name);
         // t-d06da3 — the worktree step, ahead of BOTH dismissal branches, through the cascade the
         // other door already runs. See `dismissOwnedWorktree` for why it is that cascade and not a
         // second one, and which of its gates a Temporary dismiss actually needs.
         const released = await dismissOwnedWorktree(deps, name, { confirmLiveProcesses });
         if (info.dead && !released) {
           await deps.manager.kill(name);
-          return ok(`agent '${name}' dismissed`);
+          return dismissalResult(name, `agent '${name}' dismissed`, taskSuggestions);
         }
         // A `dead` entry whose checkout WAS released has already had its pane torn down: the cascade's
         // occupancy gate reads a stopped-but-present pane as occupied and kills it, through the same
         // `manager.kill` this branch would call. Calling it twice would throw AgentNotRunningError and
         // turn a completed dismissal into an error; `dismissTemporary` is idempotent and finishes the row.
         deps.manager.dismissTemporary(name);
-        return ok(dismissReceipt(name, released));
+        return dismissalResult(name, dismissReceipt(name, released), taskSuggestions);
       } catch (err) {
         return fail(err);
       }
