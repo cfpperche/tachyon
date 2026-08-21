@@ -72,7 +72,7 @@ export interface WorkspaceBridgeServerOptions {
   scope?: unknown;
   legacyCompatEnabled?: boolean;
   onLegacyCall?: (info: { tool: string; claimedIdentity?: string }) => void;
-  healUnknownBearer?: (bearer: string) => { kind: "agent"; name: string } | undefined;
+  healUnknownBearer?: (bearer: string) => Promise<{ kind: "agent"; name: string } | undefined>;
   onRequestComplete?: (info: WorkspaceBridgeRequestCompleteInfo) => void;
   slowRequestMs?: number;
 }
@@ -117,6 +117,12 @@ export type WorkspaceBridgeClientRebindDependencies = Partial<Record<RebindCallb
  * authentication/rebind mechanism extracted in slice 4; the six remaining members replace slice
  * 5's six direct bridge imports. The engine describes only the values and operations it consumes.
  */
+/** The `/proc`-shaped reads the token heal performs; a fixture stands in for the live tree in tests. */
+export type WorkspaceBridgeProcFs = {
+  readdirSync(dir: string): string[];
+  readFileSync(file: string): Buffer | string;
+};
+
 export interface WorkspaceBridgePort {
   createWorkspaceTransport(options: {
     workspaceId: string;
@@ -143,7 +149,22 @@ export interface WorkspaceBridgePort {
   readonly companionApprovalChannel: ApprovalResolutionChannel;
   prepareAgentSummary(raw: string): string;
   composeAgentNotice(from: string, to: string, summary: string): string;
-  healUnknownBearer(registry: unknown, bearer: string, scope: unknown):
+  /**
+   * Adopt a `token_unknown` bearer ONLY when it is held inside the pane tree of one of these managed
+   * agents, under that agent's roster name. The engine resolves the pane roots (it owns tmux and the
+   * roster); the transport never discovers identity on its own (t-2a7d24).
+   *
+   * `procSeam` is the process-table seam the heal already declares one layer down. It is carried
+   * across this port so the wiring — that a real pane list reaches the confined search — is
+   * assertable from the composed port itself, which is where t-2a7d24 went wrong.
+   */
+  healUnknownBearer(
+    registry: unknown,
+    bearer: string,
+    agents: ReadonlyArray<{ name: string; panePid: number }>,
+    scope: unknown,
+    procSeam?: { procRoot?: string; proc?: WorkspaceBridgeProcFs },
+  ):
     | { ok: false }
     | { ok: true; adopted: boolean; name: string };
 }

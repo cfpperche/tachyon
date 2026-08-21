@@ -6,8 +6,9 @@
  * registry reload edges. Reading the plaintext from /proc of a managed agent pane and
  * {@link CallerIdentityRegistry.adopt}ing it restores MCP without a restart.
  *
- * Security: we only adopt a bearer that already exists as env of a managed agent process —
- * an attacker who can present that bearer already has the secret from the process.
+ * Security: the bearer must be reachable inside the process tree of a MANAGED agent pane, and the
+ * adopted identity is that pane's roster name — never TACHYON_AGENT_NAME read from the scanned
+ * process. A process outside every managed pane heals nothing, whatever env it carries (t-2a7d24).
  */
 
 import fs from "node:fs";
@@ -137,59 +138,39 @@ export type HealFromBearerResult =
   | { ok: false; reason: "no_match" };
 
 /**
- * Scan `/proc` for a live process whose env has this bearer as TACHYON_AGENT_BRIDGE_TOKEN
- * and a TACHYON_AGENT_NAME. Prefer managed pane roots when `agents` is provided; otherwise
- * any matching process is enough (dogfood heal when tmux pane pid is lagging).
+ * Name the managed agent whose pane process tree holds this bearer as TACHYON_AGENT_BRIDGE_TOKEN.
+ *
+ * The search is confined to the given pane roots and the answer is the ROSTER name (`agent.name`),
+ * so a bearer presented by a process outside every managed pane matches nothing — there is no
+ * fallback that would read an identity out of an arbitrary pid's env (t-2a7d24).
  */
 export function findAgentNameForBridgeToken(
   bearer: string,
-  opts?: {
-    agents?: ReadonlyArray<{ name: string; panePid: number }>;
+  opts: {
+    agents: ReadonlyArray<{ name: string; panePid: number }>;
     procRoot?: string;
     proc?: ProcFs;
-    maxPids?: number;
   },
 ): string | undefined {
   const trimmed = bearer.trim();
   if (!trimmed || !/^[0-9a-f]{64}$/i.test(trimmed)) return undefined;
-  const procRoot = opts?.procRoot ?? "/proc";
-  const proc = opts?.proc ?? fs;
-  const maxPids = opts?.maxPids ?? 512;
+  const procRoot = opts.procRoot ?? "/proc";
+  const proc = opts.proc ?? fs;
 
-  // Fast path: managed pane trees.
-  if (opts?.agents?.length) {
-    for (const agent of opts.agents) {
-      const token = findAgentBridgeTokenInTree(agent.panePid, {
-        agentName: agent.name,
-        procRoot,
-        proc,
-      });
-      if (token === trimmed) return agent.name;
-    }
-  }
-
-  // Full scan fallback — only when no pane list or no match (bounded).
-  try {
-    const names = proc.readdirSync(procRoot);
-    let checked = 0;
-    for (const name of names) {
-      if (!/^\d+$/.test(name)) continue;
-      if (++checked > maxPids) break;
-      const pid = Number(name);
-      const token = readProcEnvVar(pid, AGENT_TOKEN_ENV_VAR, procRoot, proc);
-      if (token !== trimmed) continue;
-      const agentName = readProcEnvVar(pid, "TACHYON_AGENT_NAME", procRoot, proc);
-      if (agentName?.trim()) return agentName.trim();
-    }
-  } catch {
-    /* /proc unavailable */
+  for (const agent of opts.agents) {
+    const token = findAgentBridgeTokenInTree(agent.panePid, {
+      agentName: agent.name,
+      procRoot,
+      proc,
+    });
+    if (token === trimmed) return agent.name;
   }
   return undefined;
 }
 
 /**
- * If `bearer` equals a live process's TACHYON_AGENT_BRIDGE_TOKEN, adopt it into the registry
- * under that process's TACHYON_AGENT_NAME.
+ * If `bearer` is held inside the pane tree of one of these managed `agents`, adopt it into the
+ * registry under that agent's roster name. Anything else is `no_match`.
  */
 export function healUnknownBearerFromAgents(
   registry: CallerIdentityRegistry,
@@ -207,14 +188,4 @@ export function healUnknownBearerFromAgents(
   const result = registry.adopt(name, bearer.trim(), scope);
   if (result === "invalid") return { ok: false, reason: "no_match" };
   return { ok: true, name, adopted: result === "adopted" };
-}
-
-/** Sync heal without pane list (full /proc scan). Used from Bridge auth path. */
-export function healUnknownBearerFromProc(
-  registry: CallerIdentityRegistry,
-  bearer: string,
-  scope: CallerScope,
-  opts?: { procRoot?: string; proc?: ProcFs },
-): HealFromBearerResult {
-  return healUnknownBearerFromAgents(registry, bearer, [], scope, opts);
 }
