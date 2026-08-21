@@ -31,7 +31,7 @@ _Gerado de `plan.md` em 2026-08-21. De cima para baixo. Se uma tarefa revelar qu
 - [ ] **T10** — `views` sai de `KNOWN_FIELDS` (`manifest.ts:213`) com erro que nomeia o campo removido e aponta o caminho de app. `VIEW_FLEET_SCOPES` sai.
 - [ ] **T11** — remover `apps/vscode-extension/src/plugins/ui/broker.ts`, `PLUGIN_UI_ACTIONS` e o modo `plugin` de `untrustedSrcdoc.ts`. Os testes que afirmavam esse comportamento saem junto ou viram a asserção nova — nenhum fica silenciado.
 - [ ] **T12** — `docs/specs/349-plugin-ui-surfaces/spec.md` recebe `**Status:** superseded` apontando para a 514.
-- [ ] **T13** — reempacotar o Terrarium como app (trabalho em `github:cfpperche/terrarium`), instalar pelo zip e conferir que ele abre pelo ladrilho.
+- [ ] **T13** — remover o plugin `terrarium` da instalação. Era POC, o dono não usa, e nada é migrado. Conferir depois que nenhum plugin instalado declara `views`.
 
 ## Verification
 
@@ -63,7 +63,7 @@ _Gerado de `plan.md` em 2026-08-21. De cima para baixo. Se uma tarefa revelar qu
 3. Conferir o ladrilho novo, abrir, ver a lista de agentes renderizada pela página.
 4. Subir de novo o mesmo zip com o `title` mudado e conferir que o ladrilho reflete a mudança.
 5. Corromper o `app.json` à mão, recarregar a janela, e conferir que o Tachyon sobe com os outros ladrilhos.
-6. Instalar o Terrarium reempacotado e abrir pelo ladrilho.
+6. Conferir que o `terrarium` sumiu da lista de plugins e que nenhum plugin instalado declara `views`.
 
 ## Visual QA
 

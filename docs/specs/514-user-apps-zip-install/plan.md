@@ -14,7 +14,7 @@ Cinco movimentos. Os quatro primeiros são adição pequena; o quinto é subtra�
 
 **4. Porta de zip na aba Apps.** Ação Adicionar → seletor de arquivo do VS Code → descompacta em diretório temporário → valida `app.json` e a existência do `entry` → move para `.tachyon/apps/<id>/`, substituindo o que houver. Falha em qualquer etapa não deixa diretório parcial.
 
-**5. Tirar a tela do plugin.** `views` sai do `KNOWN_FIELDS`, o broker de ações sai, o modo `plugin` do `srcdoc` sai, `VIEW_FLEET_SCOPES` sai. O Terrarium é reempacotado como app. O spec 349 vira `superseded`.
+**5. Tirar a tela do plugin.** `views` sai do `KNOWN_FIELDS`, o broker de ações sai, o modo `plugin` do `srcdoc` sai, `VIEW_FLEET_SCOPES` sai. O `terrarium` é **removido**, não migrado — o dono confirmou que era POC e não o usa. O spec 349 vira `superseded`. Nenhum caminho de compatibilidade: zero consumidores vivos.
 
 ## Key decisions
 
@@ -114,7 +114,9 @@ Uma entrada de zip com `../` escreve fora de `.tachyon/apps/<id>/`. Custa poucas
 
 **R4 — apagar a maquinaria do 349 derruba testes que a afirmam.** Existem ao menos `test/unit/pluginHostRelay.test.ts` e as asserções de CSP. Eles não devem ser silenciados: devem sair junto com o que afirmavam, ou virar a asserção nova.
 
-**R5 — o Terrarium mora noutro repositório** (`github:cfpperche/terrarium`). Reempacotá-lo como app é trabalho fora deste repositório, e o zip resultante precisa existir antes de a aceitação "Terrarium está instalado como app" poder ser marcada.
+**R5 — RESOLVIDO, e para menos trabalho.** A primeira versão deste plano tratava o Terrarium como migração obrigatória, com um repositório externo a reempacotar antes de a aceitação poder ser marcada. O dono confirmou em 2026-08-21 que é POC que ficou e que ele não usa. Some o repositório externo do caminho crítico, some o zip a produzir, e some qualquer compatibilidade: `views` sai sem sucessor. **O risco virou economia.**
+
+**R5b — o primeiro app real ainda não existe.** Sem o Terrarium como caso de migração, nada exercita o caminho ponta a ponta além de um app mínimo de teste. O dogfood humano precisa de um app de verdade para valer alguma coisa; empacotar um é trabalho que ninguém fez ainda.
 
 ## Visual impact
 

@@ -23,9 +23,9 @@ Esta spec parte o conceito em dois e move o consumidor para o lado certo:
 
 Um **app** é HTML estático que o usuário instala subindo um `.zip` pela aba Apps. Ele é descompactado em `.tachyon/apps/<id>/`, ganha um ladrilho no launcher e abre numa aba do editor. Ele fala com o Tachyon pelo Bridge — a mesma superfície que os agentes usam — sem restrição de ação, sem CSP, sem allowlist. O usuário instalou; o usuário consentiu.
 
-O Terrarium deixa de ser plugin-com-view e passa a ser app. O campo `views` sai do manifesto de plugin, e o spec 349 sai junto com ele.
+**E esse único consumidor é uma POC morta.** O dono confirmou em 2026-08-21 que não usa o Terrarium e que ele ficou de uma prova de conceito. Então `views` não precisa de migração, nem de janela de depreciação, nem de caminho de compatibilidade: ele sai, o plugin é removido, e o spec 349 sai junto. **Zero consumidores, não um.**
 
-**Por que agora.** A porta de terceiros tem um consumidor e um backlog aberto para alargá-la (`t-8c0a7d`). Alargar a porta errada custa mais do que trocá-la de lugar. E a capacidade que falta — usuário criar a própria tela sem publicar pacote — é a que o produto não tem de jeito nenhum hoje.
+**Por que agora.** A porta de terceiros existe há meses, serviu uma POC, e tem um backlog aberto para alargá-la (`t-8c0a7d`). Alargar uma porta que ninguém atravessa custa mais do que fechá-la. E a capacidade que falta — usuário criar a própria tela sem publicar pacote — é a que o produto não tem de jeito nenhum hoje.
 
 ## Acceptance criteria
 
@@ -101,7 +101,7 @@ Isso não é restrição de poder — é o significado da ferramenta. Um app nã
   - **When** ele passa pelo `loadManifest`
   - **Then** o manifesto não carrega e o erro nomeia `views` como campo removido, apontando o caminho de app
 
-- [ ] O Terrarium está instalado como app, aberto pelo ladrilho do launcher, e não aparece mais como plugin com view.
+- [ ] Nenhum plugin instalado declara `views`, e o `terrarium` não está mais na lista de plugins. Não há migração a fazer: era POC, e sai.
 - [ ] `PLUGIN_UI_ACTIONS`, o broker de ações de plugin, o modo `plugin` de `assembleUntrustedSrcdoc` e o `VIEW_FLEET_SCOPES` foram removidos do código, não deixados desligados.
 - [ ] `docs/specs/349-plugin-ui-surfaces/spec.md` tem `**Status:** superseded` apontando para esta spec.
 
