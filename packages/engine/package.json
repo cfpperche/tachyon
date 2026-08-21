@@ -13,6 +13,7 @@
     }
   },
   "dependencies": {
-    "@tachyon/shared": "0.91.0"
+    "@tachyon/shared": "0.91.0",
+    "jszip": "^3.10.1"
   }
 }
