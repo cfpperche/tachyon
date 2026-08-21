@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { engineSystemdUnitName } from "@tachyon/engine/engine-service/engineSupervisor.js";
+import { reapOrphanedEngineDaemons } from "@tachyon/engine/engine-service/engineOrphanHygiene.js";
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
@@ -1540,6 +1541,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // folder before upgrading.
   registerGlobalSettingsRecovery(context);
   importLegacyGlobalSettings();
+
+  const engineHygiene = await reapOrphanedEngineDaemons();
+  if (engineHygiene.stopped.length > 0) {
+    console.warn(`[tachyon] stopped ${engineHygiene.stopped.length} orphaned persistent engine(s): ${engineHygiene.stopped.join(", ")}`);
+  }
+  if (engineHygiene.refused.length > 0) {
+    notify(vscode.l10n.t("Tachyon left an orphaned engine running because its identity could not be proven: {0}", engineHygiene.refused.join("; ")), "warn");
+  }
 
   const folders = vscode.workspace.workspaceFolders ?? [];
   if (folders.length === 0) {

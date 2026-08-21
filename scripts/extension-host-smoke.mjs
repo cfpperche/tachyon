@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import { runTests } from "@vscode/test-electron";
 
 /**
@@ -50,6 +51,11 @@ const env = {
   TMUX_TMPDIR: tmuxDir,
 };
 
+const engineKey = createHash("sha256")
+  .update(`${fs.realpathSync(fixture)}\u0000tmux:${env.TACHYON_TMUX_SOCKET}`)
+  .digest("hex")
+  .slice(0, 32);
+
 try {
   const exitCode = await runTests({
     extensionDevelopmentPath: extensionPath,
@@ -62,5 +68,9 @@ try {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = typeof error?.code === "number" ? error.code : 1;
 } finally {
+  if (process.platform === "linux") {
+    spawnSync("systemctl", ["--user", "stop", `tachyon-engine-${engineKey}.service`], { stdio: "ignore" });
+    spawnSync("systemctl", ["--user", "reset-failed", `tachyon-engine-${engineKey}.service`], { stdio: "ignore" });
+  }
   fs.rmSync(staging, { recursive: true, force: true });
 }
