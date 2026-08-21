@@ -77,8 +77,9 @@ lembrado nunca, e reexibido para sempre.
 
 ## 0.93.26 — o produto fala inglês, a interface para de documentar, e o board ganha busca
 
-> Nota: o CHANGELOG estava parado na 0.93.11. As versões 0.93.12 a 0.93.25 saíram sem entrada aqui.
-> Esta entrada cobre o que entrou depois da 0.93.25; o buraco continua aberto e visível de propósito.
+> Nota: o CHANGELOG estava parado na 0.93.11 e as versões 0.93.12 a 0.93.25 saíram sem entrada.
+> O buraco foi fechado depois: as catorze entradas abaixo foram reconstruídas do histórico, a partir
+> dos intervalos que os commits de release delimitam. Esta entrada cobre o que entrou depois da 0.93.25.
 
 ### O português sai do produto
 
@@ -141,6 +142,327 @@ próprio script sobe headless.
 E a sonda que investiga travamentos do extension host olhava três portas de I/O enquanto o host usa
 dez. Agora olha as dez, ao custo medido de 0,85 ms por ativação — e o número está escrito no código,
 onde o próximo vai procurar.
+
+## 0.93.25 — Onboarding e Companion viram aplicativos próprios
+
+### O onboarding é um app em aba de editor
+
+Checar se o ambiente está pronto morava num comentário dentro do `tachyon.yml`. Agora é um aplicativo
+próprio: quando o ambiente não está pronto, a sidebar diz isso e o botão abre o app. Ele apresenta a
+ferramenta, conduz o bootstrap pela mesma porta `tachyon.init` e lista o que falta — tmux, Node, CLI
+de agente e credencial — cada linha com estado e com remédio.
+
+### O Companion sai do Settings
+
+O Companion cresceu dentro do Settings até ocupar quase a tela inteira. Agora é um app standalone,
+com painel, superfície e bundle próprios, e o Settings volta a ser Settings.
+
+### E o que sobrou da ronda
+
+Os ícones de badge alinham com os rótulos das pílulas ao lado. O estado do Integrated Browser deixa
+de viajar dentro do status do Companion. Saem também os fallbacks posicionais dos scripts de hook
+gerados — configuração é nomeada ou não existe — e strings de Control que nada alcançava.
+
+## 0.93.24 — subagentes nativos ficam de fora da trava de plano, e o grok nasce dono da própria sessão
+
+### O gate de checklist para de cobrar plano de quem a sessão do pai já cobre
+
+A trava que recusa a primeira mudança sem plano alcançava também os subagentes nativos — os que um
+agente pai abre dentro do próprio turno. A trava passa a valer só para a sessão que abre o turno,
+não para os filhos que ela própria abre.
+
+### Toda sessão grok ganha linha no ledger desde o nascimento
+
+O hook de SessionStart gerado para o grok usava o vocabulário de matcher do Claude
+(`startup|resume|clear|compact`) — medido num turno real, o grok nunca disparava assim, e a sessão
+nascia sem dono registrado. Sem matcher ele emite `session_start` normalmente. Agora toda sessão
+grok entra no ledger de donos na hora em que nasce, com transcript derivado.
+
+### O aviso de folga só afirma reset que já ocorreu
+
+O aviso citava o `resetsAt` que o canal nomeia como corroboração de que a cota resetou — mesmo
+lendo antes da hora. Agora afirma reset só quando a leitura é posterior a ele; antes disso, reporta
+a mudança observada em vez da prevista.
+
+### O Dev Host para de atravessar checkout
+
+`point` recusa link de dependência que aponte para outro checkout — o tipo de contaminação que só
+aparecia como gate verde provando a árvore errada. E `point-clear` colhe o servidor tmux privado
+que o cenário deixou para trás.
+
+## 0.93.23 — o Agent Studio conduz a criação em passos, e a conta de outro provedor nunca chega ao agente
+
+### Criar agente viram três passos; editar viram abas
+
+O formulário de criação é um wizard de três passos — Runtime, Workspace, Advanced — numa faixa
+numerada: passo pronto clica, futuro só pelo Next. Editar perfil vira abas — General, Runtime,
+Environment, Tooling, Lifecycle — e o resultado de uma ação aparece acima da faixa, visível de
+qualquer aba. Nada muda no engine nem no protocolo.
+
+### As linhas respondem pelo nome
+
+Toda linha do Studio pode ser destruída, e o erro aponta o campo dela. A linha mantém o foco entre
+ações, a recusa cita qual linha foi, e as colunas têm rótulo.
+
+### A medição da conta errada deixa de ser oferecida como sua
+
+Um agente perguntando por capacidade podia receber a leitura da conta de um provedor que não é o
+dele. Agora recebe a declaração de que aquela conta não foi medida para o provedor dele — número
+verdadeiro da conta errada é pior que ausência declarada.
+
+### E o resto
+
+Spawn temporário aceita reasoning effort explícito, projetado pela mesma guarda dos perfis
+declarados e persistido no session record. O app Keys adota a largura e a densidade dos apps
+vizinhos. E o smoke do extension host entra no verify gate: a classe de defeito que só aparece com
+o host rodando deixou de depender de alguém lembrar de rodar.
+
+## 0.93.22 — o plano concluído continua na tela, e o ambiente do agente vira configuração
+
+### Um checklist terminado deixa de desaparecer
+
+Quando o último item fechava, a linha `(n/n)` sumia da sidebar, e um plano concluído ficava
+indistinguível de um que nunca foi registrado. Agora o plano concluído continua visível como `(n/n)`.
+
+### Ambiente e segredos entram no perfil
+
+O Agent Studio ganha edição de Environment, e agentes temporários aceitam ambiente próprio: valores
+literais e referências a segredo do vault. A referência persiste; o valor resolvido, nunca.
+
+### E o Keys assenta
+
+A composição da página alinha com os apps vizinhos.
+
+## 0.93.21 — o app Keys ganha porta
+
+A Keys tinha entrado na versão anterior completa — bundle, painel, até a função que abre a aba — e
+sem nada que pudesse chamá-la: nenhum ladrilho no launcher, nenhum comando. Agora o launcher tem o
+ladrilho, com o ícone da aba.
+
+## 0.93.20 — as chaves da máquina saem do Agent Studio e viram app
+
+### Keys é um app próprio
+
+Guardar credencial de máquina deixa de ser uma seção do Studio. O app mostra o que está guardado por
+provider e o que foi declarado e falta, diz quem usa cada chave, troca valor — nunca exibe — e remove
+mostrando antes quem depende dela.
+
+### Os hooks do codex param de citar um placeholder
+
+Os scripts de hook gerados recebiam `$TACHYON_AGENT_NAME` literal no lugar do nome, e o evento saía
+atribuído ao placeholder. Resolvem agora pelo ambiente do processo.
+
+## 0.93.19 — conserta a 0.93.18, que não subia
+
+### Um arquivo observado como diretório derrubava o arranque
+
+O conserto do digest de perfil fez as referências declaradas pelo perfil dirigirem os observadores de
+arquivo — pedido certo: sem ele, corrigir o documento não limpava o alerta. Mas `instructions.md` é um
+**arquivo**, e o observador chamava `readdirSync` nele. Todo perfil com `prompt.instructions`
+derrubava o arranque do engine, o socket de controle nunca nascia, e o supervisor restaurava o engine
+anterior — o rollback fez o trabalho dele, e o workspace não ficou sem engine.
+
+Duas camadas entraram. A causa: referência de arquivo é observada como arquivo; diretório continua
+varrido. O desenho: erro transitório de sistema de arquivos — ENOENT, ENOTDIR, EACCES, EPERM, ELOOP —
+passa a ser reportado em vez de fatal. Um auxílio de observação que quebra o motor está errado por
+desenho. E o teste que faltava coube: o daemon **empacotado** sobe contra um perfil real em disco e
+cria o socket.
+
+## 0.93.18 — o cofre de chaves mora no Agent Studio, e o schema para de oferecer o que o parser recusa
+
+### Credencial de máquina: guardar, trocar, remover — e nada mais
+
+A porta é a webview nossa, no Agent Studio, e migra com o produto. O comando `tachyon.setProfileSecret`
+saiu — paleta de comandos é porta do editor. E nada de segredo no Bridge, que é o canal dos agentes:
+expor lá seria o agente gravando credencial, o oposto da razão de o cofre existir.
+
+A tela diz em voz alta o que costuma ficar implícito: o valor é aceito uma vez e nunca mostrado de
+volta; o armazenamento é `secrets.json` com permissão restrita e **não** é keychain; editar é
+substituir, operação própria que não lê o valor antigo; remover mostra quem depende antes. E o schema
+das mensagens da webview **recusa payload que contenha valor de segredo** — não é "hoje não vaza", é
+não haver como vazar por essa porta.
+
+### O schema confirmava campos que o leitor joga fora
+
+A remoção anterior do bloco `agents:` tinha renomeado a chave para `x-removed-agents` em vez de
+apagá-la — e o prefixo `x-` não esconde nada do JSON Schema. Pior: `terminals` reusava o `$ref` dela,
+então o editor confirmava `worktree`, `branch`, `baseRef` e `harness` dentro de um terminal, campos
+que o leitor joga fora. Terminais agora têm forma própria: sete campos, menos 264 linhas de schema.
+E um guarda novo afirma que as propriedades de topo são exatamente as que o parser conhece — pega a
+família do defeito, não só este caso.
+
+### O caminho legado sai de vez
+
+Perfis vivem em `.tachyon/agents/<nome>/agent.yml`. O parser e o schema param de conhecer o bloco
+`agents:` do `tachyon.yml` — a superfície morta que o autocomplete do editor recomendava.
+
+### A entrega de notices para de despejar argv
+
+Cinco argumentos posicionais viravam três linhas de ruído antes da mensagem. Agora é um JSON só, nos
+sete hooks materializados.
+
+## 0.93.17 — a terceira porta que cortava turno, e o ledger que não via grok
+
+### O rebind do engine consultava a guarda tarde demais
+
+Fechadas as portas humana e de agente, faltava o rebind do engine — e nele a guarda parecia não
+funcionar porque ele **parava** o sobrevivente antes de chamar resume(): a guarda de processo vivo
+não tinha mais processo para ver. Estava certa e era inalcançável. Agora é consultada no momento
+destrutivo, com a isenção do self-restart por identidade e sem flag de força.
+
+### O ledger de sessão tinha 317 linhas e zero grok
+
+O hook disparava; o registrador rejeitava — claude e codex mandam snake_case, o grok manda camelCase.
+Agora normaliza os dois, deriva o transcript do GROK_HOME e **diz** quando um runtime não é coberto:
+ausência de instrumento deixa de se parecer com ausência de fato.
+
+### Documento de perfil que divergiu continua reparável
+
+Um instructions pinado podia travar a única porta de reparo que o produto nomeia. Divergiu? Continua
+reparável.
+
+### Sessões de tool carregam o dono
+
+As sessões de tool nascem carimbadas com a identidade do agente e fecham no teardown dele.
+
+## 0.93.16 — a worktree do agente, do nascimento ao descarte
+
+### O agente escolhe de onde a worktree parte
+
+Como o change já podia. Sem origem declarada, segue o HEAD do primário. E re-ramificar em restart é
+impossível por construção: o baseRef só chega ao ensure quando não há registro anterior, então todo
+caminho de reuso o ignora.
+
+### A worktree aparece na lista enquanto nasce
+
+Antes a linha só existia depois do `git worktree add` retornar, e um agente despachado com worktree
+ficava invisível entre o spawn e o primeiro frame. Agora aparece com fase e com erro. É estado de
+sessão: um reload no meio derruba a linha — exatamente o comportamento de hoje para o resto.
+
+### Ref inválida avisa e cai no HEAD
+
+Criar change com ref de origem inválida bloqueava. Agora avisa e cai no HEAD, com a mesma frase que
+o agente usa. Nome de branch inválido continua recusando — esse não tem default óbvio.
+
+### Remover olha quem está dentro antes de apagar
+
+Dezenove processos achados com cwd em worktrees que não existiam mais, alguns vivos havia mais de
+dez horas — a remoção simplesmente não olhava. Agora olha, nomeia, e oferece saída que não mata
+ninguém. Plataforma sem `/proc` segue e declara que não mediu, em vez de virar pedágio permanente
+no macOS e no Windows.
+
+## 0.93.15 — uma noite de instrumento, não de feature
+
+### A cor de erro do kit para de divergir dela mesma
+
+O `--destructive` apontava para `--vscode-errorForeground` e caía num hex quando o tema não definia
+esse token: duas cores de erro diferentes na mesma tela. Agora deriva de `--ds-err`, e o foreground
+do `--ds-on-err` que já existia.
+
+### A sonda de I/O síncrono para de acusar a si mesma
+
+Três capturas do travamento do extension host nomeavam `/proc/self/schedstat` — o próprio detector
+de lag calculando. A exclusão é por origem, não por caminho, então sobrevive ao bundling. Isso não
+conserta o travamento; conserta o instrumento que vai procurá-lo.
+
+### Erros que dividiam uma frase
+
+O erro do runtime-status-publish passou a dizer qual das duas causas ocorreu, com status, statusText
+e corpo bruto — medido no caminho, 92 de 92 falhas acontecem quando o agente está sendo morto e o
+bearer já revogado, inofensivas que ninguém sabia serem inofensivas. E a frase de recusa do gate de
+checklist prometia que leitura sempre passa e que só a primeira mudança bloqueia; as duas eram
+falsas, medidas na própria sessão do dono. Agora ela diz o que o mecanismo faz. O mecanismo não mudou.
+
+## 0.93.14 — quatro ajustes apontados usando a versão por um dia
+
+### Uma segunda fonte monoespaçada
+
+A Departure Mono entra como opção, em `~/.tachyon/settings.json` sob `font.mono`; Tachyon Mono segue
+no default. São 22.496 bytes de face contra os 375.048 dos quatro pesos que já embarcavam, licença
+SIL OFL 1.1 — a mesma — com o OFL.txt acompanhando os arquivos como ela exige.
+
+### E três atritos de tela
+
+A busca do Board para de mudar de largura ao digitar: o botão de limpar era montado condicionalmente
+e a caixa crescia com ele; a pegada do estado cheio fica reservada. A lista de arquivos do review
+vira redimensionável, com a largura de hoje como padrão — caminhos longos deixam de truncar e os
+arquivos de uma mesma pasta voltam a se distinguir. E a última string em português do review foi
+traduzida; ela sobrevivera à varredura por viver no ramo que só aparece com zero agentes.
+
+## 0.93.13 — o review aprende com o dono olhando, e o notice sobrevive ao engine
+
+### Na tela do review
+
+A régua de anotação deixa de ser um segundo sinal de mais: numa linha adicionada lia-se "+ +", o
+símbolo querendo dizer "anotar" onde significava "adicionado". Virou ícone de comentário. O corpo
+sanga até as bordas, o header mantém o recuo, e as strings saem do português — era a última
+superfície assim no produto.
+
+### O notice deixa de morrer com o engine
+
+A fila era só memória. Agora reconstitui do witness durável, e o fim de turno drena o que ficou: um
+Stop hook põe a primeira linha no contexto do modelo nos três runtimes com canal por-spawn, medidos
+vivos, e o cursor avança antes do emit para o grok — que invoca três vezes — não redeliverar. Controle
+negativo: o primeiro boot sobre uma trilha de 3.283 linhas não reproduz nada.
+
+### O rodapé da sidebar ganha como dispensar
+
+Sem temporizador — a barra antiga apagava o aviso sozinha em 8 segundos, e foi por isso que o rodapé
+existe.
+
+### E o que só o uso mostrou
+
+A aprovação de schedule exigia do proponente um grant que autoriza outro objeto: a decisão humana
+ficava bloqueada por uma condição sobre outra coisa. Formulário aposentado volta a ser recusado como
+domínio, não como transporte. E a busca do Board volta à geometria de controle do design system —
+usava token de espaçamento onde o vizinho usa token de controle, e por isso não alinhava.
+
+## 0.93.12 — o review ganha tela própria no Tachyon, cobrar plano vira trava, e o pacote para de levar desenvolvimento
+
+### O review acontece numa aba do Tachyon
+
+Até aqui o review morria nos comentários do VS Code. Agora é uma aba nossa: lista de arquivos, um
+arquivo materializado por vez, régua com nota ancorada por snapshot, realce que **avisa** quando
+degrada acima de 20 mil caracteres. O engine ganha hunks linha a linha. O painel Comments do editor
+saiu do produto, com o CommentController junto — e a aba foi provada abrindo num Extension
+Development Host real.
+
+### Cobrar checklist passa a bloquear de verdade
+
+`settings.checklist.requireIn` prometia exigir plano e não alcançava ninguém: o único consumidor
+precisava de linha em persistence-stop.jsonl, que só agente **declarado** escreve — 1.461 linhas,
+zero temporárias. Campo de configuração declarando capacidade que o sistema não tinha. Agora é um
+PreToolUse injetado no canal por-spawn de cada runtime — `--settings`, `-c hooks.<Event>=`,
+`$GROK_HOME/hooks/` — que recusa a primeira ferramenta que muta até a sessão ter plano no ledger do
+próprio runtime. Fail open onde ler falha, recusa medida viva nos três, e a frase nomeia a ferramenta
+de plano do runtime em uma linha.
+
+### Um agente em pleno turno deixa de ter o processo trocado
+
+resume e restart matavam e relançavam o processo em pleno turno; cinco agentes perderam trabalho em
+voo assim em dois dias. A guarda consulta o processo vivo e admite uma única substituição — o
+self-restart, por identidade.
+
+### A sidebar mostra onde o agente está
+
+O passo do checklist ganha posição e total — "(3/9)" — na linha do agente. O estado atual vira um
+rodapé fixo na sidebar, projetado como estado de engine. Notices de shell sem ação são projetadas em
+vez de descartadas, e o marcador de modelo para de acusar divergência onde nunca houve declaração de
+`--model`.
+
+### O pacote para de levar desenvolvimento
+
+489.887 bytes de artefato de desenvolvimento saem do VSIX: sourcemap do companion, testes do
+node-pty, devDependencies do manifesto, fixture da section-app e dois shells órfãos que embarcavam
+sem fonte nem entry. Sai o Pipeline Studio inteiro — 1.957 linhas — com o seed de demonstração que
+punha "Add a dark-mode toggle to Settings" dentro do daemon de quem instala. A política de
+dimensionamento do vitest deixa de rodar no produto. Sete leituras de variável de ambiente de
+desenvolvimento somem — uma delas fazia o produto instalado gravar config nativa de runtime no
+caminho apontado por env var. E quinze comandos internos `tachyon._*` migram para um bundle irmão
+que só carrega sob `TACHYON_TEST_SEAMS=1`.
+
+A auditoria que encontrou tudo isso verificou cada achado contra os bytes do VSIX empacotado, não
+contra o fonte.
 
 ## 0.93.11 — dois consertos no que a versão anterior acabou de entregar
 
