@@ -2541,6 +2541,12 @@ export interface PreviewUpdateOpts {
    * back-compat for dir installs and pre-integrity locks.
    */
   payloadHash?: string;
+  /**
+   * t-cd4406 — dest scope the update plan writes. Default workspace. An update must land where the
+   * install it replaces lives: updating an agent-scoped install without this would silently promote
+   * it to the workspace dests. Bound into the preview fingerprint like install's scope.
+   */
+  scope?: InstallScope;
 }
 
 /** Compare major.minor.patch numerically (prerelease ignored). Shares `compareSemver` with the tag comparator
@@ -2598,7 +2604,9 @@ export async function previewUpdate(plugin: LoadedPlugin, workspaceRoot: string,
   const gitState = plugin.gitHooks.length > 0 ? await gatherGitHookState(workspaceRoot, plugin.gitHooks.map((g) => g.event), git) : undefined;
   const toolPlan = Object.keys(plugin.manifest.tools).length > 0 ? await gatherToolPlan(plugin) : undefined;
   const dataPlan = Object.keys(plugin.manifest.data).length > 0 ? await gatherDataPlan(plugin) : undefined;
-  const install = previewInstall(plugin, workspaceRoot, target, gitState, toolPlan, dataPlan);
+  // t-cd4406 — the update plan writes the SAME dest scope the caller names (default workspace), so an
+  // agent-scoped install updates in place instead of being promoted to the shared workspace dests.
+  const install = previewInstall(plugin, workspaceRoot, target, gitState, toolPlan, dataPlan, opts.scope);
   const installByRt = new Map(install.steps.map((s) => [s.runtime, s]));
 
   const conflicts: UpdateConflict[] = [];
@@ -2641,10 +2649,12 @@ export interface UpdateResult {
  * silently clobbers, duplicates, or rolls back. With `force`, proceeds with the install of the new version
  * (edited groups are left as conservative orphans — Tachyon never deletes a group the user edited).
  */
-export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; gitHookConfirmed?: boolean; toolConfirmed?: boolean; launcherBundlePath?: string; dataConfirmed?: boolean; dataResolverBundlePath?: string; externalResolverBundlePath?: string; viewConfirmed?: boolean; fleetReadConfirmed?: boolean; actionConfirmed?: Record<string, true>; nodePath?: string; toolTlsCa?: string | Buffer; onProgress?: ProvisionProgressFn; resolveFinalUrl?: (url: string) => Promise<string>; git?: GitRun } = {}): Promise<UpdateResult> {
+export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; scope?: InstallScope; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; gitHookConfirmed?: boolean; toolConfirmed?: boolean; launcherBundlePath?: string; dataConfirmed?: boolean; dataResolverBundlePath?: string; externalResolverBundlePath?: string; viewConfirmed?: boolean; fleetReadConfirmed?: boolean; actionConfirmed?: Record<string, true>; nodePath?: string; toolTlsCa?: string | Buffer; onProgress?: ProvisionProgressFn; resolveFinalUrl?: (url: string) => Promise<string>; git?: GitRun } = {}): Promise<UpdateResult> {
   const git = opts.git ?? defaultGitRun;
   // t-4e5f11 — pass the freshly resolved payload hash so same-version content changes are not short-circuited.
-  const preview = await previewUpdate(plugin, workspaceRoot, git, { payloadHash: opts.provenance?.integrity.payload });
+  // t-cd4406 — pass the dest scope too: a fingerprint consented under one scope cannot match an apply that
+  // re-derives under another (the fingerprint binds dest), so a mismatched apply is refused below.
+  const preview = await previewUpdate(plugin, workspaceRoot, git, { payloadHash: opts.provenance?.integrity.payload, scope: opts.scope });
   if (preview.errors.length > 0) return { updated: false, errors: preview.errors };
   if (!preview.found) return { updated: false, errors: [`plugin '${plugin.manifest.name}' is not installed — use install`] };
   if (preview.upToDate) return { updated: false, upToDate: true, errors: [] };
@@ -2664,7 +2674,7 @@ export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, o
   // spec 263 — apply into exactly the runtime set previewUpdate planned (the consented installed set, carried
   // on the preview), so applyInstall's TOCTOU re-derive matches and no runtime is silently added or dropped.
   const target = new Set<Runtime>(preview.install.targetRuntimes);
-  const res = await applyInstall(plugin, preview.install, workspaceRoot, target, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions, mcpConfirmed: opts.mcpConfirmed, gitHookConfirmed: opts.gitHookConfirmed, toolConfirmed: opts.toolConfirmed, launcherBundlePath: opts.launcherBundlePath, dataConfirmed: opts.dataConfirmed, dataResolverBundlePath: opts.dataResolverBundlePath, externalResolverBundlePath: opts.externalResolverBundlePath, viewConfirmed: opts.viewConfirmed, fleetReadConfirmed: opts.fleetReadConfirmed, actionConfirmed: opts.actionConfirmed, nodePath: opts.nodePath, toolTlsCa: opts.toolTlsCa, onProgress: opts.onProgress, resolveFinalUrl: opts.resolveFinalUrl, git });
+  const res = await applyInstall(plugin, preview.install, workspaceRoot, target, { provenance: opts.provenance, scope: opts.scope, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions, mcpConfirmed: opts.mcpConfirmed, gitHookConfirmed: opts.gitHookConfirmed, toolConfirmed: opts.toolConfirmed, launcherBundlePath: opts.launcherBundlePath, dataConfirmed: opts.dataConfirmed, dataResolverBundlePath: opts.dataResolverBundlePath, externalResolverBundlePath: opts.externalResolverBundlePath, viewConfirmed: opts.viewConfirmed, fleetReadConfirmed: opts.fleetReadConfirmed, actionConfirmed: opts.actionConfirmed, nodePath: opts.nodePath, toolTlsCa: opts.toolTlsCa, onProgress: opts.onProgress, resolveFinalUrl: opts.resolveFinalUrl, git });
   return {
     updated: res.installed,
     conflicts: preview.conflicts,

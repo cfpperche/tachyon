@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { detectStack, buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "../../apps/vscode-extension/src/init/initLogic.js";
+import { execFileSync, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { detectStack, buildStarterYaml, ensureTachyonGitignore, gitIgnorePatternFor, TACHYON_GITIGNORE_ENTRIES, type DetectedProject } from "../../apps/vscode-extension/src/init/initLogic.js";
 import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import { parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
+import { CREDENTIAL_CLASS_PREFIXES } from "@tachyon/engine/plugins/worktreeProjection.js";
+import { LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
 
 const base = (over: Partial<DetectedProject> = {}): DetectedProject => ({
   files: [],
@@ -121,16 +127,16 @@ describe("ensureTachyonGitignore", () => {
     expect(out).toContain(".tachyon/sessions.json");
     expect(out).toContain(".tachyon/harness/"); // spec 226 — harness homes (auth symlink + transcripts) stay local
     expect(out).toContain(".tachyon/bridge-mcp/"); // spec 236 — per-agent Bridge --mcp-config files stay local
-    expect(out).toBe("node_modules\ndist\n\n# Tachyon — machine-local state (pins.json stays shareable)\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n.tachyon/continuity/\n.tachyon/agents/\n.tachyon/agent-profile-transactions/\n.tachyon/canonical-agent-transactions/\n.tachyon/handoff-notes.jsonl\n.tachyon/pins/\n.tachyon/probes/\n");
+    expect(out).toBe("node_modules\ndist\n\n# Tachyon — machine-local state (pins.json stays shareable)\n" + TACHYON_GITIGNORE_ENTRIES.join("\n") + "\n");
   });
 
   it("handles a file with no trailing newline", () => {
     const out = ensureTachyonGitignore("dist");
-    expect(out).toBe("dist\n\n# Tachyon — machine-local state (pins.json stays shareable)\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n.tachyon/continuity/\n.tachyon/agents/\n.tachyon/agent-profile-transactions/\n.tachyon/canonical-agent-transactions/\n.tachyon/handoff-notes.jsonl\n.tachyon/pins/\n.tachyon/probes/\n");
+    expect(out).toBe("dist\n\n# Tachyon — machine-local state (pins.json stays shareable)\n" + TACHYON_GITIGNORE_ENTRIES.join("\n") + "\n");
   });
 
   it("is idempotent — returns null when all entries are already present", () => {
-    expect(ensureTachyonGitignore("dist\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n.tachyon/continuity/\n.tachyon/agents/\n.tachyon/agent-profile-transactions/\n.tachyon/canonical-agent-transactions/\n.tachyon/handoff-notes.jsonl\n.tachyon/pins/\n.tachyon/probes/\n")).toBeNull();
+    expect(ensureTachyonGitignore(`dist\n${TACHYON_GITIGNORE_ENTRIES.join("\n")}\n`)).toBeNull();
   });
 
   it("appends only the missing entry when one is already present", () => {
@@ -150,5 +156,83 @@ describe("ensureTachyonGitignore", () => {
     expect(entries).toContain(".tachyon/sessions.json");
     expect(entries).not.toContain(".tachyon/git-deliveries/");
     expect(entries).toContain(".tachyon/pins/");
+  });
+
+  it("derives its credential entries from the engine constant — no third list (t-4290d0)", () => {
+    for (const prefix of CREDENTIAL_CLASS_PREFIXES) {
+      expect(TACHYON_GITIGNORE_ENTRIES).toContain(gitIgnorePatternFor(prefix));
+    }
+    // never-projected is not never-committed: the pins lockfile stays shareable (spec 250)
+    expect(TACHYON_GITIGNORE_ENTRIES).not.toContain(LOCKFILE_REL_PATH);
+  });
+});
+
+/**
+ * t-4290d0 — the junction test the product never had. This repository's own .gitignore ignores
+ * `.tachyon/` wholesale, so dogfooding here exercises OUR rule and never the one Init writes —
+ * "two configurations, one tested" is why the hole survived. So these tests run the REAL Init path
+ * (the same `buildStarterYaml` + `ensureTachyonGitignore` calls extension.ts makes) inside a
+ * throwaway git repo OUTSIDE this checkout and ask real git. The paths are the nine credential-class
+ * ones the investigation measured uncovered (t-508c85); names only, never contents.
+ */
+describe("Init gitignore vs credential-class paths in a fresh workspace (t-4290d0)", () => {
+  const MUST_BE_IGNORED = [
+    ".tachyon/secrets.env", // paid API key (spec 337)
+    ".tachyon/browser-state/Cookies", // browser profile: cookies + tokens
+    ".tachyon/state/bridge-service/control.sock",
+    ".tachyon/plugins/acme/plugin.yml", // materialized payload incl. human-owned confirmation config
+    ".tachyon/config.lkg.json", // machine state — configLkg.ts claims it is "gitignored"
+    ".tachyon/bin/_tachyon-tool", // projected launcher shim — a worktree's symlink must never be committed
+    ".claude/settings.json", // plugin-materialized runtime config
+    ".agents/skills/x/SKILL.md",
+    ".mcp.json",
+  ];
+
+  function isIgnored(repo: string, rel: string): boolean {
+    return spawnSync("git", ["check-ignore", "-q", "--", rel], { cwd: repo }).status === 0;
+  }
+
+  /** A fresh workspace outside this checkout, holding what Tachyon materializes once it runs there. */
+  function initWorkspace(): string {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "t4290d0-init-ws-"));
+    execFileSync("git", ["init", "-q"], { cwd: repo, stdio: "ignore" });
+    for (const rel of [...MUST_BE_IGNORED, ".tachyon/sessions.json", ".tachyon/plugins.lock.json"]) {
+      fs.mkdirSync(path.join(repo, path.dirname(rel)), { recursive: true });
+      fs.writeFileSync(path.join(repo, rel), "");
+    }
+    fs.writeFileSync(path.join(repo, "tachyon.yml"), buildStarterYaml(base()));
+    const gitignore = ensureTachyonGitignore(undefined);
+    expect(gitignore).not.toBeNull();
+    fs.writeFileSync(path.join(repo, ".gitignore"), gitignore!);
+    return repo;
+  }
+
+  it("leaves every measured credential-class path ignored, secrets.env by the derived glob", () => {
+    const repo = initWorkspace();
+    try {
+      expect(isIgnored(repo, ".tachyon/sessions.json")).toBe(true); // positive control
+      const uncovered = MUST_BE_IGNORED.filter((rel) => !isIgnored(repo, rel));
+      expect(uncovered, `${uncovered.length} of ${MUST_BE_IGNORED.length} credential-class paths NOT ignored`).toEqual([]);
+      // The raw engine prefix '.tachyon/secrets' would NOT cover the .env sibling — gitignore matches
+      // whole path segments, so coverage must come from the derived glob. Assert WHICH entry covers it.
+      const verdict = execFileSync("git", ["check-ignore", "-v", "--", ".tachyon/secrets.env"], { cwd: repo, encoding: "utf8" });
+      expect(verdict.split("\t")[0]?.endsWith(".tachyon/secrets*"), `unexpected covering entry: ${verdict}`).toBe(true);
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("shows no untracked runtime state in git status — only the deliberate lockfile exception", () => {
+    const repo = initWorkspace();
+    try {
+      // The measured failure was `?? .tachyon/` collapsed as ONE untracked entry. After Init the only
+      // untracked runtime FILE left is the lockfile, committed BY DESIGN (spec 250 re-hydration) —
+      // -uall enumerates files, because git collapses the directory in the default display.
+      const status = execFileSync("git", ["status", "--porcelain", "-uall"], { cwd: repo, encoding: "utf8" }).trim().split("\n").sort();
+      expect(status).toEqual(["?? .gitignore", "?? .tachyon/plugins.lock.json", "?? tachyon.yml"]);
+      expect(isIgnored(repo, ".tachyon/plugins.lock.json")).toBe(false);
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
   });
 });

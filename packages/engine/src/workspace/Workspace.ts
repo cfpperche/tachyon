@@ -407,6 +407,41 @@ export function resolveAgentProfileHomeDir(seam: string | undefined): string | u
   return seam;
 }
 
+/** A running agent pane and the pid at its root — the heal's only identity source (t-2a7d24). */
+export type ManagedAgentPaneRoot = { name: string; panePid: number };
+
+/**
+ * Running agent panes with their pane root pid.
+ *
+ * Exported rather than private because it is the JUNCTION this whole mechanism turns on: the Bridge
+ * token heal is safe only while the list it receives is the real roster, and the defect it replaces
+ * (`t-2a7d24`) was a hardcoded `[]` that no test could see. Same construction as the fleet build's
+ * pane roots (`sidebarFleetService.ts`): resolve `panePid` per live agent, drop the ones tmux cannot
+ * answer for. Terminals are excluded — they are not agents and cannot carry an agent identity.
+ */
+export async function managedAgentPaneRoots(
+  manager: {
+    runningAgents(): Promise<string[]>;
+    kindOf(name: string): string;
+    session(name: string): string;
+  },
+  tmux: { panePid(session: string): Promise<number> },
+): Promise<ManagedAgentPaneRoot[]> {
+  const running = await manager.runningAgents();
+  const roots = await Promise.all(
+    running
+      .filter((name) => manager.kindOf(name) === "agent")
+      .map(async (name) => {
+        try {
+          return { name, panePid: await tmux.panePid(manager.session(name)) };
+        } catch {
+          return undefined;
+        }
+      }),
+  );
+  return roots.filter((row): row is ManagedAgentPaneRoot => !!row);
+}
+
 export interface BridgeStartFailureInfo {
   code: string;
   message: string;
@@ -2202,10 +2237,13 @@ export class Workspace {
         legacyCompatEnabled: this.legacyBridgeAuthEnabled,
         onLegacyCall: (info) => this.logLegacyBridgeCall(info),
         // Dogfood: agent process still holds a token the digest registry forgot → adopt on first MCP hit.
-        healUnknownBearer: (bearer) => {
+        // The pane roots are resolved here, per call: identity may only come from the roster (t-2a7d24).
+        healUnknownBearer: async (bearer) => {
           const reg = this.bridgeTransport.callerRegistry;
           if (!reg) return undefined;
-          const healed = deps.bridgeTransport.healUnknownBearer(reg, bearer, this.bridgeTransport.scope);
+          const agents = await managedAgentPaneRoots(this.manager, this.tmux);
+          if (agents.length === 0) return undefined;
+          const healed = deps.bridgeTransport.healUnknownBearer(reg, bearer, agents, this.bridgeTransport.scope);
           if (!healed.ok) return undefined;
           if (healed.adopted) {
             this.bridgeTransport.persistRegistry();

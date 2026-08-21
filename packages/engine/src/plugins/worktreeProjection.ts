@@ -76,16 +76,33 @@ export const RETIRED_PROJECTION_RELS: readonly string[] = [
 ];
 
 /**
+ * t-4290d0 — the workspace-relative prefixes holding credential or human-gate material: the
+ * materialized plugin payloads (which carry the human-owned confirmation config), browser profiles
+ * (cookies + tokens), API keys (`.tachyon/secrets.env` — spec 337) and machine state in the same
+ * class. ONE named enumeration with two consumers, each deriving its own shape from it:
+ *
+ *  - `NEVER_PROJECT_PREFIXES` below — a linked worktree must never hold a drifting copy;
+ *  - the Init-written `.gitignore` (`TACHYON_GITIGNORE_ENTRIES`, apps/vscode-extension `initLogic`) —
+ *    a fresh workspace must not be one `git add .` away from committing them.
+ *
+ * `.tachyon/plugins.lock.json` is deliberately NOT here: it is never projected (a worktree copy would
+ * drift) but it IS committed by design — spec 250 makes it the re-hydration recipe for a clone.
+ */
+export const CREDENTIAL_CLASS_PREFIXES: readonly string[] = [
+  ".tachyon/plugins/",        // materialized payloads incl. human-owned confirmation config
+  ".tachyon/browser-state",   // credential-class (cookies + tokens)
+  ".tachyon/secrets",
+  ".tachyon/state",
+];
+
+/**
  * Path prefixes that may NEVER be projected, because a worktree-local copy of any of them would be a
  * second, drifting source of truth for something the authority owns: the integrity pins, the
  * human-owned confirmation gates, or credential material.
  */
 export const NEVER_PROJECT_PREFIXES: readonly string[] = [
   LOCKFILE_REL_PATH,          // the checksum pins — the launcher must read the authority's, always
-  ".tachyon/plugins/",        // materialized payloads incl. human-owned confirmation config
-  ".tachyon/browser-state",   // credential-class (cookies + tokens)
-  ".tachyon/secrets",
-  ".tachyon/state",
+  ...CREDENTIAL_CLASS_PREFIXES,
 ];
 
 export type ProjectionState =

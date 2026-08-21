@@ -142,9 +142,10 @@ export class Bridge {
       onLegacyCall?: (info: { tool: string; claimedIdentity?: string }) => void;
       /**
        * Dogfood heal: when a bearer is `token_unknown`, try to match it against live managed agent
-       * process env and adopt into the registry. Returns an agent snapshot on success.
+       * process env and adopt into the registry. Returns an agent snapshot on success. Async because
+       * the caller resolves managed pane pids from tmux before it can search (t-2a7d24).
        */
-      healUnknownBearer?: (bearer: string) => CallerSnapshot | undefined;
+      healUnknownBearer?: (bearer: string) => Promise<CallerSnapshot | undefined>;
       onRequestComplete?: (info: BridgeRequestCompleteInfo) => void;
       slowRequestMs?: number;
     } = {},
@@ -331,7 +332,7 @@ export class Bridge {
       });
       // Self-heal: process still holds a token the digest registry forgot (remint/sweep/reload).
       if (!result.ok && result.reason === "token_unknown" && bearer && this.options.healUnknownBearer) {
-        const healed = this.options.healUnknownBearer(bearer);
+        const healed = await this.options.healUnknownBearer(bearer);
         if (healed) result = { ok: true, snapshot: healed };
       }
       if (!result.ok) {

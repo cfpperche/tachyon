@@ -9,7 +9,15 @@ import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import { useStudioFreeze } from "../shared/studio/useStudioFreeze";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
 import { Button, Chip, Input, Select, Tabs, Textarea } from "../shared/ui";
-import { KitFilePicker } from "../shared/ui/kit";
+import {
+  KitDialog,
+  KitDialogContent,
+  KitDialogDescription,
+  KitDialogFooter,
+  KitDialogHeader,
+  KitDialogTitle,
+  KitFilePicker,
+} from "../shared/ui/kit";
 import { cx } from "../shared/ui/cx";
 import {
   AGENT_STUDIO_HOST_MESSAGE_NAMES,
@@ -196,7 +204,6 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   const [bundleAction, setBundleAction] = useState<"clone" | "import" | undefined>();
   const [bundleDestination, setBundleDestination] = useState("");
   const [bundleImportBase64, setBundleImportBase64] = useState<string | undefined>(undefined);
-  const bundleCancelButtonRef = useRef<HTMLButtonElement>(null);
   // t-772f6b — where the human is in the wizard (create) or the tab row (edit). Reset with the
   // document on every rebinding, same as every other piece of local state below.
   const [step, setStep] = useState(Number.isInteger(PREVIEW_STEP) && PREVIEW_STEP >= 0 ? PREVIEW_STEP : 0);
@@ -217,8 +224,6 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   fieldsRef.current = fields;
   const dirtyRef = useRef(false);
   const editRevisionRef = useRef(0);
-  const renameCancelButtonRef = useRef<HTMLButtonElement>(null);
-  const forgetCancelButtonRef = useRef<HTMLButtonElement>(null);
 
   const dirty = computeAgentDirty(entity, fields);
   dirtyRef.current = dirty;
@@ -444,18 +449,9 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   }, [entityRef.current?.name, entityRef.current?.profile?.revision]);
 
 
-  useEffect(() => {
-    if (renameConfirmOpen) renameCancelButtonRef.current?.focus();
-  }, [renameConfirmOpen]);
-
-  useEffect(() => {
-    // t-e722ce — `preventScroll`, because the panel now opens with a seven-step plan above these
-    // buttons. Focusing Cancel used to scroll the plan off the top of the frame, landing the reader
-    // on the two controls before the thing they are meant to read. Focus still goes to the safe
-    // action (Escape-equivalent, unchanged); only the viewport stays where the human left it.
-    if (forgetConfirmOpen) forgetCancelButtonRef.current?.focus({ preventScroll: true });
-  }, [forgetConfirmOpen]);
-  useEffect(() => { if (bundleAction) bundleCancelButtonRef.current?.focus(); }, [bundleAction]);
+  // t-eaffa5 — KitDialog owns initial focus and the trap. The old Cancel-button useEffects
+  // (including t-e722ce's preventScroll, which existed because the inline plan sat in page
+  // flow above the buttons) are a second authority over the same thing and do not come back.
 
   // t-b643ac — decision 4, client half: the tombstone REPLACES the frame rather than banner-ing
   // above it, so Save/Cancel and every adapter action are ABSENT from the DOM instead of disabled
@@ -1139,65 +1135,88 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
         </div>
       )}
       {dirty && <div class="ash-profile-status">{profileLabels.saveFirst}</div>}
-      {renameConfirmOpen && canonicalSnapshot && (
-        <div class="ash-profile-replace-confirm" aria-labelledby="ash-rename-confirm-title">
-          <div class="ash-profile-replace-confirm-title" id="ash-rename-confirm-title">Rename this agent?</div>
-          <label class="ash-label" for="ash-rename-value">New name</label>
-          <Input id="ash-rename-value" value={renameValue} onInput={(event) => setRenameValue((event.currentTarget as HTMLInputElement).value)} />
-          <div class="ash-profile-replace-confirm-actions">
-            <Button ref={renameCancelButtonRef} onClick={() => setRenameConfirmOpen(false)}>Cancel</Button>
-            <Button variant="primary" disabled={renameValue === canonicalSnapshot.agentName || !/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(renameValue)} onClick={() => runCanonicalLifecycle(
-              "Renaming agent",
-              renameAgentProfileMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, renameValue),
-            )}>Rename agent</Button>
-          </div>
-        </div>
+      {canonicalSnapshot && (
+        <KitDialog open={renameConfirmOpen} onOpenChange={setRenameConfirmOpen}>
+          <KitDialogContent className="ash-lifecycle-dialog" data-testid="ash-rename-dialog">
+            <KitDialogHeader>
+              <KitDialogTitle id="ash-rename-confirm-title">Rename this agent?</KitDialogTitle>
+            </KitDialogHeader>
+            <label class="ash-label" for="ash-rename-value">New name</label>
+            <Input id="ash-rename-value" value={renameValue} onInput={(event) => setRenameValue((event.currentTarget as HTMLInputElement).value)} />
+            <KitDialogFooter>
+              <Button onClick={() => setRenameConfirmOpen(false)}>Cancel</Button>
+              <Button variant="primary" disabled={renameValue === canonicalSnapshot.agentName || !/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(renameValue)} onClick={() => runCanonicalLifecycle(
+                "Renaming agent",
+                renameAgentProfileMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, renameValue),
+              )}>Rename agent</Button>
+            </KitDialogFooter>
+          </KitDialogContent>
+        </KitDialog>
       )}
-      {forgetConfirmOpen && canonicalSnapshot && (
-        <div class="ash-profile-delete-confirm" aria-labelledby="ash-forget-confirm-title">
-          <div class="ash-profile-delete-confirm-title" id="ash-forget-confirm-title">Forget {canonicalSnapshot.agentName}</div>
-          <ForgetPlanView result={forgetPlan} />
-          {forgetPlan?.kind === "plan" && forgetPlan.plan.executable && (
-            <>
-              <div>Type <strong>{canonicalSnapshot.agentName}</strong> to approve the plan above.</div>
-              <Input aria-label="Agent name confirmation" value={forgetValue} onInput={(event) => setForgetValue((event.currentTarget as HTMLInputElement).value)} />
-            </>
-          )}
-          <div class="ash-profile-delete-confirm-actions">
-            <Button ref={forgetCancelButtonRef} onClick={() => { setForgetConfirmOpen(false); setForgetPlan(undefined); }}>Cancel</Button>
-            <Button
-              variant="danger"
-              disabled={forgetPlan?.kind !== "plan" || !forgetPlan.plan.executable || forgetValue !== canonicalSnapshot.agentName}
-              onClick={() => forgetPlan?.kind === "plan" && runCanonicalLifecycle(
-                "Forgetting agent",
-                // The plan's revision, not the snapshot's: the human approved THAT reading of
-                // the workspace, and if the profile moved since, the engine must refuse rather
-                // than execute a plan nobody was shown.
-                forgetAgentProfileMessage(canonicalSnapshot.agentName, forgetPlan.plan.revision, forgetValue),
-              )}
-            >Approve and execute</Button>
-          </div>
-        </div>
+      {canonicalSnapshot && (
+        <KitDialog
+          open={forgetConfirmOpen}
+          onOpenChange={(open) => {
+            setForgetConfirmOpen(open);
+            if (!open) setForgetPlan(undefined);
+          }}
+        >
+          <KitDialogContent className="ash-lifecycle-dialog ash-lifecycle-dialog-wide" data-testid="ash-forget-dialog">
+            <KitDialogHeader>
+              <KitDialogTitle id="ash-forget-confirm-title" className="ash-profile-delete-confirm-title">Forget {canonicalSnapshot.agentName}</KitDialogTitle>
+            </KitDialogHeader>
+            <ForgetPlanView result={forgetPlan} />
+            {forgetPlan?.kind === "plan" && forgetPlan.plan.executable && (
+              <>
+                <KitDialogDescription>Type <strong>{canonicalSnapshot.agentName}</strong> to approve the plan above.</KitDialogDescription>
+                <Input aria-label="Agent name confirmation" value={forgetValue} onInput={(event) => setForgetValue((event.currentTarget as HTMLInputElement).value)} />
+              </>
+            )}
+            <KitDialogFooter>
+              <Button onClick={() => { setForgetConfirmOpen(false); setForgetPlan(undefined); }}>Cancel</Button>
+              <Button
+                variant="danger"
+                disabled={forgetPlan?.kind !== "plan" || !forgetPlan.plan.executable || forgetValue !== canonicalSnapshot.agentName}
+                onClick={() => forgetPlan?.kind === "plan" && runCanonicalLifecycle(
+                  "Forgetting agent",
+                  // The plan's revision, not the snapshot's: the human approved THAT reading of
+                  // the workspace, and if the profile moved since, the engine must refuse rather
+                  // than execute a plan nobody was shown.
+                  forgetAgentProfileMessage(canonicalSnapshot.agentName, forgetPlan.plan.revision, forgetValue),
+                )}
+              >Approve and execute</Button>
+            </KitDialogFooter>
+          </KitDialogContent>
+        </KitDialog>
       )}
       {bundleAction === "import" && !bundleImportBase64 && (
         <ProfileBundlePicker onCancel={() => setBundleAction(undefined)} onSelect={setBundleImportBase64} />
       )}
-      {bundleAction && (bundleAction === "clone" || bundleImportBase64) && canonicalSnapshot && (
-        <div class="ash-profile-replace-confirm" aria-labelledby="ash-bundle-action-title">
-          <div class="ash-profile-replace-confirm-title" id="ash-bundle-action-title">{bundleAction === "clone" ? "Clone portable profile" : "Import portable profile"}</div>
-          <div>Creates a new disabled agent. Secrets, grants and workspace bindings must be authorized again.</div>
-          <label class="ash-label" for="ash-bundle-destination">New agent name</label>
-          <Input id="ash-bundle-destination" value={bundleDestination} onInput={(event) => setBundleDestination((event.currentTarget as HTMLInputElement).value)} />
-          <div class="ash-profile-replace-confirm-actions">
-            <Button ref={bundleCancelButtonRef} onClick={() => { setBundleAction(undefined); setBundleImportBase64(undefined); }}>Cancel</Button>
-            <Button variant="primary" disabled={!/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(bundleDestination)} onClick={() => runCanonicalLifecycle(
-              bundleAction === "clone" ? "Cloning profile" : "Importing profile",
-              bundleAction === "clone"
-                ? cloneSavedAgentProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, bundleDestination)
-                : importSavedAgentProfileBundleMessage(canonicalSnapshot.agentName, bundleDestination, bundleImportBase64!),
-            )}>{bundleAction === "clone" ? "Clone agent" : "Import agent"}</Button>
-          </div>
-        </div>
+      {canonicalSnapshot && (
+        <KitDialog
+          open={Boolean(bundleAction && (bundleAction === "clone" || bundleImportBase64))}
+          onOpenChange={(open) => {
+            if (!open) { setBundleAction(undefined); setBundleImportBase64(undefined); }
+          }}
+        >
+          <KitDialogContent className="ash-lifecycle-dialog" data-testid="ash-bundle-dialog">
+            <KitDialogHeader>
+              <KitDialogTitle id="ash-bundle-action-title">{bundleAction === "clone" ? "Clone portable profile" : "Import portable profile"}</KitDialogTitle>
+              <KitDialogDescription>Creates a new disabled agent. Secrets, grants and workspace bindings must be authorized again.</KitDialogDescription>
+            </KitDialogHeader>
+            <label class="ash-label" for="ash-bundle-destination">New agent name</label>
+            <Input id="ash-bundle-destination" value={bundleDestination} onInput={(event) => setBundleDestination((event.currentTarget as HTMLInputElement).value)} />
+            <KitDialogFooter>
+              <Button onClick={() => { setBundleAction(undefined); setBundleImportBase64(undefined); }}>Cancel</Button>
+              <Button variant="primary" disabled={!/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(bundleDestination)} onClick={() => runCanonicalLifecycle(
+                bundleAction === "clone" ? "Cloning profile" : "Importing profile",
+                bundleAction === "clone"
+                  ? cloneSavedAgentProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, bundleDestination)
+                  : importSavedAgentProfileBundleMessage(canonicalSnapshot.agentName, bundleDestination, bundleImportBase64!),
+              )}>{bundleAction === "clone" ? "Clone agent" : "Import agent"}</Button>
+            </KitDialogFooter>
+          </KitDialogContent>
+        </KitDialog>
       )}
     </section>
   );
