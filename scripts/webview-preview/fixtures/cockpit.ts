@@ -278,7 +278,7 @@ export const runtimeConfigPreviewStrings: import("../../../packages/webview-ui/s
     runtimeConfigTerminalProgress: "Terminal progress bar",
     runtimeConfigAlwaysThinking: "Always thinking",
     runtimeConfigReadOnly: "Read only",
-    runtimeConfigReadOnlyDocument: "This source is read-only in Control.",
+    runtimeConfigReadOnlyDocument: "This source is read-only in Settings.",
     runtimeConfigHiddenRecords: "runtime-managed records are hidden from this inventory.",
     runtimeConfigOverriddenBy: "Overridden by",
     runtimeConfigOpaqueSections: "Opaque sections",
