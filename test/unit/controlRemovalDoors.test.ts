@@ -68,10 +68,8 @@ describe("SDD 485 E1 — every former Control door opens an app directly", () =>
     expect(block).toMatch(/openSystemTab\(\);\n\s*return Promise\.resolve\(\);\n\s*}\),/);
   });
 
-  it("the legacy tachyon.openCockpit alias defaults to System", () => {
-    const block = blockFrom('registerCommand("tachyon.openCockpit"', 180);
-    expect(block).toContain("openSystemTab()");
-    expect(block).not.toContain("openCockpit(");
+  it("keeps the retired tachyon.openCockpit alias absent", () => {
+    expect(source).not.toContain('registerCommand("tachyon.openCockpit"');
   });
 
   it("tachyon.inspectEngine keeps its command id and lands on System", () => {

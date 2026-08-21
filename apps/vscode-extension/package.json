@@ -312,11 +312,6 @@
         "icon": "$(home)"
       },
       {
-        "command": "tachyon.openCockpit",
-        "title": "%command.openCockpit%",
-        "icon": "$(dashboard)"
-      },
-      {
         "command": "tachyon.inspectEngine",
         "title": "%command.inspectEngine%",
         "icon": "$(debug-console)"
@@ -611,10 +606,6 @@
         },
         {
           "command": "tachyon.openControl"
-        },
-        {
-          "command": "tachyon.openCockpit",
-          "when": "false"
         },
         {
           "command": "tachyon.inspectEngine"
