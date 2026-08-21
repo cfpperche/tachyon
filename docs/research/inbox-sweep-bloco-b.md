@@ -1,56 +1,184 @@
-# Inbox sweep — blocos B em diante, com a quarta pergunta: alguém quer isto?
+# Inbox sweep — bloco B (estudos Orca e pesquisa)
 
-**Task:** `t-13891c` · **Medido:** 2026-08-21 · **Árvore:** `b0fe3413` (`tachyon/tmp.varreox.20260821-152956-fecc`, 424 commits à frente da última varredura) · **Agente:** varreox
+**Task:** `t-3484a4` · **Medido:** 2026-08-16 · **Árvore:** `34a2887b626cde4459f0eb6e1e6d10ee4622fa0e` (`release: 0.93.6`) · **Agente:** sweepB
 
-**Este caminho já teve outro conteúdo.** Até hoje este arquivo guardava a varredura *bloco B* de 2026-08-16 (`t-3484a4`, sweepB, árvore `34a2887b`, commit `0314a4fe`) sobre os estudos Orca. Esta passagem cobre TODO o resto da inbox (não só estudos) e acrescenta a quarta pergunta; o texto anterior continua intacto em git: `git show 0314a4fe:docs/research/inbox-sweep-bloco-b.md`. As varreduras *bloco C* (`inbox-sweep-bloco-c.md`) e *bloco D* (`inbox-sweep-bloco-d.md`) não foram tocadas.
+Não é triagem. Cada linha é um veredito para o dono decidir. Método: cartão contra codebase, `git log -S`, tasks irmãs, e o clone Orca que o lote C deixou em `/tmp/compC-competitors/orca` (`e4e54a17`, 2026-08-16).
 
-Não é triagem. O dono decide se reescreve, despacha ou larga. Nenhum cartão foi editado, nenhum status mudou, nada foi implementado, nenhum cartão novo foi aberto.
-
-## As quatro perguntas
-
-As três do bloco A (`docs/research/inbox-sweep-bloco-a.md`): o caminho citado ainda existe? o problema ainda acontece? alguma entrega posterior já resolveu?
-A quarta, nova (`t-657d39` pagou para existir): **quem consome o resultado deste cartão, e qual é o sinal medido disso?**
-
-Contam como sinal: porta viva do produto que depende disso · outro cartão aberto com `deps` nele · exercício após a criação (commit, journal, medição).
-Não contam: "seria bom ter", "melhora a arquitetura", o próprio cartão dizendo que é importante.
-Sem sinal nenhum, a célula diz exatamente **sem sinal de consumo** — ela não larga o cartão; diz ao dono onde perguntar.
-
-Vereditos: **VALE COMO ESTA** · **PRECISA REESCREVER** · **NAO FAZ MAIS SENTIDO**. Excluídos do escopo: os sete do bloco A (`t-657d39` dropped, `t-8c0a7d`, `t-a11be4`, `t-4aac93`, `t-54cdb1`, `t-54cdb3`, `t-54cdb4`).
-
-Aviso de lista viva: entre duas leituras de `list_tasks(status: inbox)` durante esta varredura, o `t-54839a` entrou na inbox — entrou na tabela também.
+Vereditos: **VALE COMO ESTA** · **PRECISA REESCREVER** · **NÃO FAZ MAIS SENTIDO** · **PERGUNTA JÁ RESPONDIDA** (estudo: apontar o arquivo).
 
 ## Tabela
 
-| id | idade | veredito | motivo (uma linha) | sinal de consumo |
-|---|---|---|---|---|
-| `t-299769` | 46 d | PRECISA REESCREVER | Entregável 1 já medido em `docs/research/orca-orchestration-task-lifecycle-land.md`; o corpo não conhece `.attempts` (SDD 499, `packages/engine/src/tasks/TaskStore.ts:145`) nem `read_notices` (spec 493); pergunta central aberta. | Consumiu-o o dono: pediu a leitura do fonte Orca depois da criação (journal de 2026-08-09, "a pedido do dono"); o restante não tem deps. |
-| `t-3f165c` | 46 d | PRECISA REESCREVER | Zero `REAL_GIT` no tree; atribuição continua Activity-only — e a Orca **aposentou** o próprio shim (`e4e54a17`, 7-neutralized): a pergunta de provenance sobrevive, o modelo a copiar não. | sem sinal de consumo |
-| `t-d2f679` | 46 d | PRECISA REESCREVER | `sessionInspection.ts` já mostra `mcpServers` por sessão com origem e segredo mascarado (`:16`, `:115`; `t-283149` shipada) e o Runtime Config lista inventários; o corpo descreve ausência total. Sobra só o enumerador genérico `.mcp.json`/`.cursor`. | A auditoria do agente gerido tem consumidor vivo (sessionInspection + Runtime Config); para a fatia restante: sem sinal de consumo. |
-| `t-784bc8` | 46 d | PRECISA REESCREVER | Tese viva — `packages/engine/src/runtime-api/` cresceu 19→21 módulos desde a última varredura — mas o passo 2 morreu: `t-c70fb9` (CLI, 2º consumidor) foi **dropped** em 2026-08-17 e o `deps` deste cartão aponta para ele. | Consomem-no as telas, via os 21 módulos runtime-api que o próprio cartão prescreveu extrair (crescimento medido em commits); o contrato unificado restante não tem consumidor nomeado. |
-| `t-1441a8` | 46 d | PRECISA REESCREVER | A metade analytics virou produto (`t-bcf9e5` landed; recomendação "ler `runtime_condition`" é tool viva do Bridge); `t-f0180b` dropped; o estudo externo claude-dev.tools + a metade DevTools nunca foram feitos (zero hits de dev-tools). | A metade analytics tem consumidor vivo (`runtime_condition`, lida antes de spawn); a metade DevTools: sem sinal de consumo. |
-| `t-37c531` | 46 d | PRECISA REESCREVER | `accountProfile` zero; o read-back que o estudo chama de truque da Orca já é produto cá na direção oposta — harvest Claude (`docs/runtimes/parity.md:679`, `t-9598cc`) e cópia privada Grok (`parity.md:762–763`, `t-de73e0`); `t-94ec10` recusou hot-swap em sessão viva. | sem sinal de consumo — o que o estudo perguntou já virou produto por outros cartões; a parte restante (roster) não tem porta nem deps. |
-| `t-e23e57` | 46 d | PRECISA REESCREVER | O inventário-premissa aposentou-se: guidance manda não usar `agent-desktop`/`agent-screen`, e o host-action broker endureceu esta semana (SDD 514: `run_host_action` default-deny, commit `cc8bc708`). Primitivas `computer.*`: zero. A pergunta central sobrevive; o corpo, não. | sem sinal de consumo — o broker é substrato vivo, mas nada o procura pedindo computer-use: sem porta, sem deps. |
-| `t-54839a` | 46 d | PRECISA REESCREVER | Inventário envelheceu de novo: `STATIC_GATES` com seis gates (`scripts/verify-full.mjs:64`); `test:browser`/`smoke:vsix` seguem fora do `verify:full`; nenhum dos 5 candidatos entrou — e o corpo desconhece `docs/research/t-fb7025-gate-cost.md`, que mediu o custo e recusou maquinaria nova. | sem sinal de consumo |
-| `t-94ec10` | 44 d | PRECISA REESCREVER | Perfis de conta inexistentes (`accountProfile` zero); a admissão tem **grok** first-class e **não** tem GLM — o corpo lista "(claude / codex / GLM)"; `t-71ec3b` done; switch = respawn/reanchor segue sendo a fronteira certa. | sem sinal de consumo — a deteção de rate-limit que poderia sugerir a troca é done, mas não há porta de troca nem deps aqui. |
-| `t-1d9d15` | 43 d | PRECISA REESCREVER | A recusa que o desenho formalizaria já vive e mudou de linha: `packages/engine/src/config/agentProfileLifecycle.ts:703` ("runtime adapter changes require an explicit authority migration"); `continue_task` é outro gesto; o parente `t-c777ac` (triaged) cobre o failover. As 20 seções tratam julho como presente. | Consome-o a porta viva: trocar adapter hoje falha fechada pedindo exatamente a migração de autoridade que este design definiria (`:703`); irmão ativo `t-c777ac` no mesmo território. |
-| `t-bbf516` | 43 d | PRECISA REESCREVER | Overlays = base + grok + neutral (`packages/engine/src/attention/manifests/`) — claude/codex/opencode sem overlay; zero `osc_title`/`osc_progress`, anti-flap e catálogo assinado; a linha "herdr is AGPL" é falsa (Apache-2.0). | Consome-o o motor de atenção em produção: a fase 1 pousada (`eb6d412`) e os overlays existentes são lidos pelo engine para o estado do pane na sidebar — cada peça nova desce pela mesma tela. |
-| `t-feda36` | 39 d | VALE COMO ESTA | Re-medido item a item: B4 sem CLI (nenhum `bin`); C8 parcial (manifests andaram, sem `agent explain`); C9 sem hooks `agent-done`→notify (grep zero); B2/B10 sem docs SSH/headless. Framing válido, nada mente. | sem sinal de consumo |
-| `t-cb36c5` | 31 d | VALE COMO ESTA | `needs_confirm` fail-closed segue sem superfície humana (`packages/engine/src/companion/tabSafety.ts:18/:125/:140` — skip só no host approval explícito); specs-fonte existem; nenhum dos 10 residuais puxado. | Consome-o a porta viva de mutação do companion: toda mutação falha fechada em `needs_confirm` (`tabSafety.ts:125`) e o item 1 (confirm UI humana) é o próximo degrau dessa porta; sem deps. |
-| `t-b1618e` | 29 d | PRECISA REESCREVER | Agenda inteira, medida hoje: sem skill `orchestrate-project`; deps desbloqueiam por status (`packages/shared/src/tasks/nextTask.ts:69`), não por merge; sem runbook. O corpo ignora SDD 480 abandonada e Planner (SDD 491) triaged — terceira varredura seguida. | sem sinal de consumo — único apontador vivo: o corpo de `t-4ae2ce` mencioná-lo como "precisa reescrever". |
-| `t-c3dccf` | 26 d | PRECISA REESCREVER | Superfície ausente: `memoryPolicy` só aparece como EXCLUSÃO da contagem de prompt inputs (`packages/webview-ui/src/webview/agent-studio-shell/App.tsx:1224`); default canônico disabled já projetado pelo harness; as 5 deps do cartão estão done/dropped. | É dep declarada do épico aberto `t-8c7431` (deps edge medida no board) — a única dependência reversa apontando para cá. |
-| `t-8c7431` | 26 d | PRECISA REESCREVER | Registry + `resolveMemoryPolicy` existem (`nativeMemory.ts:475`) mas estão deliberadamente fora da readiness canônica (`:22`) e têm **zero chamadores** fora do arquivo; verificador isolado removido de propósito (`t-74b75a`); Hermes/OpenCode/Pi saíram. O corpo pede o que já foi decidido ao contrário. | sem sinal de consumo — nenhum chamador em produção, readiness deliberadamente não consome, e nenhum cartão depende do épico (a relação é inversa: ele depende da UX filha `t-c3dccf`). |
-| `t-e63164` | 10 d | PRECISA REESCREVER | Três envelhecimentos: o pane AGORA carrega `design-system.css` (`AgentPanePanel.ts:166`; `t-de3dfc` done) — a seção "restrição de superfície" morreu; wrap já medido para claude/opencode/hermes e grok parcial (`t-ba5357`, `runtimeProfile.ts:274/:474/:528/:567`) — o "só codex" caiu; stage/submit hoje em `App.tsx:295–300`. Fila e trava de teclado continuam ausentes. | Consome-o o operador digitando no agent pane: a porta vive — stage/submit postados (`App.tsx:300`, landado em `t-610355`) e Slice 3 triaged (`t-9e5739`). |
-| `t-4ae2ce` | 2 d | PRECISA REESCREVER | A linha "t-a48431 Heartbeat (V1 ratificada, 0 código)" caiu: a fatia 1 do heartbeat pousou (`t-21e115` done, merge `8ae96414`, 2026-08-20 — `fleet.ts`, `AgentManager.ts`, `SessionLedger.ts`). A decisão de adiar Loop/grafo/automação estilo Compozy segue de pé. | Consome-o o planejamento de autonomia quando o dono reabrir; sinal medido: a entrada que o levantamento prescreveu ("começar por Heartbeat") está sendo executada — `t-a48431` (triaged) → `t-216e3a` (done) → `t-21e115` (landed) — embora pendente de `t-a48431`, não deste cartão. |
-| `t-ada6ad` | 2 d | VALE COMO ESTA | Cartão de estacionamento deliberado do dono (2026-08-19); as duas medições existem (`maquinaria-de-hash-inventario.md`, `-classificacao.md`); a discordância CAS (atacante vs edição concorrente/stale) segue registrada sem decisão. | sem sinal de consumo — por desenho: nenhuma porta, nenhum deps; o único apontador vivo é o `docs/project-guidance.md` citá-lo como parado ("não crescer"). |
+| id | veredito | motivo |
+|---|---|---|
+| `t-1441a8` | PRECISA REESCREVER | A metade analytics foi medida em `t-bcf9e5` (não construir dashboard; ler `runtime_condition`). `claude-dev.tools` e o lado DevTools/Activity nunca foram estudados. |
+| `t-299769` | PRECISA REESCREVER | Entregável 1 e a autoridade de `worker_done` já estão em `docs/research/orca-orchestration-task-lifecycle-land.md`. Lote C confirmou o DAG. Falta a pergunta central. |
+| `t-37c531` | PRECISA REESCREVER | `t-94ec10` já recusou hot-swap em sessão viva (respawn/reanchor). O read-back da Orca já existe cá como harvest (`t-9598cc`, Grok `t-de73e0`). Falta o roster. |
+| `t-3f165c` | PRECISA REESCREVER | A Orca **aposentou** o shim git/gh. Em `e4e54a17` o caminho citado não existe; o código vivo escreve tombstones (`7-neutralized`). A pergunta de provenance no Tachyon continua, o modelo a copiar não. |
+| `t-54839a` | PRECISA REESCREVER | O inventário de gates de julho está velho. `t-fb7025` mediu o custo e recusou maquinaria nova. Nenhum dos 5 candidatos do corpo entrou no `verify:full`. |
+| `t-56cac6` | VALE COMO ESTA | Não há store de comentário em diff nem envio em lote. Design Mode (SDD 488) é outro loop. Na Orca o mecanismo ainda vive (`diff-comments-format`). |
+| `t-9d0d73` | PRECISA REESCREVER | Isolamento existe (namespace + `.tachyon/browser-state/`), não roster de perfis. Há dois browsers agora (plugin + IDE Browser da 488). A Orca ainda tem `browser-profile`. |
+| `t-d2f679` | PRECISA REESCREVER | `t-283149` já mostra `mcpServers` por sessão, com origem e segredo mascarado. Sobra o enumerador genérico de `.mcp.json` / `.cursor/mcp.json` que a Orca ainda tem. |
+| `t-eaa94d` | PRECISA REESCREVER | `ListRow` + convenção no STYLEGUIDE + `--hover/--sel` migrados (SDD 505). O corpo cita caminhos e CSS que não são mais a evidência. Sobra guard + `AgentRow` custom. |
+| `t-a2a4a0` | VALE COMO ESTA | Admissão de agente continua só CLI (`claude`…`qwen`). `aider`/`goose`/`amp` são chip de autoria, não Agent. A categoria nunca foi mapeada. |
+| `t-a27557` | VALE COMO ESTA | Attention, `write_input`, forget e harness continuam locais. MCP do Bridge permanece loopback; LAN é só companion (SDD 414), outro door. |
+| `t-7db1d5` | PERGUNTA JÁ RESPONDIDA | GO compact/fresh na nota de 2026-07-31; shipped como `renew_context` (`t-6f0377`, done). Modelo/effort ficou NO-GO explícito, sem medição própria. |
 
-## Números
+## O que o lote C responde — e o que não
 
-- Varridos: **19** — todos os de `inbox` fora do bloco A, na leitura viva de 2026-08-21.
-- Vereditos: **16 PRECISA REESCREVER** · **3 VALE COMO ESTA** (`t-feda36`, `t-cb36c5`, `t-ada6ad`) · **0 NAO FAZ MAIS SENTIDO** · 0 "não consegui julgar em tempo razoável".
-- Quarta pergunta: **8 com sinal medido direto** (`t-299769`, `t-784bc8`, `t-1d9d15`, `t-bbf516`, `t-cb36c5`, `t-c3dccf`, `t-e63164`, `t-4ae2ce`); **3 parciais** — território com consumidor vivo herdado de outros cartões, fatia restante sem sinal (`t-d2f679`, `t-1441a8`, `t-37c531`); **8 com "sem sinal de consumo"** (`t-3f165c`, `t-e23e57`, `t-54839a`, `t-94ec10`, `t-feda36`, `t-b1618e`, `t-8c7431`, `t-ada6ad`). 8 + 3 + 8 = 19.
+`docs/research/competitor-internal-checklist-lote-c.md` leu a Orca em `e4e54a17` (2026-08-16) para uma pergunta só: o concorrente lê o checklist nativo do runtime?
 
-Padrão dos 8 sem sinal: sete são estudos/backlogs de julho que ninguém procurou desde a criação — nenhuma porta espera o resultado, nenhum `deps` aponta para eles, e o que tinham de mais vivo já foi resolvido por outros cartões (harvest/auth, analytics, custo de gate). O oitavo é o `t-ada6ad`, cujo "sem sinal" é a decisão registrada do dono, não uma descoberta.
+**Não responde nenhum destes 12.** Checklist interno ≠ orquestração, contas, shim, gates, diff comments, browser profiles, inspector MCP, ListRow.
 
-## Método e limites
+O que o lote C *confirma* e poupa re-leitura:
 
-Cartão contra árvore atual (`b0fe3413`), `git log -S` onde o corpo afirma existência/ausência, journals das próprias tasks (três gerações de varreduras anteriores — 2026-08-02 e 2026-08-16 — usadas como linha de base e re-conferidas por amostragem nos pontos citados), e a lista viva do board. Não reli o clone da Orca nesta passagem: onde o veredito dependia do estado lá (aposentadoria do shim, `claude-accounts`), citei a medição do lote C (`e4e54a17`, 2026-08-16) em vez de refazer — está marcado no texto. Grep vazio não foi tratado como prova de ausência sem leitura do ponto de uso (ex.: `resolveMemoryPolicy` — zero chamadores confirmado por grep de callers + comentário do próprio código em `nativeMemory.ts:22`).
+- O DAG de orquestração (`status | dispatch | worker_done | …`) é o mesmo modelo de `orca-orchestration-task-lifecycle-land.md` (commit `34f2a62`). As linhas andaram, o modelo não. Serve `t-299769`.
+- Os quatro cartões já triados (`t-c70fb9`, `t-a8f1fd`, `t-54d0c5`, `t-7ff4c2`) não falavam de checklist — sem contradição, só o que não tinha sido medido.
+- `/tmp/orca-re` `057db5b` continua morto. O clone vivo é `/tmp/compC-competitors/orca` @ `e4e54a17`.
+
+## Série Orca — os 14 + DS, para não reabrir o mesmo produto
+
+Catorze estudos numerados do mesmo dia (2026-07-06), mais cinco DS. Destino hoje:
+
+| n | id | status | sobreposição com este bloco |
+|---|---|---|---|
+| 01 | `t-c70fb9` CLI | triaged | nenhuma com os 12; `t-784bc8` ainda depende dela |
+| 02 | `t-674fb5` Design Mode | dropped | SDD 488 entregou; distingue `t-56cac6` (diff) e `t-9d0d73` (browser) |
+| 03 | `t-56cac6` comments | **inbox** | este bloco |
+| 04 | `t-299769` orchestration | **inbox** | este bloco; metade medida em 2026-08-09 |
+| 05 | `t-619157` companion | done | `docs/architecture/companion-mobile-v1-research.md` + SDD 414; toca `t-a27557` só no door LAN |
+| 06 | `t-bcf9e5` usage | landed | responde a metade analytics de `t-1441a8` |
+| 07 | `t-a8f1fd` worktree | triaged | nenhuma direta |
+| 08 | `t-54d0c5` restore | triaged | nenhuma direta |
+| 09 | `t-9d0d73` browser profiles | **inbox** | este bloco |
+| 10 | `t-54839a` gates | **inbox** | este bloco |
+| 11 | `t-37c531` accounts | **inbox** | irmã de feature `t-94ec10` (ainda inbox) |
+| 12 | `t-3fd30a` hooks | done | `docs/research/native-runtime-stop-hooks-t3fd30a.md` |
+| 13 | `t-3f165c` attribution | **inbox** | este bloco |
+| 14 | `t-d2f679` MCP inspector | **inbox** | este bloco |
+| DS 01 | `t-e8bfb5` STYLEGUIDE | done | `docs/STYLEGUIDE.md` existe |
+| DS 02 | `t-eaa94d` ListRow | **inbox** | este bloco; trilha viva é SDD 505 / `t-b0a229` |
+| DS 03 | `t-df7df5` tokens | done | |
+| DS 04 | `t-7ff4c2` paradigmas | triaged | irmã de token; não é a lacuna de linha |
+| DS 05 | `t-c7e518` Tooltip/Dialog | landed | |
+
+## Medição por cartão
+
+### `t-1441a8` — claude-dev.tools / Analytics vs DevTools
+
+- Nenhum `claude-dev.tools` / `tachyon-dev-tools` no tree.
+- Activity continua inspeção ao vivo (spec 239).
+- `t-bcf9e5` landed 2026-08-15: Codex tem cota local fiável; Claude idle-disk não; Grok não tem canal de quota. Recomendação: **não** construir dashboard; ler `runtime_condition` antes do spawn. Arquivo: `docs/research/t-bcf9e5-local-usage-rate-limit.md`.
+- `t-f0180b` (ccusage) foi **dropped** pelo humano no mesmo dia.
+- `t-71ec3b` (medidores + auto-continue) já é **done** desde julho.
+
+O que envelheceu: o corpo fala como se analytics ainda fosse terra de ninguém. Não é. O que resta é o produto externo e a pergunta DevTools.
+
+### `t-299769` — orquestração persistente
+
+Já medido, não refazer:
+
+- `docs/research/orca-orchestration-task-lifecycle-land.md` (2026-08-09, `34f2a62`): coordinator/worker, `worker_done` exige `taskId + dispatchId + outcome`, morte de processo não completa trabalho, `merge_ready` sem inlet, tasks efêmeras.
+- Lote C (`e4e54a17`): o modelo não mudou.
+- SDD 499 / `TaskStore.attempts`: ledger `claimed`/`released`/`delivered`/`dropped` (`packages/engine/src/tasks/TaskStore.ts`). `git log -S'.attempts'` → `ed6b8305 feat(t-a5b9b9)`.
+- Spec 493 `read_notices` (`3f28ae26`): o doorbell deixou de ser só janela única. A nota de 2026-08-02 que dizia “não há inbox durável” está velha.
+
+Aberto: precisa o Tachyon de coordenação supervisionada além de `spawn_agent` / `wait_for_agent` / journal? Modelo message/inbox/gate. Handoff completo vs coordenação.
+
+Checkout citado `/tmp/orca-re` `057db5b` está morto — igual às dez irmãs.
+
+### `t-37c531` — hot-swap de contas
+
+- Isolamento de home por agente segue (`HarnessManager`, specs 357/358).
+- `git log -S'accountProfile'` → vazio. Roster nomeado não existe.
+- Irmã `t-94ec10` (inbox, feature): switch = **respawn/reanchor**; “credentials never hot-swapped inside a live session”; sem rotação automática por rate-limit.
+- Read-back já é produto: Claude harvest/promote/re-symlink (`t-9598cc`, `parity.md`); Grok cópia privada reconciliada (`t-de73e0`). Não é roster — é autoridade única.
+- Na Orca `e4e54a17` o mecanismo **ainda vive**: `src/main/claude-accounts`, `codex-accounts`, `hasLiveClaudePtys`, testes de read-back.
+
+O corpo pede para desenhar a contraparte do hot-swap da Orca. A direção já escrita no Tachyon é a oposta.
+
+### `t-3f165c` — shim git/gh
+
+- `git log -S'REAL_GIT'` → vazio. Nenhum shim no Tachyon. Attribution continua Activity, não trailer de commit.
+- Na Orca `e4e54a17`: `src/main/attribution/terminal-attribution.ts` **não existe**. O vivo é `src/main/pty/legacy-terminal-shim-dir.ts`, versão `7-neutralized`, função `neutralizeLegacyTerminalShimDir`. Tombstones POSIX/Windows fazem `unset ORCA_REAL_GIT`. Teste `retires the persisted GitHub attribution setting`. Spawn **apaga** `ORCA_ENABLE_GIT_ATTRIBUTION`.
+
+Lote C não mediu isto. Medido hoje no mesmo clone. Quem pegar o cartão não deve reimplementar o que a Orca está a desmontar.
+
+### `t-54839a` — gates
+
+`verify:full` hoje (`scripts/verify-full.mjs`): `STATIC_GATES` = `check:source-diffable`, `check:theme-tokens`, `check:webview-tokens`, `check:engine-boundary`, `check:package-boundary`, `typecheck`, depois a suíte. Sem `test:browser`, sem `smoke:vsix`, sem budget de latência, sem canary de plugin UI, sem coverage i18n.
+
+- `test:browser` e `smoke:vsix` existem como scripts; o segundo **não corre de worktree** (project guidance).
+- `docs/research/t-fb7025-gate-cost.md` (2026-08-09): o pool estava 2× acima do joelho; a proposta de maquinaria extra **não se paga**; `settings.verify.affected` foi removido de propósito (`t-f559b6`).
+- Project guidance: guard nasce de recorrência medida, não de medo.
+
+A pergunta “no máximo 3 gates de maior ROI” ainda é pergunta. O ponto de partida e a política de “não inventar gate” mudaram.
+
+### `t-56cac6` — comentários em diff em lote
+
+- Nenhuma store de comentário por worktree/commit/base ref. O caminho humano→agente continua `write_input` / `notify_agent`.
+- Design Mode (SDD 488, `t-674fb5` dropped) captura elemento no browser, não linha de diff.
+- Na Orca `e4e54a17`: `src/renderer/src/lib/diff-comments-format.test.ts` e `markdown-review-notes.test.ts` ainda existem.
+
+Pergunta intacta. Não reestudar Design Mode no lugar disto.
+
+### `t-9d0d73` — browser profiles
+
+- Spec 267: estado em `.tachyon/browser-state/` (workspace, gitignored); default isolado, nunca o Chrome do humano. Isolamento por namespace de daemon, não perfil versionado selecionável.
+- Segundo browser: IDE Browser / Design Mode (SDD 488). `agent-desktop` / `agent-screen` reformados.
+- Na Orca `e4e54a17`: `src/cli/handlers/browser-profile.ts` e IPC `browser-session-profile` ainda existem.
+
+O corpo assume um plugin só e um produto de browser só.
+
+### `t-d2f679` — inspector MCP por agente
+
+- `packages/engine/src/runtimeOps/sessionInspection.ts` (`t-283149`): `mcpServers`, origem por chave, `REDACTED` por nome de chave, `notExposed`. Leitores claude/codex/grok.
+- Runtime Config lista `mcpServers` (`claudeInventory`, `codexInventory`, `grokInventory`).
+- Não enumera `.mcp.json` / `.cursor/mcp.json` / `.claude.json` como a Orca.
+- Na Orca `e4e54a17`: `src/shared/mcp-config.ts` ainda é o inspector de candidatos (`workspace | cursor | claude`), com máscara de env.
+
+A auditoria “o que *este* agente está a ver” já tem superfície para os runtimes que o Tachyon gere. O cartão ainda descreve a ausência total.
+
+### `t-eaa94d` — KitRow / ListRow
+
+Feito desde a varredura de 2026-08-02, e mais:
+
+1. `ListRow` em `packages/webview-ui/src/webview/shared/ui/patterns.tsx` — estados `idle | hover | selected | current`.
+2. STYLEGUIDE.md:86 — “no hard-coded row hover colors in surface CSS”.
+3. Pilotos Control usam `ListRow`. SDD 505 fatia 8 migrou escala da sidebar (`t-9c7ce8` landed). `--hover/--sel` saíram; o que resta de `--idle` é cinza de status-dot, não hover de linha (`sidebar.css:50-51`).
+
+Não feito:
+
+- Guard de cor de row: `test/unit/webviewComponentKit.test.ts` ainda só bane `ds-btn|ds-tab|ds-chip|chip`.
+- `AgentRow` da sidebar (`sidebar/App.tsx:615`) continua `<div class="row">` custom, de propósito (árvore).
+
+Caminhos do corpo (`src/webview/*`, `sidebar.css:7-9` com `--hover/--sel/--idle`) estão errados. Trilha viva: `t-b0a229` (épico, reescrito 2026-08-15) e `t-7ff4c2` (tokens, triaged). Isto já não é o estudo do primitivo.
+
+### `t-a2a4a0` — agentes autónomos / open-source
+
+`packages/shared/src/agents/agentRuntimeAdmission.ts`: Agent Instance = `claude`, `codex`, `grok`, `pi`, `opencode`, `hermes`, `gemini`, `qwen`. `aider` / `goose` / `amp` / `cursor-agent` / `copilot` / `verboo` estão em `AUTHORING_CATALOG_WITHOUT_ADAPTERS` — chip, não Agent. `antigravity` / `continue` correm como Terminal.
+
+Nenhum framework de loop próprio sob o contentor de governança. O estudo não foi feito. O contentor (contrato, Activity, host-action) existe e cresceu.
+
+### `t-a27557` — remote execution substrate
+
+O que o corpo lista como “quebra fora do host” continua local:
+
+- AttentionMonitor = pane/CPU local.
+- `write_input` / `notify_agent` = tmux local.
+- forget / harness = FS local.
+- MCP do Bridge = loopback (`packages/bridge/src/Bridge.ts`). `settings.companion.lanAccess` abre `0.0.0.0` **só** para `/companion/v1/*`; MCP não sai. Isso é o companion (estudo 05 / SDD 414), não agente remoto.
+
+`t-feda36` (inbox) pede SSH attach estilo Herdr — overlap de pergunta, outro concorrente. Spec 358 como seam de identidade+host continua proposta, não binding.
+
+### `t-7db1d5` — gestão autónoma de sessão e modelo
+
+A pesquisa pediu ADR + GO/NO-GO, sem `src/` nesta fase.
+
+- 2026-07-31: nota no próprio journal com tabela de gestos, GO para compact/fresh diferido, NO-GO para modelo/effort.
+- Filha `t-6f0377` (**done**): `renew_context` em `packages/bridge/src/tools/coordination-continuity.ts` — self-only, diferido para idle, `fresh` recusa sem continuity brief, runtime sem gesto medido recusa. Testes em `test/unit/contextRenewal.test.ts`.
+
+Reabrir este cartão é reescrever um ADR que já virou ferramenta. Modelo/effort, se ainda interessar, é outra pergunta — e o próprio estudo disse que não viaja junto.
+
+## O que não fiz
+
+Não reescrevi cartão, não mudei status, não implementei, não abri cartão novo. Lote C não foi relido de ponta a ponta para openade/paseo — só a secção Orca e o clone, que é o que este bloco pede.
