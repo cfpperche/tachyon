@@ -169,7 +169,7 @@ function runtimeConfigStrings(): RuntimeConfigStrings {
     runtimeConfigTerminalProgress: t("Terminal progress bar"),
     runtimeConfigAlwaysThinking: t("Always thinking"),
     runtimeConfigReadOnly: t("Read only"),
-    runtimeConfigReadOnlyDocument: t("This source is read-only in Control."),
+    runtimeConfigReadOnlyDocument: t("This source is read-only in Settings."),
     runtimeConfigHiddenRecords: t("runtime-managed records are hidden from this inventory."),
     runtimeConfigOverriddenBy: t("Overridden by"),
     runtimeConfigOpaqueSections: t("Opaque sections"),
