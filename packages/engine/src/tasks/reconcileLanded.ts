@@ -87,6 +87,19 @@ async function reproveIdEvidence(git: LandedGit, id: string, sha: string, baseRe
   return show.code === 0 && new RegExp(`\\b${id}\\b`, "i").test(show.stdout);
 }
 
+/** Prove one task's delivery from the same reachable-from-base evidence used by reconciliation. */
+export async function landedEvidenceForTask(
+  tasks: TaskStore,
+  workspaceRoot: string,
+  id: string,
+  options: { baseRef?: string; git?: LandedGit; idCommits?: ReadonlyMap<string, string> } = {},
+): Promise<string | undefined> {
+  const baseRef = options.baseRef ?? "main";
+  const git = options.git ?? defaultGit(workspaceRoot);
+  const idCommits = options.idCommits ?? await reachableCommitsByTask(git, baseRef);
+  return idCommits.get(id.toLowerCase()) ?? await journalEvidence(tasks, git, id, baseRef);
+}
+
 /**
  * Reconcile the landed lane against strong Git evidence. Dry-run is the default because this is a
  * board-wide mutation: the caller must first see every proposed close and every refusal. Apply
@@ -106,7 +119,7 @@ export async function reconcileLanded(
 
   for (const snapshot of landed) {
     const idSha = idCommits.get(snapshot.id.toLowerCase());
-    const evidence = idSha ?? await journalEvidence(tasks, git, snapshot.id, baseRef);
+    const evidence = await landedEvidenceForTask(tasks, workspaceRoot, snapshot.id, { baseRef, git, idCommits });
     if (!evidence) {
       rows.push({ id: snapshot.id, outcome: "refused", reason: `no commit evidence reachable from ${baseRef}` });
       continue;
