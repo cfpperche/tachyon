@@ -290,13 +290,10 @@ function worktreesStrings(): Record<string, string> {
     // false now: the product performs the fast-forward under a human's click. What has NOT changed is
     // the half that matters, so the new text says it explicitly — green is information, never
     // permission, and nothing lands on its own.
-    landIntro: t("When every precondition below is proved, Tachyon fast-forwards the trunk onto this delivery, in the primary checkout, when you press Land. It never lands on its own."),
+    landIntro: t("Land fast-forwards the trunk onto this delivery, in the primary checkout. It never lands on its own."),
     landCommandLabel: t("Land command"),
     landCopyCommand: t("Copy command"),
-    landBlocked: t(
-      "Not ready to land — {0} precondition(s) not proved. No command is offered: one that would fail"
-      + " wastes your time, and one that would succeed here would land something nobody verified.",
-    ),
+    landBlocked: t("Not ready to land — {0} precondition(s) not proved. No command is offered."),
     landCheckWorktreeClean: t("Worktree clean"),
     landCheckVerifiedTree: t("Verified tree"),
     landCheckFastForward: t("Fast-forward"),

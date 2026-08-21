@@ -399,7 +399,7 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
             title={
               hasSelection
                 ? "Pin the selected terminal text to the project checklist"
-                : "Pin selection (or clipboard). Tip: Shift+drag if the agent captures the mouse — blue TUI highlight alone is not an xterm selection."
+                : "Pin selection (or clipboard). Shift+drag if the agent captures the mouse."
             }
             // Keep focus on the terminal so an active xterm selection is not cleared on click.
             onMouseDown={(e) => e.preventDefault()}
