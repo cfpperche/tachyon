@@ -525,6 +525,8 @@ export interface SpawnOptions {
   environment?: AgentEntry["environment"];
   /** Explicit per-spawn native reasoning selector; absent means the runtime default. */
   reasoningEffort?: string;
+  /** t-21e115 — fixed-policy first heartbeat slice; only this typed event is admitted. */
+  heartbeat?: "agent.child-idle";
   /** spec 230 — tag this Temporary spawn as a pipeline-run node; persisted to SessionDef.pipeline so the generic resume/offer path skips it (the run owns it). */
   pipeline?: { runId: string; nodeId: string };
   /** spec 230 — extra instructions appended to the agent's composed prompt (a pipeline node's task, added AFTER a declared agent's role/instructions so the specialist config is preserved). */
@@ -3072,6 +3074,9 @@ export class AgentManager {
       ...(opts?.env ? { env: opts.env } : {}), // spec 230 — persist the node env so a restart re-applies the nonce
       ...(temporary && opts?.environment ? { environment: opts.environment } : {}), // secret refs persist; resolved values never do
       ...(temporary && opts?.reasoningEffort !== undefined ? { reasoningEffort: opts.reasoningEffort } : {}),
+      ...(temporary && opts?.heartbeat && this.opts.ledger
+        ? { heartbeat: { event: opts.heartbeat, epoch: this.opts.ledger.allocateHeartbeatEpoch(name) } }
+        : {}),
       ...(opts?.pipeline ? { pipeline: opts.pipeline } : {}), // spec 230 — pipeline-owned node (planResume skips it)
       ...(opts?.contract ? { contract: opts.contract } : {}), // spec 246 — structured delegation contract (D8)
       ...(opts?.contractSkipReason ? { contractSkipReason: opts.contractSkipReason } : {}), // spec 246 D6 — auditable bypass
