@@ -4,6 +4,93 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.28 — os painéis do Lifecycle viram diálogo, e o produto para de explicar o que já se vê
+
+### Rename, Forget e Clone deixam de empilhar no corpo da página
+
+Os três botões do Lifecycle do Agent Studio revelavam um painel logo abaixo do formulário, no fluxo
+normal da página. Nada impedia dois abertos ao mesmo tempo, e era o que acontecia: o painel de Rename
+e o de Import, um sobre o outro, com o formulário rolado para fora de vista.
+
+Agora abrem como diálogo sobre a tela. Um por vez, e isso vem do diálogo em vez de uma guarda nova.
+
+A peça já existia e nunca tinha sido usada: o `KitDialog` está no design system desde o spec 342 e
+seus únicos consumidores eram outro componente do kit e a tela de gate. Esta é a primeira vez em
+produto, e ela vale para as outras telas que hoje empilham painel no corpo.
+
+Um componente só serve as duas larguras: centrado no largo, ancorado embaixo em largura cheia abaixo
+de 720 pixels. E o `useEffect` que focava o botão Cancel à mão saiu — o diálogo é dono do foco, e
+duas autoridades sobre a mesma coisa é defeito, não redundância.
+
+A confirmação digitada do Forget continua exigindo o nome do agente. Ela é o portão; o diálogo é
+onde ele mora.
+
+### O produto para de ensinar na tela o que a tela já mostra
+
+A 0.93.27 escreveu o princípio no guia do projeto: **o leitor vai agir com este texto, aqui?** Esta
+versão é ele sendo aplicado.
+
+Quinze textos encolheram: oito frases-professor espalhadas por sete telas, três explicações do
+modelo de consentimento em Plugins, e quatro parágrafos do Settings. Junto disso, o Settings passou a
+dizer a divisão em vez de explicá-la, e a prosa sobre modelos saiu do onboarding.
+
+O que fica é o que se lê e se usa. "Soltar não apaga nada" é lido e agido. "Um agente é um perfil
+em `.tachyon/agents/`" é lido uma vez, lembrado nunca, e reexibido para sempre.
+
+O `aria-label` do Activity ficou. Texto que só o leitor de tela recebe não disputa espaço com nada.
+
+### O Runtime Config aponta para o lugar certo e ocupa a tela
+
+Ele mandava o leitor para "Control", que não existe mais com esse nome. Agora diz Settings. E deixou
+de ter largura máxima, como as telas irmãs.
+
+### O command palette perde o último fóssil do nome antigo
+
+A 0.93.27 renomeou a aba de Control para Apps e mediu 34 ocorrências. Duas ficaram de fora, e eram
+as visíveis na paleta: `Tachyon: Control` e `Tachyon: Control (legacy alias)`.
+
+A primeira virou `Tachyon: Apps`. A segunda saiu inteira — regra da casa é que caminho morto se
+remove, não se mantém com `when: false`. Antes de remover, a busca no repositório inteiro por
+consumidor real ou atalho voltou zero.
+
+### O `kill_agent` relata o que mediu, não o que pretendia
+
+Ele imprimia "worktree removida, branch apagada" sem olhar o disco. Quando a remoção falhava — um
+processo segurando o diretório, uma branch com commit não mergeado — a mensagem de sucesso saía
+igual.
+
+Agora ele confere e diz o que encontrou, incluindo quando manteve a branch e por quê.
+
+### Dispensar um agente diz quais cartões dele já pousaram
+
+Quando um agente temporário sai, o Tachyon libera o cartão e o deixa `active` sem dono. No board isso
+lê como trabalho pendente, mesmo quando a entrega está em `main` há horas.
+
+O dismiss agora mede, por cartão, se a entrega é alcançável de `main`, e **oferece** fechar. Nunca
+fecha sozinho: um agente dispensado no meio pode ter commit que nunca foi mergeado, e nesse caso o
+cartão continua aberto, que é o certo.
+
+A prova é a mesma que a reconciliação do board já usava — extraída para uma função e chamada dos dois
+lugares, em vez de nascer uma segunda forma de provar a mesma coisa.
+
+### Atualizar um plugin instalado por agente para de promovê-lo para o workspace
+
+Um plugin pode ser instalado no harness privado de um agente em vez do workspace. O caminho de
+atualização não sabia disso: ele replanejava sempre no workspace, então a primeira atualização movia
+a instalação de lugar, sem aviso.
+
+Agora a atualização escreve onde a instalação vive. E a recusa de escopo divergente reusa o
+mecanismo que já existia — o fingerprint do preview já vinculava o destino.
+
+### `.tachyon/` para de ser versionado
+
+O `.gitignore` declarava o diretório ignorado desde sempre, e 64 arquivos continuavam no índice
+dentro dele — gitignore não desrastreia o que já entrou. Eles saíram do repositório e ficaram no
+disco; nada foi apagado e o histórico não foi reescrito.
+
+Três exceções voltaram: dois relatórios e um arquivo `.c` que um teste compila e executa. Arquivo sob
+teste é conteúdo do repositório, mesmo morando num diretório ignorado.
+
 ## 0.93.27 — o Design Mode sai da status bar, a aba Control vira Apps, e o launcher aprende a arrastar
 
 ### Design Mode deixa de morar na status bar do VS Code
