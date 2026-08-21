@@ -28,7 +28,7 @@ try {
       for (const width of [880, 360]) {
         const page = await browser.newPage();
         await page.setViewport({ width, height: 900 });
-        await page.goto(`http://localhost:${PORT}/scripts/webview-preview/index.html?view=${view}&fixture=${fixture}`, { waitUntil: "networkidle0", timeout: 45000 });
+        await page.goto(`http://127.0.0.1:${PORT}/scripts/webview-preview/index.html?view=${view}&fixture=${fixture}`, { waitUntil: "networkidle0", timeout: 45000 });
         await page.waitForSelector(`body[data-preview-view="${view}"]`, { timeout: 10000 });
         await page.screenshot({ path: path.join(OUT, `${phase}-${view}-${width}.png`) });
         await page.close();

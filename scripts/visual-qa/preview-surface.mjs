@@ -25,7 +25,7 @@ export async function openPreview(page, options) {
     // `PREVIEW_PORT` is the same knob `scripts/webview-preview/serve.mjs` reads, so a second checkout
     // running its own preview server (parallel worktrees share one machine) can be measured without
     // stopping somebody else's on the default port.
-    origin = process.env.PREVIEW_ORIGIN ?? `http://localhost:${process.env.PREVIEW_PORT ?? 5174}`,
+    origin = process.env.PREVIEW_ORIGIN ?? `http://127.0.0.1:${process.env.PREVIEW_PORT ?? 5174}`,
     waitFor,
     timeout = 45000,
     settleMs = 0,

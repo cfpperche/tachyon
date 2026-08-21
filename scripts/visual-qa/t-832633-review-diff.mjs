@@ -21,7 +21,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 const outDir = process.argv[2] ?? ".vqa/t-832633";
 mkdirSync(outDir, { recursive: true });
 const widths = [880, 360];
-const origin = process.env.PREVIEW_ORIGIN ?? `http://localhost:${process.env.PREVIEW_PORT ?? 5174}`;
+const origin = process.env.PREVIEW_ORIGIN ?? `http://127.0.0.1:${process.env.PREVIEW_PORT ?? 5174}`;
 
 const browser = await puppeteer.launch({
   executablePath: "/usr/bin/google-chrome",

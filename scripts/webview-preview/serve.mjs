@@ -4,7 +4,7 @@
  * `scripts/webview-preview/*` files at absolute paths. NOT file:// (which hides asset/CSP/origin issues).
  *
  *   npm run build && node scripts/webview-preview/serve.mjs
- *   → http://localhost:5174/scripts/webview-preview/index.html?fixture=evidence-badge
+ *   → http://127.0.0.1:5174/scripts/webview-preview/index.html?fixture=evidence-badge
  */
 import http from "node:http";
 import fs from "node:fs";
@@ -13,6 +13,11 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PORT = Number(process.env.PREVIEW_PORT) || 5174;
+// Loopback only, and not negotiable: this server hands out the whole repo root (see ROOT above), which
+// on a real workspace includes `.tachyon/secrets.env`, `.tachyon/browser-state/` and `.git/`. Omitting the
+// host argument makes Node bind the unspecified address `::`, so every peer on the LAN could read all of
+// it. The traversal guard below only refuses paths OUTSIDE the root — it does not hide dotfiles inside it.
+const HOST = "127.0.0.1";
 
 const TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -59,8 +64,8 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  const url = `http://localhost:${PORT}/scripts/webview-preview/index.html`;
+server.listen(PORT, HOST, () => {
+  const url = `http://127.0.0.1:${PORT}/scripts/webview-preview/index.html`;
   console.log(`[webview-preview] serving the repo root on ${url}`);
   console.log(`[webview-preview] try: ${url}?fixture=evidence-badge`);
 });
