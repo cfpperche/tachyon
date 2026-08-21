@@ -235,12 +235,12 @@ describe("SDD 485 D2 — the session state is PER PANEL (t-0fc9ee's contract, un
 
     // AFTER the engine said removed — a refused remove must never drag grants.
     expect(asked).toEqual(["tdd-guard"]);
-    const result = posted(panel, "result").at(-1) as { ok: boolean; text: string };
+    const result = posted(panel, "result").at(-1) as { ok: boolean; message: string };
     expect(result.ok).toBe(true);
-    expect(result.text).toContain("Revoked tdd-guard from claude (tdd-guard), grok (tdd-guard)");
+    expect(result.message).toContain("Revoked tdd-guard from claude (tdd-guard), grok (tdd-guard)");
     // t-746f0f's duty at this door too: the running agent's loss lands at restart, and the message says so.
-    expect(result.text).toContain("Running agents keep their launched copy until restart.");
-    expect(result.text).toContain("Could not revoke agent grants: codex (tdd-guard): no canonical profile");
+    expect(result.message).toContain("Running agents keep their launched copy until restart.");
+    expect(result.message).toContain("Could not revoke agent grants: codex (tdd-guard): no canonical profile");
   });
 
   it("a revocation failure is reported on the result, never silent", async () => {
@@ -257,9 +257,9 @@ describe("SDD 485 D2 — the session state is PER PANEL (t-0fc9ee's contract, un
     panel.webview.__receive({ type: "confirm", token });
     await flush();
 
-    const result = posted(panel, "result").at(-1) as { ok: boolean; text: string };
+    const result = posted(panel, "result").at(-1) as { ok: boolean; message: string };
     expect(result.ok).toBe(true);
-    expect(result.text).toContain("Could not revoke agent grants: engine unreachable");
+    expect(result.message).toContain("Could not revoke agent grants: engine unreachable");
   });
 
   it("removing a plugin nobody ever granted says nothing about grants", async () => {
@@ -274,10 +274,10 @@ describe("SDD 485 D2 — the session state is PER PANEL (t-0fc9ee's contract, un
     panel.webview.__receive({ type: "confirm", token });
     await flush();
 
-    const result = posted(panel, "result").at(-1) as { ok: boolean; text: string };
+    const result = posted(panel, "result").at(-1) as { ok: boolean; message: string };
     expect(result.ok).toBe(true);
-    expect(result.text).not.toContain("Revoked");
-    expect(result.text).not.toContain("revoke");
+    expect(result.message).not.toContain("Revoked");
+    expect(result.message).not.toContain("revoke");
   });
 
   it("two projects do not share checks, a pending consent, or the busy guard", async () => {
