@@ -10,9 +10,6 @@
  * comments tell the user to adjust.
  */
 
-import { CREDENTIAL_CLASS_PREFIXES, PROJECTED_TOOLING_RELS } from "@tachyon/engine/plugins/worktreeProjection.js";
-import { WORKSPACE_DESTS } from "@tachyon/engine/plugins/agentDest.js";
-import { CONFIG_LKG_FILENAME } from "@tachyon/engine/config/configLkg.js";
 
 export interface DetectedProject {
   /** manifest files present at the workspace root */
@@ -102,72 +99,13 @@ function pickAgent(installed: string[]): { bin: string; detected: boolean } {
 }
 
 /**
- * Builds the commented starter tachyon.yml. Always valid: at minimum one agent
- * (under agents:) plus a shell (under terminals:). Stack terminals are appended
- * with adjust-me comments. The `terminals:` block (spec 215) merges into the same
- * kind-tagged set as agents: — it just reads more naturally for non-AI processes.
+ * t-b0b8ef — machine-local Tachyon state is closed by default. The `*` is essential:
+ * ignoring `.tachyon/` itself would prevent git from re-including either committed file.
  */
-/**
- * t-4290d0 — a gitignore pattern covering a credential-class prefix. Gitignore matches whole path
- * SEGMENTS, not string prefixes: the raw engine prefix `.tachyon/secrets` would NOT cover
- * `.tachyon/secrets.env` — the measured hole (t-508c85). Appending `*` covers the bare name AND its
- * suffixed siblings; a prefix already ending in `/` already means "this directory".
- */
-export function gitIgnorePatternFor(prefix: string): string {
-  return prefix.endsWith("/") ? prefix : `${prefix}*`;
-}
-
-/**
- * t-4290d0 — plugin materialization writes into per-runtime workspace paths (`WORKSPACE_DESTS`), and
- * installing reproduces them from the lockfile, so a fresh workspace must not commit them. Each dest
- * contributes its top-level entry: the directory for paths under one, the file itself when bare
- * (`.mcp.json`). Reproduces exactly what this repository's own .gitignore ignores by hand.
- */
-function runtimeMaterializationEntries(): string[] {
-  const tops = new Set<string>();
-  for (const dest of Object.values(WORKSPACE_DESTS)) {
-    for (const rel of [dest.settingsRel, dest.skillsRel, dest.mcpRel]) {
-      if (!rel) continue;
-      const slash = rel.indexOf("/");
-      tops.add(slash === -1 ? rel : `${rel.slice(0, slash)}/`);
-    }
-  }
-  return [...tops];
-}
-
-/**
- * Machine-local Tachyon state that must never be committed. pins.json is
- * deliberately ABSENT — it's the shared checklist, meant to travel with the
- * repo. sessions.json carries a per-machine resume ledger (session ids +
- * absolute cwd), so it stays local.
- *
- * t-4290d0 — the credential-class block DERIVES from the engine's own enumeration
- * (`CREDENTIAL_CLASS_PREFIXES`, which `NEVER_PROJECT_PREFIXES` also derives from), and the rest from
- * constants that already claim the "gitignored" property (`PROJECTED_TOOLING_RELS`,
- * `CONFIG_LKG_FILENAME`, `WORKSPACE_DESTS`). No third hand-maintained list over the same knowledge —
- * hand-copying entry by entry is how the original hole opened. The lockfile
- * (`.tachyon/plugins.lock.json`, on NEVER_PROJECT_PREFIXES) stays shareable ON PURPOSE: spec 250
- * commits it as the re-hydration recipe for a clone.
- */
-// spec 245 — the canonical .tachyon/HANDOFF.md is intentionally NOT ignored (it's the durable, committed
-// project handoff); only the transient pending-notes lane is machine-local.
 export const TACHYON_GITIGNORE_ENTRIES = [
-  ".tachyon/sessions.json",
-  ".tachyon/harness/",
-  ".tachyon/bridge-mcp/",
-  ".tachyon/continuity/",
-  ".tachyon/agents/",
-  ".tachyon/agent-profile-transactions/",
-  ".tachyon/canonical-agent-transactions/",
-  ".tachyon/handoff-notes.jsonl",
-  ".tachyon/pins/",
-  ".tachyon/probes/", // spec 257 — captured probe artifacts (sensitive-by-default, machine-local)
-  // t-4290d0 — derived from CREDENTIAL_CLASS_PREFIXES (never projected, so never committed either)
-  ...CREDENTIAL_CLASS_PREFIXES.map(gitIgnorePatternFor),
-  // derived from constants that already claim to be git-ignored but which Init never delivered
-  ...PROJECTED_TOOLING_RELS.map(gitIgnorePatternFor),
-  `.tachyon/${CONFIG_LKG_FILENAME}`,
-  ...runtimeMaterializationEntries(),
+  ".tachyon/*",
+  "!.tachyon/HANDOFF.md", // spec 245 — durable, committed project handoff
+  "!.tachyon/plugins.lock.json", // spec 250 — committed clone re-hydration recipe
 ];
 
 /**
@@ -181,11 +119,17 @@ export function ensureTachyonGitignore(existing: string | undefined): string | n
   if (lines.includes(".tachyon/") || lines.includes(".tachyon")) return null; // whole dir already ignored
   const missing = TACHYON_GITIGNORE_ENTRIES.filter((e) => !lines.includes(e));
   if (missing.length === 0) return null;
-  const block = ["# Tachyon — machine-local state (pins.json stays shareable)", ...missing].join("\n") + "\n";
+  const block = ["# Tachyon — machine-local state (HANDOFF.md and plugins.lock.json stay shareable)", ...missing].join("\n") + "\n";
   if (!existing || existing.trim() === "") return block;
   return existing.endsWith("\n") ? `${existing}\n${block}` : `${existing}\n\n${block}`;
 }
 
+/**
+ * Builds the commented starter tachyon.yml. Always valid: at minimum one agent
+ * (under agents:) plus a shell (under terminals:). Stack terminals are appended
+ * with adjust-me comments. The `terminals:` block (spec 215) merges into the same
+ * kind-tagged set as agents: — it just reads more naturally for non-AI processes.
+ */
 export function buildStarterYaml(p: DetectedProject): string {
   const stack = detectStack(p);
   const agent = pickAgent(p.installedClis);
