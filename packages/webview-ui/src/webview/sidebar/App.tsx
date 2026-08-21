@@ -512,7 +512,9 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
 
   actions: ({ a, d }) => (
     <div class="actions" role="group" aria-label={`${a.name} actions`}>
-      {primaryActions(a).map((id) => <Act icon={ACTION_META[id].icon} title={ACTION_META[id].label} on={() => d.action(id, a.name)} />)}
+      <div class="action-reveal">
+        {primaryActions(a).map((id) => <Act icon={ACTION_META[id].icon} title={ACTION_META[id].label} on={() => d.action(id, a.name)} />)}
+      </div>
       {moreActions(a).length > 0 && <MoreBtn items={moreActions(a).map((id) => ({ label: ACTION_META[id].label, icon: ACTION_META[id].icon, run: () => d.action(id, a.name) }))} />}
     </div>
   ),
