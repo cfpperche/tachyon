@@ -1991,6 +1991,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         cwd?: string;
         configHome?: string;
         statusLineCapture?: boolean;
+        environment?: Readonly<Record<string, string>>;
       }) => string | undefined;
       materializeCodexSessionStartHookConfig?: (name: string, opts?: { ownershipOnly?: boolean }) => string | string[] | undefined;
       ownedSession?: (name: string, cwd: string) => { sessionId: string; transcriptPath: string } | undefined;

@@ -19,6 +19,7 @@ import {
   type ProviderUnavailableReasonV1,
   type RuntimeObservationFactV1,
   type RuntimeObservabilityProviderV1,
+  KNOWN_RUNTIME_OBSERVABILITY_PROVIDERS_V1,
 } from "./types.js";
 
 const MAX_FACTS = 512;
@@ -29,7 +30,7 @@ const MAX_CONFIG_LAYER_ROLES = 16;
 const MAX_MCP_SERVER_NAMES = 64;
 const MAX_COMPAT_CELLS = 32;
 
-const PROVIDERS: ReadonlySet<string> = new Set<RuntimeObservabilityProviderV1>(["codex", "claude", "grok"]);
+const PROVIDERS: ReadonlySet<string> = new Set<RuntimeObservabilityProviderV1>(KNOWN_RUNTIME_OBSERVABILITY_PROVIDERS_V1);
 const PROVIDER_SOURCES: ReadonlySet<string> = new Set<ProviderSourceKindV1>(["oauth", "cli"]);
 const CONFIDENCE: ReadonlySet<string> = new Set<ObservationConfidenceV1>(["exact", "estimated", "unknown"]);
 const WINDOW_NAMES: ReadonlySet<string> = new Set<ProviderQuotaWindowV1["name"]>(["session", "weekly", "tertiary"]);

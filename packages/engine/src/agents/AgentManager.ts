@@ -628,6 +628,8 @@ export interface AgentManagerOptions {
     cwd?: string;
     configHome?: string;
     statusLineCapture?: boolean;
+    /** t-d64332 — launch env so status-line capture can archive by provider, not runtime literal. */
+    environment?: Readonly<Record<string, string>>;
   }) => string | undefined;
   /** spec 303 — write Codex-compatible hook scripts and return `key=value`
    *  config override values for session-scoped `-c` injection. */
@@ -2926,6 +2928,7 @@ export class AgentManager {
       cwd,
       configHome: spawnBuild.env.CLAUDE_CONFIG_DIR,
       nativeSessionHooksInjected: binaryOf(def.cmd) === "grok" && !!(spawnBuild.env.GROK_HOME || spawnBridge.env.GROK_HOME),
+      environment: spawnBuild.env,
     });
     return { originalCmd, adapter, resumeId, selfManaged, spawnBridge, spawnBuild, ownedSpawnCmd };
     })().catch(async (error) => {
@@ -3471,6 +3474,14 @@ export class AgentManager {
     }
   }
 
+  /** t-d64332 — only the provider-routing signal; never Bridge tokens or other launch env. */
+  private statusLineCaptureEnvironment(
+    env: Readonly<Record<string, string>> | undefined,
+  ): Readonly<Record<string, string>> | undefined {
+    const value = env?.ANTHROPIC_BASE_URL?.trim();
+    return value ? { ANTHROPIC_BASE_URL: value } : undefined;
+  }
+
   private withSessionOwnership(
     name: string,
     def: Pick<AgentEntry, "cmd">,
@@ -3478,7 +3489,14 @@ export class AgentManager {
     // t-04052d — this option was called `declared`, and it never asked about storage: `!declared`
     // became `ownershipOnly`, i.e. "inject profile-backed lifecycle hooks, or ownership only?". It is
     // renamed to the question it actually asks, which is also the capability the ledger records.
-    opts: { lifecycleHooks: boolean; cwd: string; configHome?: string; preservePermissionMode?: boolean; nativeSessionHooksInjected?: boolean },
+    opts: {
+      lifecycleHooks: boolean;
+      cwd: string;
+      configHome?: string;
+      preservePermissionMode?: boolean;
+      nativeSessionHooksInjected?: boolean;
+      environment?: Readonly<Record<string, string>>;
+    },
   ): string {
     const binary = binaryOf(def.cmd);
     const adapter = adapterFor(def.cmd);
@@ -3519,6 +3537,7 @@ export class AgentManager {
       // An explicit source filter changes which lower-precedence statusLine Claude would see. Until Tachyon parses
       // that CLI value exactly, keep lifecycle hooks but omit capture instead of reviving an excluded user setting.
       statusLineCapture: !/(^|\s)--setting-sources(=|\s|$)/.test(def.cmd),
+      environment: this.statusLineCaptureEnvironment(opts.environment),
     });
     this.opts.onSessionHooksInjected?.(name, !!file);
     if (!file) return cmd;
@@ -4710,6 +4729,7 @@ export class AgentManager {
       cwd,
       configHome: restartBuild.env.CLAUDE_CONFIG_DIR,
       nativeSessionHooksInjected: binaryOf(def.cmd) === "grok" && !!(restartBuild.env.GROK_HOME || restartBridge.env.GROK_HOME),
+      environment: restartBuild.env,
     });
     // mint() revokes the incumbent credential. Wait until every fallible composition/materialization
     // step has completed so a preparation error cannot strand an unchanged live pane.
@@ -5156,6 +5176,7 @@ export class AgentManager {
         cwd,
         configHome: resumeBuild.env.CLAUDE_CONFIG_DIR ?? persistedResumeHomeEnv.CLAUDE_CONFIG_DIR,
         nativeSessionHooksInjected: runtime === "grok" && !!(resumeBuild.env.GROK_HOME || persistedResumeHomeEnv.GROK_HOME || resumeBridge.env.GROK_HOME),
+        environment: resumeBuild.env,
       }),
       cwd,
       env: { ...resumeBuild.env, ...persistedResumeHomeEnv, ...resumeBridge.env }, // spec 236 + 380 persisted home
@@ -5553,6 +5574,7 @@ export class AgentManager {
           nativeSessionHooksInjected: src.runtime === "grok" && !!(forkBuild.env.GROK_HOME || forkBridge.env.GROK_HOME),
           // A user-created fork inherits the source command's permission posture; capture must not widen it.
           preservePermissionMode: true,
+          environment: forkBuild.env,
         }),
         cwd,
         env: { ...forkBuild.env, ...forkBridge.env },

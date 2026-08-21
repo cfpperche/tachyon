@@ -6,6 +6,9 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     const profile = runtimeProfile("claude");
     expect(profile?.model).toMatchObject({ defaultModel: "Claude default", source: "declared", verified: false });
     expect(modelLabelForRuntime("claude", "claude-opus-4-8")).toBe("Opus 4.8");
+    expect(modelLabelForRuntime("claude", "glm-5.3")).toBe("GLM 5.3");
+    expect(modelLabelForRuntime("claude", "glm-4.7")).toBe("GLM 4.7");
+    expect(modelLabelForRuntime("claude", "GLM-5.3")).toBe("GLM 5.3");
     expect(profile?.isolation).toMatchObject({ mechanism: "mint", source: "measured", verified: true });
     expect(profile?.profileVersion).toBe(2);
     expect(profile?.permission).toMatchObject({

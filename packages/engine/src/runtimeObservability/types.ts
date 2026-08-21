@@ -1,6 +1,17 @@
 export const RUNTIME_OBSERVABILITY_SCHEMA_VERSION = 1 as const;
 
-export type RuntimeObservabilityProviderV1 = "codex" | "claude" | "grok";
+/**
+ * t-d64332 — the known triad. Preferences and capture scope accept any SAFE-validated key;
+ * this remains the known set, not the possible set. The Runtime Ops V2 panel contract stays closed.
+ */
+export const KNOWN_RUNTIME_OBSERVABILITY_PROVIDERS_V1 = ["codex", "claude", "grok"] as const;
+export type RuntimeObservabilityProviderV1 = typeof KNOWN_RUNTIME_OBSERVABILITY_PROVIDERS_V1[number];
+
+export function isKnownRuntimeObservabilityProvider(
+  value: string,
+): value is RuntimeObservabilityProviderV1 {
+  return (KNOWN_RUNTIME_OBSERVABILITY_PROVIDERS_V1 as readonly string[]).includes(value);
+}
 export type ProviderSourceKindV1 = "oauth" | "cli";
 export type ObservationConfidenceV1 = "exact" | "estimated" | "unknown";
 
@@ -17,7 +28,8 @@ export interface ProviderObservationScopeV1 {
 
 export interface ProviderAccountObservationScopeV1 {
   kind: "provider-account";
-  provider: RuntimeObservabilityProviderV1;
+  /** Known triad is the common case; preferences/capture accept any SAFE-validated key (t-d64332). */
+  provider: string;
   /** Opaque Tachyon-owned digest key. Never an email, username, organization id, or provider account id. */
   key: string;
 }

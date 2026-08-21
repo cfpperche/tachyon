@@ -1,12 +1,14 @@
-import type {
-  CollectorDiagnosticCodeV1,
-  CollectorEnvelopeV1,
-  ProviderAccountObservationScopeV1,
-  ProviderObservationScopeV1,
-  ProviderQuotaFactV1,
-  ProviderSourceKindV1,
-  ProviderUnavailableReasonV1,
-  RuntimeObservabilityProviderV1,
+import {
+  KNOWN_RUNTIME_OBSERVABILITY_PROVIDERS_V1,
+  isKnownRuntimeObservabilityProvider,
+  type CollectorDiagnosticCodeV1,
+  type CollectorEnvelopeV1,
+  type ProviderAccountObservationScopeV1,
+  type ProviderObservationScopeV1,
+  type ProviderQuotaFactV1,
+  type ProviderSourceKindV1,
+  type ProviderUnavailableReasonV1,
+  type RuntimeObservabilityProviderV1,
 } from "./types.js";
 import {
   PROVIDER_QUOTA_READ_CAPABILITY,
@@ -23,7 +25,7 @@ import { validateCollectorEnvelopeV1 } from "./validate.js";
 
 export const PROVIDER_OBSERVATION_LAST_GOOD_STATE_KEY = "tachyon.runtimeObservability.lastGood.v1";
 
-const PROVIDERS = ["codex", "claude", "grok"] as const satisfies readonly RuntimeObservabilityProviderV1[];
+const PROVIDERS = KNOWN_RUNTIME_OBSERVABILITY_PROVIDERS_V1;
 const HOST_COLLECTOR = { id: "tachyon-provider-host", version: "1.0.0" } as const;
 const DEFAULT_INTERVAL_MS = 60_000;
 const DEFAULT_COLLECTION_TIMEOUT_MS = 20_000;
@@ -283,7 +285,12 @@ export class ProviderObservationService {
             sourceKind,
           );
         }
-        const source = this.sources.get(sourceKey(preference.scope.provider, sourceKind));
+        const provider = preference.scope.provider;
+        if (!isKnownRuntimeObservabilityProvider(provider)) {
+          lastFailure = unavailableEnvelope(preference.scope, "unsupported", this.timestamp(), sourceKind);
+          continue;
+        }
+        const source = this.sources.get(sourceKey(provider, sourceKind));
         if (!source) {
           lastFailure = unavailableEnvelope(preference.scope, "unsupported", this.timestamp(), sourceKind);
           continue;
@@ -546,7 +553,11 @@ function unavailableEnvelope(
       reason,
       ...(lastGoodAt ? { lastGoodAt } : {}),
     }],
-    diagnostics: [{ code: diagnosticCode(reason), provider: scope.provider, factIndex: 0 }],
+    diagnostics: [{
+      code: diagnosticCode(reason),
+      ...(isKnownRuntimeObservabilityProvider(scope.provider) ? { provider: scope.provider } : {}),
+      factIndex: 0,
+    }],
   };
   return validatedHostEnvelope(candidate, scope, observedAt);
 }

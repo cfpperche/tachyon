@@ -11,12 +11,13 @@ import type {
   ProviderObservationRequestV1,
   ProviderObservationSource,
 } from "@tachyon/engine/runtimeObservability/source.js";
-import type {
-  CollectorEnvelopeV1,
-  ProviderAccountObservationScopeV1,
-  ProviderSourceKindV1,
-  ProviderUnavailableReasonV1,
-  RuntimeObservabilityProviderV1,
+import {
+  isKnownRuntimeObservabilityProvider,
+  type CollectorEnvelopeV1,
+  type ProviderAccountObservationScopeV1,
+  type ProviderSourceKindV1,
+  type ProviderUnavailableReasonV1,
+  type RuntimeObservabilityProviderV1,
 } from "@tachyon/engine/runtimeObservability/types.js";
 import { validateCollectorEnvelopeV1 } from "@tachyon/engine/runtimeObservability/validate.js";
 
@@ -84,7 +85,7 @@ function unavailable(
     facts: [{ kind: "provider-unavailable", scope, source, observedAt, reason }],
     diagnostics: [{
       code: reason === "timeout" ? "SOURCE_TIMEOUT" : reason === "invalid-payload" ? "INVALID_PAYLOAD" : "SOURCE_UNAVAILABLE",
-      provider: scope.provider,
+      ...(isKnownRuntimeObservabilityProvider(scope.provider) ? { provider: scope.provider } : {}),
       factIndex: 0,
     }],
   };

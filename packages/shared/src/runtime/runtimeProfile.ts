@@ -245,6 +245,8 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         "sonnet-5": "Sonnet 5",
         "claude-sonnet-5": "Sonnet 5",
         haiku: "Haiku",
+        "glm-5.3": "GLM 5.3",
+        "glm-4.7": "GLM 4.7",
       },
       source: "declared",
       verified: false,

@@ -164,4 +164,36 @@ describe("ProviderObservationPreferences", () => {
     })).rejects.toThrow(/unsafe key/u);
     expect(state.writes).toEqual([]);
   });
+
+  it("t-d64332: the known triad is not the possible set — get/configure accept a SAFE foreign key", async () => {
+    const state = new MemoryState();
+    const preferences = new ProviderObservationPreferences(state, () => "1".repeat(32));
+    await preferences.configure("claude", {
+      state: "granted",
+      consent: "explicit-user",
+      sources: ["cli"],
+    });
+
+    expect(preferences.get("api.z.ai")).toBeUndefined();
+    expect(preferences.get("claude")?.scope.provider).toBe("claude");
+
+    const granted = await preferences.configure("api.z.ai", {
+      state: "granted",
+      consent: "explicit-user",
+      sources: ["cli"],
+    });
+    expect(granted).toEqual({
+      scope: { kind: "provider-account", provider: "api.z.ai", key: `ps_${"1".repeat(32)}` },
+      sources: ["cli"],
+    });
+    expect(preferences.get("api.z.ai")?.scope.key).toBe(`ps_${"1".repeat(32)}`);
+    expect(preferences.get("claude")?.scope.provider).toBe("claude");
+    expect(Object.keys(preferences.all()).sort()).toEqual(["claude"]);
+    await expect(preferences.configure("not a key", {
+      state: "granted",
+      consent: "explicit-user",
+      sources: ["cli"],
+    })).rejects.toThrow();
+    expect(preferences.get("claude")?.sources).toEqual(["cli"]);
+  });
 });
