@@ -1688,7 +1688,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // detection and every apply are rooted at one `workspaceRoot`.
   const pluginsPanels = new PluginsPanelManager(
     context.extensionUri,
-    () => workspaces().map((ws) => ws.git),
+    // t-b1940c — the Plugins panel's remove flow needs the revoke door beside gitExec, so it gets
+    // the plugin-profile target rather than the bare git one.
+    () => workspaces().map((ws) => ws.pluginProfile),
     () => pluginSurfaces.refreshAll(),
     undefined,
     controlWorkspaceScope,

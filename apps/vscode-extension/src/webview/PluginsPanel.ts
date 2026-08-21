@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { WorkspaceGitPresentationTarget } from "../shell/WorkspacePresentation.js";
+import type { PluginGrantsRevocationV1, WorkspaceGitPresentationTarget, WorkspacePluginProfileTarget } from "../shell/WorkspacePresentation.js";
 import {
   SectionPanelManager,
   type SectionAppConfig,
@@ -204,7 +204,9 @@ export class PluginsPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly getWorkspaces: () => WorkspaceGitPresentationTarget[],
+    // t-b1940c — the plugin-profile target, not the bare git one: the remove flow revokes the
+    // profile grants the plugin's authorization wrote, and that door crosses into the engine.
+    private readonly getWorkspaces: () => WorkspacePluginProfileTarget[],
     private readonly onPluginsChanged: () => void = () => undefined,
     app: WebviewAppEntry = webviewApp("plugins"),
     workspaceScope?: ControlWorkspaceScope,
@@ -244,7 +246,7 @@ export class PluginsPanelManager {
     return this.manager.openKeys;
   }
 
-  private workspaceFor(target: SectionPanelTarget): WorkspaceGitPresentationTarget | undefined {
+  private workspaceFor(target: SectionPanelTarget): WorkspacePluginProfileTarget | undefined {
     // STRICT, exactly as the Board's is (C5): the project IS half this panel's key, so resolving it
     // loosely would let two panels land on one workspace under different keys, or let a panel silently
     // retarget when the sidebar's project selector moves. A project that is no longer attached says so;
@@ -321,7 +323,7 @@ export class PluginsPanelManager {
   }
 
   /** Route one inbound webview message. Network/apply ops are serialized by a `busy` flag (one at a time). */
-  private async onMessage(ws: WorkspaceGitPresentationTarget, m: InboundMsg, io: PanelIO): Promise<void> {
+  private async onMessage(ws: WorkspacePluginProfileTarget, m: InboundMsg, io: PanelIO): Promise<void> {
     // `ready` and `poll` never arrive here — `pluginsRefreshKind` claims them for the gate — so
     // everything below is an action on a panel someone is looking at.
     switch (m.type) {
@@ -691,7 +693,7 @@ export class PluginsPanelManager {
   }
 
   /** Apply the held op (token-matched) — the engine apply re-previews + lost-update-guards before writing. */
-  private async confirmOp(ws: WorkspaceGitPresentationTarget, token: string, skillDecisions: Record<string, "keep" | "replace">, mcpDecisions: Record<string, "keep" | "replace">, mcpConfirmed: boolean, gitHookConfirmed: boolean, toolConfirmed: boolean, dataConfirmed: boolean, viewConfirmed: boolean, fleetReadConfirmed: boolean, actionConfirmed: Record<string, boolean>, io: PanelIO): Promise<void> {
+  private async confirmOp(ws: WorkspacePluginProfileTarget, token: string, skillDecisions: Record<string, "keep" | "replace">, mcpDecisions: Record<string, "keep" | "replace">, mcpConfirmed: boolean, gitHookConfirmed: boolean, toolConfirmed: boolean, dataConfirmed: boolean, viewConfirmed: boolean, fleetReadConfirmed: boolean, actionConfirmed: Record<string, boolean>, io: PanelIO): Promise<void> {
     const op = io.getPending();
     io.setPending(undefined);
     if (!op) return;
@@ -728,12 +730,56 @@ export class PluginsPanelManager {
       if (r.updated && !hadConfigBefore && op.plugin.manifest.config) await this.openConfigFile(ws, op.plugin.manifest.name);
     } else {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the remove."); return; }
-      const r = await applyRemove(op.name, ws.workspaceRoot, { expectedFingerprint: token, git: this.gitRun(ws) });
-      io.postResult(r.removed, r.removed ? `Removed ${op.name}${r.orphans > 0 ? ` (${r.orphans} edited group(s) left as orphans)` : ""}.` : r.errors.join("; "));
+      // t-b1940c — decided order: the grants move BEFORE the payload goes. A revocation that cannot
+      // complete refuses the removal instead of leaving a live grant pointing at a directory the
+      // delete is about to take away; failing here destroys nothing and the user can retry.
+      const rev = await this.revokeGrantsBeforeRemove(ws, op.name);
+      if (rev.ok) {
+        const r = await applyRemove(op.name, ws.workspaceRoot, { expectedFingerprint: token, git: this.gitRun(ws) });
+        io.postResult(r.removed, r.removed
+          ? `Removed ${op.name}${r.orphans > 0 ? ` (${r.orphans} edited group(s) left as orphans)` : ""}.${rev.note}`
+          : r.errors.join("; "));
+      } else {
+        // Nothing was deleted; partial revocations (some agents cleared, one refused) are named too.
+        io.postResult(false, rev.note.trim());
+      }
     }
     io.setChecks({}); // applied state changed → drop stale checks
     this.onPluginsChanged();
     io.post();
+  }
+
+  /** t-b1940c — option (b): name who lost what, BEFORE the payload goes. Decided order (task
+   *  contract): a revocation that cannot complete — door failure or any per-agent refusal — returns
+   *  ok:false and the caller refuses the removal; deleting first would leave live grants pointing at
+   *  directories that no longer exist, which is exactly defect t-b1940c. An empty report means no
+   *  profile ever held a grant: ok:true with nothing to say. */
+  private async revokeGrantsBeforeRemove(ws: WorkspacePluginProfileTarget, pluginName: string): Promise<{ ok: boolean; note: string }> {
+    let report: PluginGrantsRevocationV1;
+    try {
+      report = await ws.revokePluginGrants(pluginName);
+    } catch (e) {
+      return { ok: false, note: ` Could not revoke agent grants: ${e instanceof Error ? e.message : String(e)} — ${pluginName} was not removed.` };
+    }
+    const notes: string[] = [];
+    if (report.revoked.length > 0) {
+      const byAgent = new Map<string, string[]>();
+      for (const { agent, referenceId } of report.revoked) {
+        const ids = byAgent.get(agent);
+        if (ids) ids.push(referenceId);
+        else byAgent.set(agent, [referenceId]);
+      }
+      notes.push(`Revoked ${pluginName} from ${[...byAgent].map(([agent, ids]) => `${agent} (${ids.join(", ")})`).join(", ")}.`);
+      // t-746f0f's duty, said here because the engine's write cannot reach the live session: what a
+      // running agent was launched with stays until its next launch.
+      if (report.revoked.some((r) => r.running === true)) {
+        notes.push("Running agents keep their launched copy until restart.");
+      }
+    }
+    if (report.errors.length > 0) {
+      return { ok: false, note: ` Could not revoke agent grants: ${report.errors.map((e) => `${e.agent} (${e.referenceId}): ${e.error}`).join("; ")} — ${pluginName} was not removed.${notes.length > 0 ? ` ${notes.join(" ")}` : ""}` };
+    }
+    return { ok: true, note: notes.length > 0 ? ` ${notes.join(" ")}` : "" };
   }
 
   /** spec 265 — re-provision the workspace's tools from the committed lockfile (clone/CI where `.tachyon/bin`

@@ -76,6 +76,9 @@ export const EXTENSION_COMMAND_ACTIONS = [
   // refuses it by name instead of silently decoding it as something else.
   "agent-profile.authorize-skill",
   "agent-profile.authorize-plugin",
+  // t-b1940c — removing a plugin revokes the profile grants that authorized it. Own action for the
+  // same skew reason as its authorize siblings: an older engine refuses it by name.
+  "agent-profile.revoke-plugin-grants",
   "secret.set",
   "secret.replace",
   "secret.remove",
@@ -203,6 +206,11 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     agentName: name,
     skillName: text(128, 1),
     reauthorize: z.boolean().optional(),
+  }).strict(),
+  z.object({
+    /** t-b1940c — enumerate every profile holding `plugin:<name>` and revoke each grant. */
+    action: z.literal("agent-profile.revoke-plugin-grants"),
+    pluginName: text(128, 1),
   }).strict(),
   z.object({
     action: z.literal("secret.set"),
