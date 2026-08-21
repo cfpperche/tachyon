@@ -72,17 +72,14 @@ export function cockpitStrings(): CockpitStrings {
     copyPath: t("Copy path"),
     openConfig: t("Open workspace settings"),
     // t-7b4bb5 — two authorities, named so the dual open buttons do not look like a split mind.
+    // t-2ad294 — state the split; the cards below already show it. Recovery-path contingency is docs.
     settingsBody: t(
-      "Tachyon keeps two settings files on purpose: one for you on this machine, one for the project shared with the team. They own different knobs — they are not two places for the same list.",
+      "Two settings files, on purpose: yours on this machine, the project's shared with the team. They own different knobs.",
     ),
     settingsScopeGlobalTitle: t("Global (personal)"),
-    settingsScopeGlobalHint: t(
-      "Your machine preferences — agent pane, git path, Activity theme. Not committed; recovery path when Control will not open.",
-    ),
+    settingsScopeGlobalHint: t("Your machine preferences — agent pane, git path, theme."),
     settingsScopeWorkspaceTitle: t("Workspace (project)"),
-    settingsScopeWorkspaceHint: t(
-      "Shared project policy in tachyon.yml — agents, agent limit, memory cap, schedules, Companion, idle notify, worktree reveal. Versioned with the repo, so the whole team gets it.",
-    ),
+    settingsScopeWorkspaceHint: t("Shared project policy in tachyon.yml — versioned with the repo."),
     settingsFileLabel: t("File:"),
     settingsOpenTachyon: t("Open global settings"),
     settingsOpenConfig: t("Open workspace settings"),
@@ -121,7 +118,7 @@ export function cockpitStrings(): CockpitStrings {
     idleNotifyReset: t("Back to default"),
     // t-aaad95 — Control -> Settings edits BOTH scopes now that VS Code contributes nothing.
     globalSettingsTitle: t("Your Tachyon settings"),
-    globalSettingsHint: t("Per-person, per-machine. Kept in a plain file you can also edit by hand — that file is the recovery path when Control itself will not open."),
+    globalSettingsHint: t("Per-person, per-machine, in a plain file you can edit by hand."),
     globalSettingsFileLabel: t("File:"),
     globalSettingsOpenFile: t("Open global settings"),
     globalSettingsRefused: t("This file was refused and the last good version is in use — fix it and it reloads by itself:"),
