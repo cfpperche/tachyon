@@ -27,6 +27,8 @@ import {
   applyRemove,
   previewRemove,
   applyContribution,
+  previewUpdate,
+  applyUpdate,
   detectRuntimes,
   planSkillTargets,
 } from "../../apps/vscode-extension/src/plugins/engine.js";
@@ -414,5 +416,72 @@ describe("applyInstall agent dest — red proof", () => {
     applyContribution("cx", { kind: "mcp", name: "cx-db" }, ws);
     expect(fs.existsSync(path.join(ws, ".codex/config.toml"))).toBe(false);
     expect(fs.existsSync(path.join(ws, ".tachyon/harness/coder/config.toml"))).toBe(true);
+  });
+});
+
+describe("update keeps dest scope (t-cd4406)", () => {
+  it("updating an agent-scoped install keeps the agent dest — no silent workspace promotion", async () => {
+    const ws = tmp("tachyon-ws-");
+    fs.mkdirSync(path.join(ws, ".claude"), { recursive: true });
+    writeProfile(ws, "alice", "claude");
+    const dir = makeSkillPlugin("solo"); // v1.0.0
+    const { plugin } = loadPlugin(dir);
+    const target = detectRuntimes(ws);
+    const scope = { type: "agent" as const, name: "alice" };
+    const preview1 = previewInstall(plugin!, ws, target, undefined, undefined, undefined, scope);
+    expect(preview1.errors).toEqual([]);
+    const applied1 = await applyInstall(plugin!, preview1, ws, target, { scope });
+    expect(applied1.installed).toBe(true);
+    // SDD 486 — install records the skill target; applying the contribution materializes the dest.
+    applyContribution("solo", { kind: "skill", name: "solo" }, ws, { replace: true });
+    expect(fs.existsSync(path.join(ws, agentSkillDestRel("alice", "solo"), "SKILL.md"))).toBe(true);
+
+    // v2 of the SAME plugin, then update it in place under its own dest scope.
+    fs.writeFileSync(path.join(dir, "tachyon-plugin.json"), JSON.stringify({ name: "solo", version: "2.0.0", description: "agent dest v2", runtimes: ["claude"] }));
+    const v2 = loadPlugin(dir).plugin!;
+    const res = await applyUpdate(v2, ws, { scope });
+    expect(res.updated, res.errors.join("; ")).toBe(true);
+
+    // the agent dest survived and was refreshed; the shared workspace dest was NEVER created
+    const harnessSkill = path.join(ws, agentSkillDestRel("alice", "solo"));
+    expect(fs.existsSync(path.join(harnessSkill, "SKILL.md")), "agent dest lost by the update").toBe(true);
+    expect(fs.existsSync(path.join(ws, ".claude/skills/solo")), "RED: update promoted the agent install into shared .claude/skills").toBe(false);
+    // lockfile: updated version recorded under the agent scope only — no unscoped duplicate target
+    const lock = JSON.parse(fs.readFileSync(path.join(ws, ".tachyon/plugins.lock.json"), "utf8"));
+    expect(lock.plugins.solo.version).toBe("2.0.0");
+    const skillTargets = lock.plugins.solo.targets.filter((t: { kind: string }) => t.kind === "skill-dir");
+    expect(skillTargets.map((t: { file: string }) => t.file)).toEqual([".tachyon/harness/alice/skills/solo"]);
+    expect(skillTargets[0].scope).toEqual({ type: "agent", name: "alice" });
+  });
+
+  it("apply refuses a fingerprint consented for a different dest scope, like install does", async () => {
+    const ws = tmp("tachyon-ws-");
+    fs.mkdirSync(path.join(ws, ".claude"), { recursive: true });
+    writeProfile(ws, "alice", "claude");
+    const dir = makeSkillPlugin("solo");
+    const { plugin } = loadPlugin(dir);
+    const target = detectRuntimes(ws);
+    const scope = { type: "agent" as const, name: "alice" };
+    const preview1 = previewInstall(plugin!, ws, target, undefined, undefined, undefined, scope);
+    expect(preview1.errors).toEqual([]);
+    expect((await applyInstall(plugin!, preview1, ws, target, { scope })).installed).toBe(true);
+
+    fs.writeFileSync(path.join(dir, "tachyon-plugin.json"), JSON.stringify({ name: "solo", version: "2.0.0", description: "agent dest v2", runtimes: ["claude"] }));
+    const v2 = loadPlugin(dir).plugin!;
+
+    // the preview plans the AGENT dest (scope propagated into the install plan)…
+    const upd = await previewUpdate(v2, ws, undefined, { scope });
+    expect(upd.errors).toEqual([]);
+    expect(upd.install?.scope).toEqual(scope);
+    expect(upd.install!.skillTargets.map((t) => t.destRel)).toEqual([".tachyon/harness/alice/skills/solo"]);
+    // …so an apply that re-derives under another scope cannot match the consented fingerprint → refuse
+    const refused = await applyUpdate(v2, ws, { expectedFingerprint: upd.install!.fingerprint });
+    expect(refused.updated).toBe(false);
+    expect(refused.errors.some((e) => /workspace changed since preview|scope/.test(e))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".claude/skills/solo"))).toBe(false);
+    // and the matching-scope apply with that same fingerprint goes through
+    const ok = await applyUpdate(v2, ws, { scope, expectedFingerprint: upd.install!.fingerprint });
+    expect(ok.updated, ok.errors.join("; ")).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".claude/skills/solo"))).toBe(false);
   });
 });
