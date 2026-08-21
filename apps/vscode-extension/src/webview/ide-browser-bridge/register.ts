@@ -1,12 +1,6 @@
 /**
- * IDE Integrated Browser bridge — status-bar action cluster.
- *
- * Two icon-only StatusBarItems that must stay **adjacent** (nothing between them):
- * shared `name` (overflow / hide-show group) + exclusive fractional priorities.
- * Each item keeps its own command (click = open browser / toggle Design Mode).
- *
- * VS Code always draws a slim gap between entries; we cannot merge into one pill
- * without losing dual-command. The exclusive priority band is what keeps them together.
+ * IDE Integrated Browser bridge — palette commands and the live state consumed by the Design Mode
+ * launcher app and System. The former status-bar controls were removed by t-53f20d.
  *
  * SDD 488 F4 — settings.ideBrowser.enabled gates this human surface (and call-time on the
  * engine). Tools stay always-registered when ideBrowserRequest is wired (t-3cab05).
@@ -32,23 +26,6 @@ export { IDE_BROWSER_FIRST_USE_TIPS };
 const OPEN_CMD = "tachyon.ideBrowserBridge.open";
 const DESIGN_CMD = "tachyon.ideBrowserBridge.designMode";
 
-/** Stable ids — required so VS Code can manage hide/show + overflow grouping. */
-const BROWSER_BAR_ID = "tachyon.ideBrowser.open";
-const DESIGN_BAR_ID = "tachyon.ideBrowser.designMode";
-/**
- * Shared name → VS Code lists them as one manage/overflow group ("Tachyon IDE").
- * Must be identical on every item in the cluster.
- */
-const BAR_GROUP_NAME = "Tachyon IDE";
-
-/**
- * Exclusive priority band on the left. Floats avoid other extensions inserting
- * between integer slots (50/49 were easy to split). Higher = further left.
- * Order: globe (open) then inspect (design).
- */
-const BROWSER_BAR_PRIORITY = 90_210.2;
-const DESIGN_BAR_PRIORITY = 90_210.1;
-
 /** globalState key — first successful open shows onboarding tips once. */
 const ONBOARDING_SEEN_KEY = "tachyon.ideBrowser.onboarding.v1";
 
@@ -57,11 +34,37 @@ const DISABLED_HUMAN_MESSAGE =
 
 let manager: IdeBrowserBridgeManager | null = null;
 let log: vscode.OutputChannel | null = null;
-/** Adjacent cluster: globe + inspect (same name, exclusive priority band). */
-let browserBar: vscode.StatusBarItem | null = null;
-let designBar: vscode.StatusBarItem | null = null;
 let registerOptions: IdeBrowserBridgeRegisterOptions = {};
 let extensionContext: vscode.ExtensionContext | null = null;
+const stateListeners = new Set<() => void>();
+
+export type IdeBrowserUiState = {
+  enabled: boolean;
+  running: boolean;
+  cdp: string;
+  url: string;
+  designModeOn: boolean;
+};
+
+export function readIdeBrowserUiState(): IdeBrowserUiState {
+  const active = managerForActiveWorkspace();
+  return {
+    enabled: featureEnabled(),
+    running: active?.running ?? false,
+    cdp: active?.status.cdp ?? "disconnected",
+    url: active?.status.url ?? "",
+    designModeOn: active?.designMode.on ?? false,
+  };
+}
+
+export function onIdeBrowserUiStateChanged(listener: () => void): vscode.Disposable {
+  stateListeners.add(listener);
+  return { dispose: () => stateListeners.delete(listener) };
+}
+
+function publishUiState(): void {
+  for (const listener of stateListeners) listener();
+}
 
 export type IdeBrowserBridgeRegisterOptions = {
   /** Resolve the active Tachyon workspace shell handle (after engine connects). */
@@ -85,29 +88,6 @@ function featureEnabled(): boolean {
   return isIdeBrowserEnabled(ws?.config?.settings);
 }
 
-function createClusterItem(
-  id: string,
-  priority: number,
-  command: string,
-  icon: string,
-  tooltip: string,
-  a11y: string,
-): vscode.StatusBarItem {
-  const item = vscode.window.createStatusBarItem(
-    id,
-    vscode.StatusBarAlignment.Left,
-    priority,
-  );
-  item.name = BAR_GROUP_NAME;
-  item.command = command;
-  item.text = icon;
-  item.tooltip = tooltip;
-  item.accessibilityInformation = { label: a11y };
-  // Visibility is owned by paintBars() via settings.ideBrowser.enabled.
-  item.hide();
-  return item;
-}
-
 export function registerIdeBrowserBridge(
   context: vscode.ExtensionContext,
   options: IdeBrowserBridgeRegisterOptions = {},
@@ -116,26 +96,6 @@ export function registerIdeBrowserBridge(
   extensionContext = context;
   log = vscode.window.createOutputChannel("Tachyon IDE Browser");
   context.subscriptions.push(log);
-
-  // Create as a tight pair so workbench layout places them next to each other.
-  browserBar = createClusterItem(
-    BROWSER_BAR_ID,
-    BROWSER_BAR_PRIORITY,
-    OPEN_CMD,
-    "$(globe)",
-    "Open Integrated Browser",
-    "Open Integrated Browser",
-  );
-  designBar = createClusterItem(
-    DESIGN_BAR_ID,
-    DESIGN_BAR_PRIORITY,
-    DESIGN_CMD,
-    "$(inspect)",
-    "Toggle Design Mode",
-    "Toggle Design Mode",
-  );
-  context.subscriptions.push(browserBar, designBar);
-  paintBars();
 
   context.subscriptions.push(
     vscode.commands.registerCommand(OPEN_CMD, async (url?: string) => {
@@ -158,7 +118,7 @@ export function registerIdeBrowserBridge(
       if (!(await requireEnabled("start"))) return;
       try {
         const st = await ensureStarted();
-        paintBars();
+        publishUiState();
         void vscode.window.showInformationMessage(
           `IDE Browser bridge ready (${st.endpoint}).`,
         );
@@ -171,7 +131,7 @@ export function registerIdeBrowserBridge(
       try {
         await manager?.stop();
         manager = null;
-        paintBars();
+        publishUiState();
         void vscode.window.showInformationMessage("IDE Browser bridge stopped.");
       } catch (err) {
         fail("stop", err);
@@ -213,7 +173,7 @@ export function registerIdeBrowserBridge(
 
   if (context.extensionMode === vscode.ExtensionMode.Development) {
     log?.appendLine(
-      `[ide-browser] ready — status cluster "${BAR_GROUP_NAME}" (globe@${BROWSER_BAR_PRIORITY} + inspect@${DESIGN_BAR_PRIORITY}; gate=settings.ideBrowser.enabled)`,
+      "[ide-browser] ready — Design Mode app state boundary (gate=settings.ideBrowser.enabled)",
     );
   }
 
@@ -236,7 +196,7 @@ async function requireEnabled(op: string): Promise<boolean> {
   if (featureEnabled()) return true;
   log?.appendLine(`[ide-browser] ${op} refused: settings.ideBrowser.enabled is not true`);
   void vscode.window.showWarningMessage(DISABLED_HUMAN_MESSAGE);
-  paintBars();
+  publishUiState();
   return false;
 }
 
@@ -259,7 +219,7 @@ async function applyGateAfterConfigChange(): Promise<void> {
   } else if (featureEnabled()) {
     await startEnabledBridge("configuration change");
   }
-  paintBars();
+  publishUiState();
 }
 
 async function startEnabledBridge(trigger: string): Promise<void> {
@@ -267,7 +227,7 @@ async function startEnabledBridge(trigger: string): Promise<void> {
   try {
     const st = await ensureStarted();
     log?.appendLine(`[ide-browser] host ready on ${trigger} — ${st.endpoint}`);
-    paintBars();
+    publishUiState();
   } catch (err) {
     log?.appendLine(
       `[ide-browser] host start on ${trigger} failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -284,7 +244,7 @@ async function showStatus(): Promise<void> {
   const st = active?.status;
   if (!st?.running) {
     void vscode.window.showInformationMessage(
-      "IDE Browser bridge is off. Click the globe icon on the status bar to open.",
+      "IDE Browser bridge is off. Open Design Mode from the launcher to start it.",
     );
     return;
   }
@@ -300,16 +260,13 @@ async function openIdeBrowser(url?: string): Promise<void> {
     let target = typeof url === "string" && url.trim() ? url.trim() : "";
     if (!target) target = homeUrl();
     await ensureStarted();
-    paintBars();
+    publishUiState();
     const finalUrl = await openAndNavigate(target);
-    paintBars();
+    publishUiState();
     log?.appendLine(`[ide-browser] opened ${finalUrl}`);
     await maybeShowFirstUseTips();
   } catch (err) {
     fail("open", err);
-    if (browserBar && featureEnabled()) {
-      browserBar.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
-    }
   }
 }
 
@@ -344,7 +301,7 @@ async function toggleDesignMode(): Promise<void> {
       }
     }
     const state = await m.toggleDesignMode();
-    paintBars();
+    publishUiState();
     log?.appendLine(
       state.on
         ? `[design-mode] ON → agent ${state.agent} (footer toolbar; nav re-injects)`
@@ -361,7 +318,7 @@ async function setDesignMode(on: boolean): Promise<void> {
     if (!m.running) await m.start();
     if (m.status.cdp !== "connected") await m.navigate(homeUrl());
     await m.setDesignMode(on);
-    paintBars();
+    publishUiState();
   } catch (err) {
     fail("design mode", err);
   }
@@ -397,88 +354,10 @@ async function ensureManager(): Promise<IdeBrowserBridgeManager> {
     if (!extensionContext) throw new Error("IDE Browser extension context is unavailable");
     manager.setWorkspaceResolver(() => owner);
     manager.setDesignModeChangedHandler(() => {
-      paintBars();
+      publishUiState();
     });
   }
   return manager;
-}
-
-/**
- * Paint the cluster: icon-only, shared group name, state in tooltip + background.
- * Never put long labels in `text` — that is what makes the pair look like two separate bars.
- * When settings.ideBrowser.enabled is false, hide both items (human surface gate).
- */
-function paintBars(): void {
-  const enabled = featureEnabled();
-  if (!enabled) {
-    browserBar?.hide();
-    designBar?.hide();
-    return;
-  }
-
-  const active = managerForActiveWorkspace();
-  const st = active?.status;
-  const dm = active?.designMode;
-  const endpoint = st?.running ? st.endpoint : undefined;
-  const cdp = st?.cdp ?? "disconnected";
-  const url = st?.url ?? "";
-  const dmOn = !!dm?.on;
-
-  if (browserBar) {
-    browserBar.name = BAR_GROUP_NAME;
-    browserBar.command = OPEN_CMD;
-    browserBar.text = "$(globe)";
-    browserBar.backgroundColor = undefined;
-    if (!endpoint) {
-      browserBar.tooltip = "Tachyon IDE — Open Integrated Browser (settings.ideBrowser.homeUrl)";
-      browserBar.accessibilityInformation = { label: "Tachyon IDE: Open Integrated Browser" };
-    } else {
-      browserBar.tooltip = [
-        "Tachyon IDE — Integrated Browser",
-        `Bridge: ${endpoint}`,
-        `CDP: ${cdp}`,
-        url && url !== "about:blank" ? `URL: ${url}` : "URL: (ready)",
-        "",
-        "Click to reopen at homeUrl",
-      ].join("\n");
-      browserBar.accessibilityInformation = {
-        label: url && url !== "about:blank"
-          ? `Tachyon IDE: Integrated Browser — ${url}`
-          : "Tachyon IDE: Integrated Browser — ready",
-      };
-    }
-    browserBar.show();
-  }
-
-  if (designBar) {
-    designBar.name = BAR_GROUP_NAME;
-    designBar.command = DESIGN_CMD;
-    designBar.text = "$(inspect)";
-    if (dmOn) {
-      designBar.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
-      designBar.tooltip = [
-        "Tachyon IDE — Design Mode ON",
-        dm?.agent ? `Agent: ${dm.agent}` : "",
-        "Footer toolbar: picker + responsive presets",
-        "Navigations re-inject while ON",
-        "",
-        "Click to turn off",
-      ].filter(Boolean).join("\n");
-      designBar.accessibilityInformation = {
-        label: `Tachyon IDE: Design Mode ON${dm?.agent ? ` — ${dm.agent}` : ""}`,
-      };
-    } else {
-      designBar.backgroundColor = undefined;
-      designBar.tooltip = [
-        "Tachyon IDE — Design Mode OFF",
-        "Overlay Picker + responsive presets on the page",
-        "",
-        "Click to turn on",
-      ].join("\n");
-      designBar.accessibilityInformation = { label: "Tachyon IDE: Design Mode OFF — click to enable" };
-    }
-    designBar.show();
-  }
 }
 
 function fail(op: string, err: unknown): void {

@@ -49,6 +49,7 @@ export type SectionId =
   // It never was a dashboard tab's worth of navigation — one document per workspace.
   | "worktrees"
   | "keys"
+  | "design-mode"
   | "runtime"
   | "runtime-config"
   | "tmux"
@@ -104,6 +105,7 @@ export const COCKPIT_SECTION_IDS: SectionId[] = [
   "tmux",
   "worktrees",
   "keys",
+  "design-mode",
   "companion",
   "validations",
 ];

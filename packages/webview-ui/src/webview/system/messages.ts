@@ -23,5 +23,12 @@ export type SystemAction = ReadyMessage
   | { type: "engineLogJournal"; wsHash: string };
 
 export const pollSystemAction = (): SystemAction => ({ type: POLL });
-export const systemModelMessage = (model: SectionsModel) => ({ type: SYSTEM_MODEL, model } as const);
+export interface SystemIdeBrowserState {
+  url: string;
+  cdp: string;
+}
+
+export const systemModelMessage = (model: SectionsModel, ideBrowser: SystemIdeBrowserState) => (
+  { type: SYSTEM_MODEL, model, ideBrowser } as const
+);
 export const systemErrorMessage = (message: string) => ({ type: SYSTEM_ERROR, message } as const);

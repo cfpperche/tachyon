@@ -49,6 +49,9 @@ export interface CockpitStrings {
   bundle: string;
   protocol: string;
   url: string;
+  integratedBrowser: string;
+  cdp: string;
+  noPage: string;
   port: string;
   auth: string;
   root: string;

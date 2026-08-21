@@ -15,7 +15,7 @@ describe("CONTROL_SECTION_NAV (t-6e2952)", () => {
     // SDD 500 — and ten became NINE, this time because two tiles MERGED rather than one being deleted:
     // Overview and Engine are one screen called System. Same shape either way — the ids stay decodable
     // and only the launcher shrinks.
-    expect(CONTROL_SECTION_NAV).toHaveLength(11);
+    expect(CONTROL_SECTION_NAV).toHaveLength(12);
     const tiles = CONTROL_SECTION_NAV.map((t) => t.id);
     for (const id of COCKPIT_SECTION_ORDER) expect(tiles, `section '${id}' has no launcher tile`).toContain(id);
     // t-5f2b5b — and the deletion is pinned, not merely reflected in a number: `fleet` is STILL a

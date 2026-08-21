@@ -21,12 +21,13 @@ describe("Design Mode overlay cutover structure", () => {
     expect(bundle).not.toMatch(/\.\/chunks\//);
   });
 
-  it("has no Design Mode panel, chat app, composer, or reply tool after cutover", () => {
+  it("keeps the retired chat panel gone while the launcher app owns session controls only", () => {
     expect(fs.existsSync(path.join(root, "packages/webview-ui/src/webview/DesignModePanel.ts"))).toBe(false);
-    // t-69f737 — the cutover deleted the directory; gone is the stronger claim, and readdirSync threw ENOENT.
-    expect(fs.existsSync(path.join(root, "packages/webview-ui/src/webview/design-mode"))).toBe(false);
-    expect(read("esbuild.mjs")).not.toMatch(/WEBVIEW_APP_VIEWS\s*=\s*\[[^\]]*"design-mode"/);
-    expect(read("apps/vscode-extension/src/webview/webviewApps.ts")).not.toContain('view: "design-mode"');
+    // t-53f20d deliberately reintroduces this basename for a different surface: the approved launcher
+    // app is Open/Reveal + Arm/Disarm + ON only. Chat, picker, viewport and annotation work stay in
+    // the page overlay, so the old panel cannot regrow through the new app.
+    const app = read("packages/webview-ui/src/webview/design-mode/App.tsx");
+    expect(app).not.toMatch(/(?:composer|chat\.send|annotation-agent-select|setViewport|sendAnnotation)/i);
     expect(read("packages/bridge/src/tools/ide-browser.ts")).not.toContain("design_mode_chat_reply");
     expect(read("apps/vscode-extension/src/webview/ide-browser-bridge/manager.ts")).not.toMatch(/(?:chatWait|sendChatMessage|ingestChatReply|designModeUiSink)/);
   });

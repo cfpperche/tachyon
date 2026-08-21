@@ -203,6 +203,7 @@ const WEBVIEW_APP_ROWS = [
   // exposed, so it is one dashboard per project. It never had a standalone id; use a new one.
   { view: "worktrees", viewId: "tachyonWorktrees", section: "worktrees", host: "section", cardinality: "dashboard" },
   { view: "keys", viewId: "tachyonKeys", section: "keys", host: "section", cardinality: "dashboard" },
+  { view: "design-mode", viewId: "tachyonDesignModeApp", section: "design-mode", host: "section", cardinality: "dashboard" },
   // t-505f13 — Onboarding, and the third `window` app after the inspector and Runtime Ops. The
   // cardinality is the card's whole knot: this app EXISTS to open where NO Tachyon workspace is
   // attached (that is who onboarding is for), so a key made of `viewId | project` would have nothing

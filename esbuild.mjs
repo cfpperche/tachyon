@@ -357,7 +357,7 @@ const webviewChunkHygienePlugin = {
  *
  * Entry outputs: `dist/webview/<view>.js` (+ `dist/webview/chunks/app-*.js`, shared across ALL entries).
  */
-const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "terminal-studio-shell", "schedule-studio-shell", "agent-studio-shell", "board", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "system", "worktrees", "keys", "settings", "companion", "activity", "probes", "review", "onboarding"];
+const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "terminal-studio-shell", "schedule-studio-shell", "agent-studio-shell", "board", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "system", "worktrees", "keys", "design-mode", "settings", "companion", "activity", "probes", "review", "onboarding"];
 const webviewApps = {
   ...sidebar,
   entryPoints: Object.fromEntries(WEBVIEW_APP_VIEWS.map((view) => [view, `packages/webview-ui/src/webview/${view}/main.tsx`])),
@@ -572,6 +572,7 @@ copyFileSync("packages/webview-ui/src/webview/runtime-ops/runtime-ops.css", "dis
 copyFileSync("packages/webview-ui/src/webview/runtime-config/runtime-config.css", "dist/webview/runtime-config.css"); // SDD 485 D8 — standalone Runtime Config styles
 copyFileSync("packages/webview-ui/src/webview/settings/settings.css", "dist/webview/settings.css"); // SDD 485 D10
 copyFileSync("packages/webview-ui/src/webview/system/system.css", "dist/webview/system.css"); // SDD 500
+copyFileSync("packages/webview-ui/src/webview/design-mode/design-mode.css", "dist/webview/design-mode.css");
 copyFileSync("packages/webview-ui/src/webview/plugins/plugins.css", "dist/webview/plugins.css"); // spec 278 — plugins styles (shared by the webview + the dev preview harness)
 copyFileSync("packages/webview-ui/src/webview/activity/activity.css", "dist/webview/activity.css"); // spec 278 — activity styles (shared by the webview + the dev preview harness)
 copyFileSync("packages/webview-ui/src/webview/probes/probes.css", "dist/webview/probes.css"); // spec 279 — probes styles (shared by the webview + the dev preview harness)

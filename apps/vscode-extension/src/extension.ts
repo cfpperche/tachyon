@@ -18,6 +18,7 @@ import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/Runtime
 import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanInboxPanel.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesPanel.js";
 import { KEYS_VIEW_TYPE, KeysPanelManager } from "./webview/KeysPanel.js";
+import { DESIGN_MODE_VIEW_TYPE, DesignModePanelManager } from "./webview/DesignModePanel.js";
 import { ONBOARDING_VIEW_TYPE, OnboardingPanelManager } from "./webview/OnboardingPanel.js";
 import { scanAgentRosterDirectory } from "@tachyon/engine/config/agentRosterDirectory.js";
 import { probeEngineNodeRuntime } from "@tachyon/engine/onboarding/nodeProbe.js";
@@ -3096,6 +3097,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
     keysPanels.open(ws.wsHash); return true;
   };
+  const designModePanels = new DesignModePanelManager(context.extensionUri, undefined, controlWorkspaceScope);
+  context.subscriptions.push({ dispose: () => designModePanels.dispose() });
+  const openDesignModeTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+    if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
+    designModePanels.open(ws.wsHash); return true;
+  };
   const openCompanionTab = (hash?: string): boolean => { const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0]; if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; } companionPanels.open(ws.wsHash); return true; };
 
   // t-505f13 — Onboarding: a `window` app, so it opens with NO attached workspace (that is its
@@ -3184,6 +3192,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<SectionPanelState>(context, SYSTEM_VIEW_TYPE, (panel, state) => systemPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, WORKTREES_VIEW_TYPE, (panel, state) => worktreesPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, KEYS_VIEW_TYPE, (panel, state) => keysPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, DESIGN_MODE_VIEW_TYPE, (panel, state) => designModePanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-505f13 — a `window` app like Runtime Ops: restore is not workspace-bound, so no revive deferral.
   registerTrustedPanelSerializer<SectionPanelState>(context, ONBOARDING_VIEW_TYPE, (panel, state) => onboardingPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_CONFIG_VIEW_TYPE, (panel, state) => runtimeConfigPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
@@ -3593,6 +3602,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         if (resolved === "keys") {
           openKeysTab();
+          return Promise.resolve();
+        }
+        if (resolved === "design-mode") {
+          openDesignModeTab();
           return Promise.resolve();
         }
         if (resolved === "runtime-config") {

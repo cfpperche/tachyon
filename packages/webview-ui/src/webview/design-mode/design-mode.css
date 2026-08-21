@@ -1,0 +1,8 @@
+.dm-card { max-width: 620px; border: var(--ds-border-width) solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-4); background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent); }
+.dm-card.is-on { border-color: var(--vscode-statusBarItem-warningBackground, var(--ds-warn)); }
+.dm-card h2 { margin: var(--ds-1) 0 0; font-size: 20px; }
+.dm-card p { color: var(--ds-muted); line-height: 1.5; }
+.dm-state { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--ds-3); }
+.dm-eyebrow { color: var(--ds-muted); font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+.dm-actions { display: flex; flex-wrap: wrap; gap: var(--ds-2); margin-top: var(--ds-4); }
+@media (max-width: 420px) { .dm-actions > * { flex: 1 1 100%; justify-content: center; } }

@@ -3,7 +3,7 @@ import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model
 import { EngineLogPanel } from "../shared/control/EngineLogPanel";
 import { Badge, Button, PageChrome } from "../shared/ui";
 import type { CockpitStrings } from "../shared/control/messages";
-import { POLL, type SystemAction } from "./messages";
+import { POLL, type SystemAction, type SystemIdeBrowserState } from "./messages";
 import { summariseWorkspaceRows } from "./summary";
 
 export type Strings = Pick<
@@ -33,6 +33,9 @@ export type Strings = Pick<
   | "bundle"
   | "protocol"
   | "url"
+  | "integratedBrowser"
+  | "cdp"
+  | "noPage"
   | "port"
   | "auth"
   | "root"
@@ -191,6 +194,20 @@ function WorkspaceCard({
   );
 }
 
+function IdeBrowserCard({ s, state }: { s: Strings; state?: SystemIdeBrowserState }) {
+  if (!state) return null;
+  return <section class="ck-browser-state" data-testid="system-ide-browser">
+    <div class="ck-browser-state-head">
+      <div><div class="name">{s.integratedBrowser}</div></div>
+      <Badge tone={state.cdp === "connected" ? "ok" : "default"}>{state.cdp}</Badge>
+    </div>
+    <div class="ck-browser-state-kv">
+      <Kv k={s.cdp} v={state.cdp} />
+      <Kv k={s.url} v={state.url || s.noPage} />
+    </div>
+  </section>;
+}
+
 /**
  * SDD 500 — System: "is Tachyon up and healthy, and if not, where?"
  *
@@ -204,12 +221,14 @@ function WorkspaceCard({
  */
 export function App({
   model,
+  ideBrowser,
   strings: s,
   auto,
   setAuto,
   post,
 }: {
   model?: SectionsModel;
+  ideBrowser?: SystemIdeBrowserState;
   strings: Strings;
   auto: boolean;
   setAuto: (value: boolean) => void;
@@ -244,6 +263,7 @@ export function App({
         }
       />
       {model === undefined ? null : <Summary s={s} rows={rows} overview={model.overview} post={post} />}
+      <IdeBrowserCard s={s} state={ideBrowser} />
       {rows.length === 0 ? (
         <div class="ck-empty">{s.empty}</div>
       ) : (

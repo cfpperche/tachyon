@@ -19,3 +19,9 @@
 .ck-metric-btn { font: inherit; color: inherit; text-align: left; cursor: pointer; width: 100%; }
 .ck-metric-btn:hover { border-color: color-mix(in srgb, var(--vscode-foreground) 35%, var(--ds-border)); }
 .ck-metric.warn .value { color: var(--ds-err); } .ck-metric.ok .value { color: var(--ds-ok); }
+.ck-browser-state { margin-bottom: var(--ds-3); border: var(--ds-border-width) solid var(--ds-border); border-radius: var(--ds-radius); background: color-mix(in srgb, var(--vscode-foreground) 3%, transparent); overflow: hidden; }
+.ck-browser-state-head { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-2); padding: var(--ds-2); border-bottom: var(--ds-border-width) solid var(--ds-border); }
+.ck-browser-state-head .name { font-weight: 600; }
+.ck-browser-state-kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px var(--ds-3); padding: var(--ds-1) 0; }
+.ck-browser-state-kv .k { color: var(--ds-muted); padding-left: var(--ds-2); }
+.ck-browser-state-kv .v { min-width: 0; overflow-wrap: anywhere; padding-right: var(--ds-2); }
