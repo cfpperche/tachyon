@@ -18,7 +18,9 @@ Cinco movimentos. Os quatro primeiros são adição pequena; o quinto é subtra�
 
 ## Key decisions
 
-- **O ladrilho de um app se chama `app:<id>`** — escolhido porque torna colisão com seção embutida impossível por construção. Rejeitado validar o id na instalação: uma regra que alguém esquece de aplicar num segundo caminho de entrada, e cujo modo de falha é sombrear um ladrilho que o produto precisa (`settings`, `plugins`) sem que nada avise.
+- **O ladrilho de um app se chama `app:<id>`, E o `ID_TOKEN` da ordem persistida se alarga para admitir um dois-pontos** — escolhido porque o prefixo torna colisão com seção embutida impossível por construção. Rejeitado validar o id na instalação: uma regra que alguém esquece de aplicar num segundo caminho de entrada, e cujo modo de falha é sombrear um ladrilho que o produto precisa (`settings`, `plugins`) sem que nada avise.
+
+  **Correção da revisão adversarial (achado 4):** a primeira versão deste plano parou no prefixo e não conferiu quem valida o id depois. `packages/webview-ui/src/sidebar/launcherOrder.ts:23` define `ID_TOKEN = /^[a-z][a-z0-9-]*$/` e `isPersistedLauncherMode` rejeita qualquer ordem customizada com token fora dele — dois-pontos é inválido. Como `App.tsx:1674` faz update otimista, a ordem pareceria correta na sessão e não sobreviveria ao reload. Corrigido alargando o token para `/^[a-z][a-z0-9-]*(:[a-z][a-z0-9-]*)?$/`. Rejeitado trocar para `app-<id>`: caberia no regex atual, mas devolveria a colisão ao terreno da convenção de nome, que é o que o prefixo existia para eliminar.
 
 - **`SectionId` se alarga para incluir `` `app:${string}` `` em vez de nascer uma lista paralela de ladrilhos** — escolhido porque a máquina de ladrilho já existe inteira e passa a servir os dois: a reordenação por arrastar e por teclado, o memento `custom:id,id,…`, o descarte de órfão, o ícone. Rejeitada a lista paralela porque duplicaria a grade do launcher e criaria duas ordens que divergem.
 
@@ -53,6 +55,25 @@ Cinco movimentos. Os quatro primeiros são adição pequena; o quinto é subtra�
 | `packages/webview-ui/src/webview/plugins/App.tsx` | a ação Adicionar na aba Apps |
 | `packages/webview-ui/src/webview/plugin-host/relay.ts` | perde o `srcdoc` e a allowlist; ganha `window.tachyon.call` |
 | `packages/engine/src/plugins/manifest.ts:213` | `views` sai de `KNOWN_FIELDS`; `:192` `VIEW_FLEET_SCOPES` sai |
+| `packages/webview-ui/src/sidebar/launcherOrder.ts:23` | `ID_TOKEN` admite um dois-pontos (achado 4) |
+
+**Portas que a primeira versão do plano omitiu — todas da revisão adversarial**
+
+| caminho | o quê | achado |
+|---|---|---|
+| `packages/engine/src/runtime-api/extensionOperations.ts` | operação de instalação de app no engine; hoje não existe nenhuma | 2 |
+| `packages/engine/src/engine-service/extensionOperationService.ts` | idem, o lado do serviço | 2 |
+| `packages/webview-ui/src/webview/plugins/messages.ts:102` | mensagem de upload; hoje só há ações de plugin | 2 |
+| `apps/vscode-extension/src/webview/PluginsPanel.ts:84,:324` | seletor de arquivo e staging do zip | 2 |
+| `packages/webview-ui/src/webview/sidebar/messages.ts:24` | transporte do catálogo de apps até a sidebar | 2 |
+| `apps/vscode-extension/src/webview/SidebarPrototype.ts:223,:316` | projeção do catálogo, e a porta de rota que hoje barra o id | 2, 3 |
+| `apps/vscode-extension/src/sections/resolveSection.ts:5` | `isSectionId` deriva de `COCKPIT_SECTION_IDS` e rejeita `app:<id>` | 3 |
+| `apps/vscode-extension/src/extension.ts:3548` | o comando `openControl` cai no System quando a seção não resolve | 3 |
+| `apps/vscode-extension/src/plugins/engine.ts:381,:449,:480,:1117` | consumidores de `views` na instalação | 5 |
+| `packages/engine/src/plugins/lockfile.ts:23,:428,:442,:530` | o target `kind: "view"` | 5 |
+| `apps/vscode-extension/src/plugins/ui/host.ts:335` | leitura de `views` | 5 |
+| `apps/vscode-extension/src/webview/PluginsPanel.ts:365,:694` | consentimento e abertura de superfície de plugin | 5 |
+| `apps/vscode-extension/package.json:325,:459` | contribuições `openPluginSurface` e `tachyonPluginSurfaces` | 5 |
 
 **Removido**
 
@@ -64,7 +85,15 @@ Cinco movimentos. Os quatro primeiros são adição pequena; o quinto é subtra�
 
 ## Risks & unknowns
 
-**R1 — o Bridge NÃO roda no extension host, e este é o risco que decide a forma da entrega.**
+**R1 — RESPONDIDO pela revisão adversarial. O Bridge não roda no extension host, e o chamador que existe é `external`.**
+
+Medido: `WorkspaceClient.ts:67-91` expõe operações do engine e `bridgeUrl`, mas **não** `callTool`. Não é preciso inventar protocolo — o engine já expõe `bridge.token` (`extensionOperations.ts:31-44`) e o pacote da extensão já depende do SDK MCP, com um cliente separado em `pi-bridge-extension/index.ts:101`. **Precisa nascer um cliente MCP fino no host principal.**
+
+Esse cliente autentica como `external` (`callerIdentity.ts:318`). Consequência medida: `lifecycleScopeGuard` só escopa agentes (`lifecycleScope.ts:17`), então um token externo alcança `spawn_agent`, `kill_agent`, board, worktree, tmux e browser — inclusive encerrar um agente qualquer, o que `test/unit/auth.test.ts:284` cobre. Doze ferramentas resistem porque exigem `caller.kind === "agent"`; estão nomeadas em `spec.md`, e onze delas têm um agente por sujeito. A décima segunda, `run_host_action`, é a única perda de capacidade real e virou pergunta aberta para o dono.
+
+**Risco residual:** o cliente MCP no host é peça nova e não medida em produção. É a primeira tarefa.
+
+**R1b — o registro histórico do que este plano dizia antes.**
 
 Medido: `packages/bridge/src/Bridge.ts:464` constrói o `McpServer`, e `packages/bridge/src/daemonMain.ts` é um entrypoint com `require.main === module` — o Bridge vive no **daemon do engine**, um processo separado, alcançado pelo `workspaceBridgePort`. O extension host não tem as ferramentas em escopo.
 
@@ -75,7 +104,9 @@ Então `window.tachyon.call()` atravessa três saltos: webview → extension hos
 
 **Resolver R1 é a primeira tarefa, e é medição, não implementação.** Se a resposta for que não existe caminho barato, a spec muda — não o código.
 
-**R2 — contenção de caminho na extração do zip: julgamento do dono, não regra que eu invento.**
+**R2 — DECIDIDO: conter, e dizer no código que é higiene e não barreira.** A revisão apontou (achado 6) que deixar isso em aberto tornava T3 não-determinística: duas implementações conformes ao plano aceitariam zips diferentes. Decisão minha, revertível numa frase pelo dono. O raciocínio original fica abaixo.
+
+
 
 Uma entrada de zip com `../` escreve fora de `.tachyon/apps/<id>/`. Custa poucas linhas conter. Mas o app, uma vez instalado, tem acesso irrestrito ao Bridge e portanto ao disco de qualquer forma — então conter na extração compra arrumação, não proteção. Registro como decisão explícita em vez de resolver sozinho: **conter, e dizer no código que é higiene e não barreira**, é a recomendação. O dono decide.
 

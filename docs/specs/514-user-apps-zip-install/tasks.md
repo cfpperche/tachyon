@@ -4,7 +4,7 @@ _Gerado de `plan.md` em 2026-08-21. De cima para baixo. Se uma tarefa revelar qu
 
 ## Medição primeiro
 
-- [ ] **T0 — resolver R1 antes de escrever qualquer código.** Medir como uma chamada sai da webview e chega numa ferramenta do Bridge, sabendo que o Bridge vive no daemon do engine (`packages/bridge/src/daemonMain.ts`) e não no extension host. Responder no `notes.md`, com caminho e linha: (a) o extension host já tem cliente do workspace bridge, ou o salto precisa nascer? (b) que identidade de chamador um app apresenta, dado que `createMcp` recebe `caller` e o `lifecycleScopeGuard` recusa alvo fora da linhagem? **Se não houver caminho barato, PARE e diga — a spec muda, não o código.**
+- [x] **T0 — R1 respondido pela revisão adversarial `t-535eaa`** (`notes.md`). Não existe `callTool` no `WorkspaceClient`; precisa nascer um cliente MCP fino no host, autenticando como `external`. Doze ferramentas exigem `caller.kind === "agent"` e estão nomeadas em `spec.md`.
 
 ## Implementação
 
@@ -14,7 +14,18 @@ _Gerado de `plan.md` em 2026-08-21. De cima para baixo. Se uma tarefa revelar qu
 - [ ] **T4** — `SectionId` admite `` `app:${string}` ``. Conferir que o invariante de `sectionNav.ts:118` não é atingido, já que app não é renderizado pelo Control.
 - [ ] **T5** — as três tabelas concatenam linhas de runtime: `LAUNCHER_ORDER` vira prefixo fixo das doze; `WEBVIEW_APPS` recebe as linhas de app; `controlSectionIcon` desvia para o ícone-imagem quando o id começa com `app:`. Os `throw` do caminho literal ficam; o caminho de runtime avisa.
 - [ ] **T6** — o ladrilho de app abre a aba pelo `SectionPanelManager` com cardinalidade `dashboard`, servindo o `entry` de `.tachyon/apps/<id>/`.
-- [ ] **T7** — `window.tachyon.call(nome, args)` na página, sobre o caminho que T0 mediu. Sem allowlist. Erro volta para a página e morre lá.
+- [ ] **T7** — cliente MCP fino no host principal, autenticando com o `bridge.token` que `extensionOperations.ts:31` já expõe. Ler `pi-bridge-extension/index.ts:101` antes de escrever: já existe um cliente MCP no pacote, e duas formas de falar com o mesmo Bridge é a divergência que esta spec existe para evitar.
+- [ ] **T7b** — `window.tachyon.call(nome, args)` na página, sobre T7. Sem allowlist. Erro volta para a página e morre lá.
+- [ ] **T7c** — o contrato de identidade escrito onde o autor de app lê: o app é `external`, e estas doze ferramentas não são dele. Vai no `cookbook.md`.
+
+### As portas que a revisão adversarial achou faltando
+
+- [ ] **T14 (achado 2, instalação)** — operação de instalação de app no engine (`runtime-api/extensionOperations.ts`, `engine-service/extensionOperationService.ts`), a mensagem de upload (`webview/plugins/messages.ts:102`) e o seletor de arquivo com staging (`PluginsPanel.ts:84,:324`). Hoje não existe nenhuma dessas; sem elas o usuário não consegue escolher o zip.
+- [ ] **T15 (achado 2, catálogo)** — projeção do catálogo de apps do engine até as DUAS webviews. `sidebar/messages.ts:24` e `SidebarPrototype.ts:223` não transportam catálogo hoje, e `sectionNav.ts:67` monta `CONTROL_SECTION_NAV` estaticamente dentro do bundle, que não lê `.tachyon/apps`. Inclui atualizar depois de instalar ou remover, sem reload.
+- [ ] **T16 (achado 3, rota)** — o clique em `app:<id>` hoje cai no System. `App.tsx:2086` manda tudo por `openControl`; `SidebarPrototype.ts:316` chama `isSectionId`, que deriva de `COCKPIT_SECTION_IDS` (`resolveSection.ts:5`) e falha; `extension.ts:3548` cai no fallback. Precisa da porta de rota dinâmica que entrega o app resolvido ao `SectionPanelManager`.
+- [ ] **T17 (achado 4, persistência)** — `ID_TOKEN` em `launcherOrder.ts:23` admite um dois-pontos. Teste de ida e volta: reordenar com ladrilho de app, recarregar, conferir que a ordem sobreviveu. Sem isso o update otimista de `App.tsx:1674` faz parecer que funcionou.
+- [ ] **T18 (achado 5, remoção completa)** — os consumidores de `views` que T10/T11 não listavam: `plugins/engine.ts:381,:449,:480,:1117`, o target `kind: "view"` em `lockfile.ts:23,:428,:442,:530`, `plugins/ui/host.ts:335`, consentimento em `PluginsPanel.ts:365,:694`, e as contribuições `openPluginSurface` / `tachyonPluginSurfaces` em `package.json:325,:459` com o wiring em `extension.ts:1678,:3418,:4000`. Parar antes disso deixa erro de compilação ou superfície morta com target de lockfile ainda aceito.
+- [ ] **T19** — o relay NÃO é apagado em bloco. A revisão mediu que os modos de protótipo do `srcdoc` têm outros consumidores; só o modo `plugin` sai.
 - [ ] **T8** — ação Adicionar na aba Apps: seletor de arquivo, chamada da instalação, e o que falhou dito na tela.
 - [ ] **T9** — o relay perde a montagem de `srcdoc` e o `connect-src 'none'` no caminho de app.
 - [ ] **T10** — `views` sai de `KNOWN_FIELDS` (`manifest.ts:213`) com erro que nomeia o campo removido e aponta o caminho de app. `VIEW_FLEET_SCOPES` sai.
@@ -32,7 +43,9 @@ _Gerado de `plan.md` em 2026-08-21. De cima para baixo. Se uma tarefa revelar qu
 - [ ] `window.tachyon.call("list_agents", {})` devolve à página o mesmo que a ferramenta devolve a um agente
 - [ ] chamada a ferramenta inexistente volta como erro para a página, sem tela de erro do Tachyon e sem retry
 - [ ] `loadManifest` recusa um `tachyon-plugin.json` com `views`, nomeando o campo
-- [ ] `grep` por `PLUGIN_UI_ACTIONS`, `broker`, `VIEW_FLEET_SCOPES` e o modo `plugin` do `srcdoc` volta zero no código de produção
+- [ ] `grep` por `PLUGIN_UI_ACTIONS`, `broker`, `VIEW_FLEET_SCOPES`, o modo `plugin` do `srcdoc`, o target `kind: "view"` do lockfile e as contribuições `openPluginSurface` / `tachyonPluginSurfaces` volta zero no código de produção
+- [ ] reordenar com ladrilho de app, recarregar a janela, e a ordem sobreviveu (achado 4 — o update otimista mascara a falha)
+- [ ] um app alcança `spawn_agent` e `kill_agent`; as doze ferramentas agent-only recusam com a mensagem que nomeia a razão
 - [ ] a ordem de produto das doze embutidas não mudou, e arrastar continua funcionando com ladrilho de app na grade
 
 **Headless check:** `npm run verify:full:quiet`

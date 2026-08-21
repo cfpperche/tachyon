@@ -73,8 +73,24 @@ O Terrarium deixa de ser plugin-com-view e passa a ser app. O campo `views` sai 
   - **When** a chamada resolve
   - **Then** a página recebe o erro e o Tachyon não mostra tela de erro própria, não repete a chamada e não enfileira nada
 
-- [ ] Nenhuma ferramenta do Bridge é negada a um app por allowlist, categoria ou escopo. Não existe lista de ações permitidas no caminho do app.
+- [ ] Não existe allowlist, categoria ou escopo no caminho do app. Nada é negado a um app por uma lista que o Tachyon mantenha.
 - [ ] A página do app não roda sob `connect-src 'none'` nem sob a montagem de `srcdoc` do spec 349.
+- [ ] Um app alcança `spawn_agent`, `kill_agent`, `list_agents`, as ferramentas de board, worktree, tmux e browser — a superfície que um agente alcança, sem intermediário que filtre.
+
+**As doze ferramentas que um app não alcança, e por quê.** Medido em 2026-08-21: o chamador que o host consegue autenticar é `external`, e doze ferramentas exigem `caller.kind === "agent"` porque o *sujeito* delas é um agente:
+
+| ferramenta | por que exige agente |
+|---|---|
+| `propose_saved_agent`, `cancel_saved_agent_proposal` | a proposta é do agente que a fez |
+| `propose_saved_agent_removal`, `cancel_saved_agent_removal_proposal` | idem |
+| `request_human_approval`, `get_approval_status`, `cancel_human_approval` | aprovação é pedida *por* um agente, para o humano |
+| `flag_for_human`, `clear_human_flag`, `request_human_attention` | a bandeira nomeia quem a levantou |
+| `attach_task_prototype` | o protótipo tem autor |
+| `run_host_action` | `host-action/policy.ts:63` exige principal de agente resolvido |
+
+Isso não é restrição de poder — é o significado da ferramenta. Um app não tem nome de agente para ser sujeito de nenhuma delas. A única perda de capacidade real da lista é `run_host_action`.
+
+- [ ] O contrato de identidade do app está escrito onde alguém que autora um app vai ler, nomeando as doze.
 
 ### O plugin perde a tela
 
@@ -115,7 +131,9 @@ O Terrarium deixa de ser plugin-com-view e passa a ser app. O campo `views` sai 
 
 ## Open questions
 
-Nenhuma aberta para o dono. As seis foram fechadas em 2026-08-21:
+**Aberta — `run_host_action` é a única capacidade que um app perde.** As outras onze da lista acima são ferramentas cujo sujeito é um agente, e um app não é um. Essa é diferente: é rodar algo na máquina, e um app poderia querer. Fechar essa lacuna significa dar ao app uma identidade de agente, o que muda a semântica de identidade do Bridge — trabalho real, não ajuste. Decisão do dono. Se ele disser "fica de fora do MVP", esta pergunta vira um non-goal.
+
+Fechadas em 2026-08-21:
 
 | pergunta | resposta |
 |---|---|
