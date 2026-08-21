@@ -933,7 +933,7 @@ async function deleteConfiguredAgent(
   if (record?.worktree) await removeAgentWorktree(workspace, agent, true);
   await stopAgentSessionForDelete(workspace.manager, agent);
   if (workspace.config?.agents[agent] === undefined) {
-    workspace.manager.dismissTemporary(agent);
+    await workspace.manager.dismissTemporaryScoped(agent);
     await workspace.forgetAgent(agent);
   } else {
     if (workspace.config.agents[agent]?.kind !== "terminal") {

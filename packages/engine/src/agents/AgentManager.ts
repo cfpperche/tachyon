@@ -78,6 +78,14 @@ import { resolveProfileSecretEnvironment } from "../config/agentSecretResolver.j
 // write_input and the notice queue refuse on. A second, private notion of busy here is how the two
 // accounts drift apart.
 import { isEvidencedWorking } from "../prompts/injectFlow.js";
+import {
+  closeTemporaryAgentScope,
+  readTemporaryAgentScopeIdentity,
+  temporaryAgentScopeSupport,
+  temporaryAgentScopeUnitName,
+  wrapTemporaryAgentScopeCommand,
+  type TemporaryAgentScope,
+} from "./temporaryAgentScope.js";
 
 /** A remembered pid is only a hint about WHICH process to measure. Pids are reusable, so existence
  *  alone cannot prove that the process still occupies this checkout. `/proc/<pid>/cwd` re-establishes
@@ -779,6 +787,8 @@ export interface AgentManagerOptions {
   launchReadiness?: LaunchReadinessPort;
   /** Observation window when `launchReadiness` is omitted. Tests pass `0`; production omits it. */
   windowMs?: number;
+  /** Test harnesses do not execute their recorded tmux command; production leaves this enabled. */
+  enableTemporaryProcessScopes?: boolean;
 }
 
 /**
@@ -2553,10 +2563,31 @@ export class AgentManager {
     cwd: string;
     env: Record<string, string>;
     runtime?: string;
-  }): Promise<void> {
+    temporary?: boolean;
+  }): Promise<{ plannedScope?: { unit: string; bootId: string }; unavailableScope?: TemporaryAgentScope }> {
+    let cmd = this.applyAgentMemoryScope(input.agent, input.ownedCmd);
+    let plannedScope: { unit: string; bootId: string } | undefined;
+    let unavailableScope: TemporaryAgentScope | undefined;
+    if (input.temporary) {
+      const executesHostCommand = this.opts.enableTemporaryProcessScopes ?? process.env.VITEST === undefined;
+      const support = executesHostCommand
+        ? await temporaryAgentScopeSupport()
+        : { ok: false as const, reason: "the session launcher cannot attest host process-scope execution" };
+      if (support.ok) {
+        const unit = temporaryAgentScopeUnitName(this.opts.wsHash, input.agent);
+        const memoryMax = parseAgentMemoryMax(this.opts.getConfig()?.settings.agentMemoryMax);
+        cmd = wrapTemporaryAgentScopeCommand(unit, input.ownedCmd, memoryMax);
+        plannedScope = { unit, bootId: support.bootId };
+      } else {
+        unavailableScope = { capability: "unavailable", reason: support.reason };
+        if (executesHostCommand) {
+          this.opts.notify?.(`temporary agent '${input.agent}' started without a process scope: ${support.reason}`, "warn");
+        }
+      }
+    }
     const create = () => this.opts.tmux.newSession({
       name: input.session,
-      cmd: this.applyAgentMemoryScope(input.agent, input.ownedCmd),
+      cmd,
       cwd: input.cwd,
       // t-fab832 — every session this build starts carries proof of which build started it.
       // t-e73e54 — the claim that used to sit here, that this was "the one door that creates an agent
@@ -2569,6 +2600,7 @@ export class AgentManager {
     });
     if (input.runtime === "pi") await this.withPiAdmission(input.agent, create);
     else await create();
+    return { plannedScope, unavailableScope };
   }
 
   private async spawnCore(name: string, opts?: SpawnOptions): Promise<void> {
@@ -2662,6 +2694,7 @@ export class AgentManager {
     // that the replacement brief could not be composed.
     const projectGuidance = this.projectGuidanceFor(def);
     const temporary = !!opts?.cmd;
+    const scopedTemporaryAgent = temporary && def.kind === "agent";
     // t-d542ac — runtime lineage belongs to this instance, independent of whether its definition is
     // Saved or Temporary. `declaredOwner` remains separate profile metadata and is never inferred
     // into this edge; only the explicit spawn parent can create it.
@@ -2701,7 +2734,7 @@ export class AgentManager {
         def,
         parent,
         delegator,
-        temporary,
+        temporary: scopedTemporaryAgent,
         isRestart: false,
         ...(def.cwd ? { declaredCwd: cwd } : {}),
       });
@@ -2995,12 +3028,14 @@ export class AgentManager {
         );
       }
     }
+    let processScopeLaunch: { plannedScope?: { unit: string; bootId: string }; unavailableScope?: TemporaryAgentScope } | undefined;
     try {
       // spec 236 Bridge + 243 ownership hook and t-0d0152 memory scope live in createOwnedSession.
-      await this.createOwnedSession({
+      processScopeLaunch = await this.createOwnedSession({
         agent: name, session, ownedCmd: ownedSpawnCmd, cwd,
         env: { ...spawnBuild.env, ...spawnBridge.env },
         runtime: adapter?.runtime,
+        temporary,
       });
     } catch (error) {
       // A same-named pane observed after newSession fails is ambiguous: it may belong to a
@@ -3058,6 +3093,19 @@ export class AgentManager {
       throw error;
     }
 
+    let processScope = processScopeLaunch!.unavailableScope;
+    if (processScopeLaunch!.plannedScope) {
+      try {
+        processScope = await readTemporaryAgentScopeIdentity(
+          processScopeLaunch!.plannedScope.unit,
+          processScopeLaunch!.plannedScope.bootId,
+        );
+      } catch (error) {
+        try { await this.opts.tmux.killSession(session); } catch { /* preserve the identity failure */ }
+        throw new Error(`agent '${name}' process scope identity could not be pinned; launch was stopped`, { cause: error });
+      }
+    }
+
     // Persist ONLY after a successful spawn (spec 211: no phantom rows). Record a
     // `def` for every Temporary agent (drives restart, incl. non-AI `sh`);
     // a `resume` block only for adapter-backed runtimes.
@@ -3090,6 +3138,7 @@ export class AgentManager {
       def: defBlock,
       resume: resumeBlock,
       worktree,
+      ...(processScope ? { processScope } : {}),
       cwd,
       // SDD 482 phase 2 — DECLARED here, from what this call was asked to do: `temporary` is set by the
       // caller supplying a command (or an explicitly ephemeral Delivery execution), never derived
@@ -3640,6 +3689,7 @@ export class AgentManager {
     await this.refreshOwnership(name); // A3: capture an in-TUI /resume before the session ends
     await this.detachPaneTranscript(session);
     await this.opts.tmux.killSession(session);
+    await this.closeTemporaryProcessScope(name);
     // Readiness belongs to the process instance, not to the durable Saved Agent.
     // Keeping either marker after the tmux session is gone makes a stopped agent
     // fail the canonical Forget precondition forever.
@@ -4247,10 +4297,15 @@ export class AgentManager {
    * explicit user "dismiss" for a stopped row, or a one-shot whose pane vanished
    * before list() observed its exit.) Idempotent.
    */
-  dismissTemporary(name: string): void {
+  async dismissTemporaryScoped(name: string): Promise<void> {
     // t-ba0d68 — a stopped Temporary with no worktree never enters removeAgentWorktree.
     // Fire-and-forget: this method is sync; the worktree door awaits the same helper.
-    void closeAgentToolSessions({ agent: name, workspaceRoot: this.opts.workspaceRoot });
+    await closeAgentToolSessions({ agent: name, workspaceRoot: this.opts.workspaceRoot });
+    await this.closeTemporaryProcessScope(name);
+    this.dismissTemporary(name);
+  }
+
+  dismissTemporary(name: string): void {
     this.forgetTemporary(name); // in-memory def + lineage
     // pin p-4dadd3 (a): dismiss is the TRUE end-of-life for a Temporary one-shot — the clean-exit dead pane
     // (remain-on-exit) keeps offering "Activity" in postmortem until the user dismisses it, so the durable
@@ -4263,6 +4318,12 @@ export class AgentManager {
     this.removeEphemeralFootprint(name); // durable: ledger row + activity log (spec 247)
     this.opts.revokeAgentToken?.(name); // spec 351 — idempotent if kill() already revoked it
     this.opts.onKilled?.(name); // Bridge dismiss needs the same sidebar refresh path as UI dismiss.
+  }
+
+  async closeTemporaryProcessScope(name: string): Promise<void> {
+    const scope = this.opts.ledger?.get(name)?.processScope;
+    if (!scope) return;
+    await closeTemporaryAgentScope(scope);
   }
 
   /**
@@ -4350,7 +4411,34 @@ export class AgentManager {
     onReplacementAttempt?: () => void;
   }): Promise<"respawned" | "created"> {
     const agentName = agentFromSession(this.opts.wsHash, opts.session) ?? opts.session;
-    const cmd = this.applyAgentMemoryScope(agentName, opts.cmd);
+    const record = this.opts.ledger?.get(agentName);
+    const temporary = !!record && isTemporaryInstance(record) && record.def?.kind === "agent";
+    let cmd = this.applyAgentMemoryScope(agentName, opts.cmd);
+    let scopeLaunch: { plannedScope?: { unit: string; bootId: string }; unavailableScope?: TemporaryAgentScope } | undefined;
+    if (temporary) {
+      await this.closeTemporaryProcessScope(agentName);
+      const executesHostCommand = this.opts.enableTemporaryProcessScopes ?? process.env.VITEST === undefined;
+      const support = executesHostCommand
+        ? await temporaryAgentScopeSupport()
+        : { ok: false as const, reason: "the session launcher cannot attest host process-scope execution" };
+      if (support.ok) {
+        const unit = temporaryAgentScopeUnitName(this.opts.wsHash, agentName);
+        cmd = wrapTemporaryAgentScopeCommand(unit, opts.cmd, parseAgentMemoryMax(this.opts.getConfig()?.settings.agentMemoryMax));
+        scopeLaunch = { plannedScope: { unit, bootId: support.bootId } };
+      } else {
+        scopeLaunch = { unavailableScope: { capability: "unavailable", reason: support.reason } };
+        if (executesHostCommand) this.opts.notify?.(`temporary agent '${agentName}' restarted without a process scope: ${support.reason}`, "warn");
+      }
+    }
+    const persistScope = async (): Promise<void> => {
+      if (!scopeLaunch || !this.opts.ledger) return;
+      let processScope = scopeLaunch.unavailableScope;
+      if (scopeLaunch.plannedScope) {
+        processScope = await readTemporaryAgentScopeIdentity(scopeLaunch.plannedScope.unit, scopeLaunch.plannedScope.bootId);
+      }
+      const current = this.opts.ledger.get(agentName);
+      if (current && processScope) this.opts.ledger.record(agentName, { ...current, processScope });
+    };
     const { session, cwd } = opts;
     // t-e73e54 — restart/resume lands here, and it creates real agent sessions: a respawned pane and
     // both `newSession` branches below. Attesting once at the top covers all three; doing it at each
@@ -4362,6 +4450,7 @@ export class AgentManager {
         opts.onReplacementAttempt?.();
         await this.opts.tmux.respawnPane({ target: session, cmd, cwd, env });
         await this.attachPaneTranscript(session);
+        await persistScope();
         return "respawned";
       } catch (respawnError) {
         opts.onBeforeKillNew?.();
@@ -4388,12 +4477,14 @@ export class AgentManager {
         opts.onReplacementAttempt?.();
         await this.opts.tmux.newSession({ name: session, cmd, cwd, env });
         await this.attachPaneTranscript(session);
+        await persistScope();
         return "created";
       }
     }
     opts.onReplacementAttempt?.();
     await this.opts.tmux.newSession({ name: session, cmd, cwd, env });
     await this.attachPaneTranscript(session);
+    await persistScope();
     return "created";
   }
 
@@ -5424,6 +5515,7 @@ export class AgentManager {
         : {}),
     };
     const persistedForkEnv = persistedForkEnvironment(src.env, src.environment);
+    let forkProcessScope: TemporaryAgentScope | undefined;
     const forkRecord = () => ({
       def: {
         cmd: src.baseCmd,
@@ -5440,6 +5532,7 @@ export class AgentManager {
       },
       resume: this.withConfigHome(forkName, forkDefinition, { runtime: src.runtime, sessionId: forkSessionId }),
       ...(worktree ? { worktree } : {}),
+      ...(forkProcessScope ? { processScope: forkProcessScope } : {}),
       cwd,
       // SDD 482 phase 2 — the case that justifies TWO fields rather than one enum. A fork has no
       // durable Profile, so its `lifetime` is `temporary`; but it owns a resume block and can be
@@ -5543,7 +5636,7 @@ export class AgentManager {
         throw new ForkUnavailableError(source, "Pi Bridge tools could not be materialized for the fork");
       }
       sessionAttempted = true;
-      await this.createOwnedSession({
+      const forkScopeLaunch = await this.createOwnedSession({
         agent: forkName,
         session,
         ownedCmd: this.withSessionOwnership(forkName, forkDefinition, forkBridge.cmd, {
@@ -5557,11 +5650,19 @@ export class AgentManager {
         cwd,
         env: { ...forkBuild.env, ...forkBridge.env },
         runtime: src.runtime,
+        temporary: true,
       });
       spawnedSession = session;
       // The catch below owns session teardown. Readiness rejection deliberately leaves the Git-locked
       // checkout as recovery state because the runtime may already have written ignored or tracked work.
       await this.observeLaunchReadiness(forkName, src.baseCmd, session);
+      forkProcessScope = forkScopeLaunch.unavailableScope;
+      if (forkScopeLaunch.plannedScope) {
+        forkProcessScope = await readTemporaryAgentScopeIdentity(
+          forkScopeLaunch.plannedScope.unit,
+          forkScopeLaunch.plannedScope.bootId,
+        );
+      }
 
       // Persistent SIBLING row: base cmd (a later resume uses the normal named path, never re-forks),
       // resume keyed to the fork's OWN name (captured → uuid by spec 220), NO parent lineage, fork:true.

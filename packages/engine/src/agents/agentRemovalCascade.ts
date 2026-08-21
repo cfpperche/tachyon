@@ -68,6 +68,7 @@ export interface AgentWorktreeRemovalPorts {
     liveDescendants(agent: string): Promise<string[]>;
     probeAgentOccupancy(agent: string): Promise<AgentOccupancyVerdict>;
     kill(agent: string): Promise<unknown>;
+    closeTemporaryProcessScope?(agent: string): Promise<void>;
     releaseOwnedWorktreeForRemoval(agent: string, worktreePath: string): Promise<void>;
   };
   ledger: {
@@ -204,6 +205,7 @@ export async function removeAgentWorktree(
       );
     }
   }
+  await ports.manager.closeTemporaryProcessScope?.(agent);
   await ports.manager.releaseOwnedWorktreeForRemoval(agent, record.path);
   // t-ba0d68 — close tool sessions THIS agent opened, through the tool's own port, before the
   // checkout is deleted. Chrome's cwd is the worktree; closing after unlink leaves daemons in a

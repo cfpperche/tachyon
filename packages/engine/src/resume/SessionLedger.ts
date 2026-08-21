@@ -260,19 +260,20 @@ function normalize(r: unknown): SessionRecord | null {
   const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : new Date(0).toISOString();
 
   // New (211) shape: a def and/or resume object (+ spec 210 worktree + spec 364 bridgeClient).
-  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.lifecycle !== undefined) {
+  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.lifecycle !== undefined || o.processScope !== undefined) {
     const def = parseDef(o.def);
     const resume = parseResume(o.resume);
     const worktree = parseWorktree(o.worktree);
     const bridgeClient = parseBridgeClient(o.bridgeClient);
     const lifecycle = parseLifecycle(o.lifecycle);
     const instance = parseInstancePolicy(o.instance);
+    const processScope = parseTemporaryAgentScope(o.processScope);
     if (!def && !resume && !worktree && !bridgeClient) return null;
     // t-04052d — a row whose `instance` did not parse is KEPT, not dropped. Dropping it would delete
     // the very evidence the activation gate refuses on, turning its ledger check into a no-op and
     // discarding a pre-cut operator's rows without telling them. It survives here and is refused
     // there; no reader can get a policy answer out of it in the meantime.
-    return { def, resume, worktree, bridgeClient, lifecycle, instance, cwd: o.cwd, updatedAt };
+    return { def, resume, worktree, bridgeClient, lifecycle, instance, processScope, cwd: o.cwd, updatedAt };
   }
 
   // SDD 478 M4 — the pre-211 flat record (`{runtime, sessionId, cwd, cmd, declared}`) predates the
@@ -281,6 +282,23 @@ function normalize(r: unknown): SessionRecord | null {
   // written. Such a record is refused rather than guessed, which drops a shape that has not been
   // written since spec 211.
   return null;
+}
+
+function parseTemporaryAgentScope(value: unknown): SessionRecord["processScope"] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const o = value as Record<string, unknown>;
+  if (o.capability === "unavailable" && typeof o.reason === "string") {
+    return { capability: "unavailable", reason: o.reason };
+  }
+  if (
+    o.capability === "available"
+    && typeof o.unit === "string"
+    && typeof o.invocationId === "string"
+    && typeof o.bootId === "string"
+  ) {
+    return { capability: "available", unit: o.unit, invocationId: o.invocationId, bootId: o.bootId };
+  }
+  return undefined;
 }
 
 function parseLifecycle(value: unknown): SessionLifecycle | undefined {

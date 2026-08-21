@@ -11,6 +11,7 @@ import type { EntryKind } from "@tachyon/shared/config/entry.js";
 import type { WorktreeRecord } from "../worktree/worktreeRecord.js";
 import type { SpawnContract } from "../agents/spawnContract.js";
 import type { AgentSecretEnvironment } from "../config/loadConfig.js";
+import type { TemporaryAgentScope } from "../agents/temporaryAgentScope.js";
 
 /** How to reconstruct/restart a Temporary instance's definition after a host restart. */
 export interface SessionDef {
@@ -135,6 +136,8 @@ export interface SessionRecord {
   resume?: SessionResume;
   /** spec 210 — the agent's git worktree (path/branch/ownership/baseRef); cleanup + C2 read this, never recompute from drifted config. */
   worktree?: WorktreeRecord;
+  /** Durable systemd-user identity for the process scope containing this Temporary instance. */
+  processScope?: TemporaryAgentScope;
   /** absolute cwd the agent ran in — resume respawns here, transcript resolves here. */
   cwd: string;
   /*
