@@ -1990,60 +1990,6 @@
     ]
   },
   {
-    "view": "design-mode",
-    "fixture": "gate-off",
-    "url": "/scripts/webview-preview/index.html?view=design-mode&fixture=gate-off",
-    "frame": {
-      "w": 880,
-      "h": 520
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Design Mode",
-    "aliases": [
-      "design mode",
-      "integrated browser",
-      "inspect"
-    ]
-  },
-  {
-    "view": "design-mode",
-    "fixture": "disarmed",
-    "url": "/scripts/webview-preview/index.html?view=design-mode&fixture=disarmed",
-    "frame": {
-      "w": 880,
-      "h": 520
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Design Mode",
-    "aliases": [
-      "design mode",
-      "integrated browser",
-      "inspect"
-    ]
-  },
-  {
-    "view": "design-mode",
-    "fixture": "armed",
-    "url": "/scripts/webview-preview/index.html?view=design-mode&fixture=armed",
-    "frame": {
-      "w": 880,
-      "h": 520
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Design Mode",
-    "aliases": [
-      "design mode",
-      "integrated browser",
-      "inspect"
-    ]
-  },
-  {
     "view": "onboarding",
     "fixture": "fresh",
     "url": "/scripts/webview-preview/index.html?view=onboarding&fixture=fresh",
@@ -2139,6 +2085,18 @@
     "view": "settings",
     "fixture": "needs-workspace",
     "url": "/scripts/webview-preview/index.html?view=settings&fixture=needs-workspace",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "settings",
+    "fixture": "ide-browser-focus",
+    "url": "/scripts/webview-preview/index.html?view=settings&fixture=ide-browser-focus",
     "frame": {
       "w": 880,
       "h": 900

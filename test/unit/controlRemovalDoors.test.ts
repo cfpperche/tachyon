@@ -42,7 +42,7 @@ describe("SDD 485 E1 — every former Control door opens an app directly", () =>
   });
 
   it("tachyon.openControl resolves every section without falling through to Control", () => {
-    const block = blockFrom('registerCommand("tachyon.openControl"', 4_000);
+    const block = blockFrom('registerCommand("tachyon.openControl"', 5_000);
     for (const opener of [
       "openBoard", "tmuxPanels.open", "openPluginsTab", "runtimeOpsPanels.open",
       "openHumanInboxTab", "openWorktreesTab",
@@ -64,7 +64,7 @@ describe("SDD 485 E1 — every former Control door opens an app directly", () =>
   });
 
   it("tachyon.openControl with no section defaults to System", () => {
-    const block = blockFrom('registerCommand("tachyon.openControl"', 4_000);
+    const block = blockFrom('registerCommand("tachyon.openControl"', 5_000);
     expect(block).toMatch(/openSystemTab\(\);\n\s*return Promise\.resolve\(\);\n\s*}\),/);
   });
 

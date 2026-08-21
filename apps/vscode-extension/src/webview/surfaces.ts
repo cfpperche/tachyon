@@ -228,7 +228,6 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   { viewId: "tachyonHandoff", view: "handoff", hostFile: "apps/vscode-extension/src/webview/HandoffPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonWorktrees", view: "worktrees", hostFile: "apps/vscode-extension/src/webview/WorktreesPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonKeys", view: "keys", hostFile: "apps/vscode-extension/src/webview/KeysPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
-  { viewId: "tachyonDesignModeApp", view: "design-mode", hostFile: "apps/vscode-extension/src/webview/DesignModePanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // t-505f13 — the Onboarding app: environment checklist + workspace bootstrap, opened from the
   // sidebar's unconfigured state (and the palette) rather than a launcher tile. `conform`: it mounts
   // through the shared shell (SectionPanelManager), links design-system.css, and onboarding.css

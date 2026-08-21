@@ -1,6 +1,6 @@
 /**
- * IDE Integrated Browser bridge — palette commands and the live state consumed by the Design Mode
- * launcher app and System. The former status-bar controls were removed by t-53f20d.
+ * IDE Integrated Browser bridge — palette commands and live state consumed by the Design Mode
+ * launcher action and System. The former status-bar controls were removed by t-53f20d.
  *
  * SDD 488 F4 — settings.ideBrowser.enabled gates this human surface (and call-time on the
  * engine). Tools stay always-registered when ideBrowserRequest is wired (t-3cab05).

@@ -37,10 +37,10 @@ _Generated from `plan.md` on 2026-08-17. Work top-to-bottom. Check boxes as task
 
 **Fatia 4 — substituída por t-53f20d (decisão do dono, 2026-08-20).**
 
-- [x] Os dois `StatusBarItem` saem da status bar nativa. Os controles permanecem juntos no app
-      Design Mode do launcher (Open/Reveal, Arm/Disarm e estado ON); URL e CDP aparecem no System.
-      Nada vai para o rodapé: `StatusNoticeFooter` continua exclusivo para avisos e continua sem
-      renderizar quando não há aviso.
+- [x] Os dois `StatusBarItem` saem da status bar nativa. O ladrilho Design Mode vira ação: gate off
+      abre Settings com o campo destacado; gate on arma e abre o browser; fechar o browser desarma.
+      URL e CDP aparecem no System. Nada vai para o rodapé: `StatusNoticeFooter` continua exclusivo
+      para avisos e continua sem renderizar quando não há aviso.
 
 ## Verification
 
@@ -75,8 +75,8 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 3. Esperar mais de oito segundos: ela continua
 4. Trocar de aba: ela continua
 5. **Fechar a sidebar, provocar um `error`, reabrir**: ele está lá
-6. Conferir que os dois ícones do IDE Browser saíram da status bar nativa; t-53f20d verifica os
-   controles substitutos no app Design Mode e URL/CDP no System. O rodapé não recebe esses controles.
+6. Conferir que os dois ícones do IDE Browser saíram da status bar nativa; t-53f20d verifica a ação
+   Design Mode do launcher e URL/CDP no System. O rodapé não recebe esses controles.
 
 ## Visual QA
 

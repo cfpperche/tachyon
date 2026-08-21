@@ -52,7 +52,6 @@ import { sectionAppFixtureFixtures, sectionAppFixtureMakeMessage } from "./fixtu
 import { reviewFixtures } from "./fixtures/review";
 import { reviewMessage } from "@tachyon/webview-ui/webview/review/messages";
 import { modelMessage as keysModelMessage } from "@tachyon/webview-ui/webview/keys/messages";
-import { modelMessage as designModeModelMessage } from "@tachyon/webview-ui/webview/design-mode/messages";
 import { keysFixtures } from "./fixtures/keys";
 import { modelMessage as onboardingModelMessage } from "@tachyon/webview-ui/webview/onboarding/messages";
 import { onboardingFixtures } from "./fixtures/onboarding";
@@ -424,26 +423,6 @@ export const ROUTES: Record<string, Route> = {
     module: true,
     makeMessage: (vm) => keysModelMessage(vm as never),
   },
-  "design-mode": {
-    bundle: "/dist/webview/design-mode.js",
-    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/design-mode.css"],
-    frame: { w: 880, h: 520 },
-    fixtures: {
-      "gate-off": { provenance: "synthetic-edge", vm: { enabled: false, running: false, cdp: "disconnected", url: "", designModeOn: false } },
-      disarmed: { provenance: "synthetic-edge", vm: { enabled: true, running: true, cdp: "connected", url: "http://127.0.0.1:5173", designModeOn: false } },
-      armed: { provenance: "synthetic-edge", vm: { enabled: true, running: true, cdp: "connected", url: "http://127.0.0.1:5173", designModeOn: true } },
-    },
-    module: true,
-    globals: { __TACHYON_DESIGN_MODE_STRINGS__: {
-      title: "Design Mode", hint: "Controls for the Integrated Browser overlay.", off: "OFF",
-      disabledTitle: "Integrated Browser is disabled", disabledBody: "Enable it in Settings before opening or arming Design Mode.",
-      openSettings: "Open Settings", armed: "Armed", disarmed: "Disarmed", on: "ON",
-      armedBody: "Picker, viewport tools, and annotations are active in the browser page. Navigations re-inject the overlay.",
-      disarmedBody: "Arm the overlay, then work in the Integrated Browser page.", revealBrowser: "Reveal browser",
-      openBrowser: "Open browser", disarm: "Disarm", arm: "Arm Design Mode",
-    } },
-    makeMessage: (vm) => designModeModelMessage(vm as never),
-  },
   // t-505f13 — Onboarding: environment checklist + bootstrap. Same sheet set as keys (the app's own
   // panel links these, IN ORDER — the harness must not invent a second list).
   onboarding: {
@@ -461,10 +440,14 @@ export const ROUTES: Record<string, Route> = {
     fixtures: {
       default: cockpitFixtures.settings,
       "needs-workspace": cockpitFixtures["settings-needs-workspace"],
+      "ide-browser-focus": {
+        provenance: "synthetic-edge",
+        vm: { ...(cockpitFixtures.settings.vm as object), __ideBrowserFocus: true },
+      },
     },
     module: true,
     globals: { __TACHYON_STRINGS__: cockpitStrings },
-    makeMessage: (vm) => settingsModelMessage(vm as never),
+    makeMessage: (vm) => settingsModelMessage(vm as never, (vm as { __ideBrowserFocus?: boolean }).__ideBrowserFocus ? 1 : undefined),
   },
   companion: {
     bundle: "/dist/webview/companion.js",
@@ -564,7 +547,6 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   system: { title: "System", aliases: ["system", "overview", "engine", "bridge", "control plane", "health"] },
   worktrees: { title: "Worktrees", aliases: ["worktrees", "managed worktrees", "checkout hygiene"] },
   keys: { title: "Keys", aliases: ["keys", "machine keys", "credentials", "secrets"] },
-  "design-mode": { title: "Design Mode", aliases: ["design mode", "integrated browser", "inspect"] },
   onboarding: { title: "Onboarding", aliases: ["onboarding", "setup", "first run", "environment check", "initialize workspace"] },
   companion: { title: "Companion", aliases: ["companion", "pairing", "trusted devices"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },

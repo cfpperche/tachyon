@@ -27,11 +27,18 @@ export interface SettingsDeps {
  * first-workspace fallback meant "pick a project", not "aggregate projects". */
 export class SettingsPanelManager {
   private readonly manager: SectionPanelManager<RefreshKind>;
+  private focusNonce = 0;
+  private readonly ideBrowserFocusByProject = new Map<string, number>();
   constructor(extensionUri: vscode.Uri, private readonly deps: SettingsDeps,
     app: WebviewAppEntry = webviewApp("settings"), scope?: ControlWorkspaceScope) {
     this.manager = new SectionPanelManager(extensionUri, this.configFor(app), scope);
   }
   open(project: string): void { this.manager.open({ project }); }
+  openIdeBrowser(project: string): void {
+    this.ideBrowserFocusByProject.set(project, ++this.focusNonce);
+    this.manager.open({ project });
+    this.manager.refresh("settings");
+  }
   get openKeys(): string[] { return this.manager.openKeys; }
   openInCurrentScope(): boolean { return this.manager.openInCurrentScope(); }
   refresh(): void { this.manager.refresh("settings"); }
@@ -61,7 +68,7 @@ export class SettingsPanelManager {
     session.post(settingsModelMessage(buildSectionsModel(bundles, {
       section: "settings", wsHash: project,
       globalSettings: globalSettingsState(),
-    })));
+    }), this.ideBrowserFocusByProject.get(project)));
   }
 
   private async action(session: SectionPanelSession<RefreshKind>, raw: unknown): Promise<void> {

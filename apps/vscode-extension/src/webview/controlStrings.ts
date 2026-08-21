@@ -101,9 +101,9 @@ export function cockpitStrings(): CockpitStrings {
     companionAllowedHostsPlaceholder: t("example.com\n*.herokuapp.com"),
     // SDD 488 F4 — Integrated Browser GA gate (human surface + call-time; tools stay listed).
     ideBrowserTitle: t("Integrated Browser"),
-    ideBrowserHint: t("VS Code editor browser and Design Mode. Opt in before the launcher controls become available."),
+    ideBrowserHint: t("VS Code editor browser and Design Mode. This gate controls the launcher action."),
     ideBrowserBody: t(
-      "When enabled, the Design Mode launcher app can open the browser and arm its overlay. Agents always see ide_browser_* tools; calls fail until you enable this and open the bridge.",
+      "When enabled, the Design Mode launcher tile arms the overlay and opens the browser. Closing the browser disarms it. Agents always see ide_browser_* tools; calls fail until you enable this and open the bridge.",
     ),
     ideBrowserEnabled: t("Enable Integrated Browser"),
     ideBrowserEnabledHelp: t("Writes settings.ideBrowser.enabled in tachyon.yml. Does not remove tools from the Bridge catalog."),

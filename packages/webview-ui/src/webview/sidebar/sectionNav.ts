@@ -80,7 +80,9 @@ const LAUNCHER_ORDER: readonly SectionId[] = [
 ];
 
 /** the ids whose tile opens a standalone app instead of navigating Control (SDD 485). */
-const STANDALONE_APPS = new Set<SectionId>(LAUNCHER_ORDER);
+// t-53f20d owner dogfood: Design Mode is the one launcher ACTION. The host either opens the
+// highlighted Settings gate or arms the overlay and opens the browser; no editor app exists.
+const STANDALONE_APPS = new Set<SectionId>(LAUNCHER_ORDER.filter((id) => id !== "design-mode"));
 
 /** Top-level launcher entries in product order — the launcher grid's sole catalog. */
 export const CONTROL_SECTION_NAV: readonly ControlSectionNav[] = LAUNCHER_ORDER.map((id) => {

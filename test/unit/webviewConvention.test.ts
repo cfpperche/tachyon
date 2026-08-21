@@ -120,7 +120,6 @@ describe("webview convention (spec 279)", () => {
       tachyonRuntimeConfig: "RUNTIME_CONFIG_VIEW_TYPE",
       tachyonSettings: "SETTINGS_VIEW_TYPE",
       tachyonKeys: "KEYS_VIEW_TYPE",
-      tachyonDesignModeApp: "DESIGN_MODE_VIEW_TYPE",
       tachyonOnboarding: "ONBOARDING_VIEW_TYPE",
       tachyonCompanion: "COMPANION_VIEW_TYPE",
     };

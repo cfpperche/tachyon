@@ -46,8 +46,9 @@ porque o estado vive no engine, e sobrevive ao reload porque a projeção é rem
 - **Fatia 4 substituída por t-53f20d (decisão do dono, 2026-08-20).** Os dois ícones não vão para o
   rodapé. `StatusNoticeFooter` não renderiza nada sem aviso para preservar a altura da lista; controles
   permanentes quebrariam essa guarda, e controles condicionados a um aviso apareceriam e sumiriam.
-  Open/Reveal e Arm/Disarm, mais o estado ON, vivem juntos no app Design Mode do launcher. URL e CDP
-  vivem no System. O rodapé continua sendo uma superfície de mensagem, não uma toolbar.
+  O dogfood do dono substituiu o app por uma ação do ladrilho: gate desligado abre e destaca Settings;
+  gate ligado arma e abre o browser; fechar o browser desarma. URL e CDP vivem no System. O rodapé
+  continua sendo uma superfície de mensagem, não uma toolbar.
 
 - **Nada de centro de notificações** — o rodapé mostra a atual e o histórico recente. O Human Inbox já
   é o lugar do que exige ação. Rejeitado *fila com badge de não lidos*: máquina é último recurso, e o
@@ -75,7 +76,7 @@ porque o estado vive no engine, e sobrevive ao reload porque a projeção é rem
 
 **Fatia 4 substituída (não pertence a esta implementação):**
 
-- t-53f20d remove os dois `StatusBarItem`; a afordância passa para o app Design Mode do launcher,
+- t-53f20d remove os dois `StatusBarItem`; a afordância passa para a ação Design Mode do launcher,
   enquanto URL e CDP passam para o System. Nenhum controle do IDE Browser entra no rodapé.
 
 ## Risks & unknowns
