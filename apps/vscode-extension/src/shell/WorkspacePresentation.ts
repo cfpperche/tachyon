@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import type { GitExec } from "@tachyon/engine/worktree/WorktreeManager.js";
 import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
@@ -18,6 +19,24 @@ export interface WorkspacePresentationTarget {
 
 export interface WorkspaceGitPresentationTarget extends WorkspacePresentationTarget {
   gitExec: GitExec;
+}
+
+/** t-b1940c — what a plugin-removal revocation DID, per agent; mirrors the engine's report shape.
+ *  `running` is optional only so an older decode cannot turn its absence into a false "restart not needed". */
+export interface PluginGrantsRevocationV1 {
+  schemaVersion: 1;
+  revoked: Array<{ agent: string; referenceId: string; deselected: boolean; running?: boolean }>;
+  errors: Array<{ agent: string; referenceId: string; error: string }>;
+}
+
+/**
+ * t-b1940c — the Plugins panel's target: everything its fs-side engine needs, plus the ONE profile
+ * mutation a remove drags with it. Revoking a grant crosses into the persistent engine because that
+ * is where the vault and the canonical transaction live — the editor composes the message, it does
+ * not write profiles.
+ */
+export interface WorkspacePluginProfileTarget extends WorkspaceGitPresentationTarget {
+  revokePluginGrants(pluginName: string): Promise<PluginGrantsRevocationV1>;
 }
 
 export interface WorkspaceProbePresentationTarget extends WorkspacePresentationTarget {
@@ -113,6 +132,35 @@ export function workspaceGitPresentationTarget(
   gitExec: GitExec,
 ): WorkspaceGitPresentationTarget {
   return { ...workspacePresentationTarget(client), gitExec };
+}
+
+/** t-b1940c — the Plugins panel's handle: git presentation plus the revoke-on-remove door. */
+export function workspacePluginProfileTarget(
+  client: WorkspaceClient,
+  gitExec: GitExec,
+): WorkspacePluginProfileTarget {
+  return {
+    ...workspaceGitPresentationTarget(client, gitExec),
+    revokePluginGrants: async (pluginName) => {
+      const result = await client.invoke(`revoke-plugin-grants:${randomUUID()}`, {
+        schemaVersion: 1,
+        method: "extension.invoke",
+        input: { action: "agent-profile.revoke-plugin-grants", pluginName },
+      });
+      if (result.status === "error") throw new Error(result.message);
+      if (result.method !== "extension.invoke" || result.action !== "agent-profile.revoke-plugin-grants") {
+        throw new Error("persistent engine returned a malformed plugin grant revocation result");
+      }
+      const value = result.value as Partial<PluginGrantsRevocationV1> | undefined;
+      // Same permissive-then-strict decode as the Studio's plugin door: the panel reads these lists
+      // by name to say who lost what, so a malformed payload must fail LOUDLY, not read as "nobody
+      // held a grant".
+      if (value?.schemaVersion !== 1 || !Array.isArray(value.revoked) || !Array.isArray(value.errors)) {
+        throw new Error("persistent engine returned a malformed plugin grant revocation result");
+      }
+      return value as PluginGrantsRevocationV1;
+    },
+  };
 }
 
 export function workspaceProbePresentationTarget(client: WorkspaceClient): WorkspaceProbePresentationTarget {

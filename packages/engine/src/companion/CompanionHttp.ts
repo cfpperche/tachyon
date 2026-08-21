@@ -17,6 +17,7 @@ import {
   type SendPromptRequest,
 } from "./protocol.js";
 import { isCompanionAppPath, serveCompanionMobileApp } from "./mobileAppStatic.js";
+import { HTTP_BODY_LIMIT_LARGE_BYTES, readBody } from "../utils/readBody.js";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -53,24 +54,6 @@ function bearer(req: http.IncomingMessage): string | undefined {
   const auth = req.headers.authorization;
   if (!auth?.startsWith("Bearer ")) return undefined;
   return auth.slice(7).trim() || undefined;
-}
-
-function readBody(req: http.IncomingMessage, limit = 64 * 1024): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    req.on("data", (c: Buffer) => {
-      size += c.length;
-      if (size > limit) {
-        reject(new Error("body too large"));
-        req.destroy();
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
-  });
 }
 
 /**
@@ -311,7 +294,7 @@ export async function handleCompanionHttp(
       let body: CompanionTabResult;
       try {
         // Screenshots (jpeg data URLs) need a larger cap than text outlines.
-        body = JSON.parse((await readBody(req, 8 * 1024 * 1024)) || "{}") as CompanionTabResult;
+        body = JSON.parse((await readBody(req, HTTP_BODY_LIMIT_LARGE_BYTES)) || "{}") as CompanionTabResult;
       } catch {
         json(res, 400, { ok: false, code: "unknown", message: "Invalid JSON body." });
         return true;

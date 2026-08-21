@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { handleCompanionHttp, isCompanionPath, type CompanionHttpSurface } from "@tachyon/engine/companion/CompanionHttp.js";
+import { HTTP_BODY_LIMIT_LARGE_BYTES, readBody } from "@tachyon/engine/utils/readBody.js";
 import { registerTools, type BridgeDeps } from "./tools.js";
 import { resolveCaller, type CallerIdentityRegistry, type CallerScope, type CallerSnapshot } from "./callerIdentity.js";
 import { WorkspaceBridgeTransport, type WorkspaceBridgeTransportOptions } from "./workspaceBridgeTransport.js";
@@ -482,24 +483,20 @@ export class Bridge {
   }
 }
 
-function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => {
-      const raw = Buffer.concat(chunks).toString("utf8");
-      if (raw.length === 0) {
-        resolve(undefined);
-        return;
-      }
-      try {
-        resolve(JSON.parse(raw));
-      } catch {
-        reject(new Error("request body is not valid JSON"));
-      }
-    });
-    req.on("error", reject);
-  });
+async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
+  // LARGE, not the Companion default: /mcp carries JSON-RPC tool calls whose declared
+  // field maxima reach 512KB (prototype HTML, workflow scripts). Both ceilings come from
+  // the shared reader in utils/readBody.ts — this door shipped unbounded while the
+  // Companion one counted bytes (t-75f094).
+  const raw = await readBody(req, HTTP_BODY_LIMIT_LARGE_BYTES);
+  if (raw.length === 0) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error("request body is not valid JSON");
+  }
 }
 
 /** spec 351 (dueto F1) — best-effort peek at a parsed MCP JSON-RPC body for the legacy-call log: the tool

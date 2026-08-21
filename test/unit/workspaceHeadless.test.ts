@@ -3757,6 +3757,70 @@ describe("Agent Studio — authorizing a capability with the agent running (t-74
   });
 
   /**
+   * t-b1940c — removing a plugin must take the profile grants that authorized it, selection
+   * included, in the SAME canonical transaction `revokeAgentSkill` uses.
+   *
+   * The agent is RUNNING on purpose, right after the refusal case above: the direct revoke door
+   * refuses this state because a human withdrawing a capability must not be left holding "gone at
+   * the next launch". Plugin removal is the other situation — the caller deletes the payload only
+   * AFTER this write completes (decided order), so this write reconciles records with the fact the
+   * same confirmed remove is about to make final and cannot diverge the live session. That is the
+   * declaration `authorizeAgentPlugin` already makes, and the report (not a boolean) is what lets
+   * the caller say what each agent lost.
+   */
+  it("revokes every profile grant owned by a removed plugin while the agent runs", async () => {
+    const ws = await runningAgentWithSkills([]);
+    try {
+      for (const skill of ["mapa", "bussola"]) {
+        const dir = path.join(ws.workspaceRoot, ".tachyon", "plugins", "cartografia", "skills", skill);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, "SKILL.md"), `# ${skill}\n`);
+      }
+      fs.mkdirSync(path.join(ws.workspaceRoot, ".tachyon"), { recursive: true });
+      fs.writeFileSync(path.join(ws.workspaceRoot, ".tachyon", "plugins.lock.json"), JSON.stringify({
+        plugins: {
+          cartografia: {
+            name: "cartografia",
+            version: "1.0.0",
+            runtimes: ["claude"],
+            targets: [
+              { runtime: "claude", kind: "skill-dir", file: ".claude/skills/mapa" },
+              { runtime: "claude", kind: "skill-dir", file: ".claude/skills/bussola" },
+            ],
+          },
+        },
+      }));
+      expect(await ws.authorizeAgentPlugin(AGENT, "cartografia")).toMatchObject({ ok: true });
+      await ws.manager.spawn(AGENT);
+      expect(await ws.manager.runningAgents()).toContain(AGENT);
+
+      const report = await ws.revokePluginProfileGrants("cartografia");
+
+      expect(report.errors).toEqual([]);
+      expect([...report.revoked].sort((a, b) => (a.referenceId < b.referenceId ? -1 : 1))).toEqual([
+        { agent: AGENT, referenceId: "bussola", deselected: true, running: true },
+        { agent: AGENT, referenceId: "mapa", deselected: true, running: true },
+      ]);
+      const snapshot = await ws.inspectAgentProfileLifecycle(AGENT);
+      expect(snapshot.profile.capabilities?.skills ?? []).toEqual([]);
+      expect(snapshot.profile.references?.filter((r) => r.owner === "plugin:cartografia")).toEqual([]);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  /** t-b1940c — a plugin nobody granted removes with an EMPTY report: nothing revoked, nothing failed. */
+  it("reports an empty revocation for a plugin no profile ever authorized", async () => {
+    const ws = await runningAgentWithSkills([]);
+    try {
+      const report = await ws.revokePluginProfileGrants("never-authorized");
+      expect(report).toEqual({ schemaVersion: 1, revoked: [], errors: [] });
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  /**
    * A plugin commits once per skill through ONE ports object, so the CAS token has to advance with
    * each commit. Captured once and reused, the second skill refused with a revision conflict against
    * its own predecessor — and that refusal reached the panel as "could not be completed".

@@ -59,6 +59,7 @@ import {
   type SkillAuthorizationPorts,
 } from "../config/agentSkillAuthorizationService.js";
 import { annotateAuthorized, listAuthorizableCapabilities } from "../config/agentCapabilityCandidates.js";
+import { pluginGrantHolders, type PluginGrantsRevocationReport } from "../config/pluginGrantHolders.js";
 import {
   agentProfileRenameBlocked,
   commitAgentProfileRename,
@@ -5880,6 +5881,48 @@ export class Workspace {
   async revokeAgentSkill(agentName: string, referenceId: string) {
     const snapshot = await this.inspectAgentProfileLifecycle(agentName);
     return revokeAgentSkill({ agentName, referenceId, ports: this.skillAuthorizationPorts(snapshot.revision) });
+  }
+
+  /**
+   * t-b1940c — removing a plugin must take the profile grants that authorized it.
+   *
+   * `applyRemove` tears the payload out of `.tachyon/plugins/<name>` and nothing else, so every
+   * skill reference an authorization wrote survived pointing at a directory that no longer exists.
+   * This enumerates the roster for references owned by `plugin:<name>` and runs each through the
+   * SAME canonical transaction `revokeAgentSkill` uses — reference, vault grant and selection in
+   * one commit. A partial outcome is a RESULT, not a throw: one agent's refusal must not hide the
+   * others, and the caller needs the per-agent report to say who lost what.
+   *
+   * t-746f0f — this door DOES declare `allowRunningAgent`, which the direct `revokeAgentSkill` door
+   * deliberately does not ("a human withdrawing a capability must not be left holding 'it is gone
+   * at the next launch'"). Plugin removal is the other situation: the caller runs this write BEFORE
+   * deleting the payload and refuses the deletion unless it completed (decided order, task contract),
+   * so the write reconciles records with the fact the same confirmed remove is about to make final,
+   * and cannot diverge a live session — the same declaration `authorizeAgentPlugin` makes for the
+   * same shape of reason. What a running agent keeps (its launched copy until restart) is a fact
+   * about the RUNTIME, not something this write changes; saying it is the caller's job, which is why
+   * the report returns per-agent outcomes rather than a boolean.
+   */
+  async revokePluginProfileGrants(pluginName: string): Promise<PluginGrantsRevocationReport> {
+    const revoked: PluginGrantsRevocationReport["revoked"] = [];
+    const errors: PluginGrantsRevocationReport["errors"] = [];
+    for (const { agent, referenceId } of pluginGrantHolders(this.workspaceRoot, pluginName)) {
+      try {
+        const snapshot = await this.inspectAgentProfileLifecycle(agent);
+        const running = await this.agentIsRunning(agent);
+        const result = await revokeAgentSkill({
+          agentName: agent,
+          referenceId,
+          ports: this.skillAuthorizationPorts(snapshot.revision, { allowRunningAgent: true }),
+        });
+        if (!result.ok) errors.push({ agent, referenceId, error: result.error });
+        else if (result.removed) revoked.push({ agent, referenceId, deselected: result.deselected, running });
+        // ok && !removed — the reference vanished between enumeration and commit; nothing left to clean.
+      } catch (error) {
+        errors.push({ agent, referenceId, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return { schemaVersion: 1, revoked, errors };
   }
 
   /**

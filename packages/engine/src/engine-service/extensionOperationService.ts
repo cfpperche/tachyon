@@ -416,6 +416,12 @@ export async function executeExtensionCommand(
       });
       return json(authorized);
     }
+    case "agent-profile.revoke-plugin-grants": {
+      // t-b1940c — a plugin removal drags the profile grants that authorized it. The per-agent
+      // report IS the payload: option (b) says who lost what, and a partial failure rides the
+      // report instead of flattening into an engine error that hides the agents that DID revoke.
+      return json(await workspace.revokePluginProfileGrants(command.pluginName));
+    }
     case "secret.set":
       return json(await workspace.setProfileSecret(command.provider, command.id, command.value));
     case "secret.replace":
