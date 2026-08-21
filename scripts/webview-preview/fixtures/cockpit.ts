@@ -79,13 +79,11 @@ export const strings: CockpitStrings & WorktreesStrings = {
   copyPath: "Copy path",
   openConfig: "Open workspace settings",
   settingsBody:
-    "Tachyon keeps two settings files on purpose: one for you on this machine, one for the project shared with the team. They own different knobs — they are not two places for the same list.",
+    "Two settings files, on purpose: yours on this machine, the project's shared with the team. They own different knobs.",
   settingsScopeGlobalTitle: "Global (personal)",
-  settingsScopeGlobalHint:
-    "Your machine preferences — agent pane, git path, Activity theme. Not committed; recovery path when Control will not open.",
+  settingsScopeGlobalHint: "Your machine preferences — agent pane, git path, theme.",
   settingsScopeWorkspaceTitle: "Workspace (project)",
-  settingsScopeWorkspaceHint:
-    "Shared project policy in tachyon.yml — agents, schedules, limits, Companion, idle notify. Versioned with the repo for the whole team.",
+  settingsScopeWorkspaceHint: "Shared project policy in tachyon.yml — versioned with the repo.",
   settingsFileLabel: "File:",
   settingsOpenTachyon: "Open global settings",
   settingsOpenConfig: "Open workspace settings",
@@ -119,7 +117,7 @@ export const strings: CockpitStrings & WorktreesStrings = {
   idleNotifySave: "Save",
   idleNotifyReset: "Back to default",
   globalSettingsTitle: "Your Tachyon settings",
-  globalSettingsHint: "Per-person, per-machine. Kept in a plain file you can also edit by hand — that file is the recovery path when Control itself will not open.",
+  globalSettingsHint: "Per-person, per-machine, in a plain file you can edit by hand.",
   globalSettingsFileLabel: "File:",
   globalSettingsOpenFile: "Open global settings",
   globalSettingsRefused: "This file was refused and the last good version is in use — fix it and it reloads by itself:",

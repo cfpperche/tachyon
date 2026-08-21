@@ -45,6 +45,21 @@ describe("t-7b4bb5 — Settings scope copy", () => {
     expect(css).toMatch(/\.ck-settings-path[\s\S]*word-break:\s*break-all/);
   });
 
+  it("t-2ad294 — four Settings paragraphs state the split; teaching-the-model sentences are gone", () => {
+    const host = read("apps/vscode-extension/src/webview/controlStrings.ts");
+    expect(host).toContain("settingsBody");
+    expect(host).toContain("settingsScopeGlobalHint");
+    expect(host).toContain("settingsScopeWorkspaceHint");
+    expect(host).toContain("globalSettingsHint");
+    expect(host).toContain("Two settings files, on purpose");
+    expect(host).toContain("Your machine preferences — agent pane, git path, theme.");
+    expect(host).toContain("Shared project policy in tachyon.yml — versioned with the repo.");
+    expect(host).toContain("Per-person, per-machine, in a plain file you can edit by hand.");
+    expect(host).not.toMatch(/they are not two places for the same list/i);
+    expect(host).not.toMatch(/recovery path when Control/i);
+    expect(host).not.toMatch(/agent limit, memory cap/);
+  });
+
   it("offers the font choice on the global block and does not send it through VS Code settings", () => {
     const app = read("packages/webview-ui/src/webview/settings/main.tsx");
     expect(app).toContain('data-testid="global-settings-font"');
