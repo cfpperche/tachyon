@@ -87,7 +87,7 @@ describe("t-83bcf4 — agent action reveal", () => {
       const shot = await page.$("#shot");
 
       await page.mouse.move(width + 30, 700);
-      await page.addStyleTag({ content: ".row{--action-gutter:80px!important}.row>.actions{opacity:0!important;pointer-events:none!important}" });
+      await page.addStyleTag({ content: ".row{--action-gutter:80px!important}.row>.actions.agent-actions{opacity:0!important;pointer-events:none!important}" });
       await new Promise((resolve) => setTimeout(resolve, 140));
       const before = `rest-before-${width}.png`;
       await shot!.screenshot({ path: path.join(OUT_DIR, before) as `${string}.png` });

@@ -8,13 +8,13 @@ const css = readFileSync(path.join(__dirname, "../../packages/webview-ui/src/web
 describe("t-83bcf4 — agent row actions reveal from the overflow trigger", () => {
   it("keeps More actions outside the clipped primary-action strip", () => {
     expect(app).toMatch(
-      /<div class="actions" role="group"[^>]*>[\s\S]*?<div class="action-reveal">[\s\S]*?primaryActions\(a\)[\s\S]*?<\/div>[\s\S]*?<MoreBtn/,
+      /class=\{`actions\$\{a\.kind === "agent" \? " agent-actions" : ""\}`\}[\s\S]*?a\.kind === "agent" \? \([\s\S]*?<div class="action-reveal">[\s\S]*?primaryActions\(a\)[\s\S]*?<\/div>[\s\S]*?: primaryActions\(a\)\.map[\s\S]*?<MoreBtn/,
     );
   });
 
   it("reveals agent actions for hover and keyboard focus without changing pins", () => {
-    expect(css).toMatch(/\.row\s*>\s*\.actions\s*\{[^}]*opacity:\s*1[^}]*pointer-events:\s*auto/);
-    expect(css).toMatch(/\.row:hover\s*>\s*\.actions\s+\.action-reveal\s*,\s*\.row:focus-within\s*>\s*\.actions\s+\.action-reveal/);
+    expect(css).toMatch(/\.row\s*>\s*\.actions\.agent-actions\s*\{[^}]*opacity:\s*1[^}]*pointer-events:\s*auto/);
+    expect(css).toMatch(/\.row:hover\s*>\s*\.actions\.agent-actions\s+\.action-reveal\s*,\s*\.row:focus-within\s*>\s*\.actions\.agent-actions\s+\.action-reveal/);
     expect(css).toMatch(/\.pin:hover\s+\.actions\s*,\s*\.pin:focus-within\s+\.actions\s*\{\s*opacity:\s*1/);
   });
 

@@ -185,9 +185,7 @@
     gap: var(--ds-spacing-size40); /* name → badges (was 1px — felt glued) */
     padding: var(--ds-spacing-size80) var(--ds-spacing-size120); /* --ds-2 vertical; was 4px — blocks blended together */
     position: relative;
-    /* t-83bcf4 — the resting corridor reserves the permanent 22px overflow trigger plus its
-       right inset/chrome. Primary actions expand left over the row instead of reserving space. */
-    --action-gutter: 38px;
+    --action-gutter: 80px;
     /* t-d588c3 — name-column / action-trail geometry. Toggle 13 and sdot 7 are widths
        (slice 4 has no token); the 2px on name-col is the measured seam under sdot+gap,
        not a scale step. Trail is the overlay gutter minus one step so focus/meta clear
@@ -198,6 +196,9 @@
     --sidebar-child-name-col: calc(var(--sidebar-sdot) + var(--ds-spacing-size60));
     --sidebar-focus-trail: calc(var(--action-gutter) - var(--ds-spacing-size80));
   }
+  /* t-83bcf4 — an agent's resting corridor reserves the permanent 22px overflow trigger plus its
+     right inset/chrome. Primary actions expand left over the row. Terminal rows keep their toolbar. */
+  .row.agent-card { --action-gutter: 38px; }
   .row.metrics-open { background: color-mix(in srgb, var(--ds-focus) 5%, transparent); }
   .row:hover { background: var(--ds-hover-row); }
   .row.flash, .pin.flash { animation: flash 1s ease-out; }
@@ -409,17 +410,17 @@
      toolbar. Agent rows override it below: their overflow trigger rests visibly in --action-gutter while
      the primary strip reveals leftward over content on pointer hover or keyboard focus. */
   .actions { display: flex; opacity: 0; pointer-events: none; transition: opacity .1s; position: absolute; right: 8px; top: 6px; gap: 0; z-index: 2; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: var(--ds-spacing-size20) var(--ds-spacing-size20); border-radius: 4px; box-shadow: 0 0 0 1px var(--ds-border); }
-  .row > .actions { opacity: 1; pointer-events: auto; }
-  .row > .actions .action-reveal {
+  .row > .actions.agent-actions { opacity: 1; pointer-events: auto; }
+  .row > .actions.agent-actions .action-reveal {
     display: flex; max-width: 0; overflow: hidden; opacity: 0; pointer-events: none;
     transform: translateX(var(--ds-spacing-size80));
     transition: max-width .18s ease, opacity .12s ease, transform .18s ease;
   }
-  .row:hover > .actions .action-reveal,
-  .row:focus-within > .actions .action-reveal {
+  .row:hover > .actions.agent-actions .action-reveal,
+  .row:focus-within > .actions.agent-actions .action-reveal {
     max-width: 66px; opacity: 1; pointer-events: auto; transform: translateX(0);
   }
-  .row > .actions .action-reveal .act { flex: none; }
+  .row > .actions.agent-actions .action-reveal .act { flex: none; }
   .act { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; cursor: pointer; color: var(--ds-muted); border: 0; background: transparent; padding: 0; font: inherit; }
   /* Reset kit Button/IconButton if ever re-applied — .ds-btn chrome breaks 22×22 hits + codicon glyphs. */
   .act.ds-btn { width: 22px; height: 22px; min-width: 22px; padding: 0; border: 0; gap: 0; background: transparent; box-shadow: none; }
