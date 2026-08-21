@@ -301,8 +301,8 @@ export function SettingsApp({ model: m, strings: s, post }: SettingsAppProps) {
 
           {/* t-aaad95 (visual QA) — the second workspace card is GONE. It repeated the "Workspace
             * (project)" scope card verbatim 1400px above it: same file path, same button, overlapping
-            * hint. Two cards for one authority taught the reader to check whether they differed. Its
-            * one unique sentence — which knobs live in the yml — moved into the scope card's hint. */}
+            * hint. Two cards for one authority taught the reader to check whether they differed.
+            * t-2ad294 — the knob list that used to live in this hint duplicated the form below. */}
           {m.idleNotify ? <IdleNotifyField s={s} idle={m.idleNotify} onSave={p.onSetIdleAfterMinutes} /> : null}
 
           {/* SDD 488 F4 — Integrated Browser human surface gate (tools stay always-registered). */}
