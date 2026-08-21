@@ -101,7 +101,7 @@ describe("t-72ff5a — one project is in focus for the whole sidebar", () => {
     // were one code path. That property SURVIVES — N=1 and N>1 are still identical — but the line
     // that states the project moved to the chrome, which every tab can see.
     for (const fleets of [[alpha], [alpha, beta]]) {
-      for (const tab of [...SCOPED_TABS, "Attentions" as TabId, "Control" as TabId]) {
+      for (const tab of [...SCOPED_TABS, "Attentions" as TabId, "Apps" as TabId]) {
         const html = render({ fleets, initialTab: tab, selectedWsHash: "hash-alpha" });
         expect(html, `${tab} @ ${fleets.length} root(s)`).not.toContain('class="grp folder');
         expect(html, `${tab} @ ${fleets.length} root(s)`).not.toContain("folder-body");
@@ -110,7 +110,7 @@ describe("t-72ff5a — one project is in focus for the whole sidebar", () => {
   });
 
   it("states the project — and its handoff — in chrome that belongs to no tab", () => {
-    for (const tab of [...SCOPED_TABS, "Attentions" as TabId, "Control" as TabId]) {
+    for (const tab of [...SCOPED_TABS, "Attentions" as TabId, "Apps" as TabId]) {
       const html = render({ fleets: [alpha, beta], initialTab: tab, selectedWsHash: "hash-alpha" });
       expect(html, `${tab}: chrome present`).toContain('data-testid="sidebar-workspace-chrome"');
       expect(html, `${tab}: selector present`).toContain('data-testid="sidebar-workspace-select"');
@@ -251,7 +251,7 @@ describe("t-72ff5a — one project is in focus for the whole sidebar", () => {
 
   it("still has seven tabs — this is a scope change, not a navigation change", () => {
     expect(TABS.map((t) => t.id)).toEqual([
-      "Attentions", "Control", "Agents", "Terminals", "Pipelines", "Schedules", "Pins",
+      "Attentions", "Apps", "Agents", "Terminals", "Pipelines", "Schedules", "Pins",
     ]);
     expect(SCOPED_TABS.length + 2).toBe(TABS.length);
   });

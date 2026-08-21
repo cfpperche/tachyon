@@ -152,7 +152,7 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
     for (const state of states) {
       const html = renderStatic(App({
         fleets: [fleet],
-        initialTab: "Control",
+        initialTab: "Apps",
         prefs: state.prefs,
         initialReorderMode: state.initialReorderMode,
         initialDraggingSection: state.initialDraggingSection,

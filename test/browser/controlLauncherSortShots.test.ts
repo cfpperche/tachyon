@@ -110,7 +110,7 @@ describe("t-50daeb launcher sort headless Visual QA", () => {
     const buttonColors = new Map<string, string>();
 
     for (const state of states) {
-      const html = renderStatic(App({ fleets: [fleet], initialTab: "Control" as never, prefs: state.prefs }));
+      const html = renderStatic(App({ fleets: [fleet], initialTab: "Apps" as never, prefs: state.prefs }));
 
       for (const w of WIDTHS) {
         await page.setViewport({ width: w.px, height: 720, deviceScaleFactor: 1 });
@@ -181,7 +181,7 @@ describe("t-50daeb launcher sort headless Visual QA", () => {
     const comparisonBodies = [
       ...states.filter((state) => state.id === "product" || state.id === "name-asc" || state.id === "custom").map((state) => ({
         label: `Launcher — ${state.id}`,
-        html: renderStatic(App({ fleets: [fleet], initialTab: "Control" as never, prefs: state.prefs })),
+        html: renderStatic(App({ fleets: [fleet], initialTab: "Apps" as never, prefs: state.prefs })),
       })),
       { label: "Agents — A-Z", html: renderStatic(App({ fleets: [fleet], initialTab: "Agents" as never })) },
     ];

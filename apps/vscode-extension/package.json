@@ -309,7 +309,7 @@
       {
         "command": "tachyon.openControl",
         "title": "%command.openControl%",
-        "icon": "$(dashboard)"
+        "icon": "$(home)"
       },
       {
         "command": "tachyon.openCockpit",

@@ -73,7 +73,7 @@ describe("t-6e2952 Control tab headless Visual QA", () => {
   });
 
   it("the grid is one panel, in the tab row, legible at 220 and 340", async () => {
-    const html = renderStatic(App({ fleets: [fleet], initialTab: "Control" as never }));
+    const html = renderStatic(App({ fleets: [fleet], initialTab: "Apps" as never }));
 
     for (const w of WIDTHS) {
       await page.setViewport({ width: w.px, height: 720, deviceScaleFactor: 1 });
