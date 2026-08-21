@@ -119,9 +119,6 @@ export function App({ model, dispatch }: { model?: OnboardingModel; dispatch: (a
         : <div class="onb-folder-list">
             {folders.map((folder) => <FolderRow key={folder.root} folder={folder} environmentReady={env.ready} dispatch={dispatch} />)}
           </div>}
-      {hasFolder && unconfigured.length === 0 && (
-        <p class="ds-dim onb-note">Agents are not declared in <code>tachyon.yml</code> — an agent is a profile under <code>.tachyon/agents/</code>, created by Agent Studio.</p>
-      )}
     </section>
 
     <section class="onb-section" aria-label="First agent">
@@ -131,7 +128,7 @@ export function App({ model, dispatch }: { model?: OnboardingModel; dispatch: (a
         : agentDone
           ? <p class="ds-dim" data-testid="onb-agent-done">{agentCount} agent{agentCount === 1 ? "" : "s"} in the roster. Start sessions from the Tachyon sidebar (▶).</p>
           : <div class="onb-agent-launch" data-testid="onb-agent-ready">
-              <p class="ds-dim">An agent is a named runtime session (claude, codex, grok…) with its own profile, worktree and permissions.</p>
+              <p class="ds-dim">A named session of claude, codex or grok, with its own profile and worktree.</p>
               <Button variant="primary" icon="hubot" data-testid="onb-open-studio" onClick={() => dispatch({ type: "openAgentStudio" })}>Open Agent Studio</Button>
             </div>}
     </section>
