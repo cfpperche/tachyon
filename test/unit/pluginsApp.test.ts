@@ -208,21 +208,23 @@ describe("SDD 485 D2 — the session state is PER PANEL (t-0fc9ee's contract, un
 
   // t-b1940c — option (b): the removal drags the profile grants that authorized the plugin, and the
   // result NAMES who lost what. These cases drive the wire: the revoke door hangs off the workspace
-  // target next to gitExec, runs only after the engine reported the payload gone, and every
-  // revocation outcome — granted, empty, failed — lands on the same posted result.
-  it("a successful remove revokes profile grants and names who lost what", async () => {
+  // target next to gitExec and runs BEFORE applyRemove deletes the payload (decided order) — a
+  // revocation that cannot complete refuses the removal, so nothing is destroyed on a failed revoke.
+  it("a successful remove revokes profile grants BEFORE deleting the payload and names who lost what", async () => {
     const root = mkroot();
     writeLockfile(root, "tdd-guard");
-    const asked: string[] = [];
+    const payloadDir = path.join(root, ".tachyon", "plugins", "tdd-guard", "skills", "tdd-guard");
+    fs.mkdirSync(payloadDir, { recursive: true }); // exists so the fake can witness WHEN the revoke ran
+    const asked: Array<{ plugin: string; payloadStillThere: boolean }> = [];
     const mgr = managerFor([target(root, "ws-1", async (plugin: string) => {
-      asked.push(plugin);
+      asked.push({ plugin, payloadStillThere: fs.existsSync(payloadDir) });
       return {
         schemaVersion: 1,
         revoked: [
           { agent: "claude", referenceId: plugin, deselected: true, running: true },
           { agent: "grok", referenceId: plugin, deselected: false, running: false },
         ],
-        errors: [{ agent: "codex", referenceId: plugin, error: "no canonical profile" }],
+        errors: [],
       };
     })]);
     const panel = await open(mgr, "ws-1");
@@ -233,19 +235,48 @@ describe("SDD 485 D2 — the session state is PER PANEL (t-0fc9ee's contract, un
     panel.webview.__receive({ type: "confirm", token });
     await flush();
 
-    // AFTER the engine said removed — a refused remove must never drag grants.
-    expect(asked).toEqual(["tdd-guard"]);
+    // BEFORE the payload went: at revoke time the directory the grant points at still existed.
+    expect(asked).toEqual([{ plugin: "tdd-guard", payloadStillThere: true }]);
+    expect(fs.existsSync(payloadDir)).toBe(false); // and the remove did delete it afterwards
     const result = posted(panel, "result").at(-1) as { ok: boolean; message: string };
     expect(result.ok).toBe(true);
     expect(result.message).toContain("Revoked tdd-guard from claude (tdd-guard), grok (tdd-guard)");
     // t-746f0f's duty at this door too: the running agent's loss lands at restart, and the message says so.
     expect(result.message).toContain("Running agents keep their launched copy until restart.");
-    expect(result.message).toContain("Could not revoke agent grants: codex (tdd-guard): no canonical profile");
   });
 
-  it("a revocation failure is reported on the result, never silent", async () => {
+  it("an incomplete revocation refuses the removal — nothing is deleted while a holder remains", async () => {
     const root = mkroot();
     writeLockfile(root, "tdd-guard");
+    const payloadDir = path.join(root, ".tachyon", "plugins", "tdd-guard");
+    fs.mkdirSync(payloadDir, { recursive: true });
+    const mgr = managerFor([target(root, "ws-1", async (plugin: string) => ({
+      schemaVersion: 1,
+      revoked: [{ agent: "claude", referenceId: plugin, deselected: true, running: false }],
+      errors: [{ agent: "codex", referenceId: plugin, error: "no canonical profile" }],
+    }))]);
+    const panel = await open(mgr, "ws-1");
+
+    panel.webview.__receive({ type: "remove", name: "tdd-guard" });
+    await flush();
+    const token = (posted(panel, "consent").at(-1) as { vm: { token: string } }).vm.token;
+    panel.webview.__receive({ type: "confirm", token });
+    await flush();
+
+    const result = posted(panel, "result").at(-1) as { ok: boolean; message: string };
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("Could not revoke agent grants: codex (tdd-guard): no canonical profile — tdd-guard was not removed.");
+    // partial progress is named too, never hidden behind the refusal
+    expect(result.message).toContain("Revoked tdd-guard from claude (tdd-guard)");
+    expect(fs.existsSync(payloadDir)).toBe(true); // nothing destroyed — retry is possible
+  });
+
+  it("a revocation door failure refuses the removal instead of leaving a live grant", async () => {
+    const root = mkroot();
+    writeLockfile(root, "tdd-guard");
+    const payloadDir = path.join(root, ".tachyon", "plugins", "tdd-guard");
+    fs.mkdirSync(payloadDir, { recursive: true });
+    const lockPath = path.join(root, LOCKFILE_REL_PATH);
     const mgr = managerFor([target(root, "ws-1", async () => {
       throw new Error("engine unreachable");
     })]);
@@ -258,8 +289,11 @@ describe("SDD 485 D2 — the session state is PER PANEL (t-0fc9ee's contract, un
     await flush();
 
     const result = posted(panel, "result").at(-1) as { ok: boolean; message: string };
-    expect(result.ok).toBe(true);
-    expect(result.message).toContain("Could not revoke agent grants: engine unreachable");
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("Could not revoke agent grants: engine unreachable — tdd-guard was not removed.");
+    // failing BEFORE destroys nothing: payload and lockfile entry both survive
+    expect(fs.existsSync(payloadDir)).toBe(true);
+    expect(fs.existsSync(lockPath)).toBe(true);
   });
 
   it("removing a plugin nobody ever granted says nothing about grants", async () => {

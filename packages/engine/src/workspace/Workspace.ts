@@ -5895,12 +5895,13 @@ export class Workspace {
    *
    * t-746f0f — this door DOES declare `allowRunningAgent`, which the direct `revokeAgentSkill` door
    * deliberately does not ("a human withdrawing a capability must not be left holding 'it is gone
-   * at the next launch'"). Plugin removal is the other situation: the payload that made delivery
-   * possible is deleted before or with this call, so the write reconciles records with a fact that
-   * already happened and cannot diverge a live session — the same declaration `authorizeAgentPlugin`
-   * makes for the same shape of reason. What a running agent keeps (its launched copy until
-   * restart) is a fact about the RUNTIME, not something this write changes; saying it is the
-   * caller's job, which is why the report returns per-agent outcomes rather than a boolean.
+   * at the next launch'"). Plugin removal is the other situation: the caller runs this write BEFORE
+   * deleting the payload and refuses the deletion unless it completed (decided order, task contract),
+   * so the write reconciles records with the fact the same confirmed remove is about to make final,
+   * and cannot diverge a live session — the same declaration `authorizeAgentPlugin` makes for the
+   * same shape of reason. What a running agent keeps (its launched copy until restart) is a fact
+   * about the RUNTIME, not something this write changes; saying it is the caller's job, which is why
+   * the report returns per-agent outcomes rather than a boolean.
    */
   async revokePluginProfileGrants(pluginName: string): Promise<PluginGrantsRevocationReport> {
     const revoked: PluginGrantsRevocationReport["revoked"] = [];

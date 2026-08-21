@@ -3762,10 +3762,11 @@ describe("Agent Studio — authorizing a capability with the agent running (t-74
    *
    * The agent is RUNNING on purpose, right after the refusal case above: the direct revoke door
    * refuses this state because a human withdrawing a capability must not be left holding "gone at
-   * the next launch". Plugin removal is the other situation — the payload that made delivery
-   * possible is already gone, so this write reconciles records with a fact that happened and cannot
-   * diverge the live session. That is the declaration `authorizeAgentPlugin` already makes, and the
-   * report (not a boolean) is what lets the caller say what each agent lost.
+   * the next launch". Plugin removal is the other situation — the caller deletes the payload only
+   * AFTER this write completes (decided order), so this write reconciles records with the fact the
+   * same confirmed remove is about to make final and cannot diverge the live session. That is the
+   * declaration `authorizeAgentPlugin` already makes, and the report (not a boolean) is what lets
+   * the caller say what each agent lost.
    */
   it("revokes every profile grant owned by a removed plugin while the agent runs", async () => {
     const ws = await runningAgentWithSkills([]);

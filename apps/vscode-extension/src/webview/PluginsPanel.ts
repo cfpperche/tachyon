@@ -730,28 +730,36 @@ export class PluginsPanelManager {
       if (r.updated && !hadConfigBefore && op.plugin.manifest.config) await this.openConfigFile(ws, op.plugin.manifest.name);
     } else {
       if (op.fingerprint !== token) { io.postResult(false, "Consent expired — re-open the remove."); return; }
-      const r = await applyRemove(op.name, ws.workspaceRoot, { expectedFingerprint: token, git: this.gitRun(ws) });
-      // t-b1940c — the grants move ONLY after the engine reported the payload gone: a refused or
-      // failed remove must never drag a grant for a plugin that is still installed. What a running
-      // agent keeps (its launched copy until restart) rides this same message.
-      io.postResult(r.removed, r.removed
-        ? `Removed ${op.name}${r.orphans > 0 ? ` (${r.orphans} edited group(s) left as orphans)` : ""}.${await this.revocationNote(ws, op.name)}`
-        : r.errors.join("; "));
+      // t-b1940c — decided order: the grants move BEFORE the payload goes. A revocation that cannot
+      // complete refuses the removal instead of leaving a live grant pointing at a directory the
+      // delete is about to take away; failing here destroys nothing and the user can retry.
+      const rev = await this.revokeGrantsBeforeRemove(ws, op.name);
+      if (rev.ok) {
+        const r = await applyRemove(op.name, ws.workspaceRoot, { expectedFingerprint: token, git: this.gitRun(ws) });
+        io.postResult(r.removed, r.removed
+          ? `Removed ${op.name}${r.orphans > 0 ? ` (${r.orphans} edited group(s) left as orphans)` : ""}.${rev.note}`
+          : r.errors.join("; "));
+      } else {
+        // Nothing was deleted; partial revocations (some agents cleared, one refused) are named too.
+        io.postResult(false, rev.note.trim());
+      }
     }
     io.setChecks({}); // applied state changed → drop stale checks
     this.onPluginsChanged();
     io.post();
   }
 
-  /** t-b1940c — option (b): name who lost what, and when it lands. Best-effort: the plugin is
-   *  already gone by the time this runs, so a revocation failure is REPORTED on the same result,
-   *  never silent, and never pretends the removal should be undone. */
-  private async revocationNote(ws: WorkspacePluginProfileTarget, pluginName: string): Promise<string> {
+  /** t-b1940c — option (b): name who lost what, BEFORE the payload goes. Decided order (task
+   *  contract): a revocation that cannot complete — door failure or any per-agent refusal — returns
+   *  ok:false and the caller refuses the removal; deleting first would leave live grants pointing at
+   *  directories that no longer exist, which is exactly defect t-b1940c. An empty report means no
+   *  profile ever held a grant: ok:true with nothing to say. */
+  private async revokeGrantsBeforeRemove(ws: WorkspacePluginProfileTarget, pluginName: string): Promise<{ ok: boolean; note: string }> {
     let report: PluginGrantsRevocationV1;
     try {
       report = await ws.revokePluginGrants(pluginName);
     } catch (e) {
-      return ` Could not revoke agent grants: ${e instanceof Error ? e.message : String(e)}`;
+      return { ok: false, note: ` Could not revoke agent grants: ${e instanceof Error ? e.message : String(e)} — ${pluginName} was not removed.` };
     }
     const notes: string[] = [];
     if (report.revoked.length > 0) {
@@ -769,9 +777,9 @@ export class PluginsPanelManager {
       }
     }
     if (report.errors.length > 0) {
-      notes.push(`Could not revoke agent grants: ${report.errors.map((e) => `${e.agent} (${e.referenceId}): ${e.error}`).join("; ")}`);
+      return { ok: false, note: ` Could not revoke agent grants: ${report.errors.map((e) => `${e.agent} (${e.referenceId}): ${e.error}`).join("; ")} — ${pluginName} was not removed.${notes.length > 0 ? ` ${notes.join(" ")}` : ""}` };
     }
-    return notes.length > 0 ? ` ${notes.join(" ")}` : "";
+    return { ok: true, note: notes.length > 0 ? ` ${notes.join(" ")}` : "" };
   }
 
   /** spec 265 — re-provision the workspace's tools from the committed lockfile (clone/CI where `.tachyon/bin`
