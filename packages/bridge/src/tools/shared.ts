@@ -479,7 +479,7 @@ export function resolveDeclaredActor(deps: Pick<BridgeDeps, "caller" | "callerRe
 }
 
 /**
- * t-bec361 — the WHICH-TARGETS gate for the three by-name lifecycle/input doors. Returns the refusal
+ * t-bec361 — the WHICH-TARGETS gate for the by-name lifecycle/input doors. Returns the refusal
  * text when the call is out of scope, `undefined` when it may proceed.
  *
  * Scoped to a caller the Bridge resolved as an AGENT, and to nothing else. A missing `deps.caller`
