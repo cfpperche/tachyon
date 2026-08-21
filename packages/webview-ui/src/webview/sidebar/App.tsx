@@ -1134,6 +1134,12 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
  * launcher shape is out; iOS's mode that survives finger-up is the one that serves both inputs.
  * Navigation copies `tabKey` in this file (Left/Right/Home/End + Enter/Space with preventDefault);
  * the new keys are only Ctrl/Cmd+X, Ctrl/Cmd+V, and Escape.
+ *
+ * t-5b84bb — live neighbor displacement during pointer drag. The research that chose this
+ * shape (`t-50daeb`, journal `j-17fe571d1194`) measured iOS as "arrasta e os outros deslocam AO
+ * VIVO": the gap is how the gesture stays reversible before it ends. Persistence is still only
+ * `onDrop` → `custom:id,…`. The in-grid dragged cell is an empty outlined slot so the native
+ * ghost cannot stack two labels. Keyboard cut/paste is unchanged.
  */
 function ControlGrid({
   onOpen,
@@ -1143,6 +1149,7 @@ function ControlGrid({
   onReorderMode,
   onCustomOrder,
   draggingSection,
+  dropTargetSection,
 }: {
   onOpen: (section: SectionId) => void;
   engineHasError: boolean;
@@ -1152,17 +1159,40 @@ function ControlGrid({
   onCustomOrder: (ids: string[]) => void;
   /** Visual-QA / test seam — production omits it. */
   draggingSection?: string;
+  /** Visual-QA / test seam — production omits it. Insertion id while a seam drag is posed. */
+  dropTargetSection?: string;
 }) {
   const [focusId, setFocusId] = useState(tiles[0]?.id);
   const [cutId, setCutId] = useState<string | undefined>(undefined);
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
+  const [dropTargetId, setDropTargetId] = useState<string | undefined>(undefined);
   const [live, setLive] = useState("");
   const cutRef = useRef<string | undefined>(undefined);
   const dragRef = useRef<string | undefined>(undefined);
+  const dropTargetRef = useRef<string | undefined>(undefined);
+  const dragGhostRef = useRef<HTMLElement | undefined>(undefined);
   const suppressClick = useRef(false);
   const longPress = useRef<number | undefined>(undefined);
   const dragging = draggingId ?? draggingSection;
+  const overId = dropTargetId ?? dropTargetSection ?? dragging;
+  const originIds = tiles.map((t) => t.id);
+  const paintedIds = dragging && overId ? moveLauncherTile(originIds, dragging, overId) : originIds;
+  const painted = paintedIds.map((id) => tiles.find((t) => t.id === id)).filter((t): t is ControlSectionNav => !!t);
   const labelOf = (id: string): string => tiles.find((t) => t.id === id)?.label ?? id;
+
+  const clearDragGhost = (): void => {
+    const ghost = dragGhostRef.current;
+    if (ghost?.parentNode) ghost.parentNode.removeChild(ghost);
+    dragGhostRef.current = undefined;
+  };
+
+  const cancelDrag = (): void => {
+    dragRef.current = undefined;
+    dropTargetRef.current = undefined;
+    clearDragGhost();
+    setDraggingId(undefined);
+    setDropTargetId(undefined);
+  };
 
   const commitMove = (fromId: string, toId: string): void => {
     const ids = tiles.map((t) => t.id);
@@ -1173,11 +1203,39 @@ function ControlGrid({
     setLive(`Moved ${labelOf(fromId)} to ${labelOf(toId)}'s position.`);
   };
 
+  const finishDrop = (fallbackTo?: string): void => {
+    const from = dragRef.current;
+    // A drop on a foreign tile wins over the origin hover recorded at dragstart, so a test (or a
+    // browser) that fires drop without an intervening dragover still persists the same move.
+    const to = fallbackTo && from && fallbackTo !== from ? fallbackTo : (dropTargetRef.current ?? fallbackTo);
+    cancelDrag();
+    if (from && to) commitMove(from, to);
+  };
+
+  const hoverDrop = (id: string): void => {
+    if (dragRef.current && id === dragRef.current) return;
+    if (dropTargetRef.current === id) return;
+    dropTargetRef.current = id;
+    setDropTargetId(id);
+  };
+
   const clearLongPress = (): void => {
     if (longPress.current === undefined) return;
     if (typeof window !== "undefined") window.clearTimeout(longPress.current);
     longPress.current = undefined;
   };
+
+  useEffect(() => {
+    if (!draggingId || typeof document === "undefined") return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      cancelDrag();
+      setLive("Cancelled move.");
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [draggingId]);
 
   const tileKey = (e: KeyboardEvent, i: number, s: ControlSectionNav): void => {
     const ids = tiles.map((t) => t.id);
@@ -1208,6 +1266,11 @@ function ControlGrid({
       return;
     } else if (e.key === "Escape") {
       e.preventDefault();
+      if (dragRef.current) {
+        cancelDrag();
+        setLive("Cancelled move.");
+        return;
+      }
       cutRef.current = undefined;
       setCutId(undefined);
       onReorderMode(false);
@@ -1230,9 +1293,19 @@ function ControlGrid({
       aria-label={reorderMode ? "Apps grid, rearranging" : "Apps grid"}
       data-testid="control-grid"
       data-reorder={reorderMode ? "true" : undefined}
+      data-drop-at={dragging && overId ? overId : undefined}
+      onDragOver={(e) => {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        finishDrop();
+      }}
     >
       <div class="ctl-live" role="status" aria-live="polite" data-testid="launcher-live">{live}</div>
-      {tiles.map((s, i) => {
+      {painted.map((s) => {
+        const i = originIds.indexOf(s.id);
         // t-aa2780 — one tile carries the log-error dot that used to sit on Control's Engine TAB. The
         // tab-strip dot next to it says "something is wrong"; this one says WHERE, so the alarm has an
         // address. Announced through the button's own label, not as a decorative glyph.
@@ -1249,12 +1322,13 @@ function ControlGrid({
           <Button
             key={s.id}
             id={`ctl-tile-${s.id}`}
-            class={`ctl-tile${err ? " has-err" : ""}${isCut ? " is-cut" : ""}${isDragging ? " is-dragging" : ""}`}
+            class={`ctl-tile${err ? " has-err" : ""}${isCut ? " is-cut" : ""}${isDragging ? " is-dragging is-drop-slot" : ""}`}
             icon={s.icon}
             title={err ? `${opens} (errors in engine log)` : opens}
             aria-label={err ? `${s.label}, errors in engine log` : undefined}
             data-section={s.id}
             data-testid={`control-tile-${s.id}`}
+            data-drop-slot={isDragging ? "true" : undefined}
             draggable
             tabindex={focusId === s.id || (focusId === undefined && i === 0) ? 0 : -1}
             onKeyDown={(e) => tileKey(e as unknown as KeyboardEvent, i, s)}
@@ -1273,25 +1347,44 @@ function ControlGrid({
               clearLongPress();
               suppressClick.current = true;
               dragRef.current = s.id;
+              dropTargetRef.current = s.id;
               e.dataTransfer?.setData("text/plain", s.id);
               if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+              const source = e.currentTarget as HTMLElement | undefined;
+              const icon = source?.querySelector?.(".codicon") as HTMLElement | null;
+              if (icon && e.dataTransfer && typeof document !== "undefined") {
+                const ghost = icon.cloneNode(true) as HTMLElement;
+                ghost.setAttribute("aria-hidden", "true");
+                ghost.style.position = "absolute";
+                ghost.style.top = "-1000px";
+                ghost.style.left = "0";
+                ghost.style.margin = "0";
+                document.body.appendChild(ghost);
+                dragGhostRef.current = ghost;
+                const cx = Math.round(icon.clientWidth / 2) || 17;
+                const cy = Math.round(icon.clientHeight / 2) || 17;
+                e.dataTransfer.setDragImage(ghost, cx, cy);
+              }
               setDraggingId(s.id);
+              setDropTargetId(s.id);
               onReorderMode(true);
             }}
             onDragOver={(e) => {
               e.preventDefault();
+              e.stopPropagation();
               if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+              hoverDrop(s.id);
+              const mark = dropTargetRef.current ?? s.id;
+              const grid = (e.currentTarget as HTMLElement | undefined)?.closest?.("[data-testid='control-grid']");
+              grid?.setAttribute?.("data-drop-at", mark);
             }}
             onDrop={(e) => {
               e.preventDefault();
-              const from = dragRef.current || e.dataTransfer?.getData("text/plain");
-              dragRef.current = undefined;
-              setDraggingId(undefined);
-              if (from) commitMove(from, s.id);
+              e.stopPropagation();
+              finishDrop(s.id);
             }}
             onDragEnd={() => {
-              dragRef.current = undefined;
-              setDraggingId(undefined);
+              cancelDrag();
             }}
             onClick={() => {
               if (suppressClick.current) {
@@ -1477,6 +1570,8 @@ export function App({
   initialReorderMode = false,
   /** Test / visual-QA seam — production has no in-flight drag. */
   initialDraggingSection,
+  /** Test / visual-QA seam — production has no in-flight drop target. */
+  initialDropTarget,
 }: {
   fleets?: FleetVM[];
   dispatch?: Dispatch;
@@ -1492,6 +1587,7 @@ export function App({
   boot?: SidebarBootVM;
   initialReorderMode?: boolean;
   initialDraggingSection?: string;
+  initialDropTarget?: string;
 }) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [tab, setTab] = useState<TabId>(initialTab);
@@ -1990,6 +2086,7 @@ export function App({
             onReorderMode={setReorderMode}
             onCustomOrder={commitLauncherOrder}
             draggingSection={initialDraggingSection}
+            dropTargetSection={initialDropTarget}
           />
         ) : selected ? (
           // t-72ff5a — the seven scoped tabs render exactly the selected project, with no folder

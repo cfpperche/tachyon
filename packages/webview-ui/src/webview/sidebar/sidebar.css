@@ -639,9 +639,19 @@
     outline: 2px solid var(--ds-focus); outline-offset: 2px;
   }
   .ctl-grid.is-reordering .ctl-tile.ds-btn.is-dragging,
-  .ctl-tile.ds-btn.is-dragging {
-    animation: none; opacity: 0.45; transform: scale(1.06) rotate(0);
-    outline: 2px solid var(--ds-focus); outline-offset: 1px;
+  .ctl-tile.ds-btn.is-dragging,
+  .ctl-grid.is-reordering .ctl-tile.ds-btn.is-drop-slot,
+  .ctl-tile.ds-btn.is-drop-slot {
+    /* t-5b84bb — the in-grid dragged cell is the insertion slot, not a second copy of the tile.
+       Neighbors have already shifted around it. Hide the label/icon so the native ghost cannot
+       stack two captions; the dashed focus ring is the visible encaixe. */
+    animation: none; opacity: 1; transform: none;
+    outline: 2px dashed var(--ds-focus); outline-offset: 2px;
+    background: color-mix(in srgb, var(--ds-focus) 14%, transparent);
+  }
+  .ctl-tile.ds-btn.is-drop-slot .codicon,
+  .ctl-tile.ds-btn.is-drop-slot .ds-btn-label {
+    visibility: hidden;
   }
   @keyframes ctl-jiggle {
     from { transform: rotate(-3.5deg); }
