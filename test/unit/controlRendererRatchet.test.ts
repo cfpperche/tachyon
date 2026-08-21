@@ -4,7 +4,7 @@ import fs from "node:fs";
 /**
  * SDD 485 E1 — the renderer ratchet reached zero and Control was deleted. The useful successor is a
  * resurrection guard: the retired host/client/view/entry must stay absent while the sidebar launcher
- * and every `tachyon.*` compatibility command remain.
+ * and the live `tachyon.*` commands remain without resurrecting retired aliases.
  */
 const absent = [
   "packages/webview-ui/src/webview/Cockpit.ts",
@@ -30,11 +30,15 @@ describe("SDD 485 E1 — Control cannot return through another door", () => {
     expect(read("apps/vscode-extension/src/webview/surfaces.ts")).not.toContain('viewId: "tachyonCockpit"');
   });
 
-  it("keeps the sidebar launcher and command compatibility doors", () => {
+  it("keeps the sidebar launcher and live command doors", () => {
     const extension = read("apps/vscode-extension/src/extension.ts");
+    const manifest = read("apps/vscode-extension/package.json");
+    const nls = read("apps/vscode-extension/package.nls.json");
     expect(extension).toContain("SidebarPrototypeProvider.viewType");
     expect(extension).toContain('registerCommand("tachyon.openControl"');
-    expect(extension).toContain('registerCommand("tachyon.openCockpit"');
+    expect(extension).not.toContain('registerCommand("tachyon.openCockpit"');
+    expect(manifest).not.toContain("tachyon.openCockpit");
+    expect(nls).not.toContain("command.openCockpit");
     expect(extension).toContain('registerTrustedPanelSerializer<{ schemaVersion: 1 | 2; view: string; wsHash?: unknown }>(context, "tachyonCockpit"');
   });
 });

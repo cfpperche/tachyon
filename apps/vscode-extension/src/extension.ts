@@ -3635,8 +3635,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       openSystemTab();
       return Promise.resolve();
     }),
-    // legacy aliases (palette hidden for openCockpit)
-    vscode.commands.registerCommand("tachyon.openCockpit", () => { openSystemTab(); }),
     // SDD 500 — `tachyon.inspectEngine` keeps its name and its palette entry and lands on System: the
     // engine detail it opened is still the whole lower half of that screen, so this is one destination
     // changing, not a command retiring.
