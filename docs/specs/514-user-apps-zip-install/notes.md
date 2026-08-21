@@ -105,3 +105,42 @@ Esse cliente autenticará como **`external`**, não como agente. Para lifecycle 
 - **Reuso de painel:** `SectionPanelManager.ts:203-235,371-379` já oferece chave por view+projeto e reveal da instância existente. A premissa de reuso é válida, desde que a rota dinâmica e o carregamento de conteúdo sejam conectados.
 - **Colisão:** prefixar o ID diferencia apps de IDs builtin por construção. A decisão só precisa ser reconciliada com o validador de persistência.
 - **Cenários:** os cenários de instalação, catálogo, abertura/reveal, isolamento entre workspaces, reordenação, remoção e plugin sem tela são observáveis. A exceção é o critério universal do Bridge, que contradiz a política e os guards atuais em vez de apenas carecer de teste.
+
+
+## Achado de revisão de segurança externa — 2026-08-21
+
+Uma revisão adversarial trazida pelo dono tocou esta spec em dois pontos. Um é decisão dele; o outro é fato de viabilidade que eu não tinha e que muda a tarefa T3.
+
+### Não é achado: "poder equivalente a agente, sem checksum nem prompt"
+
+A revisão sinalizou que a decisão de desenho dá ao app poder equivalente ao de um agente, sem checksum e sem confirmação na reinstalação.
+
+Isso está correto como descrição e não é defeito. É decisão explícita do dono em 2026-08-21, registrada em `spec.md` como non-goal com essas palavras: *"não é adiamento por falta de tempo, é decisão do dono"*. E a revisão a chamou de "sinalizado antes do código existir", que é exatamente o que a seção de non-goals serve para fazer.
+
+Uma nuance medida que vale registrar: o poder do app **não** é equivalente ao de um agente. Doze ferramentas do Bridge exigem `caller.kind === "agent"`, e um app autentica como `external`. Estão nomeadas em `spec.md`. Onze delas têm um agente por sujeito; a décima segunda, `run_host_action`, é default-deny para todo mundo neste workspace.
+
+### É achado: o extrator endurecido cobre só tar.gz
+
+**Confirmado por leitura.** `packages/engine/src/plugins/manifest.ts:61`:
+
+```
+export const TOOL_ARCHIVE_TYPES = ["tar.gz", "tgz"] as const;
+```
+
+E `:429` recusa explicitamente:
+
+```
+`${where}.type: 'zip' is not supported in v1 — use tar.gz/tgz (zip support is deferred)`
+```
+
+Esta spec inteira é sobre instalar app **por zip**. O único extrator endurecido do produto não faz zip, e a recusa é deliberada e documentada como diferimento.
+
+**Consequência para a T3.** Ela dizia "descompacta em temporário, valida, move". Isso pressupunha um descompactador. Não existe um que sirva. As opções são três, e nenhuma é óbvia:
+
+| opção | custo |
+|---|---|
+| escrever extração de zip nova | é código de parsing de formato, a categoria mais fácil de errar |
+| reusar o caminho tar.gz e trocar o formato de entrega | contraria o pedido do dono, que disse zip |
+| destravar o `zip` diferido do `TOOL_ARCHIVE_TYPES` | herda o endurecimento existente, mas é decisão do spec 265 e não desta |
+
+A terceira parece a certa e é a que eu não posso decidir sozinho, porque o diferimento do zip foi decisão de outra spec. **Vira pergunta para o dono antes de a T3 começar.**
