@@ -504,6 +504,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
           // listed; a refusal anywhere above therefore throws past this line and the agent stays
           // addressable for the retry, instead of vanishing from the board with its checkout, its
           // branch and its registry entry stranded behind it.
+          await deps.manager.closeTemporaryProcessScope?.(name);
           deps.manager.dismissTemporary(name);
           return ok(dismissReceipt(name, released));
         }
@@ -575,6 +576,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         // occupancy gate reads a stopped-but-present pane as occupied and kills it, through the same
         // `manager.kill` this branch would call. Calling it twice would throw AgentNotRunningError and
         // turn a completed dismissal into an error; `dismissTemporary` is idempotent and finishes the row.
+        await deps.manager.closeTemporaryProcessScope?.(name);
         deps.manager.dismissTemporary(name);
         return dismissalResult(name, dismissReceipt(name, released), taskSuggestions);
       } catch (err) {

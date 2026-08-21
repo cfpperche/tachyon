@@ -6259,7 +6259,7 @@ export class Workspace {
       // def is gone and cannot rehydrate. Drop it rather than holding a line for a name that will not return.
       this.pendingReloadSummaries.delete(row.name);
       this.queuedReloadSummaries.delete(row.name);
-      this.manager.dismissTemporary(row.name);
+      await this.manager.dismissTemporaryScoped(row.name);
     }
     if (autoCollect.length > 0) {
       this.refreshAgentsViews();
@@ -6307,7 +6307,7 @@ export class Workspace {
           continue;
         }
         if (rec.worktree) await removeAgentWorktree(this, name, true);
-        this.manager.dismissTemporary(name);
+        await this.manager.dismissTemporaryScoped(name);
         dismissed += 1;
       } catch (err) {
         errors.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
