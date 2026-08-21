@@ -14,8 +14,15 @@ describe("t-91884b — agent overflow trigger is hidden at rest and the ruler ai
 
   it("does not keep the agent overflow trigger painted at rest", () => {
     expect(css).not.toMatch(/\.row\s*>\s*\.actions\.agent-actions\s*\{[^}]*opacity:\s*1/);
-    expect(css).toMatch(/\.row:hover\s*>\s*\.actions\s*,\s*\.row:focus-within\s*>\s*\.actions\s*\{\s*opacity:\s*1/);
+    expect(css).toMatch(/\.row:hover\s*>\s*\.actions:not\(\.agent-actions\)\s*,\s*\.row:focus-within\s*>\s*\.actions:not\(\.agent-actions\)\s*\{\s*opacity:\s*1;\s*pointer-events:\s*auto/);
     expect(css).toMatch(/\.pin:hover\s+\.actions\s*,\s*\.pin:focus-within\s+\.actions\s*\{\s*opacity:\s*1/);
+  });
+
+  it("t-a96e82 — agent row hover paints the trigger without arming the overlay", () => {
+    expect(css).toMatch(/\.row:hover\s*>\s*\.actions\.agent-actions\s*,\s*\.row:focus-within\s*>\s*\.actions\.agent-actions\s*\{\s*opacity:\s*1\s*;\s*\}/);
+    expect(css).toMatch(/\.row:hover\s*>\s*\.actions\.agent-actions\s*>\s*\[aria-haspopup="menu"\]/);
+    expect(css).toMatch(/\.row\s*>\s*\.actions\.agent-actions:hover\s*,\s*\.row\s*>\s*\.actions\.agent-actions:focus-within\s*\{\s*pointer-events:\s*auto/);
+    expect(css).not.toMatch(/\.row:hover\s*>\s*\.actions\s*,\s*\.row:focus-within\s*>\s*\.actions\s*\{\s*opacity:\s*1;\s*pointer-events:\s*auto/);
   });
 
   it("opens the ruler only when the actions cluster is hovered or focused", () => {

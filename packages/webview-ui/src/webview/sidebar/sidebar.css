@@ -411,13 +411,18 @@
 
   /* Action overlay — absolute so it never widens the row. The shared base is the pins' and
      non-agent rows' all-or-none toolbar: hidden at rest, shown on row hover or focus-within.
-     Agent rows use that same trigger visibility (the `...` is gone at rest; the 38px corridor
-     stays empty). The primary strip (`.action-reveal`) opens only when the pointer or keyboard
-     focus is on `.actions` itself — hovering the rest of the card must not open the ruler.
+     Agent rows keep that rest state (the `...` is gone at rest; the 38px corridor stays empty)
+     but are excluded from the base pointer-events (t-a96e82): row hover/focus paints the
+     cluster so the trigger can show, and only the overflow button is a hit target. The primary
+     strip (`.action-reveal`) opens only when the pointer or keyboard focus is on `.actions`
+     itself — hovering the rest of the card must not open the ruler.
      An open overflow menu holds the trigger visible via MoreBtn[aria-expanded=true], because
      the menu is a portal and is no longer :hover/:focus-within of the card. */
   .actions { display: flex; opacity: 0; pointer-events: none; transition: opacity .1s; position: absolute; right: 8px; top: 6px; gap: 0; z-index: 2; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: var(--ds-spacing-size20) var(--ds-spacing-size20); border-radius: 4px; box-shadow: 0 0 0 1px var(--ds-border); }
-  .row:hover > .actions, .row:focus-within > .actions { opacity: 1; pointer-events: auto; }
+  .row:hover > .actions:not(.agent-actions), .row:focus-within > .actions:not(.agent-actions) { opacity: 1; pointer-events: auto; }
+  .row:hover > .actions.agent-actions, .row:focus-within > .actions.agent-actions { opacity: 1; }
+  .row:hover > .actions.agent-actions > [aria-haspopup="menu"], .row:focus-within > .actions.agent-actions > [aria-haspopup="menu"] { pointer-events: auto; }
+  .row > .actions.agent-actions:hover, .row > .actions.agent-actions:focus-within { pointer-events: auto; }
   .row > .actions.agent-actions:has([aria-expanded="true"]) { opacity: 1; pointer-events: auto; }
   .row > .actions.agent-actions .action-reveal {
     display: flex; max-width: 0; overflow: hidden; opacity: 0; pointer-events: none;
