@@ -9,7 +9,7 @@ import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/
 import type { SectionPanelState } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
 import { serializeLockfile, LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
 import { pollAction, readyMessage } from "@tachyon/webview-ui/webview/plugins/messages.js";
-import type { WorkspaceGitPresentationTarget } from "../../apps/vscode-extension/src/shell/WorkspacePresentation.js";
+import type { WorkspacePluginProfileTarget } from "../../apps/vscode-extension/src/shell/WorkspacePresentation.js";
 
 /**
  * SDD 485 D2 — Plugins as a standalone DASHBOARD app.
@@ -76,16 +76,17 @@ function writeLockfile(root: string, name: string): void {
 }
 
 /** Offline-deterministic target: every git call fails fast (no network, no real repo). */
-function target(root: string, hash: string): WorkspaceGitPresentationTarget {
+function target(root: string, hash: string, revokePluginGrants?: (pluginName: string) => Promise<unknown>): WorkspacePluginProfileTarget {
   return {
     workspaceRoot: root,
     wsHash: hash,
     folderName: `ws-${hash}`,
     gitExec: async () => ({ code: 1, stdout: "", stderr: "fake git: unavailable" }),
-  } as unknown as WorkspaceGitPresentationTarget;
+    ...(revokePluginGrants ? { revokePluginGrants } : {}),
+  } as unknown as WorkspacePluginProfileTarget;
 }
 
-function managerFor(targets: WorkspaceGitPresentationTarget[]): PluginsPanelManager {
+function managerFor(targets: WorkspacePluginProfileTarget[]): PluginsPanelManager {
   return new PluginsPanelManager(extensionUri, () => targets);
 }
 
@@ -203,6 +204,80 @@ describe("SDD 485 D2 — the session state is PER PANEL (t-0fc9ee's contract, un
     // the embed's pre-fix failure was a rebound session with no pending: confirmOp silently returned and
     // NO result was ever posted. A per-panel closure cannot be recreated under a live panel at all.
     expect(posted(panel, "result").at(-1)).toBeTruthy();
+  });
+
+  // t-b1940c — option (b): the removal drags the profile grants that authorized the plugin, and the
+  // result NAMES who lost what. These cases drive the wire: the revoke door hangs off the workspace
+  // target next to gitExec, runs only after the engine reported the payload gone, and every
+  // revocation outcome — granted, empty, failed — lands on the same posted result.
+  it("a successful remove revokes profile grants and names who lost what", async () => {
+    const root = mkroot();
+    writeLockfile(root, "tdd-guard");
+    const asked: string[] = [];
+    const mgr = managerFor([target(root, "ws-1", async (plugin: string) => {
+      asked.push(plugin);
+      return {
+        schemaVersion: 1,
+        revoked: [
+          { agent: "claude", referenceId: plugin, deselected: true, running: true },
+          { agent: "grok", referenceId: plugin, deselected: false, running: false },
+        ],
+        errors: [{ agent: "codex", referenceId: plugin, error: "no canonical profile" }],
+      };
+    })]);
+    const panel = await open(mgr, "ws-1");
+
+    panel.webview.__receive({ type: "remove", name: "tdd-guard" });
+    await flush();
+    const token = (posted(panel, "consent").at(-1) as { vm: { token: string } }).vm.token;
+    panel.webview.__receive({ type: "confirm", token });
+    await flush();
+
+    // AFTER the engine said removed — a refused remove must never drag grants.
+    expect(asked).toEqual(["tdd-guard"]);
+    const result = posted(panel, "result").at(-1) as { ok: boolean; text: string };
+    expect(result.ok).toBe(true);
+    expect(result.text).toContain("Revoked tdd-guard from claude (tdd-guard), grok (tdd-guard)");
+    // t-746f0f's duty at this door too: the running agent's loss lands at restart, and the message says so.
+    expect(result.text).toContain("Running agents keep their launched copy until restart.");
+    expect(result.text).toContain("Could not revoke agent grants: codex (tdd-guard): no canonical profile");
+  });
+
+  it("a revocation failure is reported on the result, never silent", async () => {
+    const root = mkroot();
+    writeLockfile(root, "tdd-guard");
+    const mgr = managerFor([target(root, "ws-1", async () => {
+      throw new Error("engine unreachable");
+    })]);
+    const panel = await open(mgr, "ws-1");
+
+    panel.webview.__receive({ type: "remove", name: "tdd-guard" });
+    await flush();
+    const token = (posted(panel, "consent").at(-1) as { vm: { token: string } }).vm.token;
+    panel.webview.__receive({ type: "confirm", token });
+    await flush();
+
+    const result = posted(panel, "result").at(-1) as { ok: boolean; text: string };
+    expect(result.ok).toBe(true);
+    expect(result.text).toContain("Could not revoke agent grants: engine unreachable");
+  });
+
+  it("removing a plugin nobody ever granted says nothing about grants", async () => {
+    const root = mkroot();
+    writeLockfile(root, "tdd-guard");
+    const mgr = managerFor([target(root, "ws-1", async () => ({ schemaVersion: 1, revoked: [], errors: [] }))]);
+    const panel = await open(mgr, "ws-1");
+
+    panel.webview.__receive({ type: "remove", name: "tdd-guard" });
+    await flush();
+    const token = (posted(panel, "consent").at(-1) as { vm: { token: string } }).vm.token;
+    panel.webview.__receive({ type: "confirm", token });
+    await flush();
+
+    const result = posted(panel, "result").at(-1) as { ok: boolean; text: string };
+    expect(result.ok).toBe(true);
+    expect(result.text).not.toContain("Revoked");
+    expect(result.text).not.toContain("revoke");
   });
 
   it("two projects do not share checks, a pending consent, or the busy guard", async () => {

@@ -14,9 +14,11 @@ import { workspaceExtensionTarget, type WorkspaceExtensionTarget } from "./Works
 import {
   workspaceGitPresentationTarget,
   workspacePluginPresentationTarget,
+  workspacePluginProfileTarget,
   workspaceProbePresentationTarget,
   type WorkspaceGitPresentationTarget,
   type WorkspacePluginPresentationTarget,
+  type WorkspacePluginProfileTarget,
   type WorkspaceProbePresentationTarget,
   type WorkspaceAgentStudioTarget,
   type SecretInventoryView,
@@ -44,6 +46,8 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
   readonly runtimeOps: WorkspaceRuntimeOpsTarget;
   readonly extension: WorkspaceExtensionTarget;
   readonly git: WorkspaceGitPresentationTarget;
+  /** t-b1940c — the git presentation plus the revoke-on-remove door, for the Plugins panel. */
+  readonly pluginProfile: WorkspacePluginProfileTarget;
   readonly probe: WorkspaceProbePresentationTarget;
   readonly plugin: WorkspacePluginPresentationTarget;
   private readonly studio: ClientWorkspaceStudioTarget;
@@ -62,6 +66,7 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
     this.runtimeOps = workspaceRuntimeOpsTarget(client);
     this.extension = workspaceExtensionTarget(client);
     this.git = workspaceGitPresentationTarget(client, options.gitExec);
+    this.pluginProfile = workspacePluginProfileTarget(client, options.gitExec);
     this.probe = workspaceProbePresentationTarget(client);
     this.plugin = workspacePluginPresentationTarget(client);
     this.studio = new ClientWorkspaceStudioTarget(client, { extensionUri: options.extensionUri });
