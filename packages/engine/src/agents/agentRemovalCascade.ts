@@ -102,6 +102,8 @@ export interface AgentWorktreeRemovalReceipt {
   path?: string;
   gitMessage?: string;
   error?: string;
+  /** t-9fd2e6 — checkout still present after the attempt; `error` is the measured reason. */
+  kept?: true;
 }
 
 /** t-eb25ba — WorktreeManager dirtiness lines (soft remove / refuseUnlessForceIfDirty). */
@@ -229,6 +231,15 @@ export async function removeAgentWorktree(
         "agent-profile/worktree-removal-dirty",
         agentEndOfLifeDirtyRefusal(record.path, underlying),
       );
+    }
+    // t-9fd2e6 — confirmLiveProcesses authorized the attempt; it does not guarantee the
+    // directory left. Residue is information, not a failure to throw past. Ownership is
+    // released so the Temporary row can dismiss; the receipt says KEPT with the measured
+    // reason instead of claiming the checkout is gone.
+    if (result.kept === true && opts?.confirmLiveProcesses === true) {
+      ports.managedWorktrees.syncAgentRecord(agent, null);
+      ports.ledger.clearWorktree(agent);
+      return { ...result, path: record.path, kept: true };
     }
     throw new Error(underlying);
   }

@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { registerTools } from "@tachyon/bridge/tools.js";
+import { dismissReceipt } from "@tachyon/bridge/tools/shared.js";
 import type { LifecycleOwnershipSource } from "@tachyon/bridge/lifecycleScope.js";
 import { executeExtensionCommand } from "@tachyon/engine/engine-service/extensionOperationService.js";
 import type { WorktreeRecord } from "@tachyon/engine/worktree/worktreeRecord.js";
+import type { WorktreeRemovalResult } from "@tachyon/engine/worktree/WorktreeManager.js";
 
 /**
  * t-d06da3 (spec 484) — the two lifecycle doors that open once a Temporary child may own a worktree.
@@ -69,13 +75,17 @@ function dismissWorld(opts: {
   occupancy?: Array<{ state: "free" | "occupied" | "unknown"; detail?: string }>;
   branchDeleted?: boolean;
   dirty?: boolean;
+  worktree?: WorktreeRecord;
+  /** When set, git-remove returns this instead of claiming success. */
+  removeResult?: WorktreeRemovalResult;
 } = {}): DismissWorld {
+  const record = opts.worktree ?? RECORD;
   const events: string[] = [];
   const notices: Array<{ message: string; level: string }> = [];
   const ledger = new Map<string, { worktree?: WorktreeRecord }>([
-    ["child", opts.owns === false ? {} : { worktree: RECORD }],
+    ["child", opts.owns === false ? {} : { worktree: record }],
   ]);
-  const registry = new Map<string, WorktreeRecord | null>([["child", opts.owns === false ? null : RECORD]]);
+  const registry = new Map<string, WorktreeRecord | null>([["child", opts.owns === false ? null : record]]);
   // Default: a stopped-but-present pane, which is what a finished Temporary child actually looks like
   // to tmux, then free once the cascade's gate has killed it.
   const verdicts = opts.occupancy ?? [{ state: "occupied" as const, detail: "a stopped pane is still present in tmux" }, { state: "free" as const }];
@@ -127,6 +137,7 @@ function dismissWorld(opts: {
     worktrees: {
       remove: async (rec: WorktreeRecord, deleteBranch: boolean, removeOpts: { force: boolean; refuseUnlessForceIfDirty: boolean }) => {
         events.push(`git-remove ${rec.path} deleteBranch=${deleteBranch} force=${removeOpts.force} probeDirty=${removeOpts.refuseUnlessForceIfDirty}`);
+        if (opts.removeResult) return opts.removeResult;
         if (opts.dirty) return { removed: false, branchDeleted: false, error: `worktree is dirty at ${rec.path}; pass confirmDirty=true to force-remove uncommitted work` };
         return { removed: true, branchDeleted: opts.branchDeleted ?? true };
       },
@@ -359,6 +370,120 @@ describe("t-d06da3 — dismiss_agent takes the child's worktree with it", () => 
 
     expect(result.content[0]?.text).toBe("agent 'child' dismissed");
     expect(world.events).toEqual(["dismiss-row"]); // no probe, no release, no git
+  });
+});
+
+describe("t-9fd2e6 — kill_agent reports a worktree that did not leave", () => {
+  const children: ChildProcess[] = [];
+  const dirs: string[] = [];
+
+  function holdCwd(dir: string): { pid: number } {
+    const child = spawn("sleep", ["120"], { cwd: dir, stdio: "ignore" });
+    children.push(child);
+    if (child.pid === undefined) throw new Error("sleep did not start");
+    const cwd = fs.readlinkSync(`/proc/${child.pid}/cwd`);
+    expect(path.resolve(cwd)).toBe(fs.realpathSync(dir));
+    return { pid: child.pid };
+  }
+
+  afterEach(() => {
+    for (const child of children.splice(0)) {
+      try { child.kill("SIGKILL"); } catch { /* already gone */ }
+    }
+    for (const d of dirs.splice(0)) {
+      try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* leftover hold */ }
+    }
+  });
+
+  it("does not say 'was removed' when a live process still holds the cwd", async () => {
+    const checkout = fs.mkdtempSync(path.join(os.tmpdir(), "t-9fd2e6-kept-"));
+    dirs.push(checkout);
+    const held = holdCwd(checkout);
+    const worktree: WorktreeRecord = { ...RECORD, path: checkout };
+    const world = dismissWorld({
+      worktree,
+      // The production lie: git's exit code (or the port) claims success without the directory leaving.
+      removeResult: { removed: true, branchDeleted: true },
+    });
+
+    const result = await world.kill({ name: "child", confirmLiveProcesses: true });
+    const text = result.content[0]?.text ?? "";
+
+    expect(result.isError).toBeFalsy();
+    expect(text).not.toMatch(/was removed/);
+    expect(text).toMatch(/KEPT/);
+    expect(text).toContain(checkout);
+    expect(text).toMatch(new RegExp(`pid ${held.pid}`));
+    expect(text).toMatch(/dismissed/);
+    expect(fs.existsSync(checkout)).toBe(true);
+    expect(world.events).toContain("dismiss-row");
+  });
+
+  it("confirmLiveProcesses kept residue dismisses the row and still does not say removed", async () => {
+    const checkout = fs.mkdtempSync(path.join(os.tmpdir(), "t-9fd2e6-residue-"));
+    dirs.push(checkout);
+    const world = dismissWorld({
+      worktree: { ...RECORD, path: checkout },
+      removeResult: {
+        removed: false,
+        branchDeleted: false,
+        kept: true,
+        error: `worktree KEPT at ${checkout} — 1 live process still has cwd there (pid 9 sleep)`,
+      },
+    });
+
+    const result = await world.kill({ name: "child", confirmLiveProcesses: true });
+    const text = result.content[0]?.text ?? "";
+
+    expect(result.isError).toBeFalsy();
+    expect(text).not.toMatch(/was removed/);
+    expect(text).toMatch(/KEPT/);
+    expect(text).toContain(checkout);
+    expect(world.events).toContain("dismiss-row");
+    expect(world.events).toContain("ledger-clear");
+  });
+
+  it("without confirmLiveProcesses, a kept residue refuses and does not dismiss", async () => {
+    const world = dismissWorld({
+      removeResult: {
+        removed: false,
+        branchDeleted: false,
+        kept: true,
+        error: "worktree KEPT at /checkouts/child — directory still exists on disk",
+      },
+    });
+
+    const result = await world.kill({ name: "child" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/KEPT/);
+    expect(result.content[0]?.text).not.toMatch(/was removed/);
+    expect(world.events).not.toContain("dismiss-row");
+    expect(world.events).not.toContain("ledger-clear");
+  });
+
+  it("dismissReceipt distinguishes removed from kept without collapsing the three claims", () => {
+    const removed = dismissReceipt("child", {
+      path: "/wt",
+      branch: "tachyon/child",
+      branchKept: false,
+      alreadyAbsent: false,
+      worktreeKept: false,
+    });
+    expect(removed).toBe("agent 'child' dismissed; its worktree at /wt was removed; branch 'tachyon/child' was deleted");
+
+    const kept = dismissReceipt("child", {
+      path: "/wt",
+      branch: "tachyon/child",
+      branchKept: true,
+      alreadyAbsent: false,
+      worktreeKept: true,
+      keptReason: "1 live process still has cwd there (pid 9 sleep)",
+    });
+    expect(kept).not.toMatch(/was removed/);
+    expect(kept).toContain("worktree KEPT at /wt — 1 live process still has cwd there (pid 9 sleep)");
+    expect(kept).toContain("branch 'tachyon/child' was kept — worktree is still present");
+    expect(kept).toMatch(/^agent 'child' dismissed;/);
   });
 });
 

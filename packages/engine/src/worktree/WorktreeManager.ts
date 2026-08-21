@@ -26,6 +26,7 @@ import {
   liveWorktreeProcessBlocksRemoval,
   liveWorktreeProcessRefusal,
   scanLiveWorktreeProcesses,
+  worktreeKeptAfterRemoval,
   type LiveWorktreeProcessReport,
 } from "./orphanProcessHygiene.js";
 
@@ -306,6 +307,12 @@ export interface WorktreeRemovalResult {
    * own a durable claim on this checkout may treat it as done; everyone else keeps failing.
    */
   absent?: WorktreeAbsence;
+  /**
+   * t-9fd2e6 — git returned success (or the caller asked to try anyway) and a post-check found
+   * the checkout still listed or still on disk. `removed` is false; `error` names the path and
+   * the measured reason. Not a dirty/occupancy refusal.
+   */
+  kept?: true;
   /**
    * t-361963 — what the cwd probe knew at the decision. Present once the probe ran.
    * `measured: false` with the no-/proc reason is a declaration, not a refusal.
@@ -1195,6 +1202,31 @@ export class WorktreeManager {
         if (!absent) return withProbe({ removed: false, branchDeleted: false, error });
         await this.git(gitArgs.prune(), this.opts.workspaceRoot);
         return withProbe({ removed: false, branchDeleted: false, error, absent });
+      }
+      // t-9fd2e6 — git's exit code is not the checkout's state. A coordinator received
+      // "was removed; branch was deleted" while `ls` and `git worktree list` still showed both.
+      // Prove the path is gone and unlisted before claiming removal; do not delete the branch
+      // of a checkout that is still there. (A mere cwd hold does not always prevent git from
+      // unlinking the path — measured on this host — so the post-check is the proof, not a
+      // guess about why residue remains.)
+      const gone = await this.probeAbsence(rec.path);
+      if (gone !== "missing") {
+        const stillOnDisk = this.exists(rec.path);
+        const stillListed = gone === undefined;
+        let liveReport: LiveWorktreeProcessReport | undefined;
+        if (stillOnDisk) {
+          liveReport = (this.opts.processProbe ?? scanLiveWorktreeProcesses)(rec.path);
+          processProbe = {
+            measured: liveReport.measured,
+            ...(liveReport.unavailableReason ? { unavailableReason: liveReport.unavailableReason } : {}),
+          };
+        }
+        return withProbe({
+          removed: false,
+          branchDeleted: false,
+          kept: true,
+          error: worktreeKeptAfterRemoval(rec.path, liveReport, { stillListed, stillOnDisk }),
+        });
       }
       let branchDeleted = false;
       if (deleteBranch && rec.tachyonCreatedBranch) {

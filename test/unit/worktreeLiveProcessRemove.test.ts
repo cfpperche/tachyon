@@ -15,11 +15,12 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { WorktreeManager } from "@tachyon/engine/worktree/WorktreeManager.js";
+import { defaultGitExec, WorktreeManager } from "@tachyon/engine/worktree/WorktreeManager.js";
 import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 import {
   PROC_UNAVAILABLE_REASON,
   PROC_WALK_FAILED_REASON,
+  worktreeKeptAfterRemoval,
 } from "@tachyon/engine/worktree/orphanProcessHygiene.js";
 
 describe("t-361963: probe live cwd processes before worktree remove", () => {
@@ -127,6 +128,48 @@ describe("t-361963: probe live cwd processes before worktree remove", () => {
     expect(result.removed).toBe(true);
     expect(fs.existsSync(record.path)).toBe(false);
     expect(alive(held.pid)).toBe(true);
+  });
+
+  it("t-9fd2e6: git exit 0 is not removal — live cwd still on disk means kept, not removed", async () => {
+    const settings: TachyonConfig["settings"] = { worktree: { base } };
+    const m = new WorktreeManager({
+      workspaceRoot: repo,
+      wsHash: "h",
+      getSettings: () => settings,
+      occupancy: async () => undefined,
+      git: async (args, cwd) => {
+        if (args[0] === "worktree" && args[1] === "remove") {
+          return { stdout: "", stderr: "", code: 0 };
+        }
+        return defaultGitExec(args, cwd);
+      },
+    });
+    const { record } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
+    const held = holdCwd(record.path);
+
+    const result = await m.remove(record, true, { confirmLiveProcesses: true });
+
+    expect(result.removed).toBe(false);
+    expect(result.kept).toBe(true);
+    expect(result.branchDeleted).toBe(false);
+    expect(result.error).toMatch(/KEPT/);
+    expect(result.error).not.toMatch(/was removed/);
+    expect(result.error).toContain(record.path);
+    expect(result.error).toMatch(new RegExp(`pid ${held.pid}`));
+    expect(fs.existsSync(record.path)).toBe(true);
+    expect(alive(held.pid)).toBe(true);
+  });
+
+  it("worktreeKeptAfterRemoval names the path and the live pid, never 'was removed'", () => {
+    const text = worktreeKeptAfterRemoval("/wt", {
+      worktreePath: "/wt",
+      scanned: 1,
+      unreadable: 0,
+      measured: true,
+      processes: [{ pid: 9, cwd: "/wt", command: "sleep" }],
+    }, { stillListed: true, stillOnDisk: true });
+    expect(text).toBe("worktree KEPT at /wt — 1 live process still has cwd there (pid 9 sleep); git still lists it as a worktree");
+    expect(text).not.toMatch(/was removed/);
   });
 
   it("a failed /proc walk (instrument exists) is a declared refusal, not an empty finding", async () => {

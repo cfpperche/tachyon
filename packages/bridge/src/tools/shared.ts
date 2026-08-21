@@ -1,8 +1,10 @@
 import { z } from "zod";
 import type { ZodErrorMap } from "zod";
 import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
+import fs from "node:fs";
 import { removeAgentWorktree } from "@tachyon/engine/agents/agentRemovalCascade.js";
-import type { AgentWorktreeRemovalPorts } from "@tachyon/engine/agents/agentRemovalCascade.js";
+import type { AgentWorktreeRemovalPorts, AgentWorktreeRemovalReceipt } from "@tachyon/engine/agents/agentRemovalCascade.js";
+import { scanLiveWorktreeProcesses, worktreeKeptAfterRemoval } from "@tachyon/engine/worktree/orphanProcessHygiene.js";
 import { TmuxQueueError } from "@tachyon/engine/tmux/TmuxService.js";
 import type { TmuxService } from "@tachyon/engine/tmux/TmuxService.js";
 import { paneTranscriptExists, readPaneTranscript } from "@tachyon/engine/agents/paneTranscript.js";
@@ -777,12 +779,52 @@ export async function managedEntry(deps: Pick<BridgeDeps, "manager">, name: stri
   return (await deps.manager.list()).find((a) => a.name === name);
 }
 
-/** What the Bridge needs to SAY about a checkout it just took down — the record, plus git's verdict on the branch. */
+/** What the Bridge needs to SAY about a checkout it just took down — measured, not intended. */
 export interface DismissedWorktree {
   path: string;
   branch: string;
   branchKept: boolean;
   alreadyAbsent: boolean;
+  /** Directory still present after the removal attempt (t-9fd2e6). Independent of `alreadyAbsent`. */
+  worktreeKept: boolean;
+  /** Measured reason the checkout is still there; set when `worktreeKept`. */
+  keptReason?: string;
+}
+
+function measuredDismissedWorktree(
+  record: { path: string; branch: string },
+  receipt: AgentWorktreeRemovalReceipt,
+): DismissedWorktree {
+  const alreadyAbsent = receipt.checkoutAlreadyAbsent === true;
+  if (alreadyAbsent) {
+    return {
+      path: record.path,
+      branch: record.branch,
+      branchKept: true,
+      alreadyAbsent: true,
+      worktreeKept: false,
+    };
+  }
+  const stillOnDisk = fs.existsSync(record.path);
+  const worktreeKept = receipt.kept === true || stillOnDisk;
+  if (!worktreeKept) {
+    return {
+      path: record.path,
+      branch: record.branch,
+      branchKept: !receipt.branchDeleted,
+      alreadyAbsent: false,
+      worktreeKept: false,
+    };
+  }
+  const report = stillOnDisk ? scanLiveWorktreeProcesses(record.path) : undefined;
+  return {
+    path: record.path,
+    branch: record.branch,
+    branchKept: true,
+    alreadyAbsent: false,
+    worktreeKept: true,
+    keptReason: receipt.error ?? worktreeKeptAfterRemoval(record.path, report, { stillOnDisk }),
+  };
 }
 
 /**
@@ -827,16 +869,20 @@ export async function dismissOwnedWorktree(
   // the checkout (dirty files make every end-of-life door refuse) and runs `git branch -d`, so a
   // branch holding commits that are not merged survives and the receipt says so.
   const receipt = await removeAgentWorktree(ports, name, true, opts);
-  const released = {
-    path: record.path,
-    branch: record.branch,
-    branchKept: !receipt.branchDeleted,
-    alreadyAbsent: receipt.checkoutAlreadyAbsent === true,
-  };
+  // t-9fd2e6 — the receipt's `removed`/`branchDeleted` used to be printed as fact. Re-measure
+  // the path: the ledger record is intention, and git's exit code is not the disk. If the
+  // directory is still there, the receipt says KEPT with the measured reason.
+  const released = measuredDismissedWorktree(record, receipt);
   // Said out loud rather than left in a return value nobody reads (t-da80ed): the caller of
   // `dismiss_agent` is usually an agent, and the branch that outlives the checkout is the human's
-  // only handle on work that was never merged.
-  if (released.branchKept) {
+  // only handle on work that was never merged. A checkout that itself outlived the attempt is
+  // a different sentence — do not claim the worktree was removed in that notice.
+  if (released.worktreeKept) {
+    deps.notify(
+      `dismissed '${name}'; worktree KEPT at ${released.path} — ${released.keptReason ?? "checkout still present"}`,
+      "warn",
+    );
+  } else if (released.branchKept) {
     deps.notify(
       `dismissed '${name}' and removed its worktree; branch '${released.branch}' was KEPT — it holds commits that are not merged`,
       "warn",
@@ -849,10 +895,14 @@ export function dismissReceipt(name: string, released: DismissedWorktree | undef
   if (!released) return `agent '${name}' dismissed`;
   const checkout = released.alreadyAbsent
     ? `its worktree at ${released.path} was already gone (ownership released)`
-    : `its worktree at ${released.path} was removed`;
-  const branch = released.branchKept
-    ? `branch '${released.branch}' was kept — it holds unmerged commits, or Tachyon did not create it`
-    : `branch '${released.branch}' was deleted`;
+    : released.worktreeKept
+      ? `worktree KEPT at ${released.path} — ${released.keptReason ?? "checkout still present"}`
+      : `its worktree at ${released.path} was removed`;
+  const branch = released.worktreeKept
+    ? `branch '${released.branch}' was kept — worktree is still present`
+    : released.branchKept
+      ? `branch '${released.branch}' was kept — it holds unmerged commits, or Tachyon did not create it`
+      : `branch '${released.branch}' was deleted`;
   return `agent '${name}' dismissed; ${checkout}; ${branch}`;
 }
 
