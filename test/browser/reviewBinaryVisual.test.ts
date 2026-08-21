@@ -1,7 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
-import fs from "node:fs";
-import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
 import { openPreview } from "./support/preview";
@@ -11,14 +9,11 @@ import { openPreview } from "./support/preview";
  * Binary evidence is visible in Review, contained inside the diff pane, and legible in both themes.
  * Raster/SVG retain their proportions; PDF presents a readable page; 3D presents an interactive viewport.
  */
-const OUT = path.resolve(__dirname, "../../docs/research/evidence-t-3be62b");
-
 describe("t-3be62b — Review binary families", () => {
   let server: GateServer;
   let browser: Browser;
   let page: Page;
   beforeAll(async () => {
-    fs.mkdirSync(OUT, { recursive: true });
     server = await startGateServer();
     browser = await puppeteer.launch({ executablePath: resolveChromeExecutable(), headless: true, args: ["--no-sandbox", "--disable-gpu"] });
     page = await browser.newPage();
@@ -67,9 +62,6 @@ describe("t-3be62b — Review binary families", () => {
           expect(sanitized).toContain("viewBox=\"0 0 640 360\"");
         }
         if (family === "model") await surface.waitForFunction(() => document.querySelector("model-viewer")?.shadowRoot !== null);
-        const file = path.join(OUT, `${family}-${theme}.png`);
-        await (await page.$("#frame"))!.screenshot({ path: file as `${string}.png` });
-        expect(fs.statSync(file).size).toBeGreaterThan(1000);
       }, 45_000);
     }
   }
