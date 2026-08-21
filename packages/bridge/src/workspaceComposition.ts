@@ -1,6 +1,6 @@
 import { Bridge, derivePort } from "./Bridge.js";
 import { APPROVAL_CHANNEL_COMPANION_HTTP } from "./approvalChannels.js";
-import { healUnknownBearerFromProc } from "./agentTokenHeal.js";
+import { healUnknownBearerFromAgents } from "./agentTokenHeal.js";
 import type { CallerIdentityRegistry, CallerScope } from "./callerIdentity.js";
 import type { BridgeDeps } from "./tools.js";
 import { composeAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
@@ -27,10 +27,12 @@ export const workspaceBridgePort: WorkspaceBridgePort = {
   companionApprovalChannel: APPROVAL_CHANNEL_COMPANION_HTTP,
   prepareAgentSummary,
   composeAgentNotice,
-  healUnknownBearer: (registry, bearer, scope) => healUnknownBearerFromProc(
+  healUnknownBearer: (registry, bearer, agents, scope, procSeam) => healUnknownBearerFromAgents(
     registry as CallerIdentityRegistry,
     bearer,
+    agents,
     scope as CallerScope,
+    procSeam,
   ),
 };
 
