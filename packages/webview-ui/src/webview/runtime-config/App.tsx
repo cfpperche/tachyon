@@ -260,7 +260,7 @@ export function App({
             <div>
               <span class="rcp-eyebrow">{s.runtimeConfigOther}</span>
               <h2>{config.unknownKeys.length} {s.runtimeConfigDetected}</h2>
-              <p>Values stay in the source file. This view lists only keys that are not yet editable in Control.</p>
+              <p>Not editable here yet — values stay in the source file.</p>
             </div>
             <Button variant="default" onClick={() => setUnknownOpen((open) => !open)}>
               {s.runtimeConfigViewRaw}

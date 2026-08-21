@@ -86,7 +86,6 @@ export function App({
         {snapshot.runtimes.length === 0 ? (
           <div class="runtime-ops-state">
             <strong>No supported runtimes found.</strong>
-            <span>PATH detection and managed session ledgers returned no runtime inventory.</span>
           </div>
         ) : snapshot.runtimes.map((runtime) => (
           <RuntimeRow
@@ -455,9 +454,7 @@ function WithheldGates({ gates }: { gates: InspectedSession["gatesWithheld"] }) 
   return (
     <SessionSection title="Gates NOT projected into this session" count={gates.length} empty="">
       <p class="runtime-ops-session-note">
-        Plugins this workspace classified whose gate hook did not reach this agent. Read from the
-        workspace's current plugin lockfile and classification — the same plan every spawn recomputes;
-        the Hooks list above is what this session was actually given.
+        Plugin gates that did not reach this agent. The Hooks list above is what this session actually has.
       </p>
       {gates.map((gate) => (
         <div class="runtime-ops-session-withheld" key={`${gate.plugin}-${gate.reason}`} role="status">

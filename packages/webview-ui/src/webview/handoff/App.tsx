@@ -182,7 +182,7 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
         <EmptyState
           kind="empty"
           icon="book"
-          message="No project handoff yet. Open it to create the file from the 4-section template, then curate the state of the work."
+          message="No handoff yet. Open to create it from the 4-section template."
           action={
             <Button icon="go-to-file" title="Open the handoff file" onClick={() => dispatch.openFile()}>
               Open

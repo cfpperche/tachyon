@@ -44,6 +44,6 @@ export function App({ model, post }: { model?: KeysModel; post: (action: KeysAct
       </article>)}</section>}
     </div>
     {remove && <div class="keys-confirm" role="dialog" aria-label="Confirm key removal"><h2>Remove {remove.provider}/{remove.id}?</h2><p>This cannot be undone. {remove.usedBy.length ? `It will prevent ${remove.usedBy.join(" and ")} from launching until stored again.` : "No saved agent currently declares this key."}</p><div class="keys-actions"><Button onClick={() => setRemove(undefined)}>Cancel</Button><Button variant="danger" onClick={() => { post({ type: "removeKey", provider: remove.provider, id: remove.id }); setRemove(undefined); }}>Remove</Button></div></div>}
-    <footer class="keys-storage">Storage: <code>secrets.json</code>, machine-local, owner-only. Not a keychain.</footer>
+    <footer class="keys-storage">Stored in <code>secrets.json</code> on this machine, owner-only.</footer>
   </main>;
 }
