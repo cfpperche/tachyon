@@ -96,18 +96,13 @@ function CoverageNotice({ p }: { p: InstalledPluginVM }) {
   const rts = p.uncoveredRuntimes ?? [];
   if (rts.length === 0) return null;
   const list = runtimeList(rts);
-  const them = rts.length === 1 ? "it" : "them";
-  const covered = p.runtimes.map((pill) => pill.runtime);
   return (
     <div class="pgap">
       <Badge tone="warn"><Icon name="warning" /> not installed for {list}</Badge>{" "}
       <span>
-        This workspace runs <b>{list}</b> and <b>{p.name}</b> supports {them}, but this install never covered {them}.
-        {" "}
         {p.sourceSpec
-          ? <>Use <b>Reinstall</b> in this card's ⋮ menu — it re-materializes the recorded commit for every runtime the plugin supports, through the same consent drawer.</>
-          : <>Install it again from its source directory with {list} selected, through the same consent drawer.</>}
-        {covered.length > 0 && <> It never removes first, so {runtimeList(covered)} stay{covered.length === 1 ? "s" : ""} installed throughout.</>}
+          ? <>Not installed for <b>{list}</b>. Use <b>Reinstall</b> (⋮ menu) — it adds {rts.length === 1 ? "it" : "them"} without removing the others.</>
+          : <>Not installed for <b>{list}</b>. Install it again from its source with {list} selected.</>}
       </span>
     </div>
   );
@@ -433,7 +428,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
                 </div>
               ))}
               <div class="ds-dim stack">
-                This package registers these hooks in the selected runtime settings. Tachyon-managed agent sessions receive them only when this workspace classifies <b>{vm.pluginName}</b> as <span class="ds-mono">enforcement</span> under <span class="ds-mono">settings.agentHookProjection</span>; an unclassified plugin projects nothing.
+                Reaches Tachyon-managed sessions only when the workspace classifies this plugin as enforcement.
               </div>
             </div>
           )}
@@ -715,7 +710,7 @@ export function App({ vm, consent, busy, dispatch }: { vm?: PluginsViewModel; co
           </div>
         )}
         {tab === "market" ? (
-          <EmptyState message={<>A curated registry is coming in v2.<br />For now, install any plugin by its git source above — <span class="ds-mono">github:owner/repo@ref</span>.</>} />
+          <EmptyState message={<>Registry coming in v2. Install by git source above — <span class="ds-mono">github:owner/repo@ref</span>.</>} />
         ) : vm.parseError ? (
           <div class="ds-banner"><Icon name="error" /> Lockfile is corrupt — list suppressed. {vm.parseError}</div>
         ) : vm.empty ? (

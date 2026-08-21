@@ -138,10 +138,9 @@ describe("Plugins card — runtime-coverage notice (t-fb216a)", () => {
 
     const sg = perCard.find((c) => c.name === "secrets-guard")?.notice ?? "";
     expect(sg).toContain("grok"); // names the runtime…
-    expect(sg).toContain("This workspace runs"); // …and why it matters HERE
+    expect(sg).toContain("Not installed"); // …and the state that needs action
     expect(sg).toContain("Reinstall"); // the gesture that closes it (t-8a062b)
-    expect(sg).toMatch(/never removes first/); // the cost, stated rather than left to be discovered
-    expect(sg).toContain("claude and codex stay installed"); // …naming exactly what stays protected during it
+    expect(sg).toContain("without removing the others"); // the consequence, stated rather than left to be discovered
   });
 
   /**
