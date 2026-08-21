@@ -511,8 +511,12 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
   "metrics-lanes": ({ a, metricsOpen, hasResources }) => (metricsOpen && hasResources ? <ResourceDetail a={a} /> : null),
 
   actions: ({ a, d }) => (
-    <div class="actions" role="group" aria-label={`${a.name} actions`}>
-      {primaryActions(a).map((id) => <Act icon={ACTION_META[id].icon} title={ACTION_META[id].label} on={() => d.action(id, a.name)} />)}
+    <div class={`actions${a.kind === "agent" ? " agent-actions" : ""}`} role="group" aria-label={`${a.name} actions`}>
+      {a.kind === "agent" ? (
+        <div class="action-reveal">
+          {primaryActions(a).map((id) => <Act icon={ACTION_META[id].icon} title={ACTION_META[id].label} on={() => d.action(id, a.name)} />)}
+        </div>
+      ) : primaryActions(a).map((id) => <Act icon={ACTION_META[id].icon} title={ACTION_META[id].label} on={() => d.action(id, a.name)} />)}
       {moreActions(a).length > 0 && <MoreBtn items={moreActions(a).map((id) => ({ label: ACTION_META[id].label, icon: ACTION_META[id].icon, run: () => d.action(id, a.name) }))} />}
     </div>
   ),
@@ -557,7 +561,7 @@ export function AgentRow({ a, flash, nested = false, hasChildren = false, collap
     hasHidden, hasResources, metricsOpen, onToggle, onToggleMetrics,
   };
   return (
-    <div class={`row${nested ? " child" : ""}${flash ? " flash" : ""}${metricsOpen && hasResources ? " metrics-open" : ""}`} data-name={a.name.toLowerCase()}>
+    <div class={`row${a.kind === "agent" ? " agent-card" : ""}${nested ? " child" : ""}${flash ? " flash" : ""}${metricsOpen && hasResources ? " metrics-open" : ""}`} data-name={a.name.toLowerCase()}>
       <div class="row-top">
         {/* Tree chrome, deliberately NOT a catalog component: it reveals child ROWS, and a template
             able to hide it would make collapsed children unreachable. */}

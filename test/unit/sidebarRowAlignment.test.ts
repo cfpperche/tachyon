@@ -29,11 +29,11 @@ const SPACING_PX: Record<string, number> = {
   "--ds-spacing-size320": 32,
 };
 
-/** t-d588c3 — name-column geometry on `.row`. Same computed px as the old 28/13/72 literals. */
+/** t-d588c3 geometry, with t-83bcf4's resting-action trail (38px gutter − size80 = 30px). */
 const GEOMETRY_PX: Record<string, number> = {
   "--sidebar-name-col": 28,
   "--sidebar-child-name-col": 13,
-  "--sidebar-focus-trail": 72,
+  "--sidebar-focus-trail": 30,
 };
 
 /** First length in a CSS value: `12px`, `var(--ds-spacing-size120)`, or a shorthand component. */
