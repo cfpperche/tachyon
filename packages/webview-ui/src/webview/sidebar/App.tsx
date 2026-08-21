@@ -93,7 +93,7 @@ interface SidebarCtx {
   section: (op: string, id: string, extra?: { done?: boolean; label?: string }) => void;
   global: (op: GlobalOp) => void;
   pipeline: (op: string, name: string, nodeId?: string) => void;
-  openMore: (items: MenuItem[], x: number, y: number) => void;
+  openMore: (items: MenuItem[], x: number, y: number, onClosed?: () => void) => void;
 }
 const NOOP_CTX: SidebarCtx = { action: () => {}, section: () => {}, global: () => {}, pipeline: () => {}, openMore: () => {} };
 /** Exported so the Fleet tab reuses the same row dispatch context (t-41117e). */
@@ -617,13 +617,21 @@ const Act = ({ icon, title, on }: { icon: string; title: string; on: () => void 
   </button>
 );
 
-/** The "..." overflow trigger — edit/remove (and any secondary action) live here, never inline, on every tab. */
+/** The "..." overflow trigger — edit/remove (and any secondary action) live here, never inline, on every tab.
+ *  t-91884b — aria-expanded is the open-menu signal the CSS binds to. The menu is a portal, so
+ *  :hover/:focus-within on the card are both lost once the first item takes focus. */
 function MoreBtn({ items }: { items: MenuItem[] }) {
   const d = useContext(DispatchCtx);
+  const [expanded, setExpanded] = useState(false);
   if (!items.length) return null;
   return (
     <button class="act" type="button" title="More actions" aria-label="More actions"
-      onClick={(e) => { e.stopPropagation(); d.openMore(items, e.clientX, e.clientY); }}>
+      aria-haspopup="menu" aria-expanded={expanded}
+      onClick={(e) => {
+        e.stopPropagation();
+        setExpanded(true);
+        d.openMore(items, e.clientX, e.clientY, () => setExpanded(false));
+      }}>
       <Icon name="ellipsis" />
     </button>
   );
@@ -949,7 +957,7 @@ function CmdK({ fleets, selectedHash, onClose, onPick }: { fleets: FleetVM[]; se
   );
 }
 
-interface MenuState { items: MenuItem[]; x: number; y: number }
+interface MenuState { items: MenuItem[]; x: number; y: number; onClosed?: () => void }
 /** Exported for the Fleet tab shell (t-41117e) so overflow actions share one menu implementation. */
 export function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -967,6 +975,7 @@ export function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: (
   useEffect(() => {
     if (!menu) return;
     const trigger = document.activeElement as HTMLElement | null; // restore focus here on close
+    const onClosed = menu.onClosed;
     const items = () => Array.from(ref.current?.querySelectorAll<HTMLButtonElement>(".more-item") ?? []);
     setTimeout(() => items()[0]?.focus(), 0); // open with the first item focused (keyboard entry)
     const h = (e: KeyboardEvent) => {
@@ -991,6 +1000,7 @@ export function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: (
       window.removeEventListener("blur", dismissOnFocusLoss);
       document.removeEventListener("visibilitychange", onVisibility);
       trigger?.focus?.();
+      onClosed?.();
     };
   }, [menu]); // onClose is stable enough for this session menu; avoid re-bind loops from inline lambdas
   useLayoutEffect(() => {
@@ -1853,7 +1863,7 @@ export function App({
     section: (op, id, extra) => dispatch?.section(op, id, extra, hash),
     global: (op) => dispatch?.global(op, hash),
     pipeline: (op, name, nodeId) => dispatch?.pipeline(op, name, nodeId, hash),
-    openMore: (items, x, y) => setMenu({ items, x, y }),
+    openMore: (items, x, y, onClosed) => setMenu({ items, x, y, onClosed }),
   });
   // SDD 504 — no fleet is no longer an answer, only the absence of one. What the sidebar SAYS here
   // comes from the host's discovery result; `!fleets.length` used to mean both "nothing here" and
