@@ -88,7 +88,9 @@ O Terrarium deixa de ser plugin-com-view e passa a ser app. O campo `views` sai 
 | `attach_task_prototype` | o protótipo tem autor |
 | `run_host_action` | `host-action/policy.ts:63` exige principal de agente resolvido |
 
-Isso não é restrição de poder — é o significado da ferramenta. Um app não tem nome de agente para ser sujeito de nenhuma delas. A única perda de capacidade real da lista é `run_host_action`.
+Isso não é restrição de poder — é o significado da ferramenta. Um app não tem nome de agente para ser sujeito de nenhuma delas.
+
+**E `run_host_action` também não é perda.** Medido em 2026-08-21: este workspace não tem política de host-action. `tachyon.yml` não menciona `hostAction`, não existe arquivo de política, e `DefaultDenyHostActionPolicy` (`host-action/policy.ts:31`) responde `host actions are disabled by default` a **todo** chamador. Nenhum agente alcança `run_host_action` hoje. O app é negado a mesma coisa que todos são negados.
 
 - [ ] O contrato de identidade do app está escrito onde alguém que autora um app vai ler, nomeando as doze.
 
@@ -131,7 +133,9 @@ Isso não é restrição de poder — é o significado da ferramenta. Um app nã
 
 ## Open questions
 
-**Aberta — `run_host_action` é a única capacidade que um app perde.** As outras onze da lista acima são ferramentas cujo sujeito é um agente, e um app não é um. Essa é diferente: é rodar algo na máquina, e um app poderia querer. Fechar essa lacuna significa dar ao app uma identidade de agente, o que muda a semântica de identidade do Bridge — trabalho real, não ajuste. Decisão do dono. Se ele disser "fica de fora do MVP", esta pergunta vira um non-goal.
+Nenhuma aberta.
+
+**`run_host_action` fica fora do MVP** — decisão do dono em 2026-08-21, depois de eu corrigir a premissa que eu mesmo tinha dado. Eu havia apresentado a ferramenta como "a única capacidade que um app perde". Ela não é: é default-deny para todo mundo neste workspace, agente incluído. O que fica de fora, então, não é uma capacidade — é **construir uma identidade de agente para o app**, que é o que seria preciso para alcançar as doze. Isso é maquinaria nova, não permissão removida, e maquinaria é último recurso.
 
 Fechadas em 2026-08-21:
 
