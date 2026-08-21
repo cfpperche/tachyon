@@ -26,13 +26,13 @@ describe("t-aa2780 — the engine log-error dot has a destination", () => {
     const html = renderStatic(SidebarApp({ fleets: [erroring], initialTab: "Attentions" }));
     expect(html).toContain('data-testid="tab-control-engine-dot"');
     // and it says so to a screen reader, on the button itself — the glyph is decorative.
-    expect(html).toContain('aria-label="Control, errors in engine log"');
+    expect(html).toContain('aria-label="Apps, errors in engine log"');
   });
 
   it("lights the System TILE, so the alarm has an address", () => {
     // SDD 500 — the Engine tile was merged into System, and the dot moved with the log panel it is
     // about. What must not change is that the alarm still names ONE tile a human can click.
-    const html = renderStatic(SidebarApp({ fleets: [erroring], initialTab: "Control" }));
+    const html = renderStatic(SidebarApp({ fleets: [erroring], initialTab: "Apps" }));
     expect(html).toContain('data-testid="control-tile-engine-dot"');
     expect(html).toContain('aria-label="System, errors in engine log"');
     expect((html.match(/class="ds-btn ctl-tile has-err"/g) ?? []).length).toBe(1);
@@ -42,7 +42,7 @@ describe("t-aa2780 — the engine log-error dot has a destination", () => {
 
   it("stays dark when no root reports errors, and when no root MEASURED them", () => {
     for (const fleets of [[clean], [{ ...clean, engineLogHasError: false }]]) {
-      const html = renderStatic(SidebarApp({ fleets, initialTab: "Control" }));
+      const html = renderStatic(SidebarApp({ fleets, initialTab: "Apps" }));
       expect(html).not.toContain("engine-dot");
       expect(html).not.toContain("has-err");
     }
@@ -86,7 +86,7 @@ describe("t-aa2780 — navigation semantics did not regress", () => {
 
   // The serializer emits attributes in NAME order, so the grid opens with its aria-label, not its class.
   const grid = (): string => {
-    const html = renderStatic(SidebarApp({ fleets: [{ ...SAMPLE, folder: { hash: "ws", name: "Project" } }], initialTab: "Control" }));
+    const html = renderStatic(SidebarApp({ fleets: [{ ...SAMPLE, folder: { hash: "ws", name: "Project" } }], initialTab: "Apps" }));
     const marker = html.indexOf('data-testid="control-grid"');
     expect(marker, "the launcher grid did not render").toBeGreaterThan(-1);
     const start = html.lastIndexOf("<div", marker);
@@ -110,7 +110,7 @@ describe("t-aa2780 — navigation semantics did not regress", () => {
   it("is a LABELLED group, not an unannounced div of icons", () => {
     const html = grid();
     expect(html).toContain('role="group"');
-    expect(html).toContain('aria-label="Control sections"');
+    expect(html).toContain('aria-label="Apps grid"');
   });
 
   it("deliberately claims NO selection: the sidebar cannot observe Control's live section", () => {

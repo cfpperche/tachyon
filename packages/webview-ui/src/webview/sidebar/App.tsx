@@ -1290,7 +1290,7 @@ function ControlGrid({
     <div
       class={`ctl-grid${reorderMode ? " is-reordering" : ""}`}
       role="group"
-      aria-label={reorderMode ? "Control sections, rearranging" : "Control sections"}
+      aria-label={reorderMode ? "Apps grid, rearranging" : "Apps grid"}
       data-testid="control-grid"
       data-reorder={reorderMode ? "true" : undefined}
       data-drop-at={dragging && overId ? overId : undefined}
@@ -1929,13 +1929,13 @@ export function App({
           // the old dot required Control to be open, this strip is on screen whenever the sidebar is.
           // A dot, not the numeric badge Attentions uses: the ring reports a boolean ("there are error
           // lines"), and inventing a count here would be a number no reader could reconcile with the log.
-          const engineErr = id === "Control" && engineHasError;
+          const engineErr = id === "Apps" && engineHasError;
           const label = badge > 0 ? `${id}, ${badge} open` : engineErr ? `${id}, errors in engine log` : id;
           return (
           <button class={`tab${tab === id ? " active" : ""}${engineErr ? " has-err" : ""}`} type="button" role="tab" id={`tab-${id}`}
             aria-selected={tab === id} aria-controls="sidebar-panel" aria-label={label}
             title={label}
-            data-testid={id === "Attentions" ? "tab-attentions" : id === "Control" ? "tab-control" : undefined}
+            data-testid={id === "Attentions" ? "tab-attentions" : id === "Apps" ? "tab-control" : undefined}
             tabindex={tab === id ? 0 : -1} onClick={() => setTab(id)} onKeyDown={(e) => tabKey(e, i)}>
             <Icon name={icon} />
             {badge > 0 ? <span class="tab-badge" data-testid="tab-attentions-badge" aria-hidden="true">{badge > 99 ? "99+" : badge}</span> : null}
@@ -1952,7 +1952,7 @@ export function App({
         {/* t-50daeb — the same A–Z flip the two list tabs have, on the launcher. The initial state is
             PRODUCT order, so the control starts INACTIVE ("click to sort A–Z") rather than claiming a
             direction the grid does not have; once a mode exists it flips exactly like Agents does. */}
-        {tab === "Control" && (() => {
+        {tab === "Apps" && (() => {
           const label = launcherParsed.kind === "product"
             ? "Product order"
             : launcherParsed.kind === "custom"
@@ -2076,7 +2076,7 @@ export function App({
         {tab === "Attentions" ? (
           // t-37f554 — one global stack (multi-root already merged by attentionRows); not per-folder panels.
           <AttentionStack fleets={fleets} dispatch={dispatch} />
-        ) : tab === "Control" ? (
+        ) : tab === "Apps" ? (
           // t-6e2952 — one grid for the window (Control is a singleton), so no folder header above it.
           <ControlGrid
             onOpen={(section) => dispatch?.global("openControl", undefined, section)}

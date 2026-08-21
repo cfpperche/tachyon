@@ -4,7 +4,7 @@ import type { CockpitStrings } from "@tachyon/webview-ui/webview/shared/control/
 export function cockpitStrings(): CockpitStrings {
   const t = vscode.l10n.t;
   return {
-    title: t("Control"),
+    title: t("Apps"),
     subtitle: t("Project sysadmin"),
     back: t("Back"),
     refresh: t("Refresh"),

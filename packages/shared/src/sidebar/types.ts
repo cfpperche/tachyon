@@ -336,13 +336,16 @@ export interface FleetVM {
  * t-37f554 — `Attentions` is a first-class tab (not a permanent panel above Agents). Tab order is
  * visual only; the default selected tab remains Agents so a cold open still lands on the roster.
  */
-export type TabId = "Attentions" | "Control" | "Agents" | "Terminals" | "Pipelines" | "Schedules" | "Pins";
+export type TabId = "Attentions" | "Apps" | "Agents" | "Terminals" | "Pipelines" | "Schedules" | "Pins";
 export const TABS: ReadonlyArray<{ id: TabId; icon: string }> = [
   { id: "Attentions", icon: "bell-dot" },
   // t-6e2952 — Control is a TAB in THIS row (second, right after Attentions), not a sidebar view of its
   // own: its panel is the launcher grid for the twelve Control sections. A separate WebviewView shipped
   // once (0.56.161) and rendered as a second collapsible section stacked above this panel.
-  { id: "Control", icon: "dashboard" },
+  // t-65465a — the label followed the migration: the tab that lists the apps is Apps (the sister tabs
+  // are all plural nouns naming what they list), and `home` is the glyph because the panel IS the
+  // home-screen grid (App.tsx) — `dashboard` was the System tile's glyph worn twice on one screen.
+  { id: "Apps", icon: "home" },
   { id: "Agents", icon: "hubot" },
   { id: "Terminals", icon: "terminal" },
   { id: "Pipelines", icon: "run-all" },

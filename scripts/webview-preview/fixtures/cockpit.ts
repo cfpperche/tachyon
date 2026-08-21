@@ -16,7 +16,7 @@ import type { Validation } from "@tachyon/engine/validations/types.js";
 import type { Fixture } from "../routes";
 
 export const strings: CockpitStrings & WorktreesStrings = {
-  title: "Control",
+  title: "Apps",
   subtitle: "Project sysadmin",
   back: "Back",
   refresh: "Refresh",

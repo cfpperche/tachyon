@@ -48,14 +48,16 @@ async function loadApp() {
 }
 
 describe("t-6e2952 — Control is a tab in the existing sidebar row", () => {
-  it("sits SECOND in the row, right after Attentions, with the Control command's icon", () => {
+  it("sits SECOND in the row, right after Attentions, with the openControl command's icon", () => {
     expect(TABS.map((t) => t.id)).toEqual([
-      "Attentions", "Control", "Agents", "Terminals", "Pipelines", "Schedules", "Pins",
+      "Attentions", "Apps", "Agents", "Terminals", "Pipelines", "Schedules", "Pins",
     ]);
-    // $(dashboard) is what package.json declares for tachyon.openControl — same glyph, same product thing.
-    expect(TABS[1]).toEqual({ id: "Control", icon: "dashboard" });
+    // $(home) is what package.json declares for tachyon.openControl — same glyph, same product thing.
+    // t-65465a — the glyph left `dashboard` because the System tile wears it, and tab row and tile
+    // grid are on screen together; the command follows the tab so the two declarations cannot drift.
+    expect(TABS[1]).toEqual({ id: "Apps", icon: "home" });
     const pkg = JSON.parse(read("apps/vscode-extension/package.json")) as { contributes: { commands: Array<{ command: string; icon?: string }> } };
-    expect(pkg.contributes.commands.find((c) => c.command === "tachyon.openControl")?.icon).toBe("$(dashboard)");
+    expect(pkg.contributes.commands.find((c) => c.command === "tachyon.openControl")?.icon).toBe("$(home)");
   });
 
   it("adds NO sidebar view: the launcher has no viewType, no bundle and no host file", () => {
@@ -73,7 +75,7 @@ describe("t-6e2952 — Control is a tab in the existing sidebar row", () => {
 
   it("renders the twelve section tiles from the shared catalog, in catalog order", async () => {
     const App = await loadApp();
-    const html = renderStatic(App({ fleets: [SAMPLE], initialTab: "Control" }));
+    const html = renderStatic(App({ fleets: [SAMPLE], initialTab: "Apps" }));
     expect(html).toContain('data-testid="control-grid"');
     const sections = [...html.matchAll(/data-section="([^"]+)"/g)].map((m) => m[1]);
     expect(sections).toEqual(CONTROL_SECTION_NAV.map((s) => s.id));
@@ -91,7 +93,7 @@ describe("t-6e2952 — Control is a tab in the existing sidebar row", () => {
       { ...SAMPLE, folder: { hash: "a", name: "Alpha" } },
       { ...SAMPLE, folder: { hash: "b", name: "Beta" } },
     ];
-    const html = renderStatic(App({ fleets: twoRoots, initialTab: "Control" }));
+    const html = renderStatic(App({ fleets: twoRoots, initialTab: "Apps" }));
     expect((html.match(/data-testid="control-grid"/g) ?? []).length).toBe(1);
     // no folder header above it (the per-folder map is not entered for this tab). Asserted on the
     // folder GROUP itself, not on "no workspace name appears anywhere": SDD 485 C6 put the project
@@ -110,6 +112,24 @@ describe("t-6e2952 — Control is a tab in the existing sidebar row", () => {
     expect((app.match(/<ControlGrid/g) ?? []).length,
       "App.tsx mounts no <ControlGrid at all — the tab-strip assertion above passed vacuously")
       .toBeGreaterThan(0);
+  });
+});
+
+describe("t-65465a — no glyph is on screen twice: tab row and launcher grid", () => {
+  // The defect this card measured: the launcher TAB and the System TILE both wore `dashboard`, and
+  // they are on screen TOGETHER — selecting the launcher tab paints the tab row (TABS) above the
+  // tile grid (CONTROL_SECTION_NAV). One drawing naming two things is the failure; this guard fails
+  // the moment a surface in that pair borrows the other's codicon again.
+  //
+  // Scoped to this pair on purpose. A global "no two surfaces may share a codicon" would flag
+  // legitimate repeats — row chevrons, status glyphs, the gripper on every draggable row — and a
+  // guard diluted by false positives gets deleted, not read (the card says: if it comes out full
+  // of false positives, do not build it). The pair below is closed, small, and always simultaneous.
+  it("no launcher tile wears a tab-row codicon", () => {
+    const tabIcons = new Set(TABS.map((t) => t.icon));
+    const clashes = CONTROL_SECTION_NAV.filter((tile) => tabIcons.has(tile.icon));
+    expect(clashes.map((tile) => `${tile.id} (${tile.icon})`),
+      `tab row: ${TABS.map((t) => `${t.id}:${t.icon}`).join(", ")}`).toEqual([]);
   });
 });
 
@@ -192,15 +212,15 @@ describe("t-50daeb — the launcher grid sorts A–Z and keeps the choice", () =
     // assertions below could pass with a grid that ignores prefs entirely.
     expect(sortedIds("name-asc")).not.toEqual(productOrder);
 
-    const asc = tileIds(renderStatic(App({ fleets: [SAMPLE], initialTab: "Control", prefs: { launcher: "name-asc" } })));
+    const asc = tileIds(renderStatic(App({ fleets: [SAMPLE], initialTab: "Apps", prefs: { launcher: "name-asc" } })));
     expect(asc).toEqual(sortedIds("name-asc"));
 
-    const desc = tileIds(renderStatic(App({ fleets: [SAMPLE], initialTab: "Control", prefs: { launcher: "name-desc" } })));
+    const desc = tileIds(renderStatic(App({ fleets: [SAMPLE], initialTab: "Apps", prefs: { launcher: "name-desc" } })));
     expect(desc).toEqual(sortedIds("name-desc"));
     expect(desc).toEqual([...asc].reverse());
 
     // The default is the PRODUCT order (SDD 500 positions), never a silent alphabetical takeover.
-    const fresh = tileIds(renderStatic(App({ fleets: [SAMPLE], initialTab: "Control" })));
+    const fresh = tileIds(renderStatic(App({ fleets: [SAMPLE], initialTab: "Apps" })));
     expect(fresh).toEqual(productOrder);
   });
 
@@ -208,7 +228,7 @@ describe("t-50daeb — the launcher grid sorts A–Z and keeps the choice", () =
     const calls: Array<[string, string]> = [];
     const { elements } = renderStaticWithElements(App({
       fleets: [SAMPLE],
-      initialTab: "Control",
+      initialTab: "Apps",
       dispatch: { setSort: (section, mode) => calls.push([section, mode]) },
     }));
     // The door production uses, called directly: the flip button's own onClick (SDD 501 pattern —
@@ -370,7 +390,7 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
     const calls: Array<[string, string]> = [];
     const { elements } = renderStaticWithElements(App({
       fleets: [SAMPLE],
-      initialTab: "Control",
+      initialTab: "Apps",
       dispatch: { setSort: (section, mode) => calls.push([section, mode]) },
     }));
     const ev = dragEvent();
@@ -383,7 +403,7 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
     const calls: Array<[string, string]> = [];
     const { elements, html } = renderStaticWithElements(App({
       fleets: [SAMPLE],
-      initialTab: "Control",
+      initialTab: "Apps",
       dispatch: { setSort: (section, mode) => calls.push([section, mode]) },
     }));
     expect(html).toContain('data-testid="launcher-live"');
@@ -397,7 +417,7 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
     const calls: Array<[string, string]> = [];
     const { elements, html } = renderStaticWithElements(App({
       fleets: [SAMPLE],
-      initialTab: "Control",
+      initialTab: "Apps",
       prefs: { launcher: "name-asc" },
       dispatch: { setSort: (section, mode) => calls.push([section, mode]) },
     }));
@@ -417,7 +437,7 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
     const custom = [...productOrder].reverse();
     const html = renderStatic(App({
       fleets: [SAMPLE],
-      initialTab: "Control",
+      initialTab: "Apps",
       prefs: { launcher: encodeLauncherCustom(custom) },
     }));
     expect([...html.matchAll(/data-section="([^"]+)"/g)].map((m) => m[1])).toEqual(custom);
@@ -430,7 +450,7 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
     const opens: string[] = [];
     const { elements, html } = renderStaticWithElements(App({
       fleets: [SAMPLE],
-      initialTab: "Control",
+      initialTab: "Apps",
       dispatch: { global: (_op: string, _hash?: string, sectionId?: string) => { if (sectionId) opens.push(sectionId); } },
     }));
     const system = tileEls(elements, "system");
@@ -452,12 +472,12 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
   it("reordering mode idle shows Done; tiles stay draggable so the next drop can fire", () => {
     const { html, elements } = renderStaticWithElements(App({
       fleets: [SAMPLE],
-      initialTab: "Control",
+      initialTab: "Apps",
       initialReorderMode: true,
     }));
     expect(html).toContain('data-reorder="true"');
     expect(html).toContain('data-testid="launcher-done"');
-    expect(html).toContain("Control sections, rearranging");
+    expect(html).toContain("Apps grid, rearranging");
     expect(tileEls(elements, "system").props.draggable).toBe(true);
   });
 
@@ -465,7 +485,7 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
     const calls: Array<[string, string]> = [];
     const { elements } = renderStaticWithElements(App({
       fleets: [SAMPLE],
-      initialTab: "Control",
+      initialTab: "Apps",
       dispatch: { setSort: (section, mode) => calls.push([section, mode]) },
     }));
     const ev = dragEvent();
@@ -481,7 +501,7 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
     const calls: Array<[string, string]> = [];
     const { html } = renderStaticWithElements(App({
       fleets: [SAMPLE],
-      initialTab: "Control",
+      initialTab: "Apps",
       initialReorderMode: true,
       initialDraggingSection: "system",
       initialDropTarget: "mission",
@@ -500,7 +520,7 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
     const calls: Array<[string, string]> = [];
     const { elements } = renderStaticWithElements(App({
       fleets: [SAMPLE],
-      initialTab: "Control",
+      initialTab: "Apps",
       dispatch: { setSort: (section, mode) => calls.push([section, mode]) },
     }));
     const ev = dragEvent();
@@ -514,7 +534,7 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
     const calls: Array<[string, string]> = [];
     const { elements } = renderStaticWithElements(App({
       fleets: [SAMPLE],
-      initialTab: "Control",
+      initialTab: "Apps",
       dispatch: { setSort: (section, mode) => calls.push([section, mode]) },
     }));
     const ev = dragEvent();

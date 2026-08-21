@@ -129,8 +129,9 @@ export const ROUTES: Record<string, Route> = {
       return fleetMessage(Array.isArray(fixture) ? fixture : [fixture], {});
     },
   },
-  // t-6e2952 — the Control launcher has no route of its own: it is the "Control" TAB of the `sidebar`
-  // route above (same bundle, same fixtures) — open ?view=sidebar and select the second tab.
+  // t-6e2952 — the Control launcher has no route of its own: it is the "Apps" TAB (t-65465a; shipped as
+  // "Control") of the `sidebar` route above (same bundle, same fixtures) — open ?view=sidebar and select
+  // the second tab.
   // SDD 485 D17 — Activity is standalone again. The same captured VMs now drive the shipped
   // activity.js entry directly, with the exact stylesheet list ActivityPanel links.
   activity: {

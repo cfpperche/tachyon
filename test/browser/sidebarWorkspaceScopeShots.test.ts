@@ -211,7 +211,7 @@ describe("t-72ff5a sidebar workspace scope — headless Visual QA", () => {
 
   it("Control keeps its launcher and no longer carries the selector; Attentions stays cross-project", async () => {
     for (const w of WIDTHS) {
-      await shoot("control-multi-root", { fleets: [alpha, beta], initialTab: "Control", selectedWsHash: "hash-alpha" }, w);
+      await shoot("control-multi-root", { fleets: [alpha, beta], initialTab: "Apps", selectedWsHash: "hash-alpha" }, w);
       const control = await page.evaluate(() => ({
         tiles: document.querySelectorAll(".ctl-tile").length,
         selectorsInSecRow: document.querySelectorAll(".sec select").length,

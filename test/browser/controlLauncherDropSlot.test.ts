@@ -79,7 +79,7 @@ async function bundleLiveHarness(): Promise<string> {
         const dispatch = { setSort: (section, mode) => window.__sorts.push([section, mode]) };
         window.__render = () => render(h(App, {
           fleets: [fleet],
-          initialTab: "Control",
+          initialTab: "Apps",
           initialReorderMode: true,
           dispatch,
         }), root);
@@ -257,7 +257,7 @@ describe("t-5b84bb launcher drop slot — drive the drag, then the pose", () => 
     const expected = moveLauncherTile(product, "settings", "design-mode");
     const html = renderStatic(App({
       fleets: [fleet],
-      initialTab: "Control",
+      initialTab: "Apps",
       initialReorderMode: true,
       initialDraggingSection: "settings",
       initialDropTarget: "design-mode",
