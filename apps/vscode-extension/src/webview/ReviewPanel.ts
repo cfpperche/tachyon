@@ -36,6 +36,7 @@ import {
   promptNotesFromView,
   reviewNotesEvidenceRecord,
 } from "../review/batch.js";
+import { ReviewBinaryCache } from "./reviewBinaryCache.js";
 
 export const REVIEW_VIEW_TYPE = "tachyonReview";
 
@@ -69,6 +70,7 @@ interface LiveReview {
   notes: ReviewNote[];
   agents: ReviewAgent[];
   diff: ReviewDiffFileV1 | null;
+  binaryAsset?: ReviewVM["binaryAsset"];
   diffLoading: boolean;
   selectedPath: string | null;
 }
@@ -77,6 +79,8 @@ export class ReviewPanelManager {
   private readonly manager: SectionPanelManager<ReviewRefreshKind>;
   private readonly pending = new Map<string, ReviewOpenArgs>();
   private readonly live = new Map<string, { session: SectionPanelSession<ReviewRefreshKind>; state: LiveReview }>();
+  private readonly cacheSessions = new Map<string, string>();
+  private readonly binaryCache = new ReviewBinaryCache();
 
   constructor(
     extensionUri: vscode.Uri,
@@ -92,6 +96,9 @@ export class ReviewPanelManager {
     const key = this.manager.keyFor(target);
     this.pending.set(key, args);
     const already = this.live.has(key);
+    if (!already && !this.cacheSessions.has(key)) {
+      this.cacheSessions.set(key, this.binaryCache.create(args.workspaceHash, args.worktree));
+    }
     this.manager.open(target);
     if (already) {
       const live = this.live.get(key);
@@ -100,6 +107,10 @@ export class ReviewPanelManager {
   }
 
   deserialize(panel: vscode.WebviewPanel, state: SectionPanelState): void {
+    const key = this.manager.keyFor(state);
+    if (!this.cacheSessions.has(key)) {
+      this.cacheSessions.set(key, this.binaryCache.create(state.project ?? "", state.identity ?? ""));
+    }
     this.manager.deserialize(panel, state);
   }
 
@@ -111,6 +122,8 @@ export class ReviewPanelManager {
     this.manager.dispose();
     this.pending.clear();
     this.live.clear();
+    for (const session of this.cacheSessions.values()) this.binaryCache.dispose(session);
+    this.cacheSessions.clear();
   }
 
   private configFor(app: WebviewAppEntry): SectionAppConfig<ReviewRefreshKind> {
@@ -127,6 +140,12 @@ export class ReviewPanelManager {
       ],
       title: (target) => vscode.l10n.t("Review — {0}", target.identity ?? ""),
       iconName: "note",
+      csp: { imgBlob: true, connectSrc: true, workerSrc: "blob" },
+      bootstrapGlobals: (_target, uri) => ({ PDFJS_WORKER_URI: uri("pdf.worker.min.mjs") }),
+      extraLocalResourceRoots: (target) => {
+        const session = this.cacheSessions.get(this.manager.keyFor(target));
+        return session ? [vscode.Uri.file(session)] : [];
+      },
       refreshKindFor: reviewRefreshKind,
       bind: (session) => this.bind(session),
     };
@@ -147,6 +166,7 @@ export class ReviewPanelManager {
       notes: [],
       agents: [],
       diff: null,
+      binaryAsset: undefined,
       diffLoading: false,
       selectedPath: seed?.selectedPath ?? seed?.files[0]?.path ?? null,
     };
@@ -159,6 +179,9 @@ export class ReviewPanelManager {
       dispose: () => {
         if (this.live.get(key)?.session === session) this.live.delete(key);
         this.pending.delete(key);
+        const cache = this.cacheSessions.get(key);
+        if (cache) this.binaryCache.dispose(cache);
+        this.cacheSessions.delete(key);
       },
     };
   }
@@ -220,6 +243,18 @@ export class ReviewPanelManager {
         baseRef: state.args.baseRef,
         ...(state.args.headRef !== undefined ? { headRef: state.args.headRef } : {}),
       }, state.args.workspaceHash);
+      state.binaryAsset = undefined;
+      // Extension chooses the fixed viewer families. SVG/glTF are text to Git, so `binary` alone cannot
+      // be the junction: routing only that branch would leave two of the four delivered viewers unreachable.
+      const file = state.args.files.find((candidate) => candidate.path === filePath);
+      const live = this.live.get(this.manager.keyFor({ project: state.args.workspaceHash, identity: state.args.worktree }));
+      const cache = live ? this.cacheSessions.get(live.session.key) : undefined;
+      if (file && live && cache) {
+        state.binaryAsset = await this.binaryCache.materialize(cache, {
+          cwd: state.args.cwd, file, baseRef: state.args.baseRef, headRef: state.args.headRef,
+          asWebviewUri: live.session.asWebviewUri,
+        });
+      }
     } catch (error) {
       state.diff = null;
       state.args = { ...state.args };
@@ -325,6 +360,7 @@ function vmFrom(state: LiveReview): ReviewVM {
     files: state.args.files,
     selectedPath: state.selectedPath,
     diff: state.diff,
+    ...(state.binaryAsset ? { binaryAsset: state.binaryAsset } : {}),
     diffLoading: state.diffLoading,
     notes: state.notes,
     agents: state.agents,

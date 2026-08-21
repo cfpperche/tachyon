@@ -117,4 +117,17 @@ const longPathsVm: ReviewVM = {
 export const reviewFixtures: Record<string, Fixture<ReviewVM>> = {
   default: { provenance: "synthetic-edge", vm },
   "long-paths": { provenance: "synthetic-edge", vm: longPathsVm },
+  raster: { provenance: "synthetic-edge", vm: binaryVm("raster", "png", "/docs/research/evidence-t-91884b/menu-open-880-light.png") },
+  svg: { provenance: "synthetic-edge", vm: binaryVm("svg", "svg", "/docs/research/evidence-t-3be62b/sample.svg") },
+  pdf: { provenance: "synthetic-edge", vm: binaryVm("pdf", "pdf", "/docs/research/evidence-t-3be62b/sample.pdf") },
+  model: { provenance: "synthetic-edge", vm: binaryVm("model", "gltf", "/docs/research/evidence-t-3be62b/sample.gltf") },
 };
+
+function binaryVm(family: NonNullable<ReviewVM["binaryAsset"]>["family"], extension: string, uri: string): ReviewVM {
+  const file = `evidence/sample.${extension}`;
+  return {
+    ...vm, files: [{ status: "A", path: file }], selectedPath: file, notes: [],
+    diff: { schemaVersion: 1, format: "unified", worktree: "reviewgrok", path: file, status: "A", baseRef: "abc1234", currentLabel: "worktree", binary: true, hunks: [] },
+    binaryAsset: { family, sides: [{ side: "current", label: "Current", uri }] },
+  };
+}

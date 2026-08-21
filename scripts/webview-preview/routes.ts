@@ -492,6 +492,7 @@ export const ROUTES: Record<string, Route> = {
     fixtures: reviewFixtures as Record<string, Fixture>,
     module: true,
     pageFrame: true,
+    globals: { PDFJS_WORKER_URI: "/dist/webview/pdf.worker.min.mjs" },
     makeMessage: (vm) => reviewMessage(vm as never),
   },
   // SDD 485 C1–C3 — the section-app proof surface: one manager, cardinality as a parameter. Dev-only, same

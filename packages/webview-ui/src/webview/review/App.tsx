@@ -6,6 +6,7 @@ import { Badge, Button, EmptyState, Icon, PageChrome, Select, Textarea } from ".
 import { noteMigrated, notesOnLine, orphanedNotes, visibleNewLinesFrom } from "./notes";
 import { renderReviewDiff, type ReviewRenderLine } from "./render";
 import type { ReviewVM } from "./messages";
+import { BinaryReview } from "./BinaryReview";
 import {
   REVIEW_FILES_WIDTH_DEFAULT_REM,
   REVIEW_FILES_WIDTH_MIN_REM,
@@ -314,6 +315,8 @@ export function App({ vm, dispatch }: { vm?: ReviewVM; dispatch: ReviewDispatch 
             <EmptyState kind="loading" message="Loading diff…" />
           ) : !vm.diff ? (
             <EmptyState kind="empty" message="No diff for this file." />
+          ) : vm.binaryAsset ? (
+            <BinaryReview asset={vm.binaryAsset} />
           ) : vm.diff.binary ? (
             <div class="review-binary" data-testid="review-binary">
               <p>Binary file — no text hunks.</p>

@@ -20,6 +20,10 @@ export interface ReviewAgent {
   detail?: string;
 }
 
+export type ReviewBinaryFamily = "raster" | "svg" | "pdf" | "model";
+export interface ReviewBinarySide { side: "base" | "current"; label: string; uri: string }
+export interface ReviewBinaryAsset { family: ReviewBinaryFamily; sides: ReviewBinarySide[] }
+
 /**
  * Everything the screen needs to paint. The host (fatia 3) fills this from
  * ChangedFile[] + review.view + one review.diff. Preview injects the same shape.
@@ -33,6 +37,7 @@ export interface ReviewVM {
   files: ChangedFile[];
   selectedPath: string | null;
   diff?: ReviewDiffFileV1 | null;
+  binaryAsset?: ReviewBinaryAsset;
   diffLoading?: boolean;
   notes: ReviewNote[];
   agents: ReviewAgent[];

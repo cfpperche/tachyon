@@ -19,6 +19,7 @@ const ROOT = path.resolve(__dirname, "..", "..", "..");
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".ttf": "font/ttf",
   ".woff": "font/woff",
