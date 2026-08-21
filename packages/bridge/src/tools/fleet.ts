@@ -140,6 +140,9 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         cwd: z.string().optional().describe("working directory for a Temporary instance"),
         environment: spawnEnvironmentSchema.optional().describe("Temporary Agent environment: literal values and vault secret references"),
         reasoningEffort: z.string().min(1).max(128).optional().describe("explicit runtime reasoning effort; omitted uses the runtime default"),
+        heartbeat: z.literal("agent.child-idle").optional().describe(
+          "wake this Temporary agent's parent when the child newly becomes idle; fixed defer/coalesce policy, no timers or policy controls",
+        ),
         instructions: z
           .string()
           .max(2000)
@@ -187,7 +190,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         ),
       },
     },
-    async ({ name, cmd, cwd, environment, reasoningEffort, instructions, parent, worktree, baseRef, task, context, constraints, deliverable, done_when, skip_contract_reason, claim_task }) => {
+    async ({ name, cmd, cwd, environment, reasoningEffort, heartbeat, instructions, parent, worktree, baseRef, task, context, constraints, deliverable, done_when, skip_contract_reason, claim_task }) => {
       try {
         const isTemporaryAiAgent = !!cmd;
         // t-c861e5 — starting a declared Saved Agent is an activation, not a delegation. The
@@ -198,6 +201,9 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
           return fail(new Error(
             "spawn_agent parent is only valid for a Temporary delegated agent; omit parent when starting a declared Saved Agent because ownership comes from the roster",
           ));
+        }
+        if (heartbeat && !isTemporaryAiAgent) {
+          return fail(new Error("spawn_agent heartbeat is declared only on a Temporary agent's session-ledger row in this slice"));
         }
         // spec 351 — Temporary delegation resolves omitted parent to the caller itself; a lineage
         // lie is a structured mismatch. Saved activation deliberately preserves parent=undefined.
@@ -380,6 +386,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
             cwd,
             environment,
             reasoningEffort,
+            heartbeat,
             // A contract-skipped idle spawn has operational waiting guidance, not an execution brief.
             // Keep it in the instructions layer so the startup manifest truthfully reports no task.
             instructions: isTemporaryAiAgent

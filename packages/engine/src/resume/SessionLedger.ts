@@ -34,7 +34,7 @@ export function agentSessionRecordsOf(
   return new Map([...records].filter(([, record]) => record.def?.kind !== "terminal"));
 }
 
-type LedgerFile = { sessions?: Record<string, unknown> };
+type LedgerFile = { sessions?: Record<string, unknown>; heartbeatEpochs?: Record<string, number> };
 
 export class SessionLedger {
   constructor(private readonly workspaceRoot: string) {}
@@ -75,6 +75,27 @@ export class SessionLedger {
     const all = this.all();
     all.set(name, withoutSelfParent(name, { ...rec, updatedAt: rec.updatedAt ?? new Date().toISOString() }));
     this.write(all);
+  }
+
+  /** A dismissed name can be reused, so the fencing counter deliberately outlives its session row. */
+  allocateHeartbeatEpoch(name: string): number {
+    const all = this.all();
+    const epochs = this.heartbeatEpochs();
+    const epoch = (epochs[name] ?? 0) + 1;
+    epochs[name] = epoch;
+    this.write(all, epochs);
+    return epoch;
+  }
+
+  /** Claim an idle delta before delivery. False means no delta or a stale incarnation. */
+  advanceHeartbeatCursor(name: string, epoch: number, cursor: string): boolean {
+    const all = this.all();
+    const rec = all.get(name);
+    if (!rec?.def?.heartbeat || rec.def.heartbeat.epoch !== epoch || rec.def.heartbeat.cursor === cursor) return false;
+    rec.def = { ...rec.def, heartbeat: { ...rec.def.heartbeat, cursor } };
+    all.set(name, { ...rec, updatedAt: new Date().toISOString() });
+    this.write(all);
+    return true;
   }
 
   remove(name: string): void {
@@ -194,14 +215,22 @@ export class SessionLedger {
   }
 
 
-  private write(all: Map<string, SessionRecord>): void {
+  private heartbeatEpochs(): Record<string, number> {
+    try {
+      const value = (JSON.parse(fs.readFileSync(this.path, "utf8")) as LedgerFile).heartbeatEpochs;
+      if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+      return Object.fromEntries(Object.entries(value).filter(([, epoch]) => Number.isSafeInteger(epoch) && epoch > 0));
+    } catch { return {}; }
+  }
+
+  private write(all: Map<string, SessionRecord>, heartbeatEpochs = this.heartbeatEpochs()): void {
     const dir = path.dirname(this.path);
     fs.mkdirSync(dir, { recursive: true });
     const sessions = Object.fromEntries(all);
     const temporary = `${this.path}.${crypto.randomUUID()}.tmp`;
     const fd = fs.openSync(temporary, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o600);
     try {
-      fs.writeFileSync(fd, `${JSON.stringify({ sessions }, null, 2)}\n`, "utf8");
+      fs.writeFileSync(fd, `${JSON.stringify({ sessions, heartbeatEpochs }, null, 2)}\n`, "utf8");
       fs.fsyncSync(fd);
     } finally {
       fs.closeSync(fd);
@@ -306,12 +335,14 @@ function parseDef(d: unknown): SessionDef | undefined {
   if (o.kind !== "agent" && o.kind !== "terminal") return undefined;
   const kind: EntryKind = o.kind;
   const contract = parseSpawnContract(o.contract);
+  const heartbeat = parseHeartbeat(o.heartbeat);
   return {
     cmd: o.cmd,
     kind,
     ...(typeof o.instructions === "string" ? { instructions: o.instructions } : {}),
     ...(typeof o.taskBrief === "string" ? { taskBrief: o.taskBrief } : {}),
     ...(typeof o.reasoningEffort === "string" ? { reasoningEffort: o.reasoningEffort } : {}),
+    ...(heartbeat ? { heartbeat } : {}),
     ...(typeof o.parent === "string" ? { parent: o.parent } : {}),
     ...(typeof o.delegator === "string" ? { delegator: o.delegator } : {}),
     ...(isStringMap(o.env) ? { env: o.env as Record<string, string> } : {}),
@@ -325,6 +356,13 @@ function parseDef(d: unknown): SessionDef | undefined {
       : {}),
     ...(typeof o.contractSkipReason === "string" ? { contractSkipReason: o.contractSkipReason } : {}), // spec 246 D6
   };
+}
+
+function parseHeartbeat(value: unknown): SessionDef["heartbeat"] | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const o = value as Record<string, unknown>;
+  if (o.event !== "agent.child-idle" || !Number.isSafeInteger(o.epoch) || (o.epoch as number) < 1) return undefined;
+  return { event: o.event, epoch: o.epoch as number, ...(typeof o.cursor === "string" ? { cursor: o.cursor } : {}) };
 }
 
 /** A persisted spawn-contract (spec 246) — required strings plus exactly one populated completion. */

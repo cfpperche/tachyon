@@ -1,5 +1,9 @@
 import type { Task, TaskStatus } from "@tachyon/shared/tasks/types.js";
 
+/** The typed event catalogue grows here; heartbeat must not invent a parallel enum. */
+export const AGENT_CHILD_IDLE_EVENT_ID = "agent.child-idle" as const;
+export type AgentChildIdleEvent = { type: typeof AGENT_CHILD_IDLE_EVENT_ID; child: string; epoch: number; cursor: string };
+
 export const TASK_NOTIFICATION_EVENT_IDS = [
   "created",
   "assigned",

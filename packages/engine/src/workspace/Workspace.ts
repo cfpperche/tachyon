@@ -1175,6 +1175,15 @@ export class Workspace {
         // same-name session that never compacted.
         this.pendingContextRenewal.delete(name);
         this.recordSpawnIncarnation(name);
+        // AgentManager persists the spawn row after this lifecycle callback returns. Reconcile the
+        // queue's source fence on the next microtask, once the durable heartbeat epoch exists.
+        queueMicrotask(() => {
+          const epoch = this.ledger.get(name)?.def?.heartbeat?.epoch;
+          if (epoch !== undefined) {
+            this.agentIncarnations.set(name, epoch);
+            this.agentIncarnationCounters.set(name, Math.max(this.agentIncarnationCounters.get(name) ?? 0, epoch));
+          }
+        });
         if (reveal === "preserve") {
           this.freshTurnBaselines.delete(name);
         } else {
@@ -1461,6 +1470,7 @@ export class Workspace {
         // Continuity recovery runs only after the agent becomes idle so it never writes over a turn.
         if (attention.state === "idle" && this.manager.kindOf(agent) === "agent") {
           void this.recoverOnIdle(agent).catch(() => {});
+          if (shouldToast) void this.wakeParentOnChildIdle(agent, attention.episodeKey).catch(() => {});
         }
         // t-8605be — a child stuck on an interactive prompt is otherwise unreachable by agents (write_input
         // refuses working/throttled, notify_agent refuses needs-input per 341) until a human notices the
@@ -6351,6 +6361,26 @@ export class Workspace {
       .hasSession(session)
       .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' is waiting for input: ${line}`, this.sourceNoticeMetadata(agent, "host-poke")) : undefined))
       .catch(() => undefined); // best-effort poke — never let a delivery failure escape the monitor tick
+  }
+
+  /**
+   * t-21e115 — first heartbeat slice. Fixed defaults are deliberate: one event, the parent as the
+   * sole subscriber, defer/coalesce through deliverNotice, and no timer or policy surface. The
+   * session-ledger cursor is custody; notice-cursors.json is fail-open convenience for doorbells.
+   */
+  private async wakeParentOnChildIdle(agent: string, cursor: string): Promise<void> {
+    // Initial post-spawn idle is not a completed turn and therefore not a delta worth a model wake.
+    if (this.monitor.hasStartedTurn(agent) !== true) return;
+    const heartbeat = this.ledger.get(agent)?.def?.heartbeat;
+    if (!heartbeat || heartbeat.event !== "agent.child-idle") return;
+    const parent = this.manager.parentOf(agent);
+    if (!parent || !(await this.tmux.hasSession(this.manager.session(parent)).catch(() => false))) return;
+    if (!this.ledger.advanceHeartbeatCursor(agent, heartbeat.epoch, cursor)) return; // no delta or stale epoch
+    await this.deliverNotice(
+      parent,
+      `[tachyon] heartbeat agent.child-idle: child '${agent}' became idle (epoch ${heartbeat.epoch})`,
+      { origin: "host-poke", sourceChild: agent, sourceIncarnation: heartbeat.epoch },
+    );
   }
 
   private pokeParentOnThrottle(agent: string, attention: AgentAttention): void {
