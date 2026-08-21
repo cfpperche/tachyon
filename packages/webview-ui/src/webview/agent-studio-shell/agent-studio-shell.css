@@ -100,19 +100,39 @@
 .ash-profile-state { flex: none; padding: var(--ds-spacing-size20) var(--ds-spacing-size80); border: 1px solid var(--ds-border); border-radius: 999px; font-size: var(--ds-operator-label1); font-weight: 600; }
 .ash-profile-state-active { border-color: var(--ds-ok); }
 .ash-profile-status { color: var(--ds-muted); font-size: var(--ds-operator-label1); }
-.ash-profile-delete-confirm { display: grid; gap: var(--ds-spacing-size80); padding: var(--ds-spacing-size120); border: 1px solid color-mix(in srgb, var(--ds-err) 65%, var(--ds-border)); border-radius: var(--ds-radius); background: color-mix(in srgb, var(--ds-err) 8%, var(--ds-card)); }
 .ash-profile-delete-confirm-title { color: var(--ds-err); font-weight: var(--tachyon-weight-semibold); }
-.ash-profile-delete-confirm ul { margin: 0; padding-left: var(--ds-spacing-size240); }
-.ash-profile-delete-confirm code { overflow-wrap: anywhere; }
-.ash-profile-delete-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ds-spacing-size80); }
 /* t-4c113c — declared subagents picker inside the Agent lifecycle section. */
 .ash-ownership { display: grid; gap: var(--ds-spacing-size80); padding: var(--ds-spacing-size120); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--ds-card); }
 .ash-ownership-list { display: grid; gap: var(--ds-spacing-size40); margin: 0; padding: 0; list-style: none; max-height: 14rem; overflow-y: auto; }
 .ash-ownership-list label { display: flex; align-items: center; gap: var(--ds-spacing-size80); }
-.ash-profile-replace-confirm { display: grid; gap: var(--ds-spacing-size80); padding: var(--ds-spacing-size120); border: 1px solid var(--ds-focus); border-radius: var(--ds-radius); background: var(--ds-card); }
-.ash-profile-replace-confirm-title { font-weight: var(--tachyon-weight-semibold); }
-.ash-profile-replace-confirm code { overflow-wrap: anywhere; }
 .ash-profile-replace-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ds-spacing-size80); }
+/* t-eaffa5 — Lifecycle confirmations ride KitDialog. Wide: centered, reading width. Narrow: the
+   same content docks to the bottom as a sheet. Border, fill and radius stay the dialog's. */
+.ash-lifecycle-dialog[data-slot="dialog-content"] {
+  width: min(36rem, calc(100% - (2 * var(--ds-page-pad-x))));
+  max-width: 36rem;
+  max-height: min(90dvh, 100%);
+  overflow-y: auto;
+}
+/* Forget's 3-column plan needs more than a prose reading width; 360 still docks full-bleed. */
+.ash-lifecycle-dialog-wide[data-slot="dialog-content"] {
+  width: min(48rem, calc(100% - (2 * var(--ds-page-pad-x))));
+  max-width: 48rem;
+}
+.ash-lifecycle-dialog code { overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .ash-lifecycle-dialog[data-slot="dialog-content"] {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    translate: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+}
 .ash-profile-notice { padding: var(--ds-spacing-size80); border-left: 3px solid var(--ds-ok); font-size: var(--ds-operator-label1); } /* 3px = accent rail (stroke), not distance */
 .ash-profile-notice-error { border-color: var(--ds-err); color: var(--ds-err); }
 .checks { display: flex; flex-direction: column; gap: var(--ds-spacing-size40); font-size: var(--ds-operator-label1); }
