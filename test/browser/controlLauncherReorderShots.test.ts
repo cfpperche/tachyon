@@ -20,8 +20,10 @@ import { encodeLauncherCustom } from "@tachyon/webview-ui/sidebar/launcherOrder.
  * user's custom order are the same grid of tiles — only the sequence and the sort control's label
  * change. Entering rearrange mode does not add a frame or a second chrome: tiles tilt in place,
  * a Done control appears in the existing header slot, and a tile being dragged is the same cell
- * at a lower opacity, not a ghost from another toolkit. Evidence MUST go through tokens.css
- * (the real host links it); without it `.act.on` paints the same as `.act`.
+ * at a lower opacity, not a ghost from another toolkit. The sort glyph carries direction/custom
+ * state while its white paint stays aligned with Agents. Evidence MUST go through tokens.css (the
+ * real host links it); without it the harness cannot distinguish controls that legitimately use
+ * `.act.on`, so equal-paint evidence could pass by accident.
  *
  * Not part of `verify:full` (needs system Chrome + built `dist/`). Regenerate with:
  *   npm run build && npx vitest run --config vitest.browser.config.ts test/browser/controlLauncherReorderShots.test.ts
@@ -54,7 +56,6 @@ type ShotState = {
   initialDraggingSection?: string;
   expected: string[];
   buttonLabel: string;
-  buttonOn: boolean;
   reorder: boolean;
   dragging?: string;
 };
@@ -103,7 +104,6 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
         id: "product",
         expected: product,
         buttonLabel: "Sort launcher (Product order); click to sort A–Z",
-        buttonOn: false,
         reorder: false,
       },
       {
@@ -111,7 +111,6 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
         prefs: { launcher: "name-asc" },
         expected: sortRows(CONTROL_SECTION_NAV, "name-asc", (s) => s.label).map((s) => s.id),
         buttonLabel: "Sort launcher (Name (A–Z)); click to flip",
-        buttonOn: true,
         reorder: false,
       },
       {
@@ -119,7 +118,6 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
         prefs: { launcher: "name-desc" },
         expected: sortRows(CONTROL_SECTION_NAV, "name-desc", (s) => s.label).map((s) => s.id),
         buttonLabel: "Sort launcher (Name (Z–A)); click to flip",
-        buttonOn: true,
         reorder: false,
       },
       {
@@ -127,7 +125,6 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
         prefs: { launcher: encodeLauncherCustom(custom) },
         expected: custom,
         buttonLabel: "Sort launcher (Custom order); click to sort A–Z",
-        buttonOn: true,
         reorder: false,
       },
       {
@@ -136,7 +133,6 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
         initialReorderMode: true,
         expected: custom,
         buttonLabel: "Sort launcher (Custom order); click to sort A–Z",
-        buttonOn: true,
         reorder: true,
       },
       {
@@ -146,7 +142,6 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
         initialDraggingSection: "system",
         expected: custom,
         buttonLabel: "Sort launcher (Custom order); click to sort A–Z",
-        buttonOn: true,
         reorder: true,
         dragging: "system",
       },
@@ -218,7 +213,7 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
           expect(geom.overflowingTiles, `${where}: no tile past the panel edge`).toBe(0);
           expect(geom.sortButtonFound, `${where}: the sort control is in the section header`).toBe(true);
           expect(geom.sortButtonVisible, `${where}: the sort control is visible`).toBe(true);
-          expect(geom.sortButtonOn, `${where}: the control is lit only when a direction/custom is chosen`).toBe(state.buttonOn);
+          expect(geom.sortButtonOn, `${where}: glyph, not the shared active color, carries sort state`).toBe(false);
           expect(geom.reorder, `${where}: rearrange pose`).toBe(state.reorder);
           expect(geom.doneVisible, `${where}: Done only while rearranging`).toBe(state.reorder);
           if (state.dragging) {
@@ -233,8 +228,8 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
       }
     }
 
-    expect(buttonColors.get("name-asc"), "the active sort control is painted with the focus color").not.toBe(buttonColors.get("product"));
-    expect(buttonColors.get("name-desc")).not.toBe(buttonColors.get("product"));
-    expect(buttonColors.get("custom"), "custom is a lit mode, not product order in a different label").not.toBe(buttonColors.get("product"));
+    expect(buttonColors.get("name-asc"), "A-Z uses the same white paint as product order").toBe(buttonColors.get("product"));
+    expect(buttonColors.get("name-desc"), "Z-A uses the same white paint as product order").toBe(buttonColors.get("product"));
+    expect(buttonColors.get("custom"), "custom uses the same white paint; its gripper carries state").toBe(buttonColors.get("product"));
   }, 120_000);
 });

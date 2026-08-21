@@ -9,6 +9,7 @@ import { type FleetVM } from "@tachyon/shared/sidebar/types.js";
 import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
 import { CONTROL_SECTION_NAV } from "@tachyon/webview-ui/webview/sidebar/sectionNav.js";
 import { sortRows, type SortMode } from "@tachyon/webview-ui/sidebar/sortRows.js";
+import { encodeLauncherCustom } from "@tachyon/webview-ui/sidebar/launcherOrder.js";
 
 /**
  * t-50daeb metade 1 — headless Visual QA for the launcher grid's SORT states.
@@ -17,8 +18,9 @@ import { sortRows, type SortMode } from "@tachyon/webview-ui/sidebar/sortRows.js
  * phone-home-screen reading while offering the Agents tab's A–Z flip — in BOTH directions and at a
  * narrow and a wide sidebar width, every tile stays legible (no clipped label, no tile past the
  * panel edge, no horizontal scroll), the sort control sits in the section header with its state
- * visible (inactive in product order, lit once a direction is chosen), and the grid's order matches
- * the chosen direction. The PRODUCT order stays what a person without a preference sees.
+ * visible with the same white paint as Agents, while its changing glyph carries the state, and the
+ * grid's order matches the chosen direction. The PRODUCT order stays what a person without a
+ * preference sees. Product, A-Z, custom, and Agents controls appear together in each comparison shot.
  *
  * Not part of `verify:full` (needs system Chrome + built `dist/`), same as t-6e2952's shots.
  * Regenerate with:
@@ -33,11 +35,11 @@ const shotPage = path.join(DIST, "launcher-sort-shot.html");
 // is where the grid gains columns and a wrong sort is easiest to SEE. One width hides the class of
 // defect worth catching: labels that only clip once the cells get tight.
 const WIDTHS = [
-  { id: "220", px: 220 },
-  { id: "wide-640", px: 640 },
+  { id: "narrow-360", px: 360 },
+  { id: "wide-880", px: 880 },
 ];
 
-type SortState = { id: string; prefs?: { launcher: string }; expected: string[]; buttonLabel: string; buttonOn: boolean };
+type SortState = { id: string; prefs?: { launcher: string }; expected: string[]; buttonLabel: string };
 
 const fleet: FleetVM = { ...SAMPLE, folder: { hash: "ws", name: "Project" } };
 
@@ -82,22 +84,27 @@ describe("t-50daeb launcher sort headless Visual QA", () => {
     rmSync(shotPage, { force: true });
   });
 
-  it("every sort state reads as the same launcher: ordered, legible, control visible, at 220 and 640", async () => {
+  it("every sort state reads as the same launcher and paints like Agents at 360 and 880", async () => {
+    const custom = [...CONTROL_SECTION_NAV.map((s) => s.id)].reverse();
     const states: SortState[] = [
       {
         id: "product",
         prefs: undefined,
         expected: CONTROL_SECTION_NAV.map((s) => s.id),
         buttonLabel: "Sort launcher (Product order); click to sort A–Z",
-        buttonOn: false,
       },
       ...(["name-asc", "name-desc"] as SortMode[]).map((mode) => ({
         id: mode,
         prefs: { launcher: mode },
         expected: sortRows(CONTROL_SECTION_NAV, mode, (s) => s.label).map((s) => s.id),
         buttonLabel: `Sort launcher (${mode === "name-asc" ? "Name (A–Z)" : "Name (Z–A)"}); click to flip`,
-        buttonOn: true,
       })),
+      {
+        id: "custom",
+        prefs: { launcher: encodeLauncherCustom(custom) },
+        expected: custom,
+        buttonLabel: "Sort launcher (Custom order); click to sort A–Z",
+      },
     ];
 
     const buttonColors = new Map<string, string>();
@@ -155,7 +162,7 @@ describe("t-50daeb launcher sort headless Visual QA", () => {
           expect(geom.overflowingTiles, `${where}: no tile past the panel edge`).toBe(0);
           expect(geom.sortButtonFound, `${where}: the sort control is in the section header`).toBe(true);
           expect(geom.sortButtonVisible, `${where}: the sort control is visible`).toBe(true);
-          expect(geom.sortButtonOn, `${where}: the control is lit only when a direction is chosen`).toBe(state.buttonOn);
+          expect(geom.sortButtonOn, `${where}: glyph, not the shared active color, carries sort state`).toBe(false);
           if (!buttonColors.has(state.id)) buttonColors.set(state.id, geom.sortButtonColor);
         }
 
@@ -164,9 +171,40 @@ describe("t-50daeb launcher sort headless Visual QA", () => {
       }
     }
 
-    // The lit state must PAINT differently from product order (the focus token, not the muted one) —
-    // the exact defect the missing-tokens.css shot page hid.
-    expect(buttonColors.get("name-asc"), "the active sort control is painted with the focus color").not.toBe(buttonColors.get("product"));
-    expect(buttonColors.get("name-desc")).not.toBe(buttonColors.get("product"));
+    // The glyph already distinguishes direction and custom order (gripper), so color does not repeat
+    // that state. Keep measuring computed paint through tokens.css: otherwise equality could pass by
+    // accident on a capture page unable to resolve the real focus token.
+    expect(buttonColors.get("name-asc"), "A-Z uses the same white paint as product order").toBe(buttonColors.get("product"));
+    expect(buttonColors.get("name-desc"), "Z-A uses the same white paint as product order").toBe(buttonColors.get("product"));
+    expect(buttonColors.get("custom"), "custom order uses the same white paint as product order").toBe(buttonColors.get("product"));
+
+    const comparisonBodies = [
+      ...states.filter((state) => state.id === "product" || state.id === "name-asc" || state.id === "custom").map((state) => ({
+        label: `Launcher — ${state.id}`,
+        html: renderStatic(App({ fleets: [fleet], initialTab: "Control" as never, prefs: state.prefs })),
+      })),
+      { label: "Agents — A-Z", html: renderStatic(App({ fleets: [fleet], initialTab: "Agents" as never })) },
+    ];
+    for (const w of WIDTHS) {
+      await page.setViewport({ width: w.px, height: 720, deviceScaleFactor: 1 });
+      const cards = comparisonBodies.map(({ label, html }) => `<section class="comparison-card"><h2>${label}</h2>${html}</section>`).join("");
+      writeFileSync(shotPage, pageHtml(`<main class="comparison-grid">${cards}</main>`).replace("</style>", `
+.comparison-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:8px}
+.comparison-card{min-width:0;border:1px solid var(--vscode-panel-border,#444);overflow:hidden}
+.comparison-card h2{margin:0;padding:6px 8px;font:600 11px/1.2 var(--vscode-font-family,system-ui);color:var(--vscode-descriptionForeground,#aaa)}
+@media(max-width:600px){.comparison-grid{grid-template-columns:1fr}.comparison-card{height:160px}}
+</style>`));
+      await page.goto(`file://${shotPage}`, { waitUntil: "networkidle0" });
+      await page.evaluate(() => document.fonts.ready);
+      const comparisonColors = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(".comparison-card")].map((card) => ({
+        label: card.querySelector("h2")?.textContent ?? "unknown",
+        color: getComputedStyle(card.querySelector<HTMLButtonElement>('button.act[title^="Sort"]')!).color,
+      })));
+      expect(new Set(comparisonColors.map(({ color }) => color)).size,
+        `${w.px}px: launcher product, A-Z, custom, and Agents controls share paint: ${JSON.stringify(comparisonColors)}`)
+        .toBe(1);
+      const png = await page.screenshot({ type: "png", fullPage: false });
+      writeFileSync(path.join(OUT_DIR, `launcher-agents-comparison-${w.id}.png`), png);
+    }
   }, 120_000);
 });
