@@ -399,14 +399,14 @@ function renderMath(root: HTMLElement): void {
 }
 
 let purifyHooked = false;
-function sanitize(html: string): string {
+export function sanitizeMarkup(html: string, options: Record<string, unknown> = SANITIZE_OPTIONS): string {
   if (!purifyHooked) {
     purifyHooked = true;
     DOMPurify.addHook("afterSanitizeAttributes", (node) => {
       if (node.tagName === "A") { node.setAttribute("target", "_blank"); node.setAttribute("rel", "noreferrer"); }
     });
   }
-  return DOMPurify.sanitize(html, SANITIZE_OPTIONS);
+  return DOMPurify.sanitize(html, options);
 }
 
 // ───────────────────────── public API ─────────────────────────
@@ -427,7 +427,7 @@ export function linkify(text: string): ComponentChildren[] {
 /** A sanitized markdown HTML segment + copy-button delegation + lazy math rendering. */
 function MdHtml({ text }: { text: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  const html = useMemo(() => sanitize(renderMarkdownHtml(text)), [text]);
+  const html = useMemo(() => sanitizeMarkup(renderMarkdownHtml(text)), [text]);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;

@@ -4,6 +4,9 @@ import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { REVIEW_VIEW_TYPE, ReviewPanelManager, reviewRefreshKind, type ReviewOpenArgs, type ReviewPanelHost } from "../../apps/vscode-extension/src/webview/ReviewPanel.js";
 import { readyMessage } from "@tachyon/webview-ui/webview/shared/ready.js";
 import type { ReviewDiffFileV1 } from "@tachyon/engine/runtime-api/reviewProjection.js";
+import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 
 /**
  * SDD 513 fatia 3 — the review tab. Cardinality and "nothing reveals itself" are the
@@ -74,6 +77,16 @@ describe("SDD 513 fatia 3 — ReviewPanel cardinality", () => {
     expect(manager.openKeys).toEqual([`${REVIEW_VIEW_TYPE}|ws-1|reviewgrok`]);
   });
 
+  it("grants only this document's temporary cache root", () => {
+    const manager = new ReviewPanelManager(extensionUri, host());
+    manager.open(args());
+    const options = __createdPanels[0].webview.options as { localResourceRoots: Array<{ fsPath: string }> };
+    const roots = options.localResourceRoots.map((root) => root.fsPath);
+    expect(roots).toHaveLength(2);
+    expect(roots[1]).toContain(path.join("tachyon-review-cache", "ws-1-reviewgrok", "session-"));
+    expect(roots).not.toContain("/wt");
+  });
+
   it("gives two worktrees a panel each", () => {
     const manager = new ReviewPanelManager(extensionUri, host());
     manager.open(args({ worktree: "a" }));
@@ -110,6 +123,20 @@ describe("SDD 513 fatia 3 — the command is the only reveal", () => {
     expect(h.diffs.at(-1)).toBe("gone.ts");
     const last = [...panel.webview.posted].reverse().find((m) => (m as { type?: string }).type === "review") as { vm: { selectedPath: string } };
     expect(last.vm.selectedPath).toBe("gone.ts");
+  });
+
+  it("routes textual SVG through the viewer family instead of requiring Git's binary flag", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-review-svg-"));
+    fs.writeFileSync(path.join(cwd, "proof.svg"), '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"/>');
+    const h = host({ viewDiff: async () => ({ ...emptyDiff("proof.svg"), status: "A", binary: false }) });
+    const manager = new ReviewPanelManager(extensionUri, h);
+    manager.open(args({ cwd, files: [{ status: "A", path: "proof.svg" }], selectedPath: "proof.svg" }));
+    __createdPanels[0].webview.__receive(readyMessage());
+    await flush();
+    const last = [...__createdPanels[0].webview.posted].reverse().find((message) => (message as { type?: string }).type === "review") as { vm: { binaryAsset?: { family: string } } };
+    expect(last.vm.binaryAsset?.family).toBe("svg");
+    manager.dispose();
+    fs.rmSync(cwd, { recursive: true, force: true });
   });
 
   it("writing a note does not execute vscode.diff and does not create a CommentController", async () => {

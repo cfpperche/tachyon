@@ -459,6 +459,29 @@ const katex = {
   logLevel: "info",
 };
 
+// t-3be62b — heavyweight Review viewers are independent on-demand resources. Keeping them
+// outside review.js's reachable graph makes the text-only path pay for neither library.
+const reviewPdf = {
+  entryPoints: ["packages/webview-ui/src/webview/review/pdf-entry.ts"],
+  bundle: true,
+  outfile: "dist/webview/review-pdf.js",
+  platform: "browser",
+  format: "iife",
+  target: "es2020",
+  minify: true,
+  logLevel: "info",
+};
+const reviewModelViewer = {
+  entryPoints: ["packages/webview-ui/src/webview/review/model-viewer-entry.ts"],
+  bundle: true,
+  outfile: "dist/webview/review-model-viewer.js",
+  platform: "browser",
+  format: "iife",
+  target: "es2020",
+  minify: true,
+  logLevel: "info",
+};
+
 // spec 278 — the dev-only preview-harness glue (reads ?view=&fixture=, loads a real webview bundle, injects a
 // fixture). Output lives OUTSIDE dist/webview and is excluded from the vsix (.vscodeignore); never shipped.
 const preview = {
@@ -584,6 +607,7 @@ copyFileSync("node_modules/@xterm/xterm/css/xterm.css", "dist/webview/xterm.css"
 copyFileSync("packages/webview-ui/src/webview/shared/studio/studio-frame.css", "dist/webview/studio-frame.css"); // spec 350 — the studio shell's chrome (shared by any studio built on it + the dev preview harness)
 copyFileSync("packages/webview-ui/src/webview/agent-studio-fixture/agent-studio-fixture.css", "dist/webview/agent-studio-fixture.css"); // spec 350 T5 — Agent-entity fixture (Fake 2) domain-region styles
 copyFileSync("packages/webview-ui/src/webview/review/review.css", "dist/webview/review.css"); // SDD 513 fatia 2 — Tachyon diff-review screen
+copyFileSync("node_modules/pdfjs-dist/build/pdf.worker.min.mjs", "dist/webview/pdf.worker.min.mjs"); // t-3be62b — lazy Review PDF worker
 copyFileSync("packages/webview-ui/src/webview/section-app-fixture/section-app-fixture.css", "dist/webview/section-app-fixture.css"); // SDD 485 C2 — per-app CSS for the section-app proof surface
 copyFileSync("packages/webview-ui/src/webview/agent-studio-shell/agent-studio-shell.css", "dist/webview/agent-studio-shell.css"); // spec 350 Phase 3 T3 — Agent Studio (shell) domain-region styles
 // t-610705 (Phase D, D0/D1a) — these four studio-shell stylesheets are co-loaded by Control now
@@ -615,7 +639,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, internalSeams, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate]
+const targets = [extension, internalSeams, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, reviewPdf, reviewModelViewer, preview, previewShell, uiGate]
   .map((target) => ({
     ...target,
     ...(target.outfile ? { outfile: outputPath(target.outfile) } : {}),

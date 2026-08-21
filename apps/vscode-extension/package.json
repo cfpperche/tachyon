@@ -744,6 +744,7 @@
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.17.6",
+    "@google/model-viewer": "4.3.1",
     "@iarna/toml": "^2.2.5",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@radix-ui/react-dialog": "1.1.18",
@@ -779,6 +780,7 @@
     "markdown-it-texmath": "^1.0.0",
     "mermaid": "^11.15.0",
     "node-pty": "^1.1.0",
+    "pdfjs-dist": "6.2.108",
     "preact": "^10.29.2",
     "qrcode": "^1.5.4",
     "tailwind-merge": "3.6.0",
