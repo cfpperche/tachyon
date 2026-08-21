@@ -1395,15 +1395,25 @@ describe("SDD 494 Part 0 — Saved Agent removal actor x trigger", () => {
 
   it("Agent or Human x dismiss_agent", async () => {
     const { root, ws } = await refusedSavedAgentWorkspace();
-    const tools = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>>();
-    registerTools(
-      { registerTool: (name: string, _schema: unknown, handler: unknown) => { tools.set(name, handler as never); } } as never,
-      { workspaceRoot: root, caller: { kind: "agent", name: "claude" }, manager: ws.manager } as never,
-    );
+    const register = (caller: { kind: string; name?: string }) => {
+      const tools = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>>();
+      registerTools(
+        { registerTool: (name: string, _schema: unknown, handler: unknown) => { tools.set(name, handler as never); } } as never,
+        { workspaceRoot: root, caller, manager: ws.manager } as never,
+      );
+      return tools.get("dismiss_agent")!;
+    };
     try {
-      const result = await tools.get("dismiss_agent")!({ name: "claude23" });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain("propose_saved_agent_removal");
+      // t-bb1775 — an agent caller is scoped first. Claude is not claude23's owner, so the
+      // lifetime door that names propose_saved_agent_removal is not reached.
+      const agent = await register({ kind: "agent", name: "claude" })({ name: "claude23" });
+      expect(agent.isError).toBe(true);
+      expect(agent.content[0]?.text).toContain("dismiss_agent refused");
+      expect(agent.content[0]?.text).toContain("lifecycle-scoped");
+
+      const human = await register({ kind: "legacy" })({ name: "claude23" });
+      expect(human.isError).toBe(true);
+      expect(human.content[0]?.text).toContain("propose_saved_agent_removal");
     } finally {
       ws.dispose();
     }
@@ -1435,7 +1445,8 @@ describe("SDD 494 Part 0 — Saved Agent removal actor x trigger", () => {
  *    without the sidebar and with no section filter. `t-359469` measured this asymmetry on the removed profile door
  *    door: the human path never renders for a terminal and the API path does, so a case that only
  *    drives the button measures the door nobody uses.
- *  - **A3 Agent, Bridge x dismiss_agent** — refused ahead of every side effect.
+ *  - **A3 Agent, Bridge x dismiss_agent** — refused ahead of every side effect (t-bb1775: the
+ *    lineage guard, then the declared-terminal lifetime check).
  *  - **A4 Human or Agent, text editor / write_tachyon_config x edit tachyon.yml** — no door runs at
  *    all. The deliberate escape hatch, and the reason the sweep has to name what it leaves.
  *  - **A5 Tachyon, interruption x between this door's two writes** — the window with no journal, no
@@ -1531,17 +1542,32 @@ describe("t-af4a5f — declared-terminal roster-row removal actor x trigger", ()
 
   it("A3 Agent, Bridge x dismiss_agent", async () => {
     const { ws, root } = await terminalWithFootprint();
-    const tools = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>>();
-    registerTools(
-      { registerTool: (name: string, _schema: unknown, handler: unknown) => { tools.set(name, handler as never); } } as never,
-      { workspaceRoot: root, caller: { kind: "agent", name: "a" }, manager: ws.manager } as never,
-    );
+    const register = (caller: { kind: string; name?: string }) => {
+      const tools = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>>();
+      registerTools(
+        { registerTool: (name: string, _schema: unknown, handler: unknown) => { tools.set(name, handler as never); } } as never,
+        { workspaceRoot: root, caller, manager: ws.manager } as never,
+      );
+      return tools.get("dismiss_agent")!;
+    };
     try {
-      const result = await tools.get("dismiss_agent")!({ name: "b" });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain("config.agent.delete");
-      expect(result.content[0]?.text).not.toContain("propose_saved_agent_removal");
-      expect(result.content[0]?.text).not.toContain("Agent Studio");
+      // Out-of-scope agent: t-bb1775's guard is the first door, before the lifetime check and
+      // before every side effect.
+      const scoped = await register({ kind: "agent", name: "a" })({ name: "b" });
+      expect(scoped.isError).toBe(true);
+      expect(scoped.content[0]?.text).toContain("dismiss_agent refused");
+      expect(scoped.content[0]?.text).toContain("lifecycle-scoped");
+      expect(scoped.content[0]?.text).not.toContain("propose_saved_agent_removal");
+      expect(scoped.content[0]?.text).not.toContain("Agent Studio");
+      expect(ws.config?.agents.b?.kind).toBe("terminal");
+      expect(fs.existsSync(homeOf(root))).toBe(true);
+
+      // Unrestricted human token still reaches the declared-terminal lifetime refusal.
+      const human = await register({ kind: "legacy" })({ name: "b" });
+      expect(human.isError).toBe(true);
+      expect(human.content[0]?.text).toContain("config.agent.delete");
+      expect(human.content[0]?.text).not.toContain("propose_saved_agent_removal");
+      expect(human.content[0]?.text).not.toContain("Agent Studio");
       expect(ws.config?.agents.b?.kind).toBe("terminal");
       expect(fs.existsSync(homeOf(root))).toBe(true);
     } finally {

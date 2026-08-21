@@ -82,6 +82,8 @@ function dismissWorld(opts: {
   removeResult?: WorktreeRemovalResult;
   tasks?: TaskStore;
   workspaceRoot?: string;
+  /** Resolved Bridge caller. Default `ada` is the lineage parent of `child`. */
+  callerName?: string;
 } = {}): DismissWorld {
   const record = opts.worktree ?? RECORD;
   const events: string[] = [];
@@ -106,7 +108,7 @@ function dismissWorld(opts: {
     // t-bec361 — the caller below is 'ada', and a Temporary child that owns a checkout got that
     // checkout by being SPAWNED by someone. Saying so is what makes this fake faithful to the
     // production shape the cascade runs in: the coordinator stopping its own finished child.
-    parentOf: (agent: string) => (agent === "child" ? "ada" : undefined),
+    parentOf: (agent: string) => (agent === "child" || agent === "sib" ? "ada" : undefined),
     // t-b5f896 — 'child' is a Temporary reached by lineage, never a Saved Agent the human declared
     // an owner for, so the roster answer is genuinely "nobody" rather than a stub returning 'ada'.
     // Keeping it that way is what makes the lineage walk above the branch these tests exercise.
@@ -154,7 +156,7 @@ function dismissWorld(opts: {
   };
   registerTools(mcp as never, {
     workspaceRoot,
-    caller: { kind: "agent", name: "ada" },
+    caller: { kind: "agent", name: opts.callerName ?? "ada" },
     notify: (message: string, level: string) => { notices.push({ message, level }); },
     manager,
     tasks,
@@ -418,6 +420,51 @@ describe("t-d06da3 — dismiss_agent takes the child's worktree with it", () => 
 
     expect(result.content[0]?.text).toBe("agent 'child' dismissed");
     expect(world.events).toEqual(["dismiss-row"]); // no probe, no release, no git
+  });
+});
+
+describe("t-bb1775 — dismiss_agent is lineage-scoped like kill/restart", () => {
+  it("refuses a sibling and leaves checkout, ledger and registry", async () => {
+    const world = dismissWorld({ callerName: "sib" });
+
+    const result = await world.dismiss({ name: "child" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("dismiss_agent refused");
+    expect(result.content[0]?.text).toContain("sib");
+    expect(result.content[0]?.text).toContain("ada");
+    expect(result.content[0]?.text).not.toContain("restart_agent");
+    expect(world.events.some((event) => event.startsWith("git-remove "))).toBe(false);
+    expect(world.events).not.toContain("dismiss-row");
+    expect(world.ledger.has("child")).toBe(true);
+    expect(world.ledger.get("child")?.worktree).toEqual(RECORD);
+    expect(world.registry.get("child")).toEqual(RECORD);
+  });
+
+  it("refuses a stranger and leaves checkout, ledger and registry", async () => {
+    const world = dismissWorld({ callerName: "stranger" });
+
+    const result = await world.dismiss({ name: "child" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("dismiss_agent refused");
+    expect(result.content[0]?.text).toContain("stranger");
+    expect(result.content[0]?.text).not.toContain("restart_agent");
+    expect(world.events.some((event) => event.startsWith("git-remove "))).toBe(false);
+    expect(world.events).not.toContain("dismiss-row");
+    expect(world.ledger.has("child")).toBe(true);
+    expect(world.ledger.get("child")?.worktree).toEqual(RECORD);
+    expect(world.registry.get("child")).toEqual(RECORD);
+  });
+
+  it("still lets the Temporary dismiss itself", async () => {
+    const world = dismissWorld({ callerName: "child" });
+
+    const result = await world.dismiss({ name: "child" });
+
+    expect(result.isError).toBeFalsy();
+    expect(world.ledger.has("child")).toBe(false);
+    expect(world.registry.get("child")).toBeNull();
   });
 });
 

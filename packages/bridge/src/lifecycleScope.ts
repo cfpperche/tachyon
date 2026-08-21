@@ -1,13 +1,14 @@
 /**
  * t-bec361 — WHICH TARGETS a resolved agent caller may reach through the by-name lifecycle/input
- * doors (`kill_agent`, `restart_agent`, `write_input`).
+ * doors (`kill_agent`, `restart_agent`, `write_input`, and since t-bb1775 `dismiss_agent`).
  *
  * The identity half was already built and in use (spec 351: the Bridge resolves the caller from its
  * per-agent token before any fallback, and ~10 tools already require `caller.kind === "agent"`).
- * These three doors simply never asked. They take one parameter — the target's name — so any agent
- * could stop, restart or drive any other agent in the fleet; and for a Temporary that owns a
- * checkout, `kill_agent` cascades into removing the worktree and branch (t-a76aed), which makes the
- * wrong call a deletion rather than an interruption.
+ * These doors simply never asked. They take one parameter — the target's name — so any agent
+ * could stop, restart, drive or (for a stopped Temporary) dismiss any other agent in the fleet;
+ * and for a Temporary that owns a checkout, `kill_agent` and `dismiss_agent` cascade into removing
+ * the worktree and branch (t-a76aed / t-1cf3c5), which makes the wrong call a deletion rather than
+ * an interruption.
  *
  * The rule is deliberately NARROWER than `inWaitOutputScope`'s (which also admits siblings): reading
  * a sibling's pane is observation, stopping it is destruction. Self, below you in your own runtime
@@ -32,12 +33,13 @@ export interface LifecycleOwnershipSource extends LineageSource {
   declaredOwnerOf(name: string): string | undefined;
 }
 
-export type LifecycleTool = "kill_agent" | "restart_agent" | "write_input";
+export type LifecycleTool = "kill_agent" | "restart_agent" | "write_input" | "dismiss_agent";
 
 const ACTION: Record<LifecycleTool, string> = {
   kill_agent: "stop",
   restart_agent: "restart",
   write_input: "type into",
+  dismiss_agent: "dismiss",
 };
 
 /**
