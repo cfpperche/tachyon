@@ -4,6 +4,77 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.27 — o Design Mode sai da status bar, a aba Control vira Apps, e o launcher aprende a arrastar
+
+### Design Mode deixa de morar na status bar do VS Code
+
+Os dois ícones do Integrated Browser ocupavam a barra de status do editor — o lugar onde nenhuma
+ferramenta parecida põe "modo de inspeção ligado". Chrome e Edge usam painel, Playwright abre janela
+própria, Figma troca o modo na própria tela.
+
+Agora Design Mode é um ladrilho no launcher, e clicar nele **faz**, não abre tela: com o Integrated
+Browser desligado, leva ao Settings com o campo em destaque; ligado, arma o modo e abre o browser.
+Fechar o browser desarma.
+
+O estado que dá para observar — página atual e conexão do CDP — foi para o **System**, que é onde
+estado de máquina já mora. Os comandos continuam na paleta.
+
+### A aba Control agora se chama Apps
+
+O nome era fóssil: Control era **um** app com seções antes de virar doze apps independentes. As abas
+irmãs — Attentions, Agents, Terminals, Pipelines, Schedules, Pins — todas nomeiam o que listam. Essa
+não nomeava.
+
+E o ícone estava repetido: a aba e o ladrilho System desenhavam o mesmo glifo, na mesma tela. Agora a
+aba usa `home`, que é o que aquele painel sempre foi — uma tela inicial de aplicativos.
+
+### O launcher aprende a arrastar, e mostra onde vai encaixar
+
+Arrastar um ladrilho agora abre o vão onde ele vai cair: os vizinhos deslocam ao vivo e a célula
+arrastada vira o lugar vazio, com contorno tracejado. Antes o ícone flutuava sobre os outros e o
+rótulo empilhava sobre o rótulo vizinho.
+
+Soltar fora ou apertar Escape cancela sem gravar. E quem não usa mouse reordena por teclado —
+Ctrl+X marca, Ctrl+V cola, com anúncio para leitor de tela.
+
+O controle de ordenação também deixou de acender em azul: ele pinta igual ao da aba Agents, porque o
+próprio desenho do ícone já diz a direção.
+
+### A sidebar respira
+
+A linha de tarefa parava de crescer num corredor fixo de 72 pixels, então o texto cortava mesmo com
+a barra larga. Agora usa a largura que existe: medido, 502 para 704 pixels numa sidebar aberta.
+
+E a barra de ações da linha de agente parou de cobrir o conteúdo. O botão de reticências fica
+sempre visível, e o resto se revela da direita para a esquerda quando o ponteiro chega — ou quando o
+teclado chega, que é o caminho que costuma ser esquecido.
+
+### Companion ocupa a tela toda
+
+Era o único app com largura máxima, e isso apareceu abrindo três abas em sequência. A restrição
+tinha uma boa razão tipográfica, mas largura de leitura, se vale, vale para todos.
+
+### Primeira fatia do Agent Heartbeat
+
+O Tachyon passa a acordar o agente pai quando um filho fica ocioso, sem depender de o filho avisar —
+o caso que importa é o filho que morre ou termina sem reportar.
+
+É uma fatia deliberadamente pequena: um evento, nenhum botão de configuração. O que ela responde é
+se acordar por evento produz trabalho que a notificação normal já não produzia. A resposta decide se
+o resto do catálogo se justifica.
+
+Um detalhe que parece pequeno e não é: nomes de agente temporário são reusados, então cada sessão
+recebe um contador próprio. Sem isso, um despertar atrasado alcançaria a encarnação errada do mesmo
+nome — justamente o que a entrega-uma-vez existe para impedir.
+
+### Interface não é documentação, agora por escrito
+
+Uma auditoria das 32 telas mediu ~18 casos de manual renderizado como interface. O princípio que ela
+propôs entrou no guia do projeto, e o teste é uma pergunta: **o leitor vai agir com este texto, aqui?**
+
+"Soltar não apaga nada" é lido e usado. "Um agente é um perfil em `.tachyon/agents/`" é lido uma vez,
+lembrado nunca, e reexibido para sempre.
+
 ## 0.93.26 — o produto fala inglês, a interface para de documentar, e o board ganha busca
 
 > Nota: o CHANGELOG estava parado na 0.93.11. As versões 0.93.12 a 0.93.25 saíram sem entrada aqui.
