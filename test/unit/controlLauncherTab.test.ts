@@ -319,6 +319,8 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
     prefs?: { agents?: string; terminals?: string; launcher?: string };
     dispatch?: { setSort?: (section: string, mode: string) => void; global?: (op: string, hash?: string, sectionId?: string) => void };
     initialReorderMode?: boolean;
+    initialDraggingSection?: string;
+    initialDropTarget?: string;
   };
   let App: (props: AppProps) => unknown;
 
@@ -335,13 +337,25 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
   };
   const dragEvent = (id = "") => {
     let stored = id;
+    const attrs: Record<string, string> = {};
+    const grid = {
+      setAttribute: (k: string, v: string) => { attrs[k] = v; },
+      getAttribute: (k: string) => attrs[k],
+    };
     return {
       preventDefault() {},
+      stopPropagation() {},
+      currentTarget: {
+        closest: () => grid,
+        querySelector: () => null,
+      },
+      attrs,
       dataTransfer: {
         setData: (_k: string, v: string) => { stored = v; },
         getData: () => stored,
         effectAllowed: "move",
         dropEffect: "move",
+        setDragImage() {},
       },
     };
   };
@@ -445,6 +459,69 @@ describe("t-539851 — drag and keyboard reorder persist the same custom order",
     expect(html).toContain('data-testid="launcher-done"');
     expect(html).toContain("Control sections, rearranging");
     expect(tileEls(elements, "system").props.draggable).toBe(true);
+  });
+
+  it("Interface × dragover marks the insertion slot before drop, and setSort has not fired yet", () => {
+    const calls: Array<[string, string]> = [];
+    const { elements } = renderStaticWithElements(App({
+      fleets: [SAMPLE],
+      initialTab: "Control",
+      dispatch: { setSort: (section, mode) => calls.push([section, mode]) },
+    }));
+    const ev = dragEvent();
+    (tileEls(elements, "system").props.onDragStart as (e: unknown) => void)(ev);
+    (tileEls(elements, "mission").props.onDragOver as (e: unknown) => void)(ev);
+    expect(ev.attrs["data-drop-at"], "the grid names the insertion id during dragover").toBe("mission");
+    expect(calls, "persisting on dragover would hide this defect: the final order is already correct today").toEqual([]);
+    (tileEls(elements, "mission").props.onDrop as (e: unknown) => void)(ev);
+    expect(calls).toEqual([["launcher", encodeLauncherCustom(moveLauncherTile(productOrder, "system", "mission"))]]);
+  });
+
+  it("neighbors shift around an empty slot in the drag pose, with nothing written yet", () => {
+    const calls: Array<[string, string]> = [];
+    const { html } = renderStaticWithElements(App({
+      fleets: [SAMPLE],
+      initialTab: "Control",
+      initialReorderMode: true,
+      initialDraggingSection: "system",
+      initialDropTarget: "mission",
+      dispatch: { setSort: (section, mode) => calls.push([section, mode]) },
+    }));
+    expect(calls).toEqual([]);
+    expect(html).toContain('data-drop-at="mission"');
+    expect(html).toContain('data-drop-slot="true"');
+    expect(html).toContain("is-drop-slot");
+    expect([...html.matchAll(/data-section="([^"]+)"/g)].map((m) => m[1])).toEqual(
+      moveLauncherTile(productOrder, "system", "mission"),
+    );
+  });
+
+  it("Interface × dragend without drop does not persist", () => {
+    const calls: Array<[string, string]> = [];
+    const { elements } = renderStaticWithElements(App({
+      fleets: [SAMPLE],
+      initialTab: "Control",
+      dispatch: { setSort: (section, mode) => calls.push([section, mode]) },
+    }));
+    const ev = dragEvent();
+    (tileEls(elements, "system").props.onDragStart as (e: unknown) => void)(ev);
+    (tileEls(elements, "mission").props.onDragOver as (e: unknown) => void)(ev);
+    (tileEls(elements, "system").props.onDragEnd as (e: unknown) => void)(ev);
+    expect(calls).toEqual([]);
+  });
+
+  it("Interface × Escape during drag does not persist", () => {
+    const calls: Array<[string, string]> = [];
+    const { elements } = renderStaticWithElements(App({
+      fleets: [SAMPLE],
+      initialTab: "Control",
+      dispatch: { setSort: (section, mode) => calls.push([section, mode]) },
+    }));
+    const ev = dragEvent();
+    (tileEls(elements, "system").props.onDragStart as (e: unknown) => void)(ev);
+    (tileEls(elements, "mission").props.onDragOver as (e: unknown) => void)(ev);
+    (tileEls(elements, "system").props.onKeyDown as (e: unknown) => void)(keyEvent("Escape"));
+    expect(calls).toEqual([]);
   });
 });
 

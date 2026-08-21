@@ -9,7 +9,7 @@ import { type FleetVM } from "@tachyon/shared/sidebar/types.js";
 import { SAMPLE } from "../../scripts/webview-preview/fixtures/sidebar.js";
 import { CONTROL_SECTION_NAV } from "@tachyon/webview-ui/webview/sidebar/sectionNav.js";
 import { sortRows } from "@tachyon/webview-ui/sidebar/sortRows.js";
-import { encodeLauncherCustom } from "@tachyon/webview-ui/sidebar/launcherOrder.js";
+import { encodeLauncherCustom, moveLauncherTile } from "@tachyon/webview-ui/sidebar/launcherOrder.js";
 
 /**
  * t-539851 — headless Visual QA for the launcher grid's THREE sort modes plus the two
@@ -43,6 +43,7 @@ type AppProps = {
   prefs?: { launcher?: string };
   initialReorderMode?: boolean;
   initialDraggingSection?: string;
+  initialDropTarget?: string;
 };
 
 const fleet: FleetVM = { ...SAMPLE, folder: { hash: "ws", name: "Project" } };
@@ -54,10 +55,12 @@ type ShotState = {
   prefs?: { launcher: string };
   initialReorderMode?: boolean;
   initialDraggingSection?: string;
+  initialDropTarget?: string;
   expected: string[];
   buttonLabel: string;
   reorder: boolean;
   dragging?: string;
+  dropAt?: string;
 };
 
 function pageHtml(body: string): string {
@@ -140,10 +143,12 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
         prefs: { launcher: encodeLauncherCustom(custom) },
         initialReorderMode: true,
         initialDraggingSection: "system",
-        expected: custom,
+        initialDropTarget: "design-mode",
+        expected: moveLauncherTile(custom, "system", "design-mode"),
         buttonLabel: "Sort launcher (Custom order); click to sort A–Z",
         reorder: true,
         dragging: "system",
+        dropAt: "design-mode",
       },
     ];
 
@@ -156,6 +161,7 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
         prefs: state.prefs,
         initialReorderMode: state.initialReorderMode,
         initialDraggingSection: state.initialDraggingSection,
+        initialDropTarget: state.initialDropTarget,
       }));
 
       for (const w of WIDTHS) {
@@ -164,7 +170,7 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
         await page.goto(`file://${shotPage}`, { waitUntil: "networkidle0" });
         await page.evaluate(() => document.fonts.ready);
 
-        const geom = await page.evaluate((want: { buttonLabel: string; dragging?: string }) => {
+        const geom = await page.evaluate((want: { buttonLabel: string; dragging?: string; dropAt?: string }) => {
           const doc = document.documentElement;
           const grid = document.querySelector('[data-testid="control-grid"]');
           const sec = document.querySelector(".sec");
@@ -177,7 +183,23 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
           const dragged = want.dragging
             ? grid.querySelector<HTMLElement>(`.ctl-tile[data-section="${want.dragging}"]`)
             : null;
-          const idle = tiles.find((t) => t !== dragged) ?? null;
+          const visibleLabels = tiles.flatMap((t) => {
+            const label = t.querySelector<HTMLElement>(".ds-btn-label");
+            if (!label) return [];
+            const cs = getComputedStyle(label);
+            if (cs.visibility === "hidden" || cs.display === "none" || Number(cs.opacity) === 0) return [];
+            return [label.getBoundingClientRect()];
+          });
+          let overlappingLabels = 0;
+          for (let i = 0; i < visibleLabels.length; i++) {
+            for (let j = i + 1; j < visibleLabels.length; j++) {
+              const a = visibleLabels[i]!;
+              const b = visibleLabels[j]!;
+              const hit = !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top);
+              if (hit) overlappingLabels++;
+            }
+          }
+          const slotLabel = dragged?.querySelector<HTMLElement>(".ds-btn-label");
           return {
             ok: true as const,
             scrollWidth: doc.scrollWidth,
@@ -193,14 +215,28 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
             tokensFocus: getComputedStyle(doc).getPropertyValue("--ds-focus").trim(),
             clippedLabels: tiles.filter((t) => {
               const label = t.querySelector(".ds-btn-label");
-              return !label || label.scrollHeight > label.clientHeight + 1;
+              if (!label) return true;
+              if (getComputedStyle(label).visibility === "hidden") return false;
+              return label.scrollHeight > label.clientHeight + 1;
             }).length,
             overflowingTiles: tiles.filter((t) => t.getBoundingClientRect().right > gr.right + 1).length,
-            draggedOpacity: dragged ? getComputedStyle(dragged).opacity : "",
-            idleOpacity: idle ? getComputedStyle(idle).opacity : "",
             draggedHasClass: dragged?.classList.contains("is-dragging") ?? false,
+            dropSlot: dragged?.getAttribute("data-drop-slot") === "true",
+            dropAt: grid.getAttribute("data-drop-at"),
+            slotLabelHidden: slotLabel ? getComputedStyle(slotLabel).visibility === "hidden" : false,
+            slotOutline: dragged ? getComputedStyle(dragged).outlineStyle : "",
+            slotOutlineColor: dragged ? getComputedStyle(dragged).outlineColor : "",
+            focusAsColor: (() => {
+              const probe = document.createElement("div");
+              probe.style.color = "var(--ds-focus)";
+              document.body.appendChild(probe);
+              const color = getComputedStyle(probe).color;
+              probe.remove();
+              return color;
+            })(),
+            overlappingLabels,
           };
-        }, { buttonLabel: state.buttonLabel, dragging: state.dragging });
+        }, { buttonLabel: state.buttonLabel, dragging: state.dragging, dropAt: state.dropAt });
 
         const where = `${state.id} @ ${w.px}px`;
         expect(geom.ok, `${where}: ${JSON.stringify(geom)}`).toBe(true);
@@ -218,7 +254,12 @@ describe("t-539851 launcher reorder headless Visual QA", () => {
           expect(geom.doneVisible, `${where}: Done only while rearranging`).toBe(state.reorder);
           if (state.dragging) {
             expect(geom.draggedHasClass, `${where}: the dragged tile is marked`).toBe(true);
-            expect(Number(geom.draggedOpacity), `${where}: the dragged tile paints dimmer than its neighbours`).toBeLessThan(Number(geom.idleOpacity));
+            expect(geom.dropSlot, `${where}: the dragged cell is the insertion slot`).toBe(true);
+            expect(geom.dropAt, `${where}: the grid names the drop target during drag`).toBe(state.dropAt);
+            expect(geom.slotLabelHidden, `${where}: the slot hides its label so captions cannot stack`).toBe(true);
+            expect(geom.slotOutline, `${where}: the slot is outlined, not a second painted tile`).toBe("dashed");
+            expect(geom.slotOutlineColor, `${where}: the slot outline is --ds-focus (tokens.css door)`).toBe(geom.focusAsColor);
+            expect(geom.overlappingLabels, `${where}: no two visible tile labels overlap`).toBe(0);
           }
           if (!buttonColors.has(state.id)) buttonColors.set(state.id, geom.sortButtonColor);
         }
