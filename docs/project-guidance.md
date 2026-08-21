@@ -511,3 +511,35 @@ shape here: the logic lands in the engine and the only door stays in the editor.
   (`t-92bf17`). Model/orchestration protocol text remains plain.
 - Product interface text is English even when the task contract is Portuguese; `t-ce1de8` showed the
   review webview inheriting the contract language when this convention was unstated.
+
+### The screen states; the manual teaches
+
+Adopted from the 32-screen audit (`t-b3d350`), which measured ~18 real cases of documentation
+rendered as interface. The rule is here rather than in the audit so the next author does not
+reintroduce what the audit removed.
+
+Interface text earns its pixels one of two ways: it names what is on screen (label, value, state),
+or it names what is about to happen (the consequence of the gesture in front of the reader).
+Everything else — how the system is modeled, why a rule exists, what a file is for — is
+documentation. It belongs in `docs/`, in a tooltip, or behind a link, never in a paragraph on the
+screen.
+
+The test is one question: **will the reader act on this text, right here?** "Releasing it deletes
+nothing" is read and used. "An agent is a profile under `.tachyon/agents/`" is read once, remembered
+never, and reshown forever.
+
+- A consequence is one sentence in plain voice ("Restart a running session to disarm"). A state is a
+  fact, not a story.
+- A hint answers the question the reader plausibly has ON THIS SCREEN, in at most one sentence per
+  question. Enumerating knobs belongs to the screen that shows the knobs.
+- An empty state is one sentence of state plus one action ("No plugins installed. Install one by its
+  source above."), never a paragraph.
+- Progressive help carries the depth: tooltip holds the term, link holds the topic, docs hold the
+  model. "If you have to explain how the user interface works… fix the interface so it does not need
+  explaining" (GOV.UK).
+- Where a write lands is a consequence: keep "Writes `settings.companion.tabTools` in `tachyon.yml`".
+- Two exceptions earn their prose: a CONSENT surface may spell out cost, risk and undo — that text is
+  the product there; and the ONBOARDING screen may teach, briefly, because teaching is its function.
+
+When a text grows past three sentences, do not shorten it — ask which document it was pretending to
+be, and send it there.
