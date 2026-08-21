@@ -144,3 +144,38 @@ Esta spec inteira é sobre instalar app **por zip**. O único extrator endurecid
 | destravar o `zip` diferido do `TOOL_ARCHIVE_TYPES` | herda o endurecimento existente, mas é decisão do spec 265 e não desta |
 
 A terceira parece a certa e é a que eu não posso decidir sozinho, porque o diferimento do zip foi decisão de outra spec. **Vira pergunta para o dono antes de a T3 começar.**
+
+
+## O destravamento do zip do spec 265 NAO serve — medido em 2026-08-21
+
+O `notes.md` registrava três saídas para o zip, e eu recomendei a terceira: destravar o `zip` diferido do `TOOL_ARCHIVE_TYPES` para herdar o endurecimento existente. O dono autorizou.
+
+**A recomendação estava errada, e o agente da fatia 1 parou antes de escrever código para dizer isso.**
+
+`packages/engine/src/plugins/manifest.ts:65`, conferido por mim:
+
+```
+/** When the downloaded artifact is an archive, the single regular file to extract + its own pinned hash. */
+export interface ToolArchive {
+  type: ToolArchiveType;
+  /** the contained POSIX-relative path of the ONE regular file to extract as the executable. */
+  innerPath: string;
+  /** 64-hex sha256 of the EXTRACTED executable bytes ... */
+  binSha256: string;
+}
+```
+
+O extrator do spec 265 tira **um arquivo regular**, identificado por `innerPath` e pinado por `binSha256`. É extrator de **binário**, não de árvore.
+
+Um app é uma árvore de arquivos sem hash individual. Destravar o `zip` ali:
+
+- não instalaria app nenhum, porque o contrato exige um membro único e um hash por membro;
+- **afrouxaria o contrato de tool**, que é outro caso e está protegido de propósito.
+
+### Decisão
+
+A extração de app nasce em `packages/engine/src/apps/`. O spec 265 fica intocado.
+
+Isso **não** é uma segunda forma de descompactar: é a primeira forma de descompactar **árvore**. O 265 descompacta **binário pinado**. Casos diferentes, e o comentário no código diz isso, para ninguém tentar unificá-los depois — nem tentar destravar o zip de novo, como eu tentei.
+
+A contenção de caminho reusa `contained()` do `reviewBinaryCache.ts`, exportando-a se preciso, em vez de copiar.
