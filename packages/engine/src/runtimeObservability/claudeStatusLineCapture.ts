@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { callerProviderOfEnvironment } from "../runtimeOps/runtimeCondition.js";
 import type { ClaudeStatusLineCaptureReader, ClaudeStatusLineCaptureV1 } from "./claudeStatusLineSource.js";
 import type { ProviderObservationPreferences } from "./preferences.js";
 
@@ -36,6 +37,11 @@ export interface ClaudeStatusLineMaterializeRequest {
   cwd: string;
   /** Effective CLAUDE_CONFIG_DIR. Omit for Claude's normal `~/.claude` home. */
   configHome?: string;
+  /**
+   * t-d64332 — launch environment of THIS spawn. `ANTHROPIC_BASE_URL` decides whether capture
+   * archives under the Anthropic account grant or a foreign provider's own grant (or not at all).
+   */
+  environment?: Readonly<Record<string, string>>;
 }
 
 export interface ClaudeStatusLineCaptureTransportOptions {
@@ -85,7 +91,8 @@ export class ClaudeStatusLineCaptureTransport {
   }
 
   materialize(request: ClaudeStatusLineMaterializeRequest): ClaudeStatusLineSetting | undefined {
-    const preference = this.preferences.get("claude");
+    const providerKey = callerProviderOfEnvironment(request.environment) ?? "claude";
+    const preference = this.preferences.get(providerKey);
     if (!preference || !preference.sources.includes("cli") || !SAFE_SCOPE_KEY.test(preference.scope.key)) {
       return undefined;
     }

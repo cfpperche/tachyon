@@ -394,4 +394,42 @@ describe("ClaudeStatusLineCaptureTransport", () => {
     });
     expect(fs.existsSync(capture)).toBe(false);
   });
+
+  it("t-d64332: a borrowed-provider spawn does not archive into the Anthropic account scope", async () => {
+    const h = await harness();
+    const anthropicScope = h.preferences.get("claude")!.scope.key;
+    const anthropicDir = path.join(
+      h.storage,
+      "runtime-observability-v1",
+      "claude-status-line",
+      anthropicScope,
+    );
+    const borrowed = h.transport.materialize({
+      workspaceRoot: h.cwd,
+      agent: "glm",
+      cwd: h.cwd,
+      environment: { ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic" },
+    });
+    if (borrowed) {
+      expect(runStatusLine(borrowed.command, h.cwd, {
+        rate_limits: { five_hour: { used_percentage: 99, resets_at: 1_784_077_200 } },
+      }).status).toBe(0);
+    }
+    const capturesAfterBorrowed = fs.existsSync(anthropicDir)
+      ? fs.readdirSync(anthropicDir).filter((name) => name.endsWith(".capture.json"))
+      : [];
+    expect(capturesAfterBorrowed).toEqual([]);
+    await expect(h.transport.readCapture(new AbortController().signal)).resolves.toBeNull();
+
+    const native = h.transport.materialize({ workspaceRoot: h.cwd, agent: "claude", cwd: h.cwd });
+    expect(native).toMatchObject({ type: "command" });
+    expect(runStatusLine(native!.command, h.cwd, {
+      rate_limits: { five_hour: { used_percentage: 31, resets_at: 1_784_077_200 } },
+    }).status).toBe(0);
+    const capture = await h.transport.readCapture(new AbortController().signal);
+    expect(capture).not.toBeNull();
+    expect(JSON.parse(String(capture!.json))).toEqual({
+      rate_limits: { five_hour: { used_percentage: 31, resets_at: 1_784_077_200 } },
+    });
+  });
 });

@@ -109,7 +109,7 @@ describe("RuntimeSlackMonitor", () => {
 
     expect(f.delivered).toHaveLength(1);
     expect(f.delivered[0].agent).toBe("claude-coordinator");
-    expect(f.delivered[0].line).toContain("runtime 'claude' has slack again");
+    expect(f.delivered[0].line).toContain("the provider account backing 'claude' has slack again");
     expect(f.delivered[0].line).toContain("3% used");
     expect(f.delivered[0].line).toContain("down from 100%");
   });
@@ -272,5 +272,20 @@ describe("RuntimeSlackMonitor", () => {
     f.observe("codex", RELIEVED, [{ name: "session", usedPercent: 100 }, { name: "weekly", usedPercent: 96 }]);
     await f.monitor.tick();
     expect(f.delivered).toHaveLength(0);
+  });
+
+  it("t-d64332: the relief line names the provider account, not the runtime as a delegatee", async () => {
+    const f = fixture();
+    f.observe("claude", PRESSURED, [{ name: "session", usedPercent: 100, windowMinutes: 300 }]);
+    await f.monitor.tick();
+    f.observe("claude", RELIEVED, [{ name: "session", usedPercent: 3, windowMinutes: 300 }]);
+    await f.monitor.tick();
+
+    expect(f.delivered).toHaveLength(1);
+    const line = f.delivered[0]!.line;
+    expect(line).toContain("the provider account backing 'claude' has slack again");
+    expect(line).toContain("Delegation to the provider account backing 'claude' is no longer quota-blocked");
+    expect(line).not.toContain("Delegation to 'claude'");
+    expect(line).not.toContain("runtime 'claude' has slack again");
   });
 });

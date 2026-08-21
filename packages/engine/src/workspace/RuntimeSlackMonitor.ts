@@ -40,8 +40,8 @@ import type {
  *  - An Agent reaches the same FACTS through the `runtime_condition` Bridge tool, which reads the same
  *    projection this monitor reads — one shape, two doors, so a poke and a query cannot disagree.
  *  - The Interface reads the same underlying observations through the Runtime Ops view.
- *  - Spawn/restart/dismiss of an agent does not touch this state: the subject here is a RUNTIME, not
- *    a child, so a roster change only changes who is listening.
+ *  - Spawn/restart/dismiss of an agent does not touch this state: the subject here is the provider
+ *    account backing a runtime, not a child, so a roster change only changes who is listening.
  */
 
 /**
@@ -171,10 +171,10 @@ function reliefLine(
   const reset = resetClause(armed.resetsAt, observedAt);
   const label = integrity === "best-effort" ? " (best-effort channel)" : "";
   return (
-    `[tachyon] runtime '${runtime}' has slack again — its ${scope} quota window reads `
+    `[tachyon] the provider account backing '${runtime}' has slack again — its ${scope} quota window reads `
     + `${round(window.usedPercent)}% used at ${observedAt}, down from ${round(armed.usedPercent)}% at `
-    + `${armed.observedAt}; ${reset}${label}. Delegation to '${runtime}' is no longer quota-blocked — `
-    + "runtime_condition has the full picture."
+    + `${armed.observedAt}; ${reset}${label}. Delegation to the provider account backing '${runtime}' `
+    + "is no longer quota-blocked — runtime_condition has the full picture."
   );
 }
 

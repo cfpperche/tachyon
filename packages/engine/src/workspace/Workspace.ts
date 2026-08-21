@@ -1143,6 +1143,7 @@ export class Workspace {
               agent: name,
               cwd: opts?.cwd ?? this.workspaceRoot,
               configHome: opts?.configHome,
+              ...(opts?.environment ? { environment: opts.environment } : {}),
             }),
           // t-685a0c — `configHome` is where THIS spawn's TaskCreate store lives, so the required-plan
           // gate reads the same `<configHome>/tasks/<sessionId>` the sidebar does. Absent (a claude

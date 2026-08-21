@@ -1933,6 +1933,43 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     }
   });
 
+  it("t-d64332: a borrowed-provider spawn hands ANTHROPIC_BASE_URL into status-line capture", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n", "utf8");
+    const host = new FakeHost(mkdir());
+    const fake = fakeTmux();
+    const requests: Array<{
+      workspaceRoot: string;
+      agent: string;
+      cwd: string;
+      configHome?: string;
+      environment?: Readonly<Record<string, string>>;
+    }> = [];
+    const ws = await createWorkspaceForTest(root, {
+      host,
+      onViewsChanged: () => {},
+      claudeStatusLineCapture: {
+        materialize: (request) => {
+          requests.push(request);
+          return { type: "command", command: "node '/private/capture-wrapper.cjs'" };
+        },
+      },
+    }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
+    try {
+      await ws.manager.spawn("glm", {
+        cmd: "claude",
+        env: { ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic" },
+      });
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.agent).toBe("glm");
+      expect(requests[0]?.environment?.ANTHROPIC_BASE_URL).toBe("https://api.z.ai/api/anthropic");
+    } finally {
+      ws.dispose();
+      await fake.cleanup();
+    }
+  });
+
   it("keeps a failed Resume-all offer and reports a failed fresh-spawn fallback", async () => {
     const { ws, host } = await makeWorkspace();
     const record = { instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true }, cwd: ws.workspaceRoot };

@@ -1,16 +1,20 @@
 import { randomBytes } from "node:crypto";
-import type {
-  ProviderAccountObservationScopeV1,
-  ProviderSourceKindV1,
-  RuntimeObservabilityProviderV1,
+import {
+  KNOWN_RUNTIME_OBSERVABILITY_PROVIDERS_V1,
+  type ProviderAccountObservationScopeV1,
+  type ProviderSourceKindV1,
+  type RuntimeObservabilityProviderV1,
 } from "./types.js";
 
 export const PROVIDER_OBSERVATION_PREFERENCES_STATE_KEY = "tachyon.runtimeObservability.preferences.v1";
 
-const PROVIDERS = ["codex", "claude", "grok"] as const satisfies readonly RuntimeObservabilityProviderV1[];
+/** Known triad — used as the listing of grants the panel already knows how to show. */
+const KNOWN_PROVIDERS = KNOWN_RUNTIME_OBSERVABILITY_PROVIDERS_V1;
 const SOURCES = new Set<ProviderSourceKindV1>(["cli", "oauth"]);
 const SOURCE_PRIORITY: Record<ProviderSourceKindV1, number> = { cli: 0, oauth: 1 };
 const SAFE_SCOPE_KEY = /^ps_[0-9a-f]{16,64}$/u;
+/** Host-like provider keys (`api.z.ai`) plus the known triad. Not an email, path, or free text. */
+export const SAFE_PROVIDER_KEY = /^[a-z0-9][a-z0-9._:-]{0,127}$/iu;
 
 export interface ProviderObservationStatePort {
   get<T>(key: string): T | undefined;
@@ -38,7 +42,7 @@ interface PersistedProviderPreferenceV1 {
 
 interface PersistedProviderPreferencesV1 {
   schemaVersion: 1;
-  providers: Partial<Record<RuntimeObservabilityProviderV1, PersistedProviderPreferenceV1>>;
+  providers: Record<string, PersistedProviderPreferenceV1>;
 }
 
 /**
@@ -53,7 +57,8 @@ export class ProviderObservationPreferences {
     private readonly randomHex: () => string = () => randomBytes(16).toString("hex"),
   ) {}
 
-  get(provider: RuntimeObservabilityProviderV1): ProviderObservationPreferenceV1 | undefined {
+  get(provider: string): ProviderObservationPreferenceV1 | undefined {
+    if (!SAFE_PROVIDER_KEY.test(provider)) return undefined;
     const persisted = this.read().providers[provider];
     if (!persisted) return undefined;
     return {
@@ -64,7 +69,7 @@ export class ProviderObservationPreferences {
 
   all(): Partial<Record<RuntimeObservabilityProviderV1, ProviderObservationPreferenceV1>> {
     const out: Partial<Record<RuntimeObservabilityProviderV1, ProviderObservationPreferenceV1>> = {};
-    for (const provider of PROVIDERS) {
+    for (const provider of KNOWN_PROVIDERS) {
       const preference = this.get(provider);
       if (preference) out[provider] = preference;
     }
@@ -72,17 +77,17 @@ export class ProviderObservationPreferences {
   }
 
   configure(
-    provider: RuntimeObservabilityProviderV1,
+    provider: string,
     input: ProviderObservationPreferenceInputV1,
   ): Promise<ProviderObservationPreferenceV1 | undefined> {
     return this.enqueueUpdate(() => this.configureNow(provider, input));
   }
 
   private async configureNow(
-    provider: RuntimeObservabilityProviderV1,
+    provider: string,
     input: ProviderObservationPreferenceInputV1,
   ): Promise<ProviderObservationPreferenceV1 | undefined> {
-    if (!(PROVIDERS as readonly string[]).includes(provider) || !record(input)) {
+    if (!SAFE_PROVIDER_KEY.test(provider) || !record(input)) {
       throw new TypeError("provider observation preference is invalid");
     }
     const current = this.read();
@@ -122,9 +127,9 @@ export class ProviderObservationPreferences {
       return { schemaVersion: 1, providers: {} };
     }
     const providers: PersistedProviderPreferencesV1["providers"] = {};
-    for (const provider of PROVIDERS) {
-      const candidate = raw.providers[provider];
-      if (!record(candidate)
+    for (const [provider, candidate] of Object.entries(raw.providers)) {
+      if (!SAFE_PROVIDER_KEY.test(provider)
+        || !record(candidate)
         || typeof candidate.accountScopeKey !== "string"
         || !SAFE_SCOPE_KEY.test(candidate.accountScopeKey)
         || !Array.isArray(candidate.sources)) {
