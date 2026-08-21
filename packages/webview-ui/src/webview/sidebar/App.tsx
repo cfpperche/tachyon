@@ -1862,7 +1862,6 @@ export function App({
             : launcherParsed.kind === "custom"
               ? "Custom order"
               : SORT_LABEL[launcherParsed.mode];
-          const active = launcherParsed.kind !== "product";
           const flipHint = launcherParsed.kind === "name" ? "click to flip" : "click to sort A–Z";
           const flipSort = () => changeSort(
             "launcher",
@@ -1884,7 +1883,9 @@ export function App({
               )}
               <button
                 type="button"
-                class={`act${active ? " on" : ""}`}
+                // The glyph carries sort state: SortIcon shows direction and custom order uses the
+                // gripper. Keep the same white paint as Agents instead of repeating state in color.
+                class="act"
                 title={`Sort launcher — ${label} (${flipHint})`}
                 aria-label={`Sort launcher (${label}); ${flipHint}`}
                 data-testid="launcher-sort"
