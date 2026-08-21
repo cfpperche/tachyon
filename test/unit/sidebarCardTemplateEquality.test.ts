@@ -50,6 +50,8 @@ const HEADER = [
   "#   t-83bcf4 — primary agent actions are wrapped in `.action-reveal`; the overflow trigger remains",
   "#     its sibling so it is visible at rest while the primary strip reveals leftward. Pin rows do not",
   "#     use this catalog renderer and retain their separate toolbar behavior.",
+  "#   t-91884b — MoreBtn publishes aria-haspopup=menu and aria-expanded (false at rest). The trigger",
+  "#     is no longer painted at rest; CSS binds visibility to row hover/focus and the expanded flag.",
   "#",
   "# Regenerate ONLY for an intentional card change: UPDATE_SIDEBAR_CARD_GOLDEN=1 npx vitest run test/unit/sidebarCardTemplateEquality.test.ts",
   "# Serialized by test/helpers/staticPreact.ts; fixtures in test/fixtures/sidebar/agentCardFixtures.ts.",

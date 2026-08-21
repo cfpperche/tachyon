@@ -40,8 +40,9 @@
  * them to `--ds-spacing-size*` would unalign the name column (28→24) or run the focus
  * line under the 22×22 hits (72→32). They now live as named custom properties on `.row`
  * (`--sidebar-name-col` 28, `--sidebar-child-name-col` 13, `--sidebar-focus-trail` derives from
- * `--action-gutter`). t-83bcf4 later narrowed that existing gutter to the resting overflow button;
- * the focus and checklist trails follow it by design instead of keeping parallel literals.
+ * `--action-gutter`). t-83bcf4 narrowed that gutter to the overflow trigger's 38px corridor;
+ * t-91884b then hid the trigger itself until row hover/focus, so the corridor stays empty at rest.
+ * The focus and checklist trails follow the gutter by design instead of keeping parallel literals.
  *
  * Hex: leftovers stay as vscode-var / --ds-* fallbacks so the gate exception row is not stale and
  * is not edited. Raw peek/focus-source syntax colors with no --ds role (#c586c0 memory, #dcdcaa
@@ -196,8 +197,10 @@
     --sidebar-child-name-col: calc(var(--sidebar-sdot) + var(--ds-spacing-size60));
     --sidebar-focus-trail: calc(var(--action-gutter) - var(--ds-spacing-size80));
   }
-  /* t-83bcf4 — an agent's resting corridor reserves the permanent 22px overflow trigger plus its
-     right inset/chrome. Primary actions expand left over the row. Terminal rows keep their toolbar. */
+  /* t-83bcf4 / t-91884b — an agent's corridor reserves 38px for the overflow trigger so the
+     appearing `...` never covers the name. The trigger itself is hidden at rest; it paints on
+     row hover or focus-within. Primary actions expand left over the row once the pointer or
+     focus is on the trigger cluster. Terminal rows keep their full toolbar. */
   .row.agent-card { --action-gutter: 38px; }
   .row.metrics-open { background: color-mix(in srgb, var(--ds-focus) 5%, transparent); }
   .row:hover { background: var(--ds-hover-row); }
@@ -406,18 +409,23 @@
   button.ds-badge { background: transparent; font-family: inherit; cursor: pointer; }
   button.ds-badge:hover { background: var(--ds-hover); color: var(--vscode-foreground); }
 
-  /* Action overlay — absolute so it never widens the row. The shared base remains the pins' all-or-none
-     toolbar. Agent rows override it below: their overflow trigger rests visibly in --action-gutter while
-     the primary strip reveals leftward over content on pointer hover or keyboard focus. */
+  /* Action overlay — absolute so it never widens the row. The shared base is the pins' and
+     non-agent rows' all-or-none toolbar: hidden at rest, shown on row hover or focus-within.
+     Agent rows use that same trigger visibility (the `...` is gone at rest; the 38px corridor
+     stays empty). The primary strip (`.action-reveal`) opens only when the pointer or keyboard
+     focus is on `.actions` itself — hovering the rest of the card must not open the ruler.
+     An open overflow menu holds the trigger visible via MoreBtn[aria-expanded=true], because
+     the menu is a portal and is no longer :hover/:focus-within of the card. */
   .actions { display: flex; opacity: 0; pointer-events: none; transition: opacity .1s; position: absolute; right: 8px; top: 6px; gap: 0; z-index: 2; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: var(--ds-spacing-size20) var(--ds-spacing-size20); border-radius: 4px; box-shadow: 0 0 0 1px var(--ds-border); }
-  .row > .actions.agent-actions { opacity: 1; pointer-events: auto; }
+  .row:hover > .actions, .row:focus-within > .actions { opacity: 1; pointer-events: auto; }
+  .row > .actions.agent-actions:has([aria-expanded="true"]) { opacity: 1; pointer-events: auto; }
   .row > .actions.agent-actions .action-reveal {
     display: flex; max-width: 0; overflow: hidden; opacity: 0; pointer-events: none;
     transform: translateX(var(--ds-spacing-size80));
     transition: max-width .18s ease, opacity .12s ease, transform .18s ease;
   }
-  .row:hover > .actions.agent-actions .action-reveal,
-  .row:focus-within > .actions.agent-actions .action-reveal {
+  .row > .actions.agent-actions:hover .action-reveal,
+  .row > .actions.agent-actions:focus-within .action-reveal {
     max-width: 66px; opacity: 1; pointer-events: auto; transform: translateX(0);
   }
   .row > .actions.agent-actions .action-reveal .act { flex: none; }
