@@ -198,6 +198,37 @@ export function liveWorktreeProcessRefusal(
 }
 
 /**
+ * t-9fd2e6 — what is still true after a removal attempt, for a receipt that must not
+ * say "removed". Does not kill, signal, or wait. `confirmLiveProcesses` is not named
+ * here: that flag authorized the attempt; this sentence is the measured residue.
+ */
+export function worktreeKeptAfterRemoval(
+  worktreePath: string,
+  report: LiveWorktreeProcessReport | undefined,
+  extras?: {
+    stillListed?: boolean;
+    stillOnDisk?: boolean;
+    gitError?: string;
+  },
+): string {
+  const reasons: string[] = [];
+  if (report?.measured && report.processes.length > 0) {
+    const listed = report.processes.map((p) => `pid ${p.pid} ${p.command}`).join("; ");
+    const n = report.processes.length;
+    const noun = n === 1 ? "process" : "processes";
+    const verb = n === 1 ? "has" : "have";
+    reasons.push(`${n} live ${noun} still ${verb} cwd there (${listed})`);
+  } else if (report && !report.measured && report.unavailableReason) {
+    reasons.push(`process cwd could not be re-measured (${report.unavailableReason})`);
+  }
+  if (extras?.stillListed) reasons.push("git still lists it as a worktree");
+  if (extras?.stillOnDisk && reasons.length === 0) reasons.push("directory still exists on disk");
+  if (extras?.gitError) reasons.push(extras.gitError);
+  if (reasons.length === 0) reasons.push("directory still exists on disk");
+  return `worktree KEPT at ${worktreePath} — ${reasons.join("; ")}`;
+}
+
+/**
  * Only a measured finding, or a failed walk on a system that has `/proc`, blocks removal.
  * A platform without `/proc` is not a finding — callers proceed and declare they did not measure.
  */
