@@ -4,6 +4,36 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.40 — o que ainda lia, e o que ainda dizia
+
+A 0.93.37 retirou a ponte de migração do `tachyon.yml`. A promessa era maior que isso: que um
+arquivo com esse nome na raiz simplesmente não fizesse nada, e que o nome não sobrasse vivo no
+produto. Nenhuma das duas valia ainda.
+
+### Dois caminhos ainda liam o arquivo
+
+A resolução de identidade de harness — a pergunta "este agente tem um harness isolado de verdade?",
+que decide se um plugin pode ser instalado só para ele — lia o bloco `agents:` da raiz quando não
+achava um profile canônico. Era uma segunda resposta para uma pergunta que hoje tem uma casa só,
+`.tachyon/agents/<name>/agent.yml`, e sobreviveu tanto ao arquivo quanto à própria espécie inline
+que ela lia. Saiu, junto com a espécie `yaml-harness` que só ela produzia.
+
+O Integrated Browser caía para o `tachyon.yml` quando a config viva não trazia `homeUrl`. Passa a
+ler `.tachyon/settings.yml`.
+
+### E cerca de cinquenta textos ainda mandavam o leitor para lá
+
+Isso não é cosmética, porque metade desses textos é lida por **agente**, não por humano. O
+`spawn_agent` oferecia, como saída governada para quem precisa de um checkout que sobreviva ao
+filho, "declare it in tachyon.yml" — um conselho impossível de seguir. As descrições das ferramentas
+de fleet ensinavam a mesma geografia. E todo agente salvo vinha com a explicação de por que não pode
+ser dispensado apontando para um arquivo que não existe.
+
+A regra aplicada: corrige-se o que alguém lê em runtime — descrição de ferramenta, mensagem de erro,
+texto de UI — e o comentário que afirmava no presente algo falso. Comentário que registra história
+fica: ele está certo sobre o passado. Sobraram cinco menções, todas nomeando a espécie legada como
+legada.
+
 ## 0.93.39 — a limitação era nossa, não do Codex
 
 A 0.93.38 recusava conceder skills de plugin a um agente Codex que roda na raiz do workspace, e
