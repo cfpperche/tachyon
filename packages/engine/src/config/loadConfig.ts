@@ -706,8 +706,9 @@ export interface ParseResult {
   discarded: string[];
 }
 
-// t-a65335 — CONFIG_FILENAMES retired: the workspace config is .tachyon/settings.yml (see workspaceSettingsFile.ts);
-// the legacy root filenames live on only in LEGACY_CONFIG_FILENAMES for the one-shot migration.
+// t-a65335 — CONFIG_FILENAMES retired: the workspace config is .tachyon/settings.yml (see
+// workspaceSettingsFile.ts). t-987825 removed the one-shot migration that read the legacy root
+// filenames, so nothing in the product names them any more.
 
 const NAME_RE = AGENT_NAME_PATTERN;
 function isPlainObject(v: unknown): v is Record<string, unknown> {

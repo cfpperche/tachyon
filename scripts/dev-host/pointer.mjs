@@ -510,6 +510,26 @@ export function stampDevHostWorktreeBranchFile(filePath, options = {}) {
  * Extracted from `materializeWorkspaceMirror` by t-f0efc5 so a multi-root mirror is the SAME rules
  * applied per folder, not a second policy that could drift from this one.
  */
+
+/**
+ * t-987825 — the fixture text above is authored as a full legacy document (`settings:` + a retired
+ * `agents:` block) because it reads well in one place. The settings FILE is that block's body at the
+ * top level, so this lifts it; the agents block is dropped, exactly as the loader already dropped it.
+ */
+function devHostSettingsYaml(legacyDocument) {
+  const lines = String(legacyDocument).split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === "settings:");
+  const header = lines.slice(0, start === -1 ? lines.length : start).filter((line) => line.startsWith("#"));
+  if (start === -1) return `${header.join("\n")}\n`;
+  const body = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim().length === 0) { body.push(""); continue; }
+    if (!line.startsWith("  ")) break;            // a sibling top-level key ends the block
+    body.push(line.slice(2));                      // de-indent one level
+  }
+  return `${[...header, ...body].join("\n").trimEnd()}\n`;
+}
+
 function mirrorFixtureEntry(fixtureDir, mirrorDir, name) {
   if (name === ".edh-cache" || name === ".edh-extensions" || name === ".edh-tmux" || name === ".edh-user-data") return;
   if (name === ".dev-host-source" || name === ".tachyon-dev-host.json") return;
@@ -528,10 +548,8 @@ function mirrorFixtureEntry(fixtureDir, mirrorDir, name) {
     }
     return;
   }
-  if (name === "tachyon.yml" || name === ".mcp.json") {
+  if (name === ".mcp.json") {
     fs.copyFileSync(src, dest);
-    // t-dc9cb0 — stamp the disposable copy only. The tracked fixture stays as the author wrote it.
-    if (name === "tachyon.yml") stampDevHostWorktreeBranchFile(dest);
     return;
   }
   fs.symlinkSync(src, dest);
@@ -764,7 +782,11 @@ agents:
     attention: false
 `;
 
-  fs.writeFileSync(path.join(root, "tachyon.yml"), yml, "utf8");
+  // t-987825 — a fixture workspace is configured the way the product reads one. The retired
+  // `agents:` block these fixtures carried was already inert (agents come from profiles); what a
+  // dogfood folder needs is a settings file, so it is a workspace at all.
+  fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".tachyon", "settings.yml"), devHostSettingsYaml(yml), "utf8");
 
   if (intent === "focus") {
     fs.writeFileSync(

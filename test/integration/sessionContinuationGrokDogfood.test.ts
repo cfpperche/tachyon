@@ -14,7 +14,7 @@ import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import { TmuxService, defaultExecutor } from "@tachyon/engine/tmux/TmuxService.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { gateCmdRuntimeChange } from "@tachyon/engine/agents/cmdRuntimeGate.js";
-import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml } from "../helpers/savedAgentFixture.js";
+import { writeSavedAgent, savedAgentSecrets } from "../helpers/savedAgentFixture.js";
 import { requireMachineDependency } from "../helpers/machineDependency.js";
 
 /** Seeded by the fixture setup below, then handed to every DogfoodHost this run builds. */
@@ -149,8 +149,10 @@ describe(
       const canonical = ["source", "dest"].map((name) =>
         writeSavedAgent(workspace, name, { runtime: "grok", autostart: false, attention: { enabled: false } }));
       canonicalSecrets = savedAgentSecrets(workspace, canonical);
-      const yaml = `settings:\n  maxAgents: 8\n${savedAgentsYaml(canonical)}`;
-      fs.writeFileSync(path.join(workspace, "tachyon.yml"), yaml);
+      // t-987825 — settings live in `.tachyon/settings.yml`; the agent rows come from the canonical
+      // profiles written above, which is where a declared agent has lived since SDD 478 M7.
+      fs.mkdirSync(path.join(workspace, ".tachyon"), { recursive: true });
+      fs.writeFileSync(path.join(workspace, ".tachyon", "settings.yml"), "maxAgents: 8\n");
       // minimal git so worktree paths stay sane
       execFileSync("git", ["init", "-q", "-b", "main", workspace], { stdio: "ignore" });
       execFileSync("git", ["-C", workspace, "commit", "-q", "--allow-empty", "-m", "root"], {

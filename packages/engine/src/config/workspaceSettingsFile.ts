@@ -1,9 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parseDocument, stringify } from "yaml";
-import { scanScheduleDeclarations, upsertScheduleDeclaration } from "./scheduleDeclarations.js";
+import { scanScheduleDeclarations } from "./scheduleDeclarations.js";
 import { scanTerminalDeclarations } from "./terminalDeclarations.js";
-import { upsertTerminalDeclaration } from "./terminalDeclarations.js";
 
 /**
  * t-a65335 — tachyon.yml retires. What it used to carry, by kind:
@@ -13,7 +12,12 @@ import { upsertTerminalDeclaration } from "./terminalDeclarations.js";
  *   schedules:  declarations → `.tachyon/schedules/<name>.yml` (scheduleDeclarations.ts).
  *   terminals:  declarations → `.tachyon/terminals/<name>.yml` (already canonical there).
  *   agents:     already gone (`.tachyon/agents/<name>/agent.yml`).
- *   layouts:    retired since spec 234; dies with the file.
+ *   layouts:    retired since spec 234; died with the file.
+ *
+ * t-987825 — the one-shot migration that projected a legacy `tachyon.yml` into these homes is gone
+ * too. It existed for a single upgrade, every workspace that needed it took it, and a translation
+ * layer nobody can reach is a second definition of the format waiting to disagree with the first.
+ * A `tachyon.yml` at a workspace root is now simply a file the product does not read.
  *
  * The internal composition contract (parseConfig / loadProfileAwareConfig taking one document with
  * `settings:` + `schedules:`) is untouched: `composeWorkspaceConfigText` synthesizes that document
@@ -21,8 +25,6 @@ import { upsertTerminalDeclaration } from "./terminalDeclarations.js";
  */
 
 export const WORKSPACE_SETTINGS_FILE = ".tachyon/settings.yml";
-/** Retired workspace-root config files: read only by the migration, never by the loader. */
-export const LEGACY_CONFIG_FILENAMES = ["tachyon.yml", "tachyon.yaml"] as const;
 
 export function workspaceSettingsPath(workspaceRoot: string): string {
   return path.join(workspaceRoot, WORKSPACE_SETTINGS_FILE);
@@ -82,91 +84,3 @@ export function composeWorkspaceConfigText(workspaceRoot: string, overrides: Com
   return { yamlText: stringify(document), warnings, errors };
 }
 
-export interface LegacyConfigMigration {
-  migrated: boolean;
-  /** what moved where, one line each — for the single load-time notice. */
-  actions: string[];
-  warnings: string[];
-}
-
-/**
- * One-shot, idempotent projection of a legacy workspace-root tachyon.yml into the new homes. Every
- * block lands only where nothing exists yet — a new-home file always wins over the legacy block,
- * matching the terminals precedent. The original text is preserved byte-exact inside `.tachyon/`
- * before the root file is removed, because this file was gitignored: the copy Tachyon keeps is the
- * only one anywhere.
- */
-export function migrateLegacyWorkspaceConfig(workspaceRoot: string): LegacyConfigMigration {
-  const legacyPath = LEGACY_CONFIG_FILENAMES
-    .map((name) => path.join(workspaceRoot, name))
-    .find((candidate) => fs.existsSync(candidate));
-  if (!legacyPath) return { migrated: false, actions: [], warnings: [] };
-
-  const actions: string[] = [];
-  const warnings: string[] = [];
-  const text = fs.readFileSync(legacyPath, "utf8");
-  const doc = parseDocument(text, { uniqueKeys: true });
-  if (doc.errors.length > 0) {
-    // An unreadable legacy file cannot be projected; leave it in place and say so, loudly, once.
-    return {
-      migrated: false,
-      actions: [],
-      warnings: [`${path.basename(legacyPath)} is not parseable (${doc.errors[0]!.message}); fix or remove it — the loader no longer reads it`],
-    };
-  }
-  const raw = (doc.toJS() ?? {}) as Record<string, unknown>;
-
-  const settingsTarget = workspaceSettingsPath(workspaceRoot);
-  const settings = raw.settings;
-  const hasSettingsBlock = !!settings && typeof settings === "object" && !Array.isArray(settings) && Object.keys(settings).length > 0;
-  if (fs.existsSync(settingsTarget)) {
-    if (hasSettingsBlock) warnings.push(`settings: block kept out of ${WORKSPACE_SETTINGS_FILE} — the file already exists and wins`);
-  } else {
-    // ALWAYS materialize the settings file, even when the legacy document carried no settings:
-    // block — its PRESENCE is what marked the workspace as configured, and settings.yml is that
-    // marker now. A legacy workspace holding only terminals must not migrate into an unconfigured
-    // one (caught by vsix-smoke on 0.93.30: engine up, roster empty).
-    fs.mkdirSync(path.dirname(settingsTarget), { recursive: true });
-    fs.writeFileSync(
-      settingsTarget,
-      hasSettingsBlock ? stringify(settings) : "# Tachyon workspace settings — migrated from tachyon.yml, which carried no settings block.\n",
-      "utf8",
-    );
-    actions.push(`settings → ${WORKSPACE_SETTINGS_FILE}`);
-  }
-
-  for (const [blockName, upsert] of [
-    ["schedules", (name: string, def: Record<string, unknown>) => {
-      upsertScheduleDeclaration(workspaceRoot, name, def);
-      return `.tachyon/schedules/${name}.yml`;
-    }],
-    ["terminals", (name: string, def: Record<string, unknown>) => {
-      upsertTerminalDeclaration(workspaceRoot, name, { ...def, kind: "terminal" });
-      return `.tachyon/terminals/${name}.yml`;
-    }],
-  ] as const) {
-    const block = raw[blockName];
-    if (!block || typeof block !== "object" || Array.isArray(block)) continue;
-    for (const [name, def] of Object.entries(block as Record<string, unknown>)) {
-      if (!def || typeof def !== "object" || Array.isArray(def)) {
-        warnings.push(`${blockName}.${name}: not a mapping — dropped by the migration`);
-        continue;
-      }
-      try {
-        actions.push(`${blockName}.${name} → ${upsert(name, def as Record<string, unknown>)}`);
-      } catch (error) {
-        warnings.push(`${blockName}.${name}: ${error instanceof Error ? error.message : String(error)} — left to the existing declaration`);
-      }
-    }
-  }
-
-  // Byte-exact copy inside .tachyon, then the root file goes. The stateBackup replica and this
-  // copy are the only records of a file git never tracked.
-  const preserved = path.join(workspaceRoot, ".tachyon", `${path.basename(legacyPath)}.pre-migration`);
-  fs.mkdirSync(path.dirname(preserved), { recursive: true });
-  fs.writeFileSync(preserved, text, "utf8");
-  fs.unlinkSync(legacyPath);
-  actions.push(`${path.basename(legacyPath)} removed (original preserved at .tachyon/${path.basename(preserved)})`);
-
-  return { migrated: true, actions, warnings };
-}

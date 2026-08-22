@@ -62,7 +62,18 @@ terminals:
     autostart: false
     attention: false
 `.trim();
-    fs.writeFileSync(path.join(workspace, "tachyon.yml"), `${yaml}\n`);
+    // t-987825 — the workspace is seeded the way the product reads one: a settings file plus a
+    // declaration per terminal. `yaml` above stays as the composed shape this fixture asserts on.
+    fs.mkdirSync(path.join(workspace, ".tachyon", "terminals"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, ".tachyon", "settings.yml"), "maxAgents: 8\n");
+    fs.writeFileSync(
+      path.join(workspace, ".tachyon", "terminals", "looper.yml"),
+      "cmd: bash -c 'while true; do echo looper-tick; sleep 1; done'\nautostart: false\nattention: false\n",
+    );
+    fs.writeFileSync(
+      path.join(workspace, ".tachyon", "terminals", "sticky.yml"),
+      `cmd: bash -c 'trap "" INT; trap "" TERM; while true; do echo sticky; sleep 1; done'\nautostart: false\nattention: false\n`,
+    );
     const { config, errors } = parseConfig(yaml);
     if (!config || errors.length) throw new Error(`fixture config invalid: ${errors.join("; ")}`);
 
