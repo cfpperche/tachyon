@@ -4205,6 +4205,14 @@ export class AgentManager {
     // t-14cf7c: Saved Agent Forget reaches the same credential-retirement tail as Temporary
     // dismiss. The complete cache is retained; only authority-bearing files are removed.
     this.opts.removeHarnessHome?.(name);
+    // t-1fca2c — and the Bridge credential is one of those, which this tail claimed and did not do.
+    // Measured after a committed forget: the retired agent was still `live` in the caller-identity
+    // registry, valid for the remaining 12h of its TTL — a credential outliving its holder. `kill`
+    // revokes at teardown and `dismiss` at the Temporary end-of-life, but neither is on every road
+    // to here: a session that ended on its own, or was stopped through another door, arrives at the
+    // forget with its token still live. No race to guard: `assertRemovalOccupancyFree` above proved
+    // the session dead, and the roster entry is gone, so no new instance of this name can be minting.
+    this.opts.revokeAgentToken?.(name);
     removeDerivedAgentFiles(this.opts.workspaceRoot, name);
     removePaneTranscript(this.opts.workspaceRoot, name);
     // `removeExactDigest` above took the ledger row, which is the definition — nothing else to drop.
