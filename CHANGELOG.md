@@ -4,6 +4,44 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.39 — a limitação era nossa, não do Codex
+
+A 0.93.38 recusava conceder skills de plugin a um agente Codex que roda na raiz do workspace, e
+explicava por quê: a projeção substituiria `.agents/skills` — o diretório onde o instalador guarda
+todos os plugins. A recusa protegia algo real. O que ela não protegia era a premissa em que se
+apoiava.
+
+Duas afirmações sustentavam esse desenho, ambas medidas na codex-cli **0.146.1**: que não existe
+raiz de descoberta além do diretório de trabalho, e que a supressão `[[skills.config]]` é
+identificada por **nome** — o que tornaria um skill concedido indistinguível do skill de plugin com
+quem divide o nome.
+
+Re-medidas na **0.149.0**, as duas são falsas. A supressão é por **caminho**, e funciona por entrada
+dentro de um mesmo diretório: três skills em um `.agents/skills`, duas desabilitadas por caminho, a
+terceira entregue. E no caso que decide — mesmo nome em dois lugares, o do workspace suprimido —
+o agente vê só a concedida.
+
+### Exatidão deixou de custar a posse do diretório
+
+Na raiz do workspace, o lançamento agora **não escreve nem apaga nada**: nomeia por caminho tudo que
+o agente não pode ver. Em um worktree segue substituindo a árvore, que é a forma mais forte e
+continua sendo dele.
+
+As duas metades da garantia ficam de pé, e uma delas melhorou. Nada não-concedido aparece — agora
+inclusive os skills do home do usuário, que a substituição de diretório nunca cobriu: um skill
+escrito à mão em `~/.agents/skills` chegava a um agente Codex que não recebera nenhum. E nada é
+entregue em conteúdo que a concessão não atestou: um skill cuja árvore viva não confere com o
+digest registrado é recusado pelo nome, em vez de embarcado.
+
+Na prática: um agente Codex no checkout compartilhado volta a poder receber plugins, sem worktree.
+
+### E o achado virou teste, não comentário
+
+Uma medição de runtime externo tem prazo de validade. O comentário no código registrava a versão
+medida — isso foi correto; o erro foi o produto passar a tratá-la como propriedade permanente do
+Codex. Agora as três premissas são um teste que as re-mede contra o `codex` instalado e diz qual
+delas mudou, em vez de um texto que as cita.
+
 ## 0.93.38 — autorizar um plugin deixa de ser uma porta só de ida
 
 Autorizar o `agent-browser` num agente Codex deixava o agente **sem lançar e sem resumir**, e a tela
