@@ -15,6 +15,7 @@ import { asAgent } from "@tachyon/engine/config/loadConfig.js";
 import { LEGACY_CONFIG_FILENAMES, WORKSPACE_SETTINGS_FILE, workspaceSettingsPath } from "@tachyon/engine/config/workspaceSettingsFile.js";
 import { FilesystemBackupAdapter } from "@tachyon/engine/statesync/adapter.js";
 import { listGenerationIds, readGenerationManifest, runRestore } from "@tachyon/engine/statesync/backup.js";
+import { reclaimQuarantineRoot, runReclaim } from "@tachyon/engine/reclaim/reclaimService.js";
 import { setSettingsValue } from "@tachyon/engine/config/YamlConfigEditor.js";
 import { parse as parseYaml } from "yaml";
 import { type InspectorDeps } from "./webview/ServerInspector.js";
@@ -4641,6 +4642,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       } catch (error) {
         void vscode.window.showErrorMessage(
           vscode.l10n.t("State restore failed: {0}", error instanceof Error ? error.message : String(error)),
+        );
+      }
+    }),
+    // t-f5769a — the human's door onto the reclaim plan. Always shows what it would take back and
+    // what it is leaving alone, and only acts on a plan the person has seen: measured at ~5.0GB of
+    // machine-local state on one machine, including worktrees that may still hold unlanded work.
+    vscode.commands.registerCommand("tachyon.reclaimDisk", async (hash?: string) => {
+      const ws = hash ? byHash(hash) : workspaces()[0];
+      try {
+        const preview = await runReclaim({
+          apply: false,
+          workspaceSettings: ws?.config?.settings ?? {},
+          globalStorageRoot: context.globalStorageUri.fsPath,
+        });
+        const gb = (bytes: number): string => `${(bytes / 1_000_000_000).toFixed(2)}GB`;
+        if (preview.plan.collect.length === 0 && preview.plan.quarantine.length === 0) {
+          notify(vscode.l10n.t("Nothing to reclaim — Tachyon is not holding disk it no longer needs."));
+          return;
+        }
+        const held = preview.plan.hold.filter((entry) => entry.reason.includes("review before removing"));
+        const detail = [
+          ...preview.lines,
+          ...(held.length > 0 ? ["", vscode.l10n.t("Left alone (they hold unsaved work):"), ...held.map((entry) => `  ${entry.path} — ${entry.reason}`)] : []),
+        ].join("\n");
+        const confirm = await vscode.window.showWarningMessage(
+          vscode.l10n.t("Reclaim {0} of disk Tachyon no longer needs?", gb(preview.plan.bytesCollectable)),
+          { modal: true, detail },
+          vscode.l10n.t("Reclaim"),
+        );
+        if (confirm === undefined) return;
+        const done = await runReclaim({
+          apply: true,
+          workspaceSettings: ws?.config?.settings ?? {},
+          globalStorageRoot: context.globalStorageUri.fsPath,
+          quarantineRoot: reclaimQuarantineRoot(),
+        });
+        notify(done.lines.join(" · "));
+      } catch (error) {
+        void vscode.window.showErrorMessage(
+          vscode.l10n.t("Reclaim failed: {0}", error instanceof Error ? error.message : String(error)),
         );
       }
     }),

@@ -8,6 +8,7 @@ import { ideBrowserRequest, isIdeBrowserBridgeAvailable } from "../ide-browser/c
 import { StateBackupService } from "../statesync/service.js";
 import { describeIdentityLoss, ensureWorkspaceIdentity, readIdentityState } from "./workspaceIdentity.js";
 import { buildWorkspaceProvenance, WORKSPACE_PROVENANCE_STATE_KEY } from "../reclaim/provenance.js";
+import { reclaimOnStart, reclaimQuarantineRoot } from "../reclaim/reclaimService.js";
 import {
   IDE_BROWSER_DISABLED_CODE,
   IDE_BROWSER_DISABLED_ERROR,
@@ -3094,6 +3095,19 @@ export class Workspace {
       // A state store that cannot be written is not a reason to refuse serving the workspace; the
       // entry simply stays `unknown`, which the reclaim plan never collects.
     }
+
+    // t-f5769a — the start-up reclaim pass. ON by default and deliberately fire-and-forget: taking
+    // back superseded builds must never delay a fleet coming up, and a failure to reclaim disk is
+    // not a reason to refuse serving the workspace.
+    void reclaimOnStart({
+      workspaceSettings: ws.config?.settings ?? {},
+      settings: ws.config?.settings.reclaim,
+      quarantineRoot: reclaimQuarantineRoot(),
+    })
+      .then((report) => {
+        if (report) ws.host.notify(ws.t("Tachyon reclaimed disk it no longer needs — {0}", report.lines.join("; ")), "info");
+      })
+      .catch(() => undefined);
 
     // t-5786bc — opt-in durable-state backup. Settings are read live, so declaring or removing
     // settings.stateBackup in tachyon.yml takes effect without an engine restart.
