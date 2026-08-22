@@ -479,6 +479,24 @@
           "description": "How many backup generations to keep at the destination. Default 30."
         }
       }
+    },
+    "reclaim": {
+      "type": "object",
+      "description": "Reclaiming machine-local disk Tachyon no longer needs: superseded engine builds, worktrees of workspaces that no longer exist, tokens of dead engines. ON by default. State of a workspace that is gone is moved to quarantine, never deleted, because it holds provider API keys.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Reclaim automatically when the engine starts, reporting what it took back. The manual command works either way."
+        },
+        "keepBundles": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 3,
+          "description": "How many superseded engine builds to keep as a rollback window, on top of whatever a running engine uses."
+        }
+      }
     }
   }
 }

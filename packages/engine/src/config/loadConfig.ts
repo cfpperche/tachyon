@@ -549,6 +549,12 @@ export interface TachyonConfig {
      * a one-way replica. Absent = nothing ever leaves the machine.
      */
     stateBackup?: { backend: "filesystem"; path: string; every?: string; keep?: number };
+    /**
+     * t-f5769a — reclaiming machine-local disk Tachyon no longer needs. ON by default: measured at
+     * ~5.0GB on one machine with nothing ever collected. `enabled: false` leaves everything in
+     * place; the manual command still works.
+     */
+    reclaim?: { enabled?: boolean; keepBundles?: number };
     // t-7bcba6 — settings.persistence (silentHooks kill switch) removed. Silent hooks are always
     // the supported path for eligible agents; obsolete keys are rejected at parse time.
     /**
@@ -641,7 +647,7 @@ export const KNOWN_SETTINGS_KEYS = [
   "maxAgents", "checklist", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree",
   "projectGuidance", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection",
   "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind",
-  "gitDelivery", "delivery", "taskNotifications", "humanInbox", "agentNotifications", "stateBackup",
+  "gitDelivery", "delivery", "taskNotifications", "humanInbox", "agentNotifications", "stateBackup", "reclaim",
 ] as const;
 
 /**
@@ -1754,6 +1760,27 @@ export function parseConfig(yamlText: string, options: ParseConfigOptions = {}):
           }
           if (Object.keys(h).length > 0) settings.handoff = h;
           for (const key of Object.keys(ho)) if (key !== "path" && key !== "nudgeEvery") discarded.push(`settings.handoff: unknown key '${key}'`);
+        }
+      }
+      // t-f5769a — disk reclaim policy. Unlike stateBackup this is ON by default, so a malformed
+      // value must not silently turn it off: the block is discarded by NAME and the defaults hold.
+      if (raw.settings.reclaim !== undefined) {
+        if (!isPlainObject(raw.settings.reclaim)) {
+          discarded.push("settings.reclaim: must be a mapping with 'enabled' and/or 'keepBundles'");
+        } else {
+          const rc = raw.settings.reclaim;
+          const out: NonNullable<TachyonConfig["settings"]["reclaim"]> = {};
+          if (rc.enabled !== undefined) {
+            if (typeof rc.enabled !== "boolean") discarded.push("settings.reclaim.enabled: must be a boolean");
+            else out.enabled = rc.enabled;
+          }
+          if (rc.keepBundles !== undefined) {
+            if (typeof rc.keepBundles !== "number" || !Number.isInteger(rc.keepBundles) || rc.keepBundles < 1) {
+              discarded.push("settings.reclaim.keepBundles: must be an integer >= 1");
+            } else out.keepBundles = rc.keepBundles;
+          }
+          for (const key of Object.keys(rc)) if (!["enabled", "keepBundles"].includes(key)) discarded.push(`settings.reclaim: unknown key '${key}'`);
+          if (Object.keys(out).length > 0) settings.reclaim = out;
         }
       }
       // t-5786bc — opt-in durable-state backup. Invalid input discards the WHOLE block: a half-read
