@@ -8209,6 +8209,48 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
     expect(registry.isLive("a", SCOPE)).toBe(false);
   });
 
+  it("t-1fca2c: a committed Saved Agent forget revokes the token too — the credential cannot outlive its holder", async () => {
+    // Measured on this workspace after the owner removed `codex2`: the forget committed (roster entry
+    // gone, profile quarantined, session dead, brief and transcript removed) and the caller-identity
+    // registry still carried the agent as `live` for the remaining 12h of its TTL.
+    // `convergeAgentProfileForget` already claimed "the same credential-retirement tail as Temporary
+    // dismiss"; the token was the one item of that tail it did not run.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-am-forget-token-"));
+    try {
+      const registry = new CallerIdentityRegistry(crypto.randomBytes(32));
+      const { tmux } = fakeTmux();
+      const config = configOf("agents:\n  reviewer:\n    cmd: codex\n");
+      const manager = new AgentManager({
+        windowMs: 0,
+        tmux,
+        wsHash: HASH,
+        workspaceRoot: dir,
+        getConfig: () => config,
+        mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: registry.mint(name, SCOPE) }),
+        revokeAgentToken: (name) => registry.revoke(name, SCOPE),
+      });
+      asAgent(manager.defOf("reviewer"))!.profileLifecycle = {
+        enabled: true,
+        agentId: "11111111-1111-4111-8111-111111111111",
+        canonicalSha256: "a".repeat(64),
+        authorityRevision: "r1",
+      };
+      await manager.spawn("reviewer");
+      await manager.kill("reviewer");
+      // The session has to be dead for the forget to run at all — but being dead is NOT the same as
+      // having been revoked. `kill` revokes; a session that ended on its own, or was stopped through
+      // another door, reaches the forget with its credential still live. That is the state measured
+      // on `codex2`, and it is what this mint reproduces.
+      registry.mint("reviewer", SCOPE);
+      expect(registry.isLive("reviewer", SCOPE)).toBe(true);
+      const snapshot = await manager.prepareAgentProfileForget("reviewer");
+      await manager.convergeAgentProfileForget("reviewer", "11111111-1111-4111-8111-111111111111", "tx-1", snapshot);
+      expect(registry.isLive("reviewer", SCOPE)).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("restart remints a fresh token; prior token stays valid during supersede grace (kill hard-revokes)", async () => {
     const registry = new CallerIdentityRegistry(crypto.randomBytes(32));
     let lastMinted = "";
