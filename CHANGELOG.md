@@ -4,6 +4,39 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.35 — uma chave sem dono passa a dizer por quê, e um token só sai com prova
+
+### A tela de Keys nomeia a situação em vez de apenas constatá-la
+
+Quando o workspace de 2026-08-21 foi destruído e clonado de novo, as três chaves de provider
+sobreviveram — corretamente, porque uma chave de máquina é machine-local por design. Mas os perfis
+de agente que as declaravam morreram junto, e a tela passou a dizer *"No profile declares this key"*
+três vezes: uma frase verdadeira que não nomeava a causa nem oferecia saída, sobre credenciais que
+talvez fossem a razão daquele workspace existir. Pior: a única ação disponível era **Remove**,
+escondida atrás do menu `⋯` — o que lê como "isto aqui é lixo".
+
+Agora a tela distingue duas situações que eram uma. Quando **nada** naquele workspace declara chave
+alguma, a chave aparece como **órfã**, com a explicação do mecanismo: chaves de máquina sobrevivem
+ao workspace que as pediu, então um workspace recriado as deixa para trás. Quando outras chaves
+*são* declaradas e só aquela não, o texto diz isso — é uma chave que você ainda não ligou, não uma
+sobrevivente.
+
+E as duas saídas reais agora estão no card: **Declare in an agent**, que abre o Agent Studio, onde
+mora o perfil que declara a chave, e **Remove key**.
+
+### Um token do Bridge só é removido quando algo prova que o workspace acabou
+
+A coleta de tokens da 0.93.34 seguia a regra "remove a menos que se prove vivo". Só que a prova de
+vida vem da proveniência, que é carimbada um workspace por vez — numa máquina real, 216 de 217
+estados ainda não tinham nenhuma. Ligar a varredura automática sob essa regra teria apagado material
+de autenticação de workspaces que estavam apenas não-carimbados.
+
+A regra foi invertida para a mesma que o estado de engine já seguia: **desconhecido nunca é
+coletado**; só a prova de morte — um estado que registra um workspace que sumiu ou foi substituído —
+justifica remover. Com isso a varredura passou a rodar também no início do engine, o que antes não
+acontecia. Hoje isso significa zero tokens removidos, e o número se corrige sozinho conforme cada
+engine carimba o seu.
+
 ## 0.93.34 — o estado machine-local ganha dono, e o disco ganha coleta
 
 Medido numa máquina em 2026-08-22: **cerca de 5 GB** de estado que o Tachyon guarda fora do
