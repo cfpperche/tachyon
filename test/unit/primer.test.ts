@@ -248,11 +248,16 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     expect(doorbellInBeforeFinishing).toBe("claude");
   });
 
-  it("states separate precedence for task contract, Tachyon protocol and project-owned guidance", () => {
+  it("states separate precedence for task contract, Tachyon mechanism and project-owned method", () => {
+    // t-a1ee7e — the boundary is unchanged in shape and narrower in claim: the product owns what
+    // its mechanisms DO, the project owns HOW an agent works. The old line claimed both, which is
+    // what made a dispatch model imposed on every project unanswerable.
     const { primer } = renderPrimer(declared);
-    expect(primer).toMatch(/Tachyon primer governs orchestration protocol/);
-    expect(primer).toMatch(/project-owned guidance governs repository conventions/);
-    expect(primer).toMatch(/cannot override either contract or protocol/);
+    expect(primer).toMatch(/Every statement above is a property of Tachyon, not a preference/);
+    expect(primer).toMatch(/the project cannot change how these mechanisms behave/);
+    expect(primer).toMatch(/is this project's, configured in \.tachyon\/settings\.yml \(settings\.agentGuidance\)/);
+    // the retired wholesale claim must not come back
+    expect(primer).not.toContain("cannot override either contract or protocol");
     expect(primer).not.toContain("orient");
   });
 
@@ -314,7 +319,9 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
       const primer = primerOf(delegatedAdhoc);
       expect(primer).toMatch(/BOTH name DIFFERENT BOARD work/);
       expect(primer).toMatch(/conflict and not a choice/);
-      expect(primer).toMatch(/report it to your spawner and do not pick one/);
+      // t-a1ee7e — the DEFAULT resolution is still "report it", but it now comes from
+      // settings.agentGuidance.conflict: the product states the conflict, the project settles it.
+      expect(primer).toMatch(/Report it to your spawner and do not pick one/);
     });
 
     it("says the same thing to every spawn shape", () => {
@@ -332,7 +339,7 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
      */
     it("spends at most five lines on the rule", () => {
       const lines = primerOf(delegatedAdhoc).split("\n");
-      const precedence = lines.filter((line) => /Precedence|wins on board ownership|wins on substance|conflict and not a choice|governs orchestration protocol/.test(line));
+      const precedence = lines.filter((line) => /Precedence|wins on board ownership|wins on substance|conflict and not a choice|Every statement above is a property of Tachyon/.test(line));
       expect(precedence).toHaveLength(5);
     });
   });

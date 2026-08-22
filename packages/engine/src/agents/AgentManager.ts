@@ -1977,6 +1977,7 @@ export class AgentManager {
           agentName: name,
           delegator: primerCtx?.delegator,
           parent,
+          guidance: this.opts.getConfig()?.settings.agentGuidance,
         })
       : deliverable;
     // Size-check the exact successful-write pointer before deliverableBody atomically replaces any
@@ -2051,6 +2052,9 @@ export class AgentManager {
         ? { kind: "worktree", path: durable.path, branch: durable.branch }
         : { kind: "shared", cwd },
       assignment,
+      // t-a1ee7e — the workspace's working methods, read live so an edit takes effect on the next
+      // launch or retask without an engine restart.
+      guidance: this.opts.getConfig()?.settings.agentGuidance,
       ...(stale.length > 0 ? { staleContractReferences: stale } : {}),
     };
   }
