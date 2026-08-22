@@ -4,6 +4,37 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.43 — morrer sozinho também retira a credencial
+
+A 0.93.42 fechou a retirada de credencial quando o agente é removido. Ficou medido, e dito, um caso
+vizinho: um agente que **morre por conta própria** — crash, exit, Ctrl-C no arranque — não passa por
+`kill` nem por `dismiss`, que são as duas ações nossas, e por isso ninguém revogava seu token. Ele
+esperava as doze horas do TTL. Medido: uma saída 130 às 14:15, ainda `live` seis horas depois.
+
+O lugar sempre foi óbvio — a costura onde a morte é evento e não condição parada, a mesma que já
+carimba "esta parada foi pedida" na linha durável. O que impedia era a colisão de nomes: a revogação
+é por **nome**, e spawn, restart e resume mintam sob o mesmo nome. Revogar ali podia matar a
+credencial da instância **viva** que substituiu o pane morto — 401 aleatório num agente que está
+funcionando, defeito pior que o vazamento que se queria fechar.
+
+### A guarda é um contador, não um relógio
+
+Um token mintado a partir do inventário que viu aquele nome **vivo** não pode pertencer à encarnação
+que acabou de morrer: algo o criou depois. Só um token mais velho que aquela observação é o do
+morto, e só ele é revogado. Relógio não serviria — o mint e a leitura cabem no mesmo milissegundo, e
+a distinção que decide o caso desapareceria justamente onde ela é necessária.
+
+Na dúvida o vazamento fica: uma credencial que expira sozinha é o mais barato dos dois erros.
+
+Todo mint passa agora por um único ponto, para que o registro não possa divergir do que foi de fato
+mintado.
+
+### As duas metades foram provadas carregando peso
+
+Sem a revogação, a morte deixa o token vivo e o teste falha. Sem a guarda, o restart perde a
+credencial nova e o teste falha. Um teste verde que passasse com qualquer das duas removidas não
+estaria medindo nada.
+
 ## 0.93.42 — a credencial não sobrevive ao agente
 
 Um agente removido deste workspace continuou existindo onde importa. O forget commitou — saiu do
