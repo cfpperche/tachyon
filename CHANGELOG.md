@@ -4,6 +4,33 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.42 — a credencial não sobrevive ao agente
+
+Um agente removido deste workspace continuou existindo onde importa. O forget commitou — saiu do
+roster, o perfil foi quarentenado no recibo de retirada, a sessão morreu, o brief e o transcript
+sumiram — e o registro de identidade do host ainda o trazia como **live**, válido pelas doze horas
+restantes do seu TTL.
+
+O caminho do forget já afirmava, em comentário no próprio código, alcançar "a mesma cauda de
+retirada de credencial que o dismiss de um Temporary". O token era o único item dessa cauda que ele
+não executava. O `kill` revoga no teardown e o `dismiss` revoga no fim de vida do Temporary, mas
+nenhum dos dois está em toda estrada que chega ao forget: uma sessão que morreu sozinha, ou que foi
+parada por outra porta, chega lá com a credencial viva. Agora a retirada revoga.
+
+Não há corrida a proteger nesse ponto: a mesma função já provou a sessão morta antes de começar, e a
+entrada do roster deixou de existir — nenhuma instância nova daquele nome pode estar mintando.
+
+### O teste reproduz o estado medido, não o conveniente
+
+Matar o agente antes do forget também revoga, então um teste que apenas matasse passaria sem a
+correção — verde sobre uma garantia que não existe. Ele reencena o estado que foi medido: morto, com
+a credencial ainda viva. Falha sem a correção, passa com ela.
+
+Fica medido e não corrigido um caso vizinho: um processo que morre por conta própria não passa pelo
+`kill`, e seu token também espera o TTL. Fechar isso não é uma linha — a observação de morte roda por
+varredura e a revogação é por nome, então revogar ali pode atingir o token de uma instância nova que
+subiu entre duas varreduras. Precisa de revogação por encarnação, e isso é outra mudança.
+
 ## 0.93.41 — entregar o que o instalador deixou tem uma premissa
 
 A 0.93.39 trocou posse por exatidão: na raiz do workspace o lançamento parou de escrever a árvore de
