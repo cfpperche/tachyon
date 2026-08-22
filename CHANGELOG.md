@@ -4,6 +4,29 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.32 — o produto para de dizer como se trabalha, e não inventa onde dizer
+
+A 0.93.31 tirou os métodos de trabalho do primer e os pôs numa chave nova,
+`settings.agentGuidance`. A chave era desnecessária: um agente **já** tem persistent instructions —
+texto por agente, entregue no início de toda sessão, salvo como `instructions.md` no perfil e
+editável no Agent Studio — e um agente Temporary recebe a mesma camada de quem o spawna. Para o
+nível do projeto, `settings.projectGuidance` já existe desde a spec 383. Duas casas para dizer
+"como se trabalha aqui", e a 0.93.31 abriu uma terceira.
+
+Ela foi removida. Os métodos não mudaram de casa: saíram do produto. O brief de um agente agora
+enuncia apenas fatos — onde a sessão roda, que um checkout compartilhado não autoriza nada, o que o
+board tem para ele, que os dois registros podem se contradizer sem que nenhuma leitura resolva, o
+que uma verificação atesta, que o doorbell existe. O que fazer diante de cada um desses fatos é
+dito onde um projeto já dizia essas coisas.
+
+O guarda acompanhou: em vez de provar que os defaults do produto eram sobrescrevíveis, ele agora
+prova que **nenhuma linha entregue a um agente enuncia um método de trabalho**, carregando a lista
+literal do que foi retirado para que não volte por outra porta.
+
+Nota de upgrade: um `.tachyon/settings.yml` que tenha ganhado um bloco `agentGuidance` na 0.93.31
+passa a ser reportado como chave desconhecida e é descartado — o resto do arquivo carrega
+normalmente. Mova o texto para as persistent instructions do agente.
+
 ## 0.93.31 — o primer volta a ser fato: como você trabalha passa a ser do workspace
 
 ### O produto parou de impor um modelo de orquestração
@@ -25,19 +48,18 @@ faz com mais de 500 caracteres, o que sobrevive na continuity, que o texto de ap
 é autoridade, o que o board e o brief *são*, o que uma verificação atesta. Os **métodos** viraram
 configuração do workspace, em `.tachyon/settings.yml`:
 
-    settings:
-      agentGuidance:
-        dispatch: Pegue você mesmo a task não atribuída de maior prioridade no board.
-
-São sete chaves — `dispatch`, `adoption`, `queueOrder`, `worktreeWrites`, `sharedCheckout`,
-`conflict`, `reporting` — e o default de cada uma é **o texto exato que o produto já entregava**.
-Um workspace que não configurar nada lê precisamente o que lia antes.
+Não há chave nova para isso: os métodos simplesmente **saíram do produto**. Onde eles vivem já
+existia — as **persistent instructions** de cada agente (o `instructions.md` do perfil, editável no
+Agent Studio, entregue no início de toda sessão; para um Temporary, a mesma camada vem de quem o
+spawna) e o **`settings.projectGuidance`** do projeto (spec 383), composto no startup de todo
+agente. Uma terceira casa para a mesma pergunta só produziria duas respostas divergindo.
 
 ### A linha de imunidade parou de blindar receita junto com fato
 
 Onde antes se lia que a guidance do projeto *"cannot override either contract or protocol"*, hoje se
-lê que os mecanismos são propriedades do Tachyon e que **como** você trabalha é do projeto, com o
-caminho do arquivo que o define. É a mesma fronteira, com a metade certa de cada lado.
+lê que os mecanismos são propriedades do Tachyon e que **como** você trabalha *não é do Tachyon
+dizer* — vem das suas persistent instructions, do seu brief de spawn e dos documentos de guidance do
+projeto. É a mesma fronteira, com a metade certa de cada lado.
 
 ### Uma promessa que era falsa foi corrigida
 
@@ -50,9 +72,9 @@ promessa verdadeira além desta máquina.
 
 O guarda que classificava cada linha imune do primer como fato de produto nunca tinha olhado o
 `WORK ON RECORD` — que era exatamente onde o modelo de dispatch morava. Agora ambos passam pelo mesmo
-crivo, e um invariante novo prova a propriedade inteira: renderizando com sentinelas, **nenhum
-default do produto pode sobreviver a um override** e nenhuma chave pode ficar morta. Um método novo
-nasce sobrescrevível, ou o teste quebra.
+crivo, e um invariante novo prova a propriedade inteira: **nenhuma linha entregue a um agente
+enuncia um método de trabalho**, com a lista literal do que foi retirado para que não volte. Uma
+linha nova é fato classificado, ou o teste quebra.
 
 ## 0.93.30 — tachyon.yml aposentado: configuração e declarações ganham casas próprias em .tachyon
 
