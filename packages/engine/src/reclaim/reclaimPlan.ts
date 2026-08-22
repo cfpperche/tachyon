@@ -73,6 +73,11 @@ export interface ReclaimInput {
   bridgeTokens: BridgeTokenEntry[];
   /** workspace hashes with a live engine state — a token for one of these is in use. */
   liveWorkspaceHashes: ReadonlySet<string>;
+  /**
+   * t-63955f — hashes whose engine state PROVES the workspace is gone or was replaced. Only these
+   * justify removing a token: see the collection rule below for why "not provably live" must not.
+   */
+  deadWorkspaceHashes: ReadonlySet<string>;
   probe: ProvenanceProbe;
 }
 
@@ -154,11 +159,24 @@ export function planReclaim(input: ReclaimInput): ReclaimPlan {
   }
 
   for (const token of input.bridgeTokens) {
-    if (input.liveWorkspaceHashes.has(token.hash)) {
-      hold.push({ kind: "bridge-token", path: token.path, bytes: token.bytes, reason: "belongs to a live workspace" });
+    // t-63955f — this rule used to be "collect unless provably LIVE", which is the destructive
+    // default: liveness comes from provenance, provenance is stamped one workspace at a time, and on
+    // a real machine 216 of 217 states carried none. Enabling the automatic pass under that rule
+    // would have deleted the authentication material of workspaces that were simply not stamped yet.
+    // Engine state already followed the opposite rule (unknown is never collected); a token is the
+    // same class of thing and now follows it too: only provable death justifies removal.
+    if (input.deadWorkspaceHashes.has(token.hash)) {
+      collect.push({ kind: "bridge-token", path: token.path, bytes: token.bytes, reason: "token of a workspace that no longer exists" });
       continue;
     }
-    collect.push({ kind: "bridge-token", path: token.path, bytes: token.bytes, reason: "token of an engine that no longer exists" });
+    hold.push({
+      kind: "bridge-token",
+      path: token.path,
+      bytes: token.bytes,
+      reason: input.liveWorkspaceHashes.has(token.hash)
+        ? "belongs to a live workspace"
+        : "cannot be shown to belong to a dead workspace — it stays until provenance says otherwise",
+    });
   }
 
   return {

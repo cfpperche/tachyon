@@ -155,9 +155,15 @@ export async function scanReclaim(options: ReclaimScanOptions = {}): Promise<Rec
   }));
 
   const liveWorkspaceHashes = new Set<string>();
+  // t-63955f — a hash is DEAD only when its state proves it: provenance recorded, and the workspace
+  // behind it gone or replaced. Everything else (no state at all, no provenance) is neither, and a
+  // token for it is kept.
+  const deadWorkspaceHashes = new Set<string>();
   for (const state of engineStates) {
     const root = state.provenance?.root;
-    if (root && fs.existsSync(root)) liveWorkspaceHashes.add(state.hash);
+    if (!root) continue;
+    if (fs.existsSync(root)) liveWorkspaceHashes.add(state.hash);
+    else deadWorkspaceHashes.add(state.hash);
   }
 
   const worktrees: WorktreeEntry[] = [];
@@ -200,6 +206,7 @@ export async function scanReclaim(options: ReclaimScanOptions = {}): Promise<Rec
     worktrees,
     bridgeTokens,
     liveWorkspaceHashes,
+    deadWorkspaceHashes,
     probe: {
       rootExists: (root) => { try { return fs.existsSync(root); } catch { return false; } },
       identityAt: (root) => {
