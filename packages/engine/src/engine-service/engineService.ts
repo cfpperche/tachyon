@@ -371,9 +371,23 @@ export async function startDaemonEngineService(
       },
     );
     const observationsForCondition = providerObservations;
+    // t-af0d29 — the loss callback fires long after this point, so it reaches close() through a
+    // reference filled in when the service object below is built.
+    let stopService: (() => Promise<void>) | undefined;
     workspace = await Workspace.createDaemon(canonicalRoot, {
       host,
       bridgeTransport,
+      // t-af0d29 — the workspace this daemon exists to serve is gone (deleted, or replaced by a
+      // different one at the same path). The Workspace has already quiesced; a daemon outliving its
+      // workspace has nothing left to serve and, worse, rebuilds a skeleton of it on every write it
+      // still attempts. Exit the way SIGTERM would, so the unit stops instead of restarting.
+      onWorkspaceLost: (_ws, reason) => {
+        process.stderr.write(`tachyon-engine: ${reason} — stopping\n`);
+        void (stopService?.() ?? Promise.resolve()).then(
+          () => process.exit(0),
+          () => process.exit(1),
+        );
+      },
       // t-458497 — the cached provider-observation state the runtime-condition projection reads. The
       // channel inventory comes from the sources registered just above; presence or absence is
       // derived from that wiring rather than a provider-name table.
@@ -473,7 +487,7 @@ export async function startDaemonEngineService(
     const runningControl = control;
 
     let closing: Promise<void> | undefined;
-    return {
+    const service = {
       identity,
       controlSocketPath: runningControl.socketPath,
       snapshot: getSnapshot,
@@ -491,6 +505,8 @@ export async function startDaemonEngineService(
         return closing;
       },
     };
+    stopService = () => service.close();
+    return service;
   } catch (error) {
     await control?.close().catch(() => undefined);
     await activityLog?.stop().catch(() => undefined);
