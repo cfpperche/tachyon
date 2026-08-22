@@ -9,7 +9,6 @@
  */
 
 import { containsUnsafeFramingCharacter } from "../config/framingSafety.js";
-import { resolveAgentGuidance, type AgentGuidance, type AgentGuidanceInput } from "./agentGuidance.js";
 
 /** Narrow read-only gated Delivery shape so this module stays a leaf
  *  (no bridge-internal coupling beyond the pure stub-path helper). */
@@ -20,11 +19,6 @@ export interface PrimerInput {
   delegator?: string;
   /** Plain Temporary lineage parent. */
   parent?: string;
-  /**
-   * t-a1ee7e — the workspace's working methods (`settings.agentGuidance`). Absent means the product
-   * defaults, which are the text this primer shipped before the methods were released.
-   */
-  guidance?: AgentGuidanceInput;
 }
 
 export interface RenderedPrimer {
@@ -115,20 +109,20 @@ function protocolLines(input: PrimerInput): string[] {
  * `spawnTaskClaim.ts` removes the disagreement by construction for a spawn that claims a board task.
  * These lines govern every spawn that does not.
  */
-function precedenceLines(guidance: AgentGuidance): string[] {
+function precedenceLines(): string[] {
   return [
     "Precedence — two records can name your work, and they answer different questions:",
     "  - WHICH BOARD task is yours, if any: the latest \"WORK ON RECORD\" section, projected from the board at launch or live retask. It wins on board ownership; no such section, or \"none\" in it, means you hold NO board task. A brief cannot create or assign a board row.",
     "  - WHAT to do: the TASK/CONTEXT/CONSTRAINTS/DELIVERABLE brief your spawner wrote. It wins on substance — including work that holds no board task — because the directive exists nowhere else, and a board row is a problem statement, not this session's instructions.",
     // t-a1ee7e — the FACT is that the two records disagree and that no reading of them settles it.
-    // WHICH way to settle it is a working method (report it, decide it, ask the human), so the
-    // sentence that used to prescribe one comes from the workspace.
-    `  - If BOTH name DIFFERENT BOARD work, that is a conflict and not a choice — no reading of the two records resolves it. ${guidance.conflict} No board task plus a substantive brief is not a conflict: execute the brief.`,
+    // HOW to settle it is a working method, and the product no longer ships one: an agent's own
+    // persistent instructions (or its spawn brief) is where a project says what to do about it.
+    "  - If BOTH name DIFFERENT BOARD work, that is a conflict and not a choice: no reading of the two records resolves it. No board task plus a substantive brief is not a conflict: execute the brief.",
     // t-a1ee7e — the immunity claim, scoped. It used to cover "contract or protocol" wholesale,
     // which blinded the project to every working method stated inside the block (t-486f43 measured
     // that on continuity policy; the same defect had swallowed dispatch, adoption and conflict
     // resolution). Facts are the product's and stay; methods are the project's and are named here.
-    "Every statement above is a property of Tachyon, not a preference: the project cannot change how these mechanisms behave. HOW you work — how work reaches you, how conflicts settle, where you write, what you report — is this project's, configured in .tachyon/settings.yml (settings.agentGuidance) and stated wherever it applies below.",
+    "Every statement above is a property of Tachyon, not a preference: the project cannot change how these mechanisms behave. HOW you work — how work reaches you, how conflicts settle, where you write, what you report — is not Tachyon's to say: it comes from your own persistent instructions, your spawn brief, and this project's guidance documents.",
   ];
 }
 
@@ -150,12 +144,11 @@ export function renderPrimer(input: PrimerInput): RenderedPrimer {
     throw new Error("primer facts must not contain control characters");
   }
   const spawner = spawnerOf(input);
-  const guidance = resolveAgentGuidance(input.guidance);
   const primerLines = [
     PRIMER_OPEN,
     ...identityLines(input),
     ...protocolLines(input),
-    ...precedenceLines(guidance),
+    ...precedenceLines(),
     PRIMER_CLOSE,
   ];
 
@@ -166,8 +159,8 @@ export function renderPrimer(input: PrimerInput): RenderedPrimer {
       // t-21bcb7 — a notify is best-effort pane input, not history: it points at durable detail
       // instead of carrying it, which is also what keeps it inside the one-line cap.
       // t-a1ee7e — that the doorbell exists and that the product witnesses it is the fact; WHAT a
-      // summary should carry is a reporting method, so its content comes from the workspace.
-      ? [`Call notify_agent(to: "${spawner}", summary: ${guidance.reporting}) — the doorbell; do not skip it.`]
+      // summary should carry is a reporting method, and the product no longer prescribes one.
+      ? [`Call notify_agent(to: "${spawner}") — the doorbell; do not skip it.`]
       : []),
     BEFORE_FINISHING_CLOSE,
   ];

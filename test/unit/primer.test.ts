@@ -160,15 +160,16 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     });
   });
 
-  it("points the doorbell at durable detail instead of carrying it", () => {
-    const line = renderPrimer(delegatedAdhoc).beforeFinishing
-      .split("\n")
-      .find((candidate) => candidate.includes("notify_agent"));
+  it("names the doorbell without prescribing what a summary carries", () => {
+    const { primer, beforeFinishing } = renderPrimer(delegatedAdhoc);
+    const line = beforeFinishing.split("\n").find((candidate) => candidate.includes("notify_agent"));
     expect(line).toBeDefined();
-    // A notify is not history. It says what happened, which tree it happened on, and where to read
-    // the rest — naming the tree is what lets a reader check the claim against § Landing order.
-    expect(line).toContain("commit/tree");
-    expect(line).toMatch(/where the detail lives/);
+    expect(line).toMatch(/notify_agent\(to: "[a-z]+"\)/);
+    // t-a1ee7e — WHAT a summary should say is a reporting method and belongs to the project. The
+    // product still states the property that makes a pointer necessary: the line is best-effort
+    // pane input, so only what it points at survives.
+    expect(line).not.toContain("commit/tree");
+    expect(primer).toMatch(/only what the line points at survives/);
     // Still one instruction on one line: the summary has a one-line cap, and advice that does not
     // fit the thing it describes teaches the agent to overflow it.
     expect(renderPrimer(delegatedAdhoc).beforeFinishing.split("\n").filter((l) => l.includes("notify_agent"))).toHaveLength(1);
@@ -255,7 +256,8 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     const { primer } = renderPrimer(declared);
     expect(primer).toMatch(/Every statement above is a property of Tachyon, not a preference/);
     expect(primer).toMatch(/the project cannot change how these mechanisms behave/);
-    expect(primer).toMatch(/is this project's, configured in \.tachyon\/settings\.yml \(settings\.agentGuidance\)/);
+    expect(primer).toMatch(/is not Tachyon's to say/);
+    expect(primer).toMatch(/your own persistent instructions, your spawn brief, and this project's guidance documents/);
     // the retired wholesale claim must not come back
     expect(primer).not.toContain("cannot override either contract or protocol");
     expect(primer).not.toContain("orient");
@@ -315,13 +317,14 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
      * already names the case where the brief points at CLOSED work, and every other disagreement is
      * a fact about the spawner's call that only the spawner can resolve.
      */
-    it("makes a disagreement a report, not a choice", () => {
+    it("names the disagreement without settling it", () => {
       const primer = primerOf(delegatedAdhoc);
       expect(primer).toMatch(/BOTH name DIFFERENT BOARD work/);
       expect(primer).toMatch(/conflict and not a choice/);
-      // t-a1ee7e — the DEFAULT resolution is still "report it", but it now comes from
-      // settings.agentGuidance.conflict: the product states the conflict, the project settles it.
-      expect(primer).toMatch(/Report it to your spawner and do not pick one/);
+      expect(primer).toMatch(/no reading of the two records resolves it/);
+      // t-a1ee7e — that the two records disagree is a fact; HOW to settle it (report it, decide it,
+      // ask the human) is a working method and the product states none.
+      expect(primer).not.toMatch(/report it to your spawner/i);
     });
 
     it("says the same thing to every spawn shape", () => {

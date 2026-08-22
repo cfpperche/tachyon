@@ -17,6 +17,6 @@ describe("container-generated delegation behavior", () => {
     expect(combined).not.toMatch(/git add|git commit|pathspec|cd-then-commit/i);
     // t-a1ee7e — the boundary line is scoped to mechanism now; the project owns method.
     expect(primer).toMatch(/Every statement above is a property of Tachyon, not a preference/);
-    expect(primer).toMatch(/HOW you work .* is this project's/);
+    expect(primer).toMatch(/HOW you work .* is not Tachyon's to say/);
   });
 });

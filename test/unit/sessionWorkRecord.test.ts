@@ -92,12 +92,15 @@ describe("session work record", () => {
     expect(rendered).not.toContain("Do not reopen");
   });
 
-  it("renders an empty assignment as a fact, and forbids adopting work off the board", () => {
+  it("renders an empty assignment as a fact and prescribes nothing about it", () => {
     const rendered = renderSessionWorkRecord(record());
 
     expect(rendered).toContain("Assigned work on record: none.");
-    expect(rendered).toContain("Do not adopt work by scanning the board");
-    expect(rendered).toContain("Wait for an explicit assignment.");
+    // t-a1ee7e — what an agent does with an empty board is this project's dispatch model, stated in
+    // the agent's persistent instructions. A product that shipped one contradicted every workspace
+    // whose model differed, inside a block it declared the project could not override.
+    expect(rendered).not.toContain("Do not adopt work by scanning the board");
+    expect(rendered).not.toContain("Wait for an explicit assignment");
   });
 
   it("states the separate checkout with its path and branch without promising write confinement", () => {
@@ -105,15 +108,19 @@ describe("session work record", () => {
 
     expect(rendered).toContain("Checkout: separate git worktree /wt/agent on branch tachyon/change/t-5bfb72.");
     expect(rendered).toContain("not a write-confinement boundary");
-    expect(rendered).toContain("Do not edit, commit to, or push the primary checkout");
+    // t-a1ee7e — the record says WHERE the session runs; the write policy for it is a working
+    // method and lives with the agent, not with the product.
+    expect(rendered).not.toContain("Do not edit, commit to, or push the primary checkout");
   });
 
   it("says outright that a shared checkout authorizes nothing — the measured main-mutation case", () => {
     const rendered = renderSessionWorkRecord(record({ isolation: shared }));
 
     expect(rendered).toContain("Checkout: shared — this session runs in /repo.");
+    // The absence of an authorization IS a fact about this record, and it stays. What to do about
+    // it (t-a1ee7e: create a checkout first, ask, proceed) is the agent's own instruction to carry.
     expect(rendered).toContain("nothing here authorizes committing to the trunk");
-    expect(rendered).toContain("do not assume an earlier conversation already granted that");
+    expect(rendered).not.toContain("do not assume an earlier conversation already granted that");
   });
 
   it("refuses facts carrying control characters", () => {
