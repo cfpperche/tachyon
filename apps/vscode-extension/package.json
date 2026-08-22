@@ -436,6 +436,10 @@
       {
         "command": "tachyon.ideBrowserBridge.designModeOff",
         "title": "Tachyon: Design Mode Off"
+      },
+      {
+        "command": "tachyon.restoreStateBackup",
+        "title": "%command.restoreStateBackup%"
       }
     ],
     "viewsContainers": {

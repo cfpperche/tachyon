@@ -95,5 +95,6 @@
   "command.injectPromptTemplateItem": "Inject Prompt Template",
   "view.pluginSurfaces": "Plugin Surfaces",
   "command.openAgentPane": "Tachyon: Open Agent Pane",
-  "command.openAgentPaneItem": "Open Agent Pane"
+  "command.openAgentPaneItem": "Open Agent Pane",
+  "command.restoreStateBackup": "Tachyon: Restore State Backup"
 }
