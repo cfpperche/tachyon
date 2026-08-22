@@ -441,6 +441,10 @@
       {
         "command": "tachyon.restoreStateBackup",
         "title": "%command.restoreStateBackup%"
+      },
+      {
+        "command": "tachyon.reclaimDisk",
+        "title": "%command.reclaimDisk%"
       }
     ],
     "viewsContainers": {

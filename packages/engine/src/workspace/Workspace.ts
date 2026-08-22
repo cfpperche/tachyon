@@ -7,6 +7,8 @@ import {
 import { ideBrowserRequest, isIdeBrowserBridgeAvailable } from "../ide-browser/client.js";
 import { StateBackupService } from "../statesync/service.js";
 import { describeIdentityLoss, ensureWorkspaceIdentity, readIdentityState } from "./workspaceIdentity.js";
+import { buildWorkspaceProvenance, WORKSPACE_PROVENANCE_STATE_KEY } from "../reclaim/provenance.js";
+import { reclaimOnStart, reclaimQuarantineRoot } from "../reclaim/reclaimService.js";
 import {
   IDE_BROWSER_DISABLED_CODE,
   IDE_BROWSER_DISABLED_ERROR,
@@ -3080,6 +3082,32 @@ export class Workspace {
     // t-af0d29 — mint or read the workspace's identity BEFORE the heartbeat starts sampling it, so
     // the first tick compares against a value this engine actually saw on disk.
     ws.workspaceIdentityId = ensureWorkspaceIdentity(workspaceRoot)?.id;
+    // t-f5769a — stamp WHICH workspace this engine's machine-local state belongs to. Without it the
+    // state directory is named by a one-way hash of the path and nothing can tell whether the
+    // workspace behind it still exists — which is why 217 of them had accumulated with no way to
+    // collect any. Refreshed on every start, so "last seen" is measurable.
+    try {
+      ws.host.setState(
+        WORKSPACE_PROVENANCE_STATE_KEY,
+        buildWorkspaceProvenance(workspaceRoot, ws.workspaceIdentityId, new Date()),
+      );
+    } catch {
+      // A state store that cannot be written is not a reason to refuse serving the workspace; the
+      // entry simply stays `unknown`, which the reclaim plan never collects.
+    }
+
+    // t-f5769a — the start-up reclaim pass. ON by default and deliberately fire-and-forget: taking
+    // back superseded builds must never delay a fleet coming up, and a failure to reclaim disk is
+    // not a reason to refuse serving the workspace.
+    void reclaimOnStart({
+      workspaceSettings: ws.config?.settings ?? {},
+      settings: ws.config?.settings.reclaim,
+      quarantineRoot: reclaimQuarantineRoot(),
+    })
+      .then((report) => {
+        if (report) ws.host.notify(ws.t("Tachyon reclaimed disk it no longer needs — {0}", report.lines.join("; ")), "info");
+      })
+      .catch(() => undefined);
 
     // t-5786bc — opt-in durable-state backup. Settings are read live, so declaring or removing
     // settings.stateBackup in tachyon.yml takes effect without an engine restart.
