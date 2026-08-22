@@ -98,6 +98,14 @@ export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
     | { ok: true; authorized: string[]; outcomes: string[]; reachesAgentAtNextLaunch?: boolean }
     | { ok: false; error: string }
   >;
+  /** t-d697c7 — the withdrawal half; per-reference results because a plugin grants several skills. */
+  revokeAgentPlugin(
+    agent: string,
+    pluginName: string,
+  ): Promise<
+    | { ok: true; revoked: string[]; deselected: string[] }
+    | { ok: false; error: string; revoked: string[] }
+  >;
   /** t-4c113c — declared `ownership.subagents` plus the targets this agent may still declare. */
   agentOwnershipView(agent: string): Promise<AgentOwnershipViewV1>;
   commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1>;

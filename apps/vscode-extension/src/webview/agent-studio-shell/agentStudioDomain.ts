@@ -132,6 +132,7 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   }
   if (m.type === "authorizeSkill") { void authorizeSkill(ws, ctx, agent, m.skillName, m.reauthorize); return; }
   if (m.type === "authorizePlugin") { void authorizePlugin(ws, ctx, agent, m.pluginName, m.reauthorize); return; }
+  if (m.type === "revokePlugin") { void revokePlugin(ws, ctx, agent, m.pluginName); return; }
   if (m.type === "refreshAuthorizableCapabilities") { void refreshCandidates(ws, ctx, agent); return; }
 }
 
@@ -282,6 +283,40 @@ function postNextLaunchNotice(ctx: StudioDomainContext, agent: string, pending: 
  * or a `view` is refused WHOLE, because authorizing only its skills would report success while half
  * the plugin never reached the agent.
  */
+/**
+ * t-d697c7 — the withdrawal handler. Mirrors `authorizePlugin`, including refreshing the profile and
+ * the candidate lists afterwards: a revoked plugin has to reappear as authorizable, or the screen
+ * would show a state the human cannot act on.
+ */
+async function revokePlugin(
+  ws: WorkspaceAgentStudioTarget,
+  ctx: StudioDomainContext,
+  agent: string,
+  pluginName: string,
+): Promise<void> {
+  try {
+    const result = await ws.revokeAgentPlugin(agent, pluginName);
+    if (!result.ok) {
+      ctx.post(agentProfileErrorMessage(agent, "agent-profile/skill-authorization-refused", result.error, false));
+      return;
+    }
+    await refreshAgentProfile(ws, ctx, agent);
+    await refreshCandidates(ws, ctx, agent);
+    // Posted AFTER the refreshes for the reason t-746f0f measured: the profile refresh posts its own
+    // notice, so a statement sent first is overwritten before anyone reads it.
+    ctx.post(agentProfileErrorMessage(
+      agent,
+      "agent-profile/skill-authorization-refused",
+      result.revoked.length === 0
+        ? `plugin '${pluginName}': nothing was authorized for this agent.`
+        : `plugin '${pluginName}': authorization withdrawn (${result.revoked.length} skill${result.revoked.length === 1 ? "" : "s"}${result.deselected.length > 0 ? `, ${result.deselected.length} deselected` : ""}). It reaches the agent at its next launch.`,
+      false,
+    ));
+  } catch (error) {
+    postAgentProfileError(ctx, agent, error);
+  }
+}
+
 async function authorizePlugin(
   ws: WorkspaceAgentStudioTarget,
   ctx: StudioDomainContext,

@@ -44,6 +44,7 @@ import {
 } from "./domain";
 import {
   authorizePluginMessage,
+  revokePluginMessage,
   authorizeSkillMessage,
   refreshAuthorizableCapabilitiesMessage,
   browseMessage,
@@ -1326,13 +1327,20 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 </span>
                 {/* An unauthorizable plugin is SHOWN with its reason rather than hidden: a
                   * hidden option is indistinguishable from one that is not installed. */}
+                {/* t-d697c7 — an authorized plugin used to end at a dead "Authorized" label, so a
+                  * grant made by mistake was permanent through this screen: the profile is attested,
+                  * which makes hand-editing it a way to refuse the agent entirely. Granting and
+                  * withdrawing are the same decision seen from two sides, and both belong here. */}
                 {!plugin.authorizable
                   ? <span class="hint" title={plugin.reason}>{plugin.reason}</span>
                   : plugin.authorized === undefined
                     ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizePluginMessage(entity.name, plugin.name, false))}>Authorize</Button>
-                    : plugin.authorized.stale
-                      ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizePluginMessage(entity.name, plugin.name, true))}>Reauthorize</Button>
-                      : <span class="hint">Authorized</span>}
+                    : <span class="ash-native-config-actions">
+                      {plugin.authorized.stale
+                        ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizePluginMessage(entity.name, plugin.name, true))}>Reauthorize</Button>
+                        : <span class="hint">Authorized</span>}
+                      <Button variant="danger" disabled={mutationDisabled} onClick={() => entity.name && post(revokePluginMessage(entity.name, plugin.name))}>Revoke</Button>
+                    </span>}
               </div>
             ))}
         {/* t-c01f91 — git-hook plugins act on the CHECKOUT, not on an agent: `core.hooksPath`

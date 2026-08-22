@@ -61,6 +61,7 @@ import {
   authorizeAgentSkill,
   authorizedSkillStates,
   revokeAgentSkill,
+  revokeAgentPlugin,
   skillOriginFor,
   type SkillAuthorizationPorts,
 } from "../config/agentSkillAuthorizationService.js";
@@ -5974,6 +5975,20 @@ export class Workspace {
   }
 
   /** t-5498a6 — withdraw an authorization, dropping the selection in the same transaction. */
+  /**
+   * t-d697c7 — withdraw one plugin's authorization from one agent. Same door policy as the direct
+   * skill revoke: NOT `allowRunningAgent`, because a human taking a capability back must not be
+   * left holding "it is gone at the next launch".
+   */
+  async revokeAgentPlugin(agentName: string, pluginName: string) {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    return revokeAgentPlugin({
+      agentName,
+      pluginName,
+      ports: this.skillAuthorizationPorts(snapshot.revision),
+    });
+  }
+
   async revokeAgentSkill(agentName: string, referenceId: string) {
     const snapshot = await this.inspectAgentProfileLifecycle(agentName);
     return revokeAgentSkill({ agentName, referenceId, ports: this.skillAuthorizationPorts(snapshot.revision) });

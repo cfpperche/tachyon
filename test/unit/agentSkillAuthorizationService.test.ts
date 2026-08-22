@@ -7,6 +7,7 @@ import {
   authorizeAgentSkill,
   authorizedSkillStates,
   revokeAgentSkill,
+  revokeAgentPlugin,
   skillOriginFor,
   type SkillAuthorizationPorts,
 } from "@tachyon/engine/config/agentSkillAuthorizationService.js";
@@ -371,5 +372,116 @@ describe("t-4a2a6f — classifying what the agent already holds", () => {
     ];
 
     expect(authorizedSkillStates(root, references as never).size).toBe(0);
+  });
+});
+
+describe("t-a0a860 — the grant that produced an unlaunchable agent is refused where it is made", () => {
+  const codexProfile = (worktree?: boolean) => profile({
+    runtime: { adapter: "codex", executable: "codex" },
+    ...(worktree === undefined ? {} : { workspace: { worktree: { enabled: worktree } } }),
+  } as Partial<AgentProfileV1>);
+
+  it("refuses a plugin skill for a Codex agent that runs in the workspace root", async () => {
+    // The owner's 2026-08-22 case: authorize agent-browser on `codex`, and the agent stops launching
+    // AND resuming — because its skills would project over the workspace's own .agents/skills, the
+    // directory holding every installed plugin. HarnessManager refuses that launch, correctly; what
+    // was wrong is that the Studio accepted the grant first and the discovery came later.
+    const root = workspace();
+    writeSkill(root, ".tachyon/plugins/agent-browser/skills/agent-browser", "# agent-browser\n");
+    writeLock(root, { "agent-browser": { name: "agent-browser", version: "3.2.0", targets: [{ runtime: "codex", kind: "skill-dir", file: ".agents/skills/agent-browser" }] } });
+    const { port, state } = ports(codexProfile());
+
+    const result = await authorizeAgentSkill({
+      workspaceRoot: root,
+      agentName: "codex",
+      origin: { kind: "plugin", plugin: "agent-browser", skill: "agent-browser", version: "3.2.0", runtimes: ["codex"] },
+      ports: port,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected refusal");
+    expect(result.error).toContain("runs in the workspace root");
+    expect(result.error).toContain("Give this agent a worktree");
+    // and nothing was written — a refused grant must not leave half a profile behind
+    expect(state.commits).toBe(0);
+  });
+
+  it("allows the same grant once the agent has a worktree", async () => {
+    const root = workspace();
+    writeSkill(root, ".tachyon/plugins/agent-browser/skills/agent-browser", "# agent-browser\n");
+    writeLock(root, { "agent-browser": { name: "agent-browser", version: "3.2.0", targets: [{ runtime: "codex", kind: "skill-dir", file: ".agents/skills/agent-browser" }] } });
+    const { port, state } = ports(codexProfile(true));
+
+    const result = await authorizeAgentSkill({
+      workspaceRoot: root,
+      agentName: "codex",
+      origin: { kind: "plugin", plugin: "agent-browser", skill: "agent-browser", version: "3.2.0", runtimes: ["codex"] },
+      ports: port,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(state.commits).toBe(1);
+  });
+
+  it("leaves other runtimes alone — the collision is the Codex projection's", async () => {
+    const root = workspace();
+    writeSkill(root, ".tachyon/plugins/agent-browser/skills/agent-browser", "# agent-browser\n");
+    writeLock(root, { "agent-browser": { name: "agent-browser", version: "3.2.0", targets: [{ runtime: "claude", kind: "skill-dir", file: ".claude/skills/agent-browser" }] } });
+    const { port } = ports(profile()); // claude, no worktree
+
+    const result = await authorizeAgentSkill({
+      workspaceRoot: root,
+      agentName: "claude",
+      origin: { kind: "plugin", plugin: "agent-browser", skill: "agent-browser", version: "3.2.0", runtimes: ["claude"] },
+      ports: port,
+    });
+
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe("t-d697c7 — a plugin authorization can be withdrawn", () => {
+  it("revokes every reference the plugin granted, and takes the selection with it", async () => {
+    // Before this, the Studio granted and never took back: an authorized plugin ended at a dead
+    // "Authorized" label. The profile is attested, so hand-editing it risks refusing the agent —
+    // which left a grant made by mistake permanent in practice.
+    const root = workspace();
+    writeSkill(root, ".tachyon/plugins/toolbelt/skills/one", "# one\n");
+    writeSkill(root, ".tachyon/plugins/toolbelt/skills/two", "# two\n");
+    writeLock(root, { toolbelt: { name: "toolbelt", version: "1.0.0", targets: [{ runtime: "claude", kind: "skill-dir", file: ".claude/skills/one" }, { runtime: "claude", kind: "skill-dir", file: ".claude/skills/two" }] } });
+    const { port, state } = ports(profile());
+
+    for (const skill of ["one", "two"]) {
+      const granted = await authorizeAgentSkill({
+        workspaceRoot: root,
+        agentName: "claude",
+        origin: { kind: "plugin", plugin: "toolbelt", skill, version: "1.0.0", runtimes: ["claude"] },
+        ports: port,
+        select: true,
+      });
+      expect(granted.ok, `authorizing ${skill}`).toBe(true);
+    }
+    expect(state.profile.capabilities?.skills).toEqual(["one", "two"]);
+
+    const revoked = await revokeAgentPlugin({ agentName: "claude", pluginName: "toolbelt", ports: port });
+
+    expect(revoked.ok).toBe(true);
+    if (!revoked.ok) throw new Error("expected revocation");
+    expect(revoked.revoked.sort()).toEqual(["one", "two"]);
+    expect(state.profile.references ?? []).toEqual([]);
+    expect(state.profile.capabilities?.skills ?? []).toEqual([]);
+    expect(state.grants).toEqual([]);
+  });
+
+  it("says so when the agent holds nothing from that plugin, instead of reporting a silent success", async () => {
+    const root = workspace();
+    writeLock(root, { toolbelt: { name: "toolbelt", version: "1.0.0", targets: [] } });
+    const { port } = ports(profile());
+
+    const result = await revokeAgentPlugin({ agentName: "claude", pluginName: "toolbelt", ports: port });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected refusal");
+    expect(result.error).toContain("holds no authorization");
   });
 });

@@ -417,6 +417,11 @@ export async function executeExtensionCommand(
       });
       return json(authorized);
     }
+    case "agent-profile.revoke-plugin": {
+      // t-d697c7 — withdrawing ONE plugin from ONE agent. A refusal is a RESULT, like its authorize
+      // twin: "this agent holds no authorization from that plugin" is an answer, not a fault.
+      return json(await workspace.revokeAgentPlugin(command.agentName, command.pluginName));
+    }
     case "agent-profile.revoke-plugin-grants": {
       // t-b1940c — a plugin removal drags the profile grants that authorized it. The per-agent
       // report IS the payload: option (b) says who lost what, and a partial failure rides the
