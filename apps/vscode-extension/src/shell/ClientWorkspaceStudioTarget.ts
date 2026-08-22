@@ -310,6 +310,34 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
   }
 
   /** t-5498a6 — authorize a whole plugin; a refusal arrives as a value, never as a transport error. */
+  /** t-d697c7 — the withdrawal door, same transport shape as its authorize twin. */
+  async revokeAgentPlugin(
+    agentName: string,
+    pluginName: string,
+  ): Promise<
+    | { ok: true; revoked: string[]; deselected: string[] }
+    | { ok: false; error: string; revoked: string[] }
+  > {
+    const result = await this.client.invoke(`revoke-plugin:${this.operationId()}`, {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "agent-profile.revoke-plugin", agentName, pluginName },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== "agent-profile.revoke-plugin") {
+      throw new Error("persistent engine returned a malformed plugin revocation result");
+    }
+    const value = result.value as { ok?: unknown; error?: unknown; revoked?: unknown; deselected?: unknown };
+    if (value?.ok === false && typeof value.error === "string") {
+      return { ok: false, error: value.error, revoked: Array.isArray(value.revoked) ? value.revoked as string[] : [] };
+    }
+    if (value?.ok !== true || !Array.isArray(value.revoked) || !Array.isArray(value.deselected)) {
+      throw new Error("persistent engine returned a malformed plugin revocation result");
+    }
+    this.refreshConfig();
+    return { ok: true, revoked: value.revoked as string[], deselected: value.deselected as string[] };
+  }
+
   async authorizeAgentPlugin(
     agentName: string,
     pluginName: string,

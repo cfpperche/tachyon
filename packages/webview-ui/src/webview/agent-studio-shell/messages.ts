@@ -36,6 +36,9 @@ export const authorizeSkillMessage = (agent: string, skillName: string, reauthor
 /** t-5498a6 — authorize everything a plugin exposes for this runtime, or refuse it whole. */
 export const authorizePluginMessage = (agent: string, pluginName: string, reauthorize: boolean) =>
   envelope({ type: "authorizePlugin" as const, agent, pluginName, reauthorize });
+/** t-d697c7 — the withdrawal the screen never offered. */
+export const revokePluginMessage = (agent: string, pluginName: string) =>
+  envelope({ type: "revokePlugin" as const, agent, pluginName });
 
 export const refreshAuthorizableCapabilitiesMessage = (agent: string) =>
   envelope({ type: "refreshAuthorizableCapabilities" as const, agent });

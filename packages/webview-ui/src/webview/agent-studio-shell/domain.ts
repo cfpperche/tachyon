@@ -55,6 +55,7 @@ export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   // separate gesture on the Runtime tooling checkboxes.
   "authorizeSkill",
   "authorizePlugin",
+  "revokePlugin",
   "refreshAuthorizableCapabilities",
   "refreshAgentProfile",
   "setAgentProfileEnabled",
@@ -124,12 +125,14 @@ export type AgentStudioBundleActionMessage =
 /** t-5498a6 — authorize one workspace skill for a profile; selecting it stays a separate gesture. */
 export type AgentStudioAuthorizeSkillMessage = { type: "authorizeSkill"; agent: string; skillName: string; reauthorize: boolean };
 export type AgentStudioAuthorizePluginMessage = { type: "authorizePlugin"; agent: string; pluginName: string; reauthorize: boolean };
+export type AgentStudioRevokePluginMessage = { type: "revokePlugin"; agent: string; pluginName: string };
 export type AgentStudioRefreshCandidatesMessage = { type: "refreshAuthorizableCapabilities"; agent: string };
 
 export type AgentStudioInboundDomainMessage =
   | { type: "browse" }
   | AgentStudioAuthorizeSkillMessage
   | AgentStudioAuthorizePluginMessage
+  | AgentStudioRevokePluginMessage
   | AgentStudioRefreshCandidatesMessage
   | AgentStudioLifecycleActionMessage
   | AgentStudioBundleActionMessage;
@@ -236,6 +239,15 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
       || !SKILL_NAME_RE.test(value.pluginName) || typeof value.reauthorize !== "boolean") return undefined;
     return { type: "authorizePlugin", agent: value.agent, pluginName: value.pluginName, reauthorize: value.reauthorize };
   }
+
+  // t-d697c7 — same closed shape as its authorize twin: an unknown key is a message from a build
+  // that disagrees with this one, not something to accept partially.
+  if (value.type === "revokePlugin") {
+    if (!exactKeys(value, ["type", "agent", "pluginName"]) || typeof value.pluginName !== "string"
+      || !SKILL_NAME_RE.test(value.pluginName)) return undefined;
+    return { type: "revokePlugin", agent: value.agent, pluginName: value.pluginName };
+  }
+
   if (value.type === "refreshAuthorizableCapabilities") {
     if (!exactKeys(value, ["type", "agent"])) return undefined;
     return { type: "refreshAuthorizableCapabilities", agent: value.agent };

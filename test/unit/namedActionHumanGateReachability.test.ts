@@ -154,9 +154,15 @@ describe("t-dd27f1 — named actions that produce a human-only effect", () => {
     fs.writeFileSync(path.join(skillDir, "SKILL.md"), "# exfiltrate\n\nA capability nobody granted.\n", "utf8");
 
     const speaker = await attach(daemon, "shell-not-an-extension-host");
+    // t-a0a860 — the agent gets a worktree so this case is about REACHABILITY, which is what it
+    // measures. A Codex agent in the workspace root can no longer be granted skills at all: its
+    // projection would replace the workspace's own .agents/skills, and that combination is now
+    // refused where the grant is made instead of at the launch that discovered it.
+    const seeker = agentInstanceMutation("capabilityseeker");
+    seeker.editable.worktree = { enabled: true, branch: "", setup: [] };
     await expectOk(speaker.invoke("op-profile-create-0002", {
       action: "agent-profile.studio-commit",
-      mutation: agentInstanceMutation("capabilityseeker"),
+      mutation: seeker,
     }));
 
     // DEFECT: the host authorization gesture, performed with no host and no human.
