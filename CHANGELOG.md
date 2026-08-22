@@ -4,6 +4,30 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.37 — a ponte de migração do tachyon.yml é retirada
+
+A 0.93.30 aposentou o `tachyon.yml` e deixou uma ponte: na primeira carga, um arquivo legado era
+projetado para as casas novas, o original preservado e o arquivo da raiz removido. A ponte existia
+para um upgrade, e todo workspace que precisava dela já atravessou.
+
+Ela sai agora, e não por gosto de limpeza: uma camada de tradução que ninguém mais alcança é uma
+**segunda definição do formato**, esperando para discordar da primeira no dia em que alguém mexer
+numa das duas.
+
+O que muda para quem usa: nada — a não ser que você tenha um `tachyon.yml` esquecido na raiz. Ele
+agora é um arquivo inerte. O produto não o lê, não o traduz e não o apaga.
+
+### O que passava por causa dela
+
+A parte que valeu o trabalho não foi remover, foi descobrir o que dependia. Cinco lugares semeavam
+workspaces no formato antigo e funcionavam **porque a migração os traduzia** — entre eles o próprio
+`vsix-smoke`, o portão que roda em toda release. Removê-la sem convertê-los teria quebrado o
+empacotamento, e não o teste que a apontasse.
+
+Vários deles escreviam blocos `agents:` que o carregador **já** descartava — agentes vêm de perfis
+desde a SDD 478. Ou seja, semeavam configuração que o produto ignorava havia meses, e ninguém tinha
+motivo para notar enquanto tudo passava.
+
 ## 0.93.36 — a rotina de verificação visual vira guidance, e o relatório do reclaim presta contas
 
 ### Qualquer agente passa a saber COMO olhar para a UI
