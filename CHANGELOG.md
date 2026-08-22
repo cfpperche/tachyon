@@ -4,6 +4,40 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.36 — a rotina de verificação visual vira guidance, e o relatório do reclaim presta contas
+
+### Qualquer agente passa a saber COMO olhar para a UI
+
+A guidance do projeto já dizia que uma suíte verde não é julgamento visual, e trazia os princípios
+duramente aprendidos: escreva a âncora antes de construir, meça em duas larguras, o veredito é
+advisory e é insumo do julgamento, não a conclusão. Faltava a mecânica — como capturar de verdade,
+neste repositório, onde as superfícies são webviews sem URL própria.
+
+Agora ela está escrita, em quatro passos, cada um com o motivo. Buildar antes, porque um worktree
+novo não tem `dist` e o harness serve o build. Resolver a superfície pelo catálogo, que já carrega
+cada `view`/`fixture` com o frame natural e os apelidos. **Verificar dentro do iframe antes de
+capturar** — medido em 2026-08-22, o marcador do documento de topo dizia "superfície certa" enquanto
+o iframe ainda estava vazio, e a captura tirada nesse sinal era uma página em branco com cara de
+resultado; uma checagem que valida o continente e não o conteúdo compra confiança falsa. E capturar
+no frame que o catálogo declara, mais a segunda largura.
+
+Ficou também a regra que faltava: um estado que só se alcança com clique se reporta como **não
+julgado**. Nunca se automatiza um fluxo de clique para fabricar um screenshot, nem se julga o estado
+alcançável fingindo que era o que importava.
+
+### O relatório do reclaim diz o que fez — e o que não fez
+
+A notícia dizia o total recuperado e nada mais. Agora lista o que foi removido por tipo, o que foi
+movido para quarentena e de onde, e — o que mais faltava — **o que foi deixado de lado e por quê**.
+Essa última parte é a diferença entre "não havia mais nada" e "havia, e não era meu para levar".
+
+### O aviso de status respira quando aberto
+
+O rodapé de aviso da sidebar reaproveitava, no estado expandido, o espaçamento apertado do estado
+fechado — que é apertado de propósito, porque um aviso fechado custa exatamente uma linha. Aberto, a
+primeira linha da mensagem ficava sentada sobre a borda. Só o estado aberto cresce; a altura fechada
+está intacta.
+
 ## 0.93.35 — uma chave sem dono passa a dizer por quê, e um token só sai com prova
 
 ### A tela de Keys nomeia a situação em vez de apenas constatá-la
