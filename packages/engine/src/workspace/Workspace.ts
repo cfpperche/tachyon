@@ -3103,6 +3103,10 @@ export class Workspace {
       workspaceSettings: ws.config?.settings ?? {},
       settings: ws.config?.settings.reclaim,
       quarantineRoot: reclaimQuarantineRoot(),
+      // t-63955f — in the editor this is VS Code's global storage, where Bridge tokens live; in the
+      // daemon it is the engine's own state root, which holds only its own token. Both are safe to
+      // scan because a token is removed only when its workspace is PROVEN gone.
+      globalStorageRoot: ws.host.globalStoragePath(),
     })
       .then((report) => {
         if (report) ws.host.notify(ws.t("Tachyon reclaimed disk it no longer needs — {0}", report.lines.join("; ")), "info");

@@ -19,6 +19,7 @@ function input(over: Partial<ReclaimInput> = {}): ReclaimInput {
     worktrees: [],
     bridgeTokens: [],
     liveWorkspaceHashes: new Set(),
+    deadWorkspaceHashes: new Set(),
     probe: { rootExists: () => true, identityAt: () => undefined },
     ...over,
   };
@@ -130,16 +131,30 @@ describe("planReclaim — worktrees hold unsaved work", () => {
   });
 });
 
-describe("planReclaim — bridge tokens", () => {
-  it("collects tokens of dead engines and keeps live ones", () => {
+describe("planReclaim — bridge tokens are authentication material", () => {
+  const tokens = [
+    { path: "/gs/bridge-token-live", bytes: 100, hash: "live" },
+    { path: "/gs/bridge-token-dead", bytes: 100, hash: "dead" },
+    { path: "/gs/bridge-token-unknown", bytes: 100, hash: "unstamped" },
+  ];
+
+  it("collects a token only when its workspace is PROVEN gone", () => {
     const plan = planReclaim(input({
-      bridgeTokens: [
-        { path: "/gs/bridge-token-live", bytes: 100, hash: "live" },
-        { path: "/gs/bridge-token-dead", bytes: 100, hash: "dead" },
-      ],
+      bridgeTokens: tokens,
       liveWorkspaceHashes: new Set(["live"]),
+      deadWorkspaceHashes: new Set(["dead"]),
     }));
     expect(plan.collect.map((c) => c.path)).toEqual(["/gs/bridge-token-dead"]);
+  });
+
+  it("keeps a token it cannot prove dead — the default that used to be inverted", () => {
+    // t-63955f: the rule was "collect unless provably live". Liveness comes from provenance, and on
+    // a real machine 216 of 217 states carried none — so turning the automatic pass on would have
+    // deleted the authentication material of workspaces that were merely unstamped.
+    const plan = planReclaim(input({ bridgeTokens: tokens, liveWorkspaceHashes: new Set(), deadWorkspaceHashes: new Set() }));
+    expect(plan.collect).toEqual([]);
+    expect(plan.hold).toHaveLength(3);
+    expect(plan.hold[0]!.reason).toContain("cannot be shown to belong to a dead workspace");
   });
 });
 

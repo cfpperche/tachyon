@@ -100,18 +100,23 @@ describe("scanReclaim", () => {
     expect(plan.collect.some((c) => c.path.endsWith("dirty-one"))).toBe(false);
   });
 
-  it("collects bridge tokens of dead engines only", async () => {
+  it("collects a bridge token only when a state proves its workspace is gone", async () => {
     const r = roots();
     const liveWs = path.join(home, "ws");
     fs.mkdirSync(liveWs, { recursive: true });
     engineState(r.enginesStateRoot, "aaaa", buildWorkspaceProvenance(liveWs, undefined, new Date()));
+    // bbbb has a state whose workspace is gone → provably dead
+    engineState(r.enginesStateRoot, "bbbb", buildWorkspaceProvenance(path.join(home, "deleted"), undefined, new Date()));
     write(path.join(r.globalStorageRoot, "bridge-token-aaaa"), "live");
     write(path.join(r.globalStorageRoot, "bridge-token-bbbb"), "dead");
     write(path.join(r.globalStorageRoot, "bridge-external-token-bbbb"), "dead");
+    // cccc has no engine state at all — unknowable, so its token stays
+    write(path.join(r.globalStorageRoot, "bridge-token-cccc"), "unknown");
 
     const plan = await scanReclaim(r);
     expect(plan.collect.filter((c) => c.kind === "bridge-token").map((c) => path.basename(c.path)).sort())
       .toEqual(["bridge-external-token-bbbb", "bridge-token-bbbb"]);
+    expect(plan.hold.some((h) => h.path.endsWith("bridge-token-cccc"))).toBe(true);
   });
 });
 
