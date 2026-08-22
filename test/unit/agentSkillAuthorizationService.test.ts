@@ -375,17 +375,17 @@ describe("t-4a2a6f — classifying what the agent already holds", () => {
   });
 });
 
-describe("t-a0a860 — the grant that produced an unlaunchable agent is refused where it is made", () => {
+describe("t-ef3c1f — a Codex agent on the shared checkout can hold a grant again", () => {
   const codexProfile = (worktree?: boolean) => profile({
     runtime: { adapter: "codex", executable: "codex" },
     ...(worktree === undefined ? {} : { workspace: { worktree: { enabled: worktree } } }),
   } as Partial<AgentProfileV1>);
 
-  it("refuses a plugin skill for a Codex agent that runs in the workspace root", async () => {
-    // The owner's 2026-08-22 case: authorize agent-browser on `codex`, and the agent stops launching
-    // AND resuming — because its skills would project over the workspace's own .agents/skills, the
-    // directory holding every installed plugin. HarnessManager refuses that launch, correctly; what
-    // was wrong is that the Studio accepted the grant first and the discovery came later.
+  it("authorizes a plugin skill for a Codex agent that runs in the workspace root", async () => {
+    // t-a0a860 refused this at save time, mirroring a launch refusal (t-94d49a) whose premises were
+    // measured on codex-cli 0.146.1 and are false on 0.149.0 — see codexSkillDiscoveryPremises. The
+    // launch is exact by SUPPRESSING what it did not grant, so owning the directory is no longer the
+    // price of exactness, and the owner's `codex` agent can hold agent-browser without a worktree.
     const root = workspace();
     writeSkill(root, ".tachyon/plugins/agent-browser/skills/agent-browser", "# agent-browser\n");
     writeLock(root, { "agent-browser": { name: "agent-browser", version: "3.2.0", targets: [{ runtime: "codex", kind: "skill-dir", file: ".agents/skills/agent-browser" }] } });
@@ -398,41 +398,20 @@ describe("t-a0a860 — the grant that produced an unlaunchable agent is refused 
       ports: port,
     });
 
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("expected refusal");
-    expect(result.error).toContain("runs in the workspace root");
-    expect(result.error).toContain("Give this agent a worktree");
-    // and nothing was written — a refused grant must not leave half a profile behind
-    expect(state.commits).toBe(0);
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    expect(state.commits).toBe(1);
   });
 
-  it("allows the same grant once the agent has a worktree", async () => {
+  it("still authorizes when the agent does have a worktree", async () => {
     const root = workspace();
     writeSkill(root, ".tachyon/plugins/agent-browser/skills/agent-browser", "# agent-browser\n");
     writeLock(root, { "agent-browser": { name: "agent-browser", version: "3.2.0", targets: [{ runtime: "codex", kind: "skill-dir", file: ".agents/skills/agent-browser" }] } });
-    const { port, state } = ports(codexProfile(true));
+    const { port } = ports(codexProfile(true));
 
     const result = await authorizeAgentSkill({
       workspaceRoot: root,
       agentName: "codex",
       origin: { kind: "plugin", plugin: "agent-browser", skill: "agent-browser", version: "3.2.0", runtimes: ["codex"] },
-      ports: port,
-    });
-
-    expect(result.ok).toBe(true);
-    expect(state.commits).toBe(1);
-  });
-
-  it("leaves other runtimes alone — the collision is the Codex projection's", async () => {
-    const root = workspace();
-    writeSkill(root, ".tachyon/plugins/agent-browser/skills/agent-browser", "# agent-browser\n");
-    writeLock(root, { "agent-browser": { name: "agent-browser", version: "3.2.0", targets: [{ runtime: "claude", kind: "skill-dir", file: ".claude/skills/agent-browser" }] } });
-    const { port } = ports(profile()); // claude, no worktree
-
-    const result = await authorizeAgentSkill({
-      workspaceRoot: root,
-      agentName: "claude",
-      origin: { kind: "plugin", plugin: "agent-browser", skill: "agent-browser", version: "3.2.0", runtimes: ["claude"] },
       ports: port,
     });
 

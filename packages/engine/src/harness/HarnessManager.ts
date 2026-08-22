@@ -26,7 +26,7 @@ import type { ResolvedAgentNativeConfigProjection } from "@tachyon/shared/config
 import { GROK_PROJECTED_KEY_ORDER } from "../config/grokNativeConfigProjection.js";
 import { withGrokProjectSkillsIgnored } from "../config/grokSkillIsolation.js";
 import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileResolver.js";
-import type { CapturedCapabilitySource } from "../config/agentCapabilitySource.js";
+import { inspectCapabilitySourceAtRoot, type CapturedCapabilitySource } from "../config/agentCapabilitySource.js";
 import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs, grokMemoryEnv } from "../runtime/adapters/grokMemory.js";
 import { authRequiredFromHarness, type AuthRequiredEvidence } from "@tachyon/shared/runtime/authRequired.js";
 import type { ResumeAdapter } from "@tachyon/shared/resume/adapters.js";
@@ -1752,6 +1752,84 @@ export class HarnessManager {
     fs.rmSync(target, { recursive: true, force: true });
   }
 
+
+  /**
+   * t-ef3c1f — deliver a Codex grant without OWNING a directory.
+   *
+   * The projection used to be exact by replacement: rebuild `<cwd>/.agents/skills` from the
+   * digest-pinned snapshot, so nothing ambient survives. That works in a worktree and is refused at
+   * the workspace root, where the same directory belongs to the plugin installer (t-94d49a) — which
+   * left a Codex agent on the shared checkout unable to hold any grant at all.
+   *
+   * Measured on codex-cli 0.149.0 (`codex debug prompt-input`, temp fixtures), the two premises that
+   * refusal rested on are no longer true. `[[skills.config]]` suppression is keyed by PATH, not by
+   * name, and it applies per entry INSIDE one directory: three skills in one `.agents/skills`, two
+   * disabled by path, the third still delivered. So exactness no longer needs ownership — the launch
+   * can name what the agent may NOT see and leave the directory alone.
+   *
+   * The guarantee is preserved on both halves. Nothing ungranted is visible, because every
+   * discoverable skill that is not in the snapshot is disabled by its own path. And nothing is
+   * delivered at content the grant did not attest, because a granted skill whose live tree no longer
+   * digests to the captured `sha256` is refused by name rather than shipped: fail-closed, the same
+   * posture the authorization door already takes on `digest-changed`.
+   */
+  private codexSkillSuppressionToml(
+    agent: string,
+    cwd: string,
+    projection: ResolvedAgentCapabilityProjection,
+  ): string {
+    const granted = new Map(projection.skills.map((skill) => [skill.name, skill.source]));
+    const seen = new Set<string>();
+    const disabled: string[] = [];
+    const delivered = new Set<string>();
+
+    // Every root codex 0.149 discovers repository and user skills from. The user root is included
+    // deliberately: `replaceCapturedSkillTree` never covered it, so a hand-written skill in the
+    // human's own home reached a Codex agent that was granted none of it.
+    const roots = [path.join(path.resolve(cwd), ".agents", "skills"), path.join(os.homedir(), ".agents", "skills")];
+    for (const root of roots) {
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(root, { withFileTypes: true });
+      } catch {
+        continue; // an absent root discovers nothing
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const manifest = path.join(root, entry.name, "SKILL.md");
+        if (!fs.existsSync(manifest) || seen.has(manifest)) continue;
+        seen.add(manifest);
+        const source = granted.get(entry.name);
+        if (source && !delivered.has(entry.name)) {
+          let live: CapturedCapabilitySource | undefined;
+          try {
+            live = inspectCapabilitySourceAtRoot(root, entry.name);
+          } catch {
+            live = undefined;
+          }
+          if (live && live.sha256 === source.sha256) {
+            delivered.add(entry.name);
+            continue; // the attested content, in place: deliver it by leaving it enabled
+          }
+        }
+        disabled.push(manifest);
+      }
+    }
+
+    const missing = [...granted.keys()].filter((name) => !delivered.has(name));
+    if (missing.length > 0) {
+      throw new HarnessUnavailableError(
+        agent,
+        `granted skill(s) ${missing.join(", ")} are not present at the content this profile authorized — `
+        + "reauthorize them in Agent Studio (their source changed or was removed)",
+      );
+    }
+    if (disabled.length === 0) return "";
+    return disabled
+      .map((manifest) => `[[skills.config]]\npath = ${JSON.stringify(manifest)}\nenabled = false\n`)
+      .join("\n");
+  }
+
   private writeProfileCapabilityManifest(agent: string, home: string, projection: ResolvedAgentCapabilityProjection): void {
     const root = this.ensureProfileCapabilityRoot(agent, home);
     const manifest = {
@@ -2656,30 +2734,12 @@ export class HarnessManager {
     ) {
       throw new Error(`runtime '${adapter.runtime}' is not compatible with the Codex native configuration projection`);
     }
-    // t-94d49a — REFUSE rather than replace a directory this projection does not own. The skill tree
-    // below goes to `<cwd>/.agents/skills`, and with the agent's worktree OFF `cwd` IS the workspace
-    // root — where that directory belongs to the plugin installer (`src/plugins/engine.ts` codex
-    // `skillsRel`, recorded per install in `src/plugins/lockfile.ts` so uninstall removes exactly
-    // what it created). `replaceCapturedSkillTree` swaps the WHOLE directory, so the launch would
-    // delete the workspace's entire plugin roster.
-    //
-    // Launching anyway without projecting was the other candidate outcome and measurement rejects
-    // it. On codex-cli 0.146.1 (`codex debug prompt-input`, temp fixture): every
-    // `<cwd>/.agents/skills/<name>` is model-visible regardless of `CODEX_HOME`; `[skills] paths`
-    // adds no private root; and the one suppression that works, `[[skills.config]] name/enabled`,
-    // is keyed by NAME — which is the t-f842f0 collision itself, since a granted skill and a plugin
-    // skill share the name. So that launch would hand the agent the ENTIRE ambient roster under a
-    // profile that granted none of it — the inheritance t-62f599 withdrew the worktree skill
-    // projection to stop. The shared-directory half of t-f842f0 stays refused: no discovery-root
-    // override exists, and unapply-by-name would delete the plugin install of the same name.
-    if (capabilities && path.resolve(cwd ?? this.workspaceRoot) === path.resolve(this.workspaceRoot)) {
-      const collision = path.join(path.resolve(this.workspaceRoot), ".agents", "skills");
-      throw new HarnessUnavailableError(
-        agent,
-        `its Codex skill grants would replace ${collision}, which holds this workspace's plugin installs — `
-        + "give this agent a worktree so it launches outside the workspace root, or remove its skill grants",
-      );
-    }
+    // t-ef3c1f — the refusal that stood here (t-94d49a) rested on two measurements of codex-cli
+    // 0.146.1: that no discovery root but `<cwd>` existed, and that `[[skills.config]]` suppression
+    // was keyed by NAME — which made a granted skill indistinguishable from the plugin skill it
+    // shares a name with. Re-measured on 0.149.0: suppression is keyed by PATH and applies per entry
+    // inside one directory, so exactness no longer requires owning the directory. The projection
+    // below names what the agent may not see instead of replacing what it must not touch.
     const home = this.materializeHome(agent, adapter, cwd);
     // t-987347 — unconditional, because the guard this replaced (`if (capabilities)`) named the one
     // case a revocation never reaches. The private-home half (manifest) is swept here. The launch
@@ -2745,12 +2805,24 @@ export class HarnessManager {
     if (content.length > 0) atomicWrite(configPath, `${content}\n`);
     else fs.rmSync(configPath, { force: true });
     if (capabilities) {
-      // Codex discovers user-authored skills from the launch project's `.agents/skills`, not
-      // CODEX_HOME. This tree is still an exact grant projection: it is rebuilt solely from the
-      // resolved, digest-pinned capability snapshot and never copied from the ambient workspace.
-      // The one root it must never own — the workspace's own, shared with the plugin installer —
-      // was refused above (t-94d49a), so this replacement only ever lands in the agent's worktree.
-      this.replaceCapturedSkillTree(agent, path.join(cwd ?? this.workspaceRoot, ".agents"), capabilities);
+      // Codex discovers skills from the launch project's `.agents/skills` and from the user's home,
+      // never from CODEX_HOME. Two ways to make that exact, and which one applies is decided by
+      // whether this launch OWNS the directory it would write into:
+      //
+      //  - a worktree is the agent's own: replace the tree, rebuilt solely from the digest-pinned
+      //    snapshot. Nothing ambient can survive a replacement, which is the strongest form.
+      //  - the workspace root belongs to the plugin installer: touch nothing, and disable by path
+      //    every discoverable skill the snapshot does not carry (t-ef3c1f).
+      const launchRoot = path.resolve(cwd ?? this.workspaceRoot);
+      if (launchRoot === path.resolve(this.workspaceRoot)) {
+        const suppression = this.codexSkillSuppressionToml(agent, launchRoot, capabilities);
+        if (suppression.length > 0) {
+          const current = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : "";
+          atomicWrite(configPath, `${current}${current.endsWith("\n") || current.length === 0 ? "" : "\n"}${suppression}`);
+        }
+      } else {
+        this.replaceCapturedSkillTree(agent, path.join(launchRoot, ".agents"), capabilities);
+      }
       this.writeProfileCapabilityManifest(agent, home, capabilities);
     }
     overlayAgentPluginDests(this.workspaceRoot, agent);

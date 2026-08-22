@@ -97,35 +97,9 @@ function custodyOf(workspaceRoot: string, origin: SkillOrigin): { root: string; 
  * Authorize one skill for one agent. Idempotent: authorizing the same content twice is `unchanged`
  * and writes nothing.
  */
-/**
- * t-a0a860 — the combination that produces an agent nobody can launch.
- *
- * A Codex agent's skills project into `<cwd>/.agents/skills`, and with its worktree OFF that cwd IS
- * the workspace root — where the directory belongs to the plugin installer. `HarnessManager`
- * refuses that launch rather than replace a roster it does not own (t-94d49a), and the refusal is
- * right. What was wrong is WHEN it was discovered: the Studio accepted the grant, saved it, and the
- * agent stopped launching AND resuming. Measured on 2026-08-22 with the owner's `codex` agent.
- *
- * So the same condition is checked where the choice is made. The message names the way out, because
- * the workspace answer (give the agent a worktree) is a real and supported configuration.
- */
-export function codexSharedCheckoutSkillRefusal(
-  profile: { runtime: { adapter: string }; workspace?: { worktree?: { enabled?: boolean } } },
-  agentName: string,
-): string | undefined {
-  if (profile.runtime.adapter !== "codex") return undefined;
-  if (profile.workspace?.worktree?.enabled === true) return undefined;
-  return `agent '${agentName}' runs in the workspace root, and a Codex skill grant there would replace `
-    + "the workspace's own .agents/skills — the directory holding every installed plugin. Give this agent "
-    + "a worktree (Lifecycle → worktree) and the grant becomes safe; until then the launch would be refused.";
-}
-
 export async function authorizeAgentSkill(input: AuthorizeAgentSkillInput): Promise<AuthorizeAgentSkillResult> {
   const current = await input.ports.read(input.agentName);
   if (!current) return { ok: false, error: `agent '${input.agentName}' has no canonical profile to authorize against` };
-
-  const trap = codexSharedCheckoutSkillRefusal(current.profile, input.agentName);
-  if (trap) return { ok: false, error: trap };
 
   const custody = custodyOf(input.workspaceRoot, input.origin);
   if ("error" in custody) return { ok: false, error: custody.error };
