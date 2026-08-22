@@ -705,7 +705,7 @@
   .status-footer details { flex: 1 1 auto; min-width: 0; }
   .status-footer > .act { flex: none; margin-right: var(--ds-spacing-size40); }
   .status-footer:has(details[open]) { align-items: flex-start; }
-  .status-footer:has(details[open]) > .act { margin-top: var(--ds-spacing-size40); }
+  .status-footer:has(details[open]) > .act { margin-top: var(--ds-spacing-size60); }
   .status-footer-summary {
     display: flex; align-items: center; gap: var(--ds-spacing-size40);
     padding: var(--ds-spacing-size40) var(--ds-spacing-size80);
@@ -717,7 +717,15 @@
     content: "▶"; flex: none; font-size: var(--ds-operator-label3); color: var(--ds-muted);
   }
   .status-footer details[open] .status-footer-summary::before { content: "▼"; }
-  .status-footer details[open] .status-footer-summary { align-items: flex-start; }
+  /* t-91323a — expanded, the summary has to breathe. The collapsed padding is size40 top and bottom
+     BY BUDGET (a closed footer must cost exactly one operator row, see above), and reusing it while
+     open leaves the first line of a wrapped message sitting on the border-top stroke. Only the open
+     state grows, so the closed height is untouched. */
+  .status-footer details[open] .status-footer-summary {
+    align-items: flex-start;
+    padding-top: var(--ds-spacing-size80);
+    padding-bottom: var(--ds-spacing-size80);
+  }
   .status-footer-message {
     min-width: 0; flex: 1 1 auto;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

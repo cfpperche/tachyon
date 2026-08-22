@@ -62,6 +62,7 @@ export interface ReclaimReport {
 export async function runReclaim(input: ReclaimRunInput & { apply: boolean }): Promise<ReclaimReport> {
   const plan = await planWorkspaceReclaim(input);
   const lines = summarizeReclaimPlan(plan);
+  const heldForReview = plan.hold.filter((entry) => entry.reason.includes("review before removing"));
   if (!input.apply || (plan.collect.length === 0 && plan.quarantine.length === 0)) {
     return { plan, lines: lines.length > 0 ? lines : ["nothing to reclaim"] };
   }
@@ -69,11 +70,34 @@ export async function runReclaim(input: ReclaimRunInput & { apply: boolean }): P
     quarantineRoot: input.quarantineRoot ?? reclaimQuarantineRoot(),
     now: input.now ?? new Date(),
   });
-  const freed = `${(result.bytesFreed / 1_000_000_000).toFixed(2)}GB reclaimed`;
+  // t-91323a — a total is not a report. This is the product's only destructive operation, and the
+  // human is told about it once, in a notice they can expand: so it says WHAT it removed, by kind,
+  // not just how many gigabytes are gone. (The owner declined a persisted record on disk — the
+  // notice carrying the detail is the whole account.)
+  const removedByKind = new Map<string, { count: number; bytes: number }>();
+  const removed = new Set(result.removed);
+  for (const entry of plan.collect) {
+    if (!removed.has(entry.path)) continue;
+    const current = removedByKind.get(entry.kind) ?? { count: 0, bytes: 0 };
+    removedByKind.set(entry.kind, { count: current.count + 1, bytes: current.bytes + entry.bytes });
+  }
   const reported = [
-    freed,
-    ...(result.quarantined.length > 0 ? [`${result.quarantined.length} dead workspace state(s) moved to ${input.quarantineRoot ?? reclaimQuarantineRoot()} — kept, not deleted`] : []),
-    ...(result.failed.length > 0 ? [`${result.failed.length} entr(y|ies) could not be removed`] : []),
+    `${(result.bytesFreed / 1_000_000_000).toFixed(2)}GB reclaimed`,
+    ...[...removedByKind].map(([kind, totals]) => `  ${totals.count} ${kind}(s), ${(totals.bytes / 1_000_000).toFixed(1)}MB`),
+    ...(result.quarantined.length > 0
+      ? [
+        `${result.quarantined.length} state(s) of workspaces that are gone moved to ${input.quarantineRoot ?? reclaimQuarantineRoot()} — kept, not deleted`,
+        ...result.quarantined.map((entry) => `  ${entry.from}`),
+      ]
+      : []),
+    // What was deliberately left alone is part of the account: it is the difference between "there
+    // was nothing else" and "there was, and it was not mine to take".
+    ...(heldForReview.length > 0
+      ? [`${heldForReview.length} left alone because they may hold unsaved work:`, ...heldForReview.map((entry) => `  ${entry.path} — ${entry.reason}`)]
+      : []),
+    ...(result.failed.length > 0
+      ? [`${result.failed.length} could not be removed:`, ...result.failed.map((entry) => `  ${entry.path} — ${entry.error}`)]
+      : []),
   ];
   return { plan, result, lines: reported };
 }

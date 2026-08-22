@@ -190,3 +190,37 @@ describe("runReclaim — the two doors onto one plan", () => {
     expect(fs.existsSync(path.join(r.bundlesRoot, "old"))).toBe(true);
   });
 });
+
+describe("t-91323a — the report says what it did, not just how much", () => {
+  it("names what was removed by kind, and what it left alone and why", async () => {
+    const r = roots();
+    bundle(r.bundlesRoot, "keep", new Date("2026-08-20"));
+    bundle(r.bundlesRoot, "drop-a", new Date("2026-07-01"));
+    bundle(r.bundlesRoot, "drop-b", new Date("2026-07-02"));
+    // a worktree with uncommitted work: never collected, and the report must say so
+    const dirty = path.join(r.worktreesRoot, "deadhash", "change", "unsaved");
+    fs.mkdirSync(dirty, { recursive: true });
+    const git = (...args: string[]): void => { execFileSync("git", args, { cwd: dirty, stdio: "ignore" }); };
+    git("init", "-q"); git("config", "user.email", "t@t.dev"); git("config", "user.name", "t");
+    write(path.join(dirty, "f.txt"), "base"); git("add", "."); git("commit", "-qm", "base");
+    write(path.join(dirty, "f.txt"), "never committed");
+
+    const report = await runReclaim({
+      apply: true,
+      roots: { bundlesRoot: r.bundlesRoot, runtimesRoot: r.runtimesRoot, enginesStateRoot: r.enginesStateRoot },
+      workspaceSettings: { worktree: { base: r.worktreesRoot } },
+      globalStorageRoot: r.globalStorageRoot,
+      quarantineRoot: path.join(home, "q"),
+      settings: { keepBundles: 1 },
+      now: new Date("2026-08-22T12:00:00Z"),
+    });
+
+    const text = report.lines.join("\n");
+    expect(text).toMatch(/GB reclaimed/);
+    expect(text).toContain("2 bundle(s)");
+    expect(text).toContain("left alone because they may hold unsaved work");
+    expect(text).toContain("unsaved");
+    // and the untouched worktree is still there
+    expect(fs.existsSync(dirty)).toBe(true);
+  });
+});
