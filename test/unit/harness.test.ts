@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
+import { inspectCapabilitySourceAtRoot } from "@tachyon/engine/config/agentCapabilitySource.js";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -928,26 +929,28 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.existsSync(manifestFile)).toBe(false);
   });
 
-  it("t-94d49a: codex profile with the worktree OFF refuses the launch instead of replacing the workspace plugin roster", () => {
+  it("t-ef3c1f: codex with the worktree OFF leaves the workspace roster alone and suppresses what it did not grant", () => {
     const codexHome = path.join(path.dirname(realHome), "realcodex-noworktree");
     fs.mkdirSync(codexHome, { recursive: true });
     fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
-    // the plugin installer's roster in the WORKSPACE ROOT (`apps/vscode-extension/src/plugins/engine.ts` codex skillsRel)
+    // the plugin installer's roster in the WORKSPACE ROOT — a directory this launch must not own
     const rosterSkill = path.join(ws, ".agents", "skills", "workspace-plugin", "SKILL.md");
     fs.mkdirSync(path.dirname(rosterSkill), { recursive: true });
-    const rosterBytes = "workspace plugin bytes\n";
+    const rosterBytes = "---\nname: workspace-plugin\ndescription: installed by the plugin installer\n---\nbody\n";
     fs.writeFileSync(rosterSkill, rosterBytes);
-    const skillBytes = Buffer.from("---\nname: research\ndescription: research\n---\nCanonical skill.\n");
+    // and the granted skill, present in that same directory at the content the grant attested
+    const grantedDir = path.join(ws, ".agents", "skills", "research");
+    fs.mkdirSync(grantedDir, { recursive: true });
+    fs.writeFileSync(path.join(grantedDir, "SKILL.md"), "---\nname: research\ndescription: research\n---\nCanonical skill.\n");
+    const grantedDigest = inspectCapabilitySourceAtRoot(path.join(ws, ".agents", "skills"), "research");
+
     const projection: ResolvedAgentCapabilityProjection = {
       schemaVersion: 1,
       adapter: "codex",
       sha256: "a".repeat(64),
       effectiveProfileSha256: "b".repeat(64),
-      sources: [{ referenceId: "research", kind: "skill", scope: "project", owner: "workspace", path: "shared/research", sha256: "c".repeat(64) }],
-      skills: [{ name: "research", source: { source: "shared/research", sourcePath: path.join(ws, "shared/research"), type: "tree", sha256: "c".repeat(64), entries: [
-        { path: ".", type: "directory", mode: 0o755 },
-        { path: "SKILL.md", type: "file", mode: 0o644, bytes: skillBytes },
-      ] } }],
+      sources: [{ referenceId: "research", kind: "skill", scope: "project", owner: "workspace", path: ".agents/skills/research", sha256: grantedDigest.sha256 }],
+      skills: [{ name: "research", source: grantedDigest }],
       mcp: {},
       hooks: {},
       pi: { extensions: [], prompts: [], themes: [], packages: [] },
@@ -955,31 +958,47 @@ describe("HarnessManager materialize (fs)", () => {
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
     const nativeConfig = { adapter: "codex" as const, selectors: { model: "gpt-5.6" } };
 
-    // worktree OFF: the launch cwd IS the workspace root, both as an explicit cwd and as the default
-    for (const cwd of [ws, path.join(ws, "sub", ".."), undefined]) {
-      expect(() => mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, cwd))
-        .toThrow(HarnessUnavailableError);
-      expect(() => mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, cwd))
-        .toThrow(/plugin installs/);
-    }
-    // the roster the projection does not own is untouched, and nothing claims a selection was applied
-    expect(fs.readdirSync(path.join(ws, ".agents", "skills"))).toEqual(["workspace-plugin"]);
-    expect(fs.readFileSync(rosterSkill, "utf8")).toBe(rosterBytes);
-    expect(fs.existsSync(path.join(harnessHome(ws, "coder"), ".tachyon-profile-capabilities", "manifest.json"))).toBe(false);
-    expect(fs.existsSync(harnessCodexConfigPath(ws, "coder"))).toBe(false);
+    // worktree OFF: the launch cwd IS the workspace root — allowed now, because exactness comes
+    // from naming what the agent may not see instead of replacing the directory it lives in.
+    mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, ws);
 
-    // the refusal is exactly the collision: a worktree cwd still materializes its own tree
-    const launchCwd = path.join(ws, "managed-worktree");
-    fs.mkdirSync(launchCwd);
-    const res = mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, launchCwd);
-    expect(fs.readFileSync(path.join(launchCwd, ".agents", "skills", "research", "SKILL.md"), "utf8")).toContain("Canonical skill");
-    expect(fs.existsSync(path.join(res.home, ".tachyon-profile-capabilities", "manifest.json"))).toBe(true);
+    // the roster the projection does not own is untouched, byte for byte
+    expect(fs.readdirSync(path.join(ws, ".agents", "skills")).sort()).toEqual(["research", "workspace-plugin"]);
     expect(fs.readFileSync(rosterSkill, "utf8")).toBe(rosterBytes);
+    // the ungranted neighbour is disabled BY PATH, and the granted one is not
+    const config = fs.readFileSync(harnessCodexConfigPath(ws, "coder"), "utf8");
+    expect(config).toContain(JSON.stringify(rosterSkill));
+    expect(config).toContain("enabled = false");
+    expect(config).not.toContain(JSON.stringify(path.join(grantedDir, "SKILL.md")));
+    expect(fs.existsSync(path.join(harnessHome(ws, "coder"), ".tachyon-profile-capabilities", "manifest.json"))).toBe(true);
+  });
 
-    // a codex profile with NO capabilities never reaches the skill projection, so it still launches
-    const plain = mgr.materializeCanonicalCodexHome("coder", codex, nativeConfig, ws);
-    expect(fs.readFileSync(path.join(plain.home, "config.toml"), "utf8")).toContain('model = "gpt-5.6"');
-    expect(fs.readFileSync(rosterSkill, "utf8")).toBe(rosterBytes);
+  it("t-ef3c1f: a granted skill that is no longer at its attested content refuses the launch by name", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex-drifted");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    const grantedDir = path.join(ws, ".agents", "skills", "research");
+    fs.mkdirSync(grantedDir, { recursive: true });
+    fs.writeFileSync(path.join(grantedDir, "SKILL.md"), "---\nname: research\ndescription: research\n---\nEDITED after the grant.\n");
+    const projection: ResolvedAgentCapabilityProjection = {
+      schemaVersion: 1,
+      adapter: "codex",
+      sha256: "a".repeat(64),
+      effectiveProfileSha256: "b".repeat(64),
+      sources: [{ referenceId: "research", kind: "skill", scope: "project", owner: "workspace", path: ".agents/skills/research", sha256: "c".repeat(64) }],
+      // the snapshot attests a digest the live tree no longer has
+      skills: [{ name: "research", source: { source: ".agents/skills/research", sourcePath: grantedDir, type: "tree", sha256: "c".repeat(64), entries: [] } }],
+      mcp: {},
+      hooks: {},
+      pi: { extensions: [], prompts: [], themes: [], packages: [] },
+    };
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const nativeConfig = { adapter: "codex" as const, selectors: { model: "gpt-5.6" } };
+
+    // Fail closed: delivering the edited bytes as if the profile had authorized them is the one
+    // outcome the grant exists to prevent.
+    expect(() => mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, ws))
+      .toThrow(/research .* not present at the content this profile authorized|not present at the content/);
   });
 
   it("t-f842f0: empty Codex selection purges the worktree skill tree and never the plugin roster", () => {
