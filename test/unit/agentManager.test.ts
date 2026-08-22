@@ -8251,6 +8251,50 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
     }
   });
 
+  it("t-686cdb: a session that dies on its own has its token revoked — and a newer incarnation's token is never touched", async () => {
+    // Measured: `grok` exited 130 at 14:15 and was still `live` in the registry six hours later.
+    // Nothing revoked it, because dying is not `kill` and not `dismiss`.
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-am-death-token-"));
+    try {
+      const hash = workspaceHash(ws);
+      const registry = new CallerIdentityRegistry(crypto.randomBytes(32));
+      const { dead, tmux } = fakeTmux();
+      const config = configOf("agents:\n  grok:\n    cmd: grok\n");
+      const manager = new AgentManager({
+        windowMs: 0,
+        tmux,
+        wsHash: hash,
+        workspaceRoot: ws,
+        getConfig: () => config,
+        launchPreflight: HERMETIC_PREFLIGHT,
+        mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: registry.mint(name, SCOPE) }),
+        revokeAgentToken: (name) => registry.revoke(name, SCOPE),
+      });
+      const session = sessionName(hash, "grok");
+
+      await manager.spawn("grok");
+      await manager.list(); // the inventory that sees it ALIVE — the reference the guard compares to
+      expect(registry.isLive("grok", SCOPE)).toBe(true);
+      dead.set(session, 130); // died on its own: no kill, no dismiss, nobody asked
+      await manager.list(); // the alive→dead transition is observed here
+      expect(registry.isLive("grok", SCOPE)).toBe(false);
+
+      // THE RACE THIS GUARD EXISTS FOR. `revoke` is keyed by name, and every door mints under the
+      // same name. A restart between two polls replaces the pane; if the death of the one it replaced
+      // is observed afterwards, revoking by name would kill the credential of the LIVE instance —
+      // random 401s on a working agent, worse than the leak this fixes.
+      await manager.spawn("grok");
+      await manager.list(); // alive; this is the observation the guard will compare against
+      await manager.restart("grok", { stop: "force", session: "new" }); // kills, then mints afresh
+      expect(registry.isLive("grok", SCOPE)).toBe(true);
+      dead.set(session, 130); // the replaced pane's death surfaces only now
+      await manager.list();
+      expect(registry.isLive("grok", SCOPE)).toBe(true);
+    } finally {
+      fs.rmSync(ws, { recursive: true, force: true });
+    }
+  });
+
   it("restart remints a fresh token; prior token stays valid during supersede grace (kill hard-revokes)", async () => {
     const registry = new CallerIdentityRegistry(crypto.randomBytes(32));
     let lastMinted = "";

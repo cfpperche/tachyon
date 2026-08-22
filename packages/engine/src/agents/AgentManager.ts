@@ -1081,6 +1081,13 @@ export class AgentManager {
    * null (an ambiguous list-panes error), so a transient tmux hiccup can't read as "every
    * agent vanished" (t-3a3a14). */
   private lastAgentStates = new Map<string, { dead: boolean; exitCode?: number }>();
+  /**
+   * t-686cdb — the read-sequence value each name's token was minted at. Compared against the sequence
+   * of the inventory that last saw that name ALIVE, this is what makes revoking on an observed death
+   * safe: see `revokeTokenOfDeadIncarnation`. A counter, not a clock — two events inside one
+   * millisecond must stay distinguishable.
+   */
+  private tokenMintReadSeq = new Map<string, number>();
   /** t-ab9b40: dispatch-order sequence for tmux reads that may write lastAgentStates. */
   private tmuxReadSeq = 0;
   /** Sequence number of the read that produced the CURRENT lastAgentStates — a read dispatched
@@ -1607,7 +1614,7 @@ export class AgentManager {
       //
       // Guarded by `seq` for the same reason the cache is: a read dispatched earlier must not resolve
       // later and re-announce a death against a newer inventory.
-      this.observeAgentDeaths(this.lastAgentStates, out);
+      this.observeAgentDeaths(this.lastAgentStates, out, this.tmuxReadAppliedSeq);
       this.lastAgentStates = out;
       this.tmuxReadAppliedSeq = seq;
     }
@@ -1627,13 +1634,49 @@ export class AgentManager {
   private observeAgentDeaths(
     previous: ReadonlyMap<string, { dead: boolean; exitCode?: number }>,
     next: ReadonlyMap<string, { dead: boolean; exitCode?: number }>,
+    previousAppliedSeq: number,
   ): void {
     for (const [agent, state] of next) {
       const before = previous.get(agent);
       if (!before || before.dead || !state.dead) continue;
       const requested = this.stopRequestedAt.has(agent);
       if (requested) this.stampRequestedStop(agent);
+      this.revokeTokenOfDeadIncarnation(agent, previousAppliedSeq);
     }
+  }
+
+  /**
+   * t-686cdb — a session that ended ON ITS OWN never passes through `kill` or `dismiss`, so nothing
+   * revoked its Bridge credential and it stayed live for the rest of its 12h TTL. Measured: `grok`
+   * exited 130 at 14:15 and was still `live` six hours later.
+   *
+   * The reason this was not simply added to the death seam is that `revoke` is keyed by NAME, and
+   * spawn / restart / resume all mint under the SAME name. Revoking a dead pane's credential could
+   * therefore kill the credential of the LIVE instance that replaced it — a worse defect than the
+   * leak, and one that would look like random 401s.
+   *
+   * The guard is the read sequence. A token minted at or after the inventory that last saw this name
+   * ALIVE cannot belong to the incarnation that just died — something spawned it since. Only a token
+   * older than that observation is the dead one's, and only that one is revoked. When in doubt the
+   * leak is kept: a credential that expires on its own is the cheaper of the two mistakes.
+   */
+  private revokeTokenOfDeadIncarnation(agent: string, previousAppliedSeq: number): void {
+    const mintSeq = this.tokenMintReadSeq.get(agent);
+    if (mintSeq === undefined) return; // no token was ever minted here — nothing to retire
+    if (mintSeq >= previousAppliedSeq) return; // a newer incarnation owns this name's credential
+    this.tokenMintReadSeq.delete(agent);
+    try {
+      this.opts.revokeAgentToken?.(agent);
+    } catch {
+      /* best-effort: a credential that outlives its holder still expires on its own */
+    }
+  }
+
+  /** Every mint goes through here so `tokenMintReadSeq` cannot drift from what was actually minted. */
+  private mintTokenEnv(name: string): Record<string, string> | undefined {
+    const env = this.opts.mintAgentToken?.(name);
+    if (env !== undefined) this.tokenMintReadSeq.set(name, this.tmuxReadSeq);
+    return env;
   }
 
   /**
@@ -2914,7 +2957,7 @@ export class AgentManager {
       );
     }
     const effectiveCmd = this.effectiveCmd(name, def, effectiveInstructions, !!(parent || delegator));
-    const tokenEnv = this.opts.mintAgentToken?.(name);
+    const tokenEnv = this.mintTokenEnv(name);
     launchTokenMinted = tokenEnv !== undefined && Object.keys(tokenEnv).length > 0;
     // Host-minted Bridge identity wins over def.env / opts.env (a stale TACHYON_AGENT_BRIDGE_TOKEN
     // in YAML used to overwrite the digest just registered → MCP 401 token_unknown).
@@ -4828,7 +4871,7 @@ export class AgentManager {
     });
     // mint() revokes the incumbent credential. Wait until every fallible composition/materialization
     // step has completed so a preparation error cannot strand an unchanged live pane.
-    const restartTokenEnv = this.opts.mintAgentToken?.(name);
+    const restartTokenEnv = this.mintTokenEnv(name);
     restartTokenMinted = restartTokenEnv !== undefined && Object.keys(restartTokenEnv).length > 0;
     // t-4d2630: respawn in place when the session exists (clients + scrollback stay).
     // onRestart UI close only on kill+new fallback — unnecessary when respawn keeps the attach.
@@ -5239,7 +5282,7 @@ export class AgentManager {
         id,
       ),
       // Mint last so resumeDef.env cannot clobber TACHYON_AGENT_BRIDGE_TOKEN.
-      { ...this.opts.getExtraEnv?.(), ...environmentValues(resumeDef), ...this.opts.mintAgentToken?.(name), TACHYON_AGENT_NAME: name },
+      { ...this.opts.getExtraEnv?.(), ...environmentValues(resumeDef), ...this.mintTokenEnv(name), TACHYON_AGENT_NAME: name },
       resumeHarness,
     );
     this.applyDelegatedOpencodeHarnessPermission(resumeDef, resumeBuild.env, resumeDelegatedOpencode);
@@ -5633,7 +5676,7 @@ export class AgentManager {
         );
         if (!seeded) throw new ForkUnavailableError(source, "couldn't seed the session transcript into the fork's private namespace (the fork's resume would find nothing)");
       }
-      const tokenEnv = this.opts.mintAgentToken?.(forkName);
+      const tokenEnv = this.mintTokenEnv(forkName);
       tokenMinted = tokenEnv !== undefined && Object.keys(tokenEnv).length > 0;
       const baseForkEnv = { ...this.opts.getExtraEnv?.(), ...tokenEnv, ...src.env, TACHYON_AGENT_NAME: forkName };
       // Apply the already-prepared private home for Pi and canonical Claude; ordinary forks retain
