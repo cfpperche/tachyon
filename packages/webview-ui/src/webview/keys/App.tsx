@@ -1,6 +1,23 @@
 import { useState } from "preact/hooks";
 import { Badge, Button, EmptyState, Input, PageChrome } from "../shared/ui";
-import type { KeysAction, KeysModel } from "./messages";
+import type { KeysAction, KeysModel, StoredKey } from "./messages";
+
+/**
+ * t-3b8073 — an unused key is not a mistake and the screen must not read like one.
+ *
+ * A machine key is machine-local BY DESIGN: it outlives the workspace it was added for. On
+ * 2026-08-21 a workspace was destroyed and re-cloned, three provider keys correctly survived, and
+ * this screen said "No profile declares this key" three times — a true sentence that named neither
+ * the cause nor a way out, for credentials that were the reason the workspace existed.
+ */
+function keyStatusLine(key: StoredKey): string {
+  if (key.usedBy.length) return `Used by ${key.usedBy.join(" · ")}`;
+  if (key.orphan === "no-declarations") {
+    return "Kept on this machine, declared by nothing here — no agent in this workspace declares any key. "
+      + "Machine keys outlive the workspace they were added for, so a re-created workspace leaves them behind.";
+  }
+  return "No agent in this workspace declares this key — other keys here are declared.";
+}
 
 export function App({ model, post }: { model?: KeysModel; post: (action: KeysAction) => void }) {
   const [adding, setAdding] = useState(false);
@@ -34,8 +51,9 @@ export function App({ model, post }: { model?: KeysModel; post: (action: KeysAct
     <div class="keys-list">
       {stored.length === 0 && missing.length === 0 && <EmptyState message="No machine keys are configured." />}
       {providers.map(provider => <section key={provider}><h2>{provider}</h2>{stored.filter(key => key.provider === provider).map(key => <article class="keys-card" key={`${key.provider}/${key.id}`}>
-        <div class="keys-row"><code>{key.provider}/{key.id}</code><Badge>{key.usedBy.length ? "in use" : "unused"}</Badge><button class="keys-menu" aria-label={`Actions for ${key.provider}/${key.id}`} onClick={() => setMenu(menu === key.id ? undefined : key.id)}>⋯</button></div>
-        <div class="keys-muted">{key.usedBy.length ? `Used by ${key.usedBy.join(" · ")}` : "No profile declares this key"}</div>
+        <div class="keys-row"><code>{key.provider}/{key.id}</code><Badge>{key.usedBy.length ? "in use" : key.orphan === "no-declarations" ? "orphaned" : "unused"}</Badge><button class="keys-menu" aria-label={`Actions for ${key.provider}/${key.id}`} onClick={() => setMenu(menu === key.id ? undefined : key.id)}>⋯</button></div>
+        <div class="keys-muted">{keyStatusLine(key)}</div>
+        {key.orphan && <div class="keys-actions"><Button onClick={() => post({ type: "declareKey", provider: key.provider, id: key.id })}>Declare in an agent</Button><Button variant="danger" onClick={() => setRemove(key)}>Remove key</Button></div>}
         {menu === key.id && <div class="keys-popover"><Button onClick={() => { setProvider(key.provider); setId(key.id); setAdding(true); setMenu(undefined); }}>Replace value</Button><Button variant="danger" onClick={() => { setRemove(key); setMenu(undefined); }}>Remove</Button></div>}
       </article>)}</section>)}
       {missing.length > 0 && <section><h2>Missing</h2>{missing.map(key => <article class="keys-card" key={`${key.agent}/${key.provider}/${key.id}`}>

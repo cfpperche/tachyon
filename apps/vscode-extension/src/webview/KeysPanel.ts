@@ -53,6 +53,11 @@ export class KeysPanelManager {
       } else if (action.type === "removeKey" && typeof action.provider === "string"
         && typeof action.id === "string") {
         await ws.removeProfileSecret(action.provider, action.id);
+      } else if (action.type === "declareKey") {
+        // t-3b8073 — a key is declared by an agent PROFILE, so the repair is Agent Studio; the panel
+        // hands the human to the surface that owns the other half instead of describing it.
+        await vscode.commands.executeCommand("tachyon.agentStudio");
+        return;
       }
       else return;
       await this.send(session);
@@ -64,11 +69,14 @@ export function toModel(inventory: {
   required: Array<{ agent: string; name: string; provider: string; id: string; purpose: string; [key: string]: unknown }>;
 }): KeysModel {
   const required = inventory.required.map(({ agent, name, provider, id, purpose }) => ({ agent, name, provider, id, purpose }));
-  const stored = inventory.stored.map(key => ({
-    provider: key.provider,
-    id: key.id,
-    usedBy: required.filter(r => r.provider === key.provider && r.id === key.id).map(r => r.agent),
-  }));
+  const stored = inventory.stored.map(key => {
+    const usedBy = required.filter(r => r.provider === key.provider && r.id === key.id).map(r => r.agent);
+    // t-3b8073 — an unused key means one of two things, and the difference is what the human needs:
+    // nothing here declares ANY key (the workspace's agents are gone, or it has none yet), or other
+    // keys ARE declared and this one simply is not.
+    const orphan = usedBy.length > 0 ? undefined : required.length === 0 ? "no-declarations" as const : "not-declared-here" as const;
+    return { provider: key.provider, id: key.id, usedBy, ...(orphan ? { orphan } : {}) };
+  });
   const missing = required.filter(key => !inventory.stored.some(
     storedKey => storedKey.provider === key.provider && storedKey.id === key.id,
   ));
