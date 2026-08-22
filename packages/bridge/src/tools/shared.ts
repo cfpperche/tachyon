@@ -927,7 +927,7 @@ export function outputCapabilities(
     ...(!canReadOutput ? { readOutputReason: "no live pane or retained postmortem output is available" } : {}),
     canDismiss,
     ...(!canDismiss
-      ? { dismissReason: info.lifetime === "saved" ? "Saved Agents (declared in tachyon.yml) must be deleted from config" : "agent is still running" }
+      ? { dismissReason: info.lifetime === "saved" ? "a Saved Agent lives in .tachyon/agents/<name>/agent.yml and must be removed there" : "agent is still running" }
       : {}),
   };
 }

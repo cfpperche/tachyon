@@ -58,7 +58,7 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
    */
   it("renames the refusal to the ratified vocabulary while keeping the old term findable", () => {
     const source = SOURCE("packages/bridge/src/tools/fleet.ts");
-    expect(source).toContain("is a Saved Agent (declared in tachyon.yml)");
+    expect(source).toContain("is a Saved Agent (declared in .tachyon/agents)");
   });
 
   /** Reader 2. Board's live-Temporary filter, and its second guard which is NOT the same question. */

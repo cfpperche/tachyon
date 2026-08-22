@@ -29,8 +29,9 @@ provenance.json
 .grok/
 .mcp.json
 
-# Legacy root config (retired by t-a65335; the engine migrates one into .tachyon/settings.yml and
-# removes it). Still ignored so a transient legacy file never lands in git.
+# Legacy root config (retired by t-a65335; the migration bridge that used to fold one into
+# .tachyon/settings.yml is gone since t-987825). Nothing reads or writes it — a file with this name
+# does nothing at all now. Kept ignored so one left in an old checkout never lands in git.
 tachyon.yml
 tachyon.yaml
 

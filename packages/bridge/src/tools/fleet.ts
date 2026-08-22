@@ -125,7 +125,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
     "spawn_agent",
     {
       description:
-        "Compatibility name: start a managed entry in this workspace. With only a name, spawns the entry declared in tachyon.yml; " +
+        "Compatibility name: start a managed entry in this workspace. With only a name, spawns the entry declared in .tachyon/agents/<name>/agent.yml; " +
         "pass cmd to spawn a Temporary sub-agent (e.g. a fresh AI CLI for a delegated task). " +
         `cmd MUST name a supported LLM runtime (${SUPPORTED_AGENT_RUNTIME_NAMES.join(", ")}) — a generic process ` +
         "(shell, server, build) is refused here and belongs to spawn_terminal, which starts it with no task, lineage, brief or worktree. " +
@@ -154,7 +154,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
           .string()
           .min(1)
           .optional()
-          .describe(`command for a Temporary instance — must name a supported LLM runtime (${SUPPORTED_AGENT_RUNTIME_NAMES.join(", ")}); omit to use tachyon.yml`),
+          .describe(`command for a Temporary instance — must name a supported LLM runtime (${SUPPORTED_AGENT_RUNTIME_NAMES.join(", ")}); omit to use the agent's declared runtime`),
         cwd: z.string().optional().describe("working directory for a Temporary instance"),
         environment: spawnEnvironmentSchema.optional().describe("Temporary Agent environment: literal values and vault secret references"),
         reasoningEffort: z.string().min(1).max(128).optional().describe("explicit runtime reasoning effort; omitted uses the runtime default"),
@@ -532,7 +532,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         "Temporary footprint; it is only valid for Temporary entries that are no longer running. Use kill_agent first for " +
         "a running Temporary instance. Tachyon activity and pane transcripts are deleted, and so is the private runtime " +
         "home under .tachyon/bridge-mcp (Grok/Hermes, with a receipt naming its size), plus the file-shaped configs there for Claude/OpenCode. A harness home under " +
-        ".tachyon/harness keeps its runtime-native caches, which are not a uniform archive. Declared tachyon.yml agents " +
+        ".tachyon/harness keeps its runtime-native caches, which are not a uniform archive. Declared Saved Agents " +
         "cannot be dismissed through the Bridge. For each card the agent owned, the result reports whether delivery is " +
         "reachable from main and suggests close when proved; dismissal never closes a card itself. " +
         "GOVERNANCE: as an agent you may dismiss only yourself, an agent below you in your own lineage, or a Saved Agent you own " +
@@ -558,12 +558,12 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         if (info.lifetime === "saved") {
           if (info.kind === "terminal") {
             return fail(new Error(
-              `agent '${name}' is a terminal declared in tachyon.yml and cannot be dismissed through the Bridge; ` +
+              `agent '${name}' is a declared terminal (.tachyon/terminals) and cannot be dismissed through the Bridge; ` +
               "use Remove in the sidebar, or invoke config.agent.delete",
             ));
           }
           return fail(new Error(
-            `agent '${name}' is a Saved Agent (declared in tachyon.yml) and cannot be dismissed through the Bridge; ` +
+            `agent '${name}' is a Saved Agent (declared in .tachyon/agents) and cannot be dismissed through the Bridge; ` +
             "use propose_saved_agent_removal for a human-approved retirement, or remove it from Agent Studio",
           ));
         }
@@ -1086,8 +1086,8 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
     "list_agents",
     {
       description:
-        "Compatibility name: list this workspace's managed entries: agents and terminals declared in tachyon.yml and/or currently running. " +
-        "Rows include runtime parent lineage plus declaredOwner ownership metadata from tachyon.yml subagents, advisory capabilities for output reading, and stopped Temporary dismissal; action tools still re-check state.",
+        "Compatibility name: list this workspace's managed entries: agents and terminals declared in .tachyon/ and/or currently running. " +
+        "Rows include runtime parent lineage plus declaredOwner ownership metadata from declared subagents, advisory capabilities for output reading, and stopped Temporary dismissal; action tools still re-check state.",
       inputSchema: {},
     },
     async () => {

@@ -19,7 +19,7 @@ export function buildSavedAgentProposalReview(input: {
       label: "roster ownership",
       detail:
         `would be recorded as the declared owner of ${spec.ownsSubagents.join(", ")}. Ownership is a durable ` +
-        "relationship in tachyon.yml; it confers no operational authority over those agents by itself.",
+        "relationship in the workspace roster; it confers no operational authority over those agents by itself.",
     });
   }
   // Capability references are REQUESTED but never granted by this approval: a new canonical profile
@@ -128,7 +128,7 @@ export function buildSavedAgentProposalReview(input: {
     affected: [
       `.tachyon/agents/${spec.name}/agent.yml (new canonical profile, lifecycle.enabled=true)`,
       `.tachyon/agents/${spec.name}/authority.json (new authority record)`,
-      `tachyon.yml → agents.${spec.name} (new roster pointer)`,
+      `.tachyon/agents/${spec.name}/agent.yml (new roster entry)`,
       (spec.ownership ?? "proposer") === "proposer"
         ? `${proposal.proposer} → ownership.subagents adds ${spec.name}`
         : `no declaredOwner edge (top-level Saved Agent)`,

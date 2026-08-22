@@ -25,11 +25,11 @@ import { IDE_BROWSER_TOOL_NAMES } from "../helpers/bridgeConditionalToolNames.js
 
 /** Exact MCP tool-result text returned to every runtime when the bridge is offline. */
 const OFFLINE_TOOL_RESULT =
-  "error: IDE browser bridge offline. Ensure settings.ideBrowser.enabled is true in tachyon.yml and the Tachyon extension is active for this workspace.";
+  "error: IDE browser bridge offline. Ensure ideBrowser.enabled is true in .tachyon/settings.yml and the Tachyon extension is active for this workspace.";
 
 /** Client-layer message (without the tool `error: ` prefix) from ideBrowserRequest when no instance. */
 const CLIENT_OFFLINE_ERROR =
-  "IDE browser bridge offline. Ensure settings.ideBrowser.enabled is true in tachyon.yml and the Tachyon extension is active for this workspace.";
+  "IDE browser bridge offline. Ensure ideBrowser.enabled is true in .tachyon/settings.yml and the Tachyon extension is active for this workspace.";
 
 type ToolResult = { content: Array<{ type?: string; text: string }>; isError?: boolean };
 type ToolHandler = (args: Record<string, unknown>) => Promise<ToolResult>;

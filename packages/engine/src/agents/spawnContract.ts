@@ -308,7 +308,7 @@ const EXIT_PROSE: Record<SpawnCwdExit, string> = {
   "isolate-in-own-worktree":
     "To give the child a directory of its own, drop cwd and pass worktree:true — it is born in its own "
     + "git worktree on its own branch, and dismissing it takes that checkout with it.",
-  "declare-in-config": "For a checkout that outlives the child, declare it in tachyon.yml with a worktree.",
+  "declare-in-config": "For a checkout that outlives the child, make it a Saved Agent (.tachyon/agents/<name>/agent.yml) with a worktree.",
   "inherit-parent-cwd": "Omit cwd and the child runs where you run.",
 };
 

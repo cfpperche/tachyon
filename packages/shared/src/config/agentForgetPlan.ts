@@ -287,8 +287,8 @@ function retireAuthorityStep(facts: AgentForgetPlanFactsV1): AgentForgetPlanStep
 
 function removeLocatorStep(facts: AgentForgetPlanFactsV1): AgentForgetPlanStepV1 {
   return facts.locatorPresent
-    ? step("remove-locator", "will-run", `removes the '${facts.agentName}' entry from tachyon.yml`)
-    : step("remove-locator", "satisfied", "tachyon.yml no longer declares this agent");
+    ? step("remove-locator", "will-run", `removes '${facts.agentName}' from the workspace roster`)
+    : step("remove-locator", "satisfied", "the workspace roster no longer declares this agent");
 }
 
 function quarantineProfileStep(facts: AgentForgetPlanFactsV1): AgentForgetPlanStepV1 {

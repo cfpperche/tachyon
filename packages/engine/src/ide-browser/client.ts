@@ -137,7 +137,7 @@ export async function ideBrowserRequest(
       ok: false,
       code: "bridge_offline",
       error:
-        "IDE browser bridge offline. Ensure settings.ideBrowser.enabled is true in tachyon.yml and the Tachyon extension is active for this workspace.",
+        "IDE browser bridge offline. Ensure ideBrowser.enabled is true in .tachyon/settings.yml and the Tachyon extension is active for this workspace.",
     };
   }
   let lastFailure: IdeBrowserEnvelope | null = null;

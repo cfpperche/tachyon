@@ -631,7 +631,7 @@ export const MAX_IDLE_NOTIFY_MINUTES = 7 * 24 * 60;
 /**
  * t-fe772a — the keys this parser KNOWS, exported because a second door publishes the same list.
  *
- * `package.json` binds `dist/tachyon.schema.json` to `tachyon.yml` through `contributes.yamlValidation`,
+ * `package.json` binds `dist/tachyon.schema.json` to `.tachyon/settings.yml` through `contributes.yamlValidation`,
  * and that schema closes both levels with `additionalProperties: false`. So every key added here has
  * to be added there too, or the editor marks a file the product accepts — measured 2026-08-10 on the
  * tracked onboarding template itself, where `humanInbox` (t-e4f662) and `agentNotifications`
@@ -653,7 +653,7 @@ export const KNOWN_SETTINGS_KEYS = [
 /**
  * t-d47b0a — the closed vocabulary accepted on an `agents:` / `terminals:` entry.
  *
- * The shipped schema is the human-facing input contract: VS Code binds it to `tachyon.yml`, while
+ * The shipped schema is the human-facing input contract: VS Code binds it to `.tachyon/settings.yml`, while
  * this parser supplies the forgiving implementation (invalid input warns and is discarded). Keep
  * the vocabulary exact in both places; `configSchema.test.ts` measures both directions.
  * `isolate` remains present only for deprecated read compatibility.
@@ -1212,7 +1212,7 @@ export function parseConfig(yamlText: string, options: ParseConfigOptions = {}):
   }
 
   if (!isPlainObject(raw)) {
-    return { errors: ["tachyon.yml must be a YAML mapping"], warnings, discarded: [] };
+    return { errors: [".tachyon/settings.yml must be a YAML mapping"], warnings, discarded: [] };
   }
 
 
@@ -1811,7 +1811,7 @@ export function parseConfig(yamlText: string, options: ParseConfigOptions = {}):
       // t-7bcba6 — reject obsolete persistence kill switch so a false override cannot silently disable hooks.
       if (raw.settings.persistence !== undefined) {
         discarded.push(
-          "settings.persistence is obsolete: silent hooks are always enabled for eligible declared Claude/Codex agents. Remove settings.persistence (including silentHooks) from tachyon.yml — there is no visible-legacy fallback.",
+          "settings.persistence is obsolete: silent hooks are always enabled for eligible declared Claude/Codex agents. Remove persistence (including silentHooks) from .tachyon/settings.yml — there is no visible-legacy fallback.",
         );
       }
       // spec 364 — Bridge-client rebind policy (host generation bump after reload).
@@ -1876,7 +1876,7 @@ export function parseConfig(yamlText: string, options: ParseConfigOptions = {}):
        */
       if (raw.settings.gitDelivery !== undefined) {
         warnings.push(
-          "settings.gitDelivery was ignored because the Delivery tools it authorized (git_delivery_integrate, git_delivery_prune, delivery_salvage) were retired; remove settings.gitDelivery from tachyon.yml",
+          "settings.gitDelivery was ignored because the Delivery tools it authorized (git_delivery_integrate, git_delivery_prune, delivery_salvage) were retired; remove gitDelivery from .tachyon/settings.yml",
         );
       }
       // t-8b8315 — this message used to say Delivery "is always active", which was true when the
@@ -1885,7 +1885,7 @@ export function parseConfig(yamlText: string, options: ParseConfigOptions = {}):
       // fact meaningless, so they leave it in place.
       if (raw.settings.delivery !== undefined) {
         warnings.push(
-          "settings.delivery was ignored because the Delivery subsystem was retired; remove settings.delivery from tachyon.yml",
+          "settings.delivery was ignored because the Delivery subsystem was retired; remove delivery from .tachyon/settings.yml",
         );
       }
       if (raw.settings.taskNotifications !== undefined) {

@@ -31,7 +31,7 @@ describe("parseConfig", () => {
     expect(obsolete.errors).toEqual([]);
     expect(obsolete.config).toBeDefined();
     expect(obsolete.config?.settings).not.toHaveProperty("delivery");
-    expect(obsolete.warnings).toEqual([expect.stringMatching(/settings\.delivery was ignored.*remove settings\.delivery/i)]);
+    expect(obsolete.warnings).toEqual([expect.stringMatching(/settings\.delivery was ignored.*remove delivery from \.tachyon\/settings\.yml/i)]);
   });
   it("parses a full valid config with defaults applied", () => {
     const { config, errors } = parseConfig(VALID);

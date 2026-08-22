@@ -2348,7 +2348,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const dest = (Array.isArray(listed) ? listed : []).map((row) => row as AgentRow).find((row) => row.name === toName);
     if (!dest || typeof dest.name !== "string") throw new Error(`destination agent '${toName}' not found`);
     if (dest.kind === "terminal") throw new Error(`destination '${toName}' is a terminal agent — pick a declared runtime agent`);
-    if (dest.lifetime !== "saved") throw new Error(`destination '${toName}' is a Temporary Agent (not declared in tachyon.yml)`);
+    if (dest.lifetime !== "saved") throw new Error(`destination '${toName}' is a Temporary Agent (it has no .tachyon/agents/<name>/agent.yml)`);
     if (dest.running) throw new Error(`destination '${toName}' is running — stop it first`);
     const result = jsonObject(await extensionInvoke(ws, {
       action: "agent.continue-task", fromAgent: fromName, toAgent: toName, reason: "continued from the Agents roster",
@@ -3482,7 +3482,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       const answer = await showNotification(
-        vscode.l10n.t("Delete schedule '{0}' from tachyon.yml?", item.scheduleName),
+        vscode.l10n.t("Delete schedule '{0}'?", item.scheduleName),
         "warn",
         [vscode.l10n.t("Delete")],
         { modal: true },
@@ -4202,7 +4202,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       const def = ws.config?.agents[item.agentName];
       if (!def) {
-        notify(vscode.l10n.t("'{0}' is not saved in tachyon.yml (a Temporary instance has no stored definition)", item.agentName), "warn");
+        notify(vscode.l10n.t("'{0}' is not a Saved Agent (a Temporary instance has no stored definition)", item.agentName), "warn");
         return;
       }
       // t-610705 (Phase D, D1a/D1b) — both branches are Control routes now.
@@ -4266,8 +4266,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ? vscode.l10n.t("This kills its tmux session and deletes its saved state. {0}", retention)
             : vscode.l10n.t("This deletes its saved state. {0}", retention))
           : (hasSession
-            ? vscode.l10n.t("This removes it from tachyon.yml, kills its tmux session, and deletes its saved state.")
-            : vscode.l10n.t("This removes it from tachyon.yml and deletes its saved state."));
+            ? vscode.l10n.t("This removes its .tachyon/agents entry, kills its tmux session, and deletes its saved state.")
+            : vscode.l10n.t("This removes its .tachyon/agents entry and deletes its saved state."));
         const prompt = vscode.l10n.t("Remove agent '{0}'? {1}", item.agentName, effects);
         const confirmLabel = vscode.l10n.t("Remove");
         const answer = await showNotification(prompt, "warn", [confirmLabel], { modal: true });
@@ -4734,7 +4734,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       const def = ws.config?.schedules[item.scheduleName];
       if (!def) {
-        notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.scheduleName), "warn");
+        notify(vscode.l10n.t("'{0}' is not declared in .tachyon/schedules", item.scheduleName), "warn");
         return;
       }
       studioPanels.schedule.openExisting(ws.wsHash, item.scheduleName);

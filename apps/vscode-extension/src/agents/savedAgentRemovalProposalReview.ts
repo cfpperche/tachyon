@@ -25,7 +25,7 @@ export function buildSavedAgentRemovalProposalReview(input: {
     {
       label: "profile + authority + roster",
       detail:
-        "the canonical profile is quarantined, its authority record is retired, and the tachyon.yml locator is " +
+        "the canonical profile is quarantined, its authority record is retired, and the roster locator is " +
         "removed in one recoverable transaction — half-removed is refused",
     },
   ];
@@ -46,7 +46,7 @@ export function buildSavedAgentRemovalProposalReview(input: {
     affected: [
       "canonical profile home (quarantined under agentId)",
       "profile authority record",
-      "tachyon.yml agents locator",
+      "workspace roster locator",
       "managed worktree ownership (if any)",
       "live session (stopped if present)",
     ],

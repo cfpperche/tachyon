@@ -30,7 +30,7 @@ const DESIGN_CMD = "tachyon.ideBrowserBridge.designMode";
 const ONBOARDING_SEEN_KEY = "tachyon.ideBrowser.onboarding.v1";
 
 const DISABLED_HUMAN_MESSAGE =
-  "Integrated Browser is off. Set settings.ideBrowser.enabled: true in tachyon.yml (Control → Settings).";
+  "Integrated Browser is off. Set ideBrowser.enabled: true in .tachyon/settings.yml (Control → Settings).";
 
 let manager: IdeBrowserBridgeManager | null = null;
 let log: vscode.OutputChannel | null = null;
@@ -82,7 +82,7 @@ function managerForActiveWorkspace(): IdeBrowserBridgeManager | null {
   return path.resolve(manager.status.workspaceRoot) === path.resolve(workspaceRoot()) ? manager : null;
 }
 
-/** Live opt-in from the active workspace's tachyon.yml (absent = off). */
+/** Live opt-in from the active workspace's .tachyon/settings.yml (absent = off). */
 function featureEnabled(): boolean {
   const ws = registerOptions.getWorkspace?.();
   return isIdeBrowserEnabled(ws?.config?.settings);
@@ -142,7 +142,7 @@ export function registerIdeBrowserBridge(
     }),
   );
 
-  // Re-paint when the human edits tachyon.yml (enable/disable without reload).
+  // Re-paint when the human edits .tachyon/settings.yml (enable/disable without reload).
   const ymlWatcher = vscode.workspace.createFileSystemWatcher("**/tachyon.y{a,}ml");
   const onYml = () => {
     void applyGateAfterConfigChange();
@@ -182,7 +182,7 @@ export function registerIdeBrowserBridge(
   return startEnabledBridge("activation");
 }
 
-/** Workspace home URL (tachyon.yml settings.ideBrowser.homeUrl). */
+/** Workspace home URL (.tachyon/settings.yml ideBrowser.homeUrl). */
 function homeUrl(): string {
   const ws = registerOptions.getWorkspace?.();
   const configHome = ws?.config?.settings?.ideBrowser?.homeUrl;

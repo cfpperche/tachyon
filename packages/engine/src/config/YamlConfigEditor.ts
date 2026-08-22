@@ -21,7 +21,7 @@ export interface EditResult {
 function load(text: string) {
   const doc = parseDocument(text);
   if (doc.errors.length > 0) {
-    throw new Error(`tachyon.yml is not parseable: ${doc.errors[0].message}`);
+    throw new Error(`config YAML is not parseable: ${doc.errors[0].message}`);
   }
   return doc;
 }
@@ -387,7 +387,7 @@ export function renameAgent(text: string, oldName: string, newName: string): Edi
   return { text: String(doc), warnings };
 }
 
-/** 0-based line of an agent/terminal's entry — lets "Edit" open tachyon.yml at the right place. */
+/** 0-based line of an agent/terminal's entry — lets "Edit" open the file at the right place. */
 export function agentEntryLine(text: string, name: string): number | undefined {
   const doc = load(text ?? "");
   const section = legacyManagedSectionOf(doc, name);
@@ -418,7 +418,7 @@ export interface AgentStanzaSourceSlice {
 export function agentStanzaSourceSlice(text: string, name: string): AgentStanzaSourceSlice {
   assertValidName(name);
   const doc = parseDocument(text, { uniqueKeys: true, keepSourceTokens: true });
-  if (doc.errors.length > 0) throw new Error(`tachyon.yml is not parseable: ${doc.errors[0]!.message}`);
+  if (doc.errors.length > 0) throw new Error(`config YAML is not parseable: ${doc.errors[0]!.message}`);
   if (doc.hasIn(["terminals", name])) throw new Error(`terminal '${name}' cannot be migrated to an agent profile`);
   const agents = doc.get("agents", true);
   if (!(agents instanceof YAMLMap)) throw new Error("'agents' must be a mapping");

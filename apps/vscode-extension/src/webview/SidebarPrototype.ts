@@ -397,7 +397,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       case "schedule:editYaml": return exec("tachyon.editScheduleItem", { kind: "schedule", scheduleName: id });
       case "schedule:delete": {
         const answer = await showNotification(
-          vscode.l10n.t("Delete schedule '{0}' from tachyon.yml?", id),
+          vscode.l10n.t("Delete schedule '{0}'?", id),
           "warn",
           [vscode.l10n.t("Delete")],
           { modal: true },

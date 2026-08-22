@@ -1,10 +1,9 @@
 /**
  * Workspace home URL for the Integrated Browser (globe status bar).
  *
- * Configured in tachyon.yml:
- *   settings:
- *     ideBrowser:
- *       homeUrl: https://my-app.local:3000
+ * Configured in `.tachyon/settings.yml` (the file IS the settings mapping, no `settings:` wrapper):
+ *   ideBrowser:
+ *     homeUrl: https://my-app.local:3000
  *
  * When unset or invalid → about:blank (no fixed example.com).
  */
@@ -64,7 +63,7 @@ export function normalizeIdeBrowserNavigationUrl(raw: string): string {
 }
 
 /**
- * Resolve home URL from live workspace config, else parse tachyon.yml on disk.
+ * Resolve home URL from live workspace config, else read `.tachyon/settings.yml` on disk.
  */
 export function resolveIdeBrowserHomeUrl(opts: {
   workspaceRoot: string;
@@ -74,23 +73,23 @@ export function resolveIdeBrowserHomeUrl(opts: {
   if (opts.configHomeUrl != null && String(opts.configHomeUrl).trim()) {
     return normalizeIdeBrowserHomeUrl(opts.configHomeUrl);
   }
-  const fromFile = readHomeUrlFromTachyonYml(opts.workspaceRoot);
+  const fromFile = readHomeUrlFromSettingsFile(opts.workspaceRoot);
   return normalizeIdeBrowserHomeUrl(fromFile);
 }
 
-function readHomeUrlFromTachyonYml(workspaceRoot: string): string | undefined {
-  for (const name of ["tachyon.yml", "tachyon.yaml"]) {
-    const file = path.join(workspaceRoot, name);
-    if (!fs.existsSync(file)) continue;
-    try {
-      const doc = parseYaml(fs.readFileSync(file, "utf8")) as {
-        settings?: { ideBrowser?: { homeUrl?: unknown } };
-      } | null;
-      const home = doc?.settings?.ideBrowser?.homeUrl;
-      if (typeof home === "string") return home;
-    } catch {
-      /* ignore parse errors — loader will surface them separately */
-    }
+function readHomeUrlFromSettingsFile(workspaceRoot: string): string | undefined {
+  // t-987825 — this used to probe `tachyon.yml` at the workspace root, a file the product stopped
+  // writing in 0.93.30 and stopped reading in 0.93.37. The settings file is the only home now.
+  const file = path.join(workspaceRoot, ".tachyon", "settings.yml");
+  if (!fs.existsSync(file)) return undefined;
+  try {
+    const doc = parseYaml(fs.readFileSync(file, "utf8")) as {
+      ideBrowser?: { homeUrl?: unknown };
+    } | null;
+    const home = doc?.ideBrowser?.homeUrl;
+    if (typeof home === "string") return home;
+  } catch {
+    /* ignore parse errors — loader will surface them separately */
   }
   return undefined;
 }

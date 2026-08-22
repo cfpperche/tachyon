@@ -7182,7 +7182,7 @@ export class Workspace {
               "invalid {0} — fleet shown from session ledger / last-known-good (read-only). Fix the config or run Tachyon: Doctor.",
               this.configFailure.file,
             )
-          : this.t("no valid tachyon.yml in the workspace root — create one (see the Tachyon README) and run 'Tachyon: Start' again"),
+          : this.t("no valid .tachyon/settings.yml in this workspace — create one (see the Tachyon README) and run 'Tachyon: Start' again"),
         "warn",
       );
       // Offer manual resume for ledger-resumable agents (defs are self-contained).

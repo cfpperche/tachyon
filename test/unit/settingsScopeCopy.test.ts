@@ -4,7 +4,7 @@ import path from "node:path";
 
 /**
  * t-7b4bb5 — Control → Settings must name the two authorities (global personal file vs
- * workspace tachyon.yml) without VS Code settings folklore or ambiguous open labels.
+ * workspace .tachyon/settings.yml) without VS Code settings folklore or ambiguous open labels.
  */
 
 const root = path.resolve(__dirname, "../..");
@@ -53,7 +53,7 @@ describe("t-7b4bb5 — Settings scope copy", () => {
     expect(host).toContain("globalSettingsHint");
     expect(host).toContain("Two settings files, on purpose");
     expect(host).toContain("Your machine preferences — agent pane, git path, theme.");
-    expect(host).toContain("Shared project policy in tachyon.yml — versioned with the repo.");
+    expect(host).toContain("Shared project policy in .tachyon/settings.yml — versioned with the repo.");
     expect(host).toContain("Per-person, per-machine, in a plain file you can edit by hand.");
     expect(host).not.toMatch(/they are not two places for the same list/i);
     expect(host).not.toMatch(/recovery path when Control/i);

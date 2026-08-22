@@ -1,5 +1,5 @@
 /**
- * SDD 488 F4 / t-48ff4a — settings.ideBrowser.enabled is a human + call-time gate only.
+ * SDD 488 F4 / t-48ff4a — ideBrowser.enabled is a human + call-time gate only.
  * Registration always follows ideBrowserRequest wiring (see ideBrowserToolsOffline.test.ts).
  */
 import { describe, expect, it } from "vitest";
@@ -68,7 +68,7 @@ describe("t-48ff4a — disabled fails at call time; tools still register", () =>
     expect(result.isError).toBe(true);
     const text = result.content.map((c) => c.text).join("\n");
     expect(text).toContain(IDE_BROWSER_DISABLED_ERROR);
-    expect(text).toMatch(/settings\.ideBrowser\.enabled/);
+    expect(text).toMatch(/ideBrowser\.enabled/);
     expect(text).not.toMatch(/bridge offline/i);
   });
 });

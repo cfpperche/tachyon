@@ -149,7 +149,7 @@ function parseNode(
   if (hasAgent === hasCmd) {
     errors.push(`nodes.${id}: exactly one of 'agent' or 'cmd' is required`);
   } else if (hasAgent && !knownAgents.has(raw.agent as string)) {
-    errors.push(`nodes.${id}.agent: '${raw.agent as string}' is not a declared agent in tachyon.yml`);
+    errors.push(`nodes.${id}.agent: '${raw.agent as string}' is not a declared agent in this workspace`);
   }
 
   // spec 231 work-source rule (codex B1/M2): a node needs a work source. `task` is required EXCEPT for an
