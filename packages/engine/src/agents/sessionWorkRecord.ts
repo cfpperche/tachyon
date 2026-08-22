@@ -22,7 +22,6 @@
  */
 
 import { containsUnsafeFramingCharacter } from "../config/framingSafety.js";
-import { resolveAgentGuidance, type AgentGuidance, type AgentGuidanceInput } from "./agentGuidance.js";
 import type { AssignedTaskRecord, AssignmentSelection, StaleContractReference } from "./assignmentSelection.js";
 
 export type { AssignedTaskRecord };
@@ -33,11 +32,6 @@ export type SessionIsolation =
   | { kind: "shared"; cwd: string };
 
 export interface SessionWorkRecord {
-  /**
-   * t-a1ee7e — the workspace's working methods (`settings.agentGuidance`). Absent means the product
-   * defaults, which are the text this record shipped before the methods were released.
-   */
-  guidance?: AgentGuidanceInput;
   /**
    * t-7f3009 — which launch this record describes. A restart and a spawn state DIFFERENT facts: only
    * a restart lost a conversation. Omitted means `restart`, so every pre-existing caller renders
@@ -84,18 +78,18 @@ export const RETASK_RECORD_CLOSE = "── END SESSION RETASK ──";
 /** Ids shown in the bounded startup-brief header before it collapses to a count. */
 export const MAX_HEADER_TASK_IDS = 3;
 
-function isolationLines(isolation: SessionIsolation, guidance: AgentGuidance): string[] {
-  // t-a1ee7e — WHERE this session runs and what the record does (or does not) authorize are facts;
-  // what an agent may WRITE there is a working method and comes from the workspace.
+function isolationLines(isolation: SessionIsolation): string[] {
+  // t-a1ee7e — WHERE this session runs and what the record does (or does not) authorize are facts.
+  // What an agent may WRITE there is a working method: the product states neither a policy nor a
+  // default for it, because an agent's persistent instructions already carry one per agent.
   if (isolation.kind === "worktree") {
     return [
       `Checkout: separate git worktree ${isolation.path} on branch ${isolation.branch}. This is the session's working directory, not a write-confinement boundary.`,
-      guidance.worktreeWrites,
     ];
   }
   return [
     `Checkout: shared — this session runs in ${isolation.cwd}.`,
-    `No worktree or branch was recorded for you, so nothing here authorizes committing to the trunk. ${guidance.sharedCheckout}`,
+    "No worktree or branch was recorded for you, so nothing here authorizes committing to the trunk.",
   ];
 }
 
@@ -106,25 +100,17 @@ function taskLines(task: AssignedTaskRecord): string[] {
   return body ? [head, body] : [head];
 }
 
-function assignmentLines(
-  assignment: AssignmentSelection,
-  launch: SessionLaunchKind,
-  hasTaskBrief: boolean,
-  guidance: AgentGuidance,
-): string[] {
+function assignmentLines(assignment: AssignmentSelection, launch: SessionLaunchKind, hasTaskBrief: boolean): string[] {
   if (!assignment.current) {
     // t-a1ee7e — "none on record" and "a brief creates no board row" are facts about the records.
     // HOW an agent then comes by work (wait to be assigned, take from the board, ask) is this
-    // project's dispatch model, not Tachyon's: the product ships a default and the workspace owns it.
+    // project's dispatch model, and the product states none: an agent's persistent instructions —
+    // or, for a Temporary, its spawn brief — is where a project already says such things.
     return [
       "Assigned work on record: none.",
-      // t-7b9e60 — a substantive brief IS the work: telling that agent to wait for an assignment
-      // contradicts the document it was just handed. So the dispatch method answers only the case
-      // it is about; the adoption method applies to both, exactly as before the release.
       ...(hasTaskBrief
         ? ["Execute the delegation brief above as delegated work. It does not create or assign a board task."]
-        : [guidance.dispatch]),
-      guidance.adoption,
+        : []),
     ];
   }
   const lines = [
@@ -135,9 +121,10 @@ function assignmentLines(
   if (assignment.queue.length > 0) {
     // Named, but never as work to start: the previous wording ("all of them yours — say which one you
     // are taking") made the choice the agent's, and a fresh session has nothing to choose with.
-    // t-a1ee7e — the list is the board's fact; the ORDER to work it in is the project's method.
+    // t-a1ee7e — the list is the board's fact; the ORDER to work it in is the project's method and
+    // is not stated here.
     lines.push(
-      `Also assigned to you and still active (${assignment.queue.length}) — NOT your current task. ${guidance.queueOrder}`,
+      `Also assigned to you and still active (${assignment.queue.length}) — NOT your current task.`,
       ...assignment.queue.map((task) => `- ${task.id} — ${task.title}`),
     );
   }
@@ -188,7 +175,6 @@ export function renderSessionWorkRecord(record: SessionWorkRecord): string {
     throw new Error("session work record facts must not contain control characters");
   }
   const launch: SessionLaunchKind = record.launch ?? "restart";
-  const guidance = resolveAgentGuidance(record.guidance);
   return [
     launch === "spawn" ? SPAWN_RECORD_OPEN : launch === "retask" ? RETASK_RECORD_OPEN : SESSION_RECORD_OPEN,
     launch === "spawn"
@@ -201,8 +187,8 @@ export function renderSessionWorkRecord(record: SessionWorkRecord): string {
           " every work fact below was reread from durable record now."
         : "This session was restarted with a NEW conversation. The previous one is not available to you," +
           " and nothing below came from it — every line is durable record.",
-    ...isolationLines(record.isolation, guidance),
-    ...assignmentLines(record.assignment, launch, record.hasTaskBrief === true, guidance),
+    ...isolationLines(record.isolation),
+    ...assignmentLines(record.assignment, launch, record.hasTaskBrief === true),
     ...staleContractLines(record.staleContractReferences, launch),
     launch === "spawn" ? SPAWN_RECORD_CLOSE : launch === "retask" ? RETASK_RECORD_CLOSE : SESSION_RECORD_CLOSE,
   ].join("\n");

@@ -754,7 +754,7 @@ describe("AgentManager", () => {
       }
     });
 
-    it("restates the durable worktree and branch the agent must stay inside", async () => {
+    it("restates the durable worktree and branch the session runs in", async () => {
       const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-e3aaae-worktree-"));
       const checkout = path.join(root, "wt");
       fs.mkdirSync(checkout, { recursive: true });
@@ -776,14 +776,16 @@ describe("AgentManager", () => {
 
         const brief = delivered(root, fake, from);
         expect(brief).toContain(`Checkout: separate git worktree ${checkout} on branch tachyon/change/t-5bfb72.`);
-        expect(brief).toContain("Do not edit, commit to, or push the primary checkout");
         expect(brief).not.toContain("Checkout: shared");
+        // t-a1ee7e — WHERE the session runs is the record's fact; what it may write there is a
+        // working method and lives in the agent's persistent instructions, not in the product.
+        expect(brief).not.toContain("Do not edit, commit to, or push the primary checkout");
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }
     });
 
-    it("forbids adopting work off the board when nothing is assigned", async () => {
+    it("reports an empty board without prescribing what to do about it", async () => {
       const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-e3aaae-unassigned-"));
       try {
         const { fake, manager } = harness(root, { assignedWork: () => [] });
@@ -794,7 +796,11 @@ describe("AgentManager", () => {
 
         const brief = delivered(root, fake, from);
         expect(brief).toContain("Assigned work on record: none.");
-        expect(brief).toContain("Do not adopt work by scanning the board");
+        // t-a1ee7e — the record states what the board holds. Whether this agent then waits, takes
+        // the top task, or asks is this project's dispatch model, said in the agent's persistent
+        // instructions; the product imposing one contradicted every workspace that wanted another.
+        expect(brief).not.toContain("Do not adopt work by scanning the board");
+        expect(brief).not.toContain("Wait for an explicit assignment");
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }

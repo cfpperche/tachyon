@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import { AGENT_GUIDANCE_KEYS } from "../agents/agentGuidance.js";
 import type { EntryKind } from "@tachyon/shared/config/entry.js";
 import { parse as parseYaml } from "yaml";
 import { parseAgentMemoryMax } from "../agents/agentMemoryScope.js";
@@ -550,12 +549,6 @@ export interface TachyonConfig {
      * a one-way replica. Absent = nothing ever leaves the machine.
      */
     stateBackup?: { backend: "filesystem"; path: string; every?: string; keep?: number };
-    /**
-     * t-a1ee7e — the working METHODS an agent's brief states, owned by this workspace. Each key
-     * overrides one product default (see agents/agentGuidance.ts); absent keys keep the default,
-     * which is the exact text the primer shipped before these methods were released.
-     */
-    agentGuidance?: Record<string, string>;
     // t-7bcba6 — settings.persistence (silentHooks kill switch) removed. Silent hooks are always
     // the supported path for eligible agents; obsolete keys are rejected at parse time.
     /**
@@ -648,7 +641,7 @@ export const KNOWN_SETTINGS_KEYS = [
   "maxAgents", "checklist", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree",
   "projectGuidance", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection",
   "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind",
-  "gitDelivery", "delivery", "taskNotifications", "humanInbox", "agentNotifications", "stateBackup", "agentGuidance",
+  "gitDelivery", "delivery", "taskNotifications", "humanInbox", "agentNotifications", "stateBackup",
 ] as const;
 
 /**
@@ -1761,33 +1754,6 @@ export function parseConfig(yamlText: string, options: ParseConfigOptions = {}):
           }
           if (Object.keys(h).length > 0) settings.handoff = h;
           for (const key of Object.keys(ho)) if (key !== "path" && key !== "nudgeEvery") discarded.push(`settings.handoff: unknown key '${key}'`);
-        }
-      }
-      // t-a1ee7e — the workspace's working methods for its agents. A malformed entry is dropped by
-      // NAME (not the whole block): losing one override silently falls back to the product default,
-      // which is a working brief; refusing the block would take the valid overrides down with it.
-      if (raw.settings.agentGuidance !== undefined) {
-        if (!isPlainObject(raw.settings.agentGuidance)) {
-          discarded.push("settings.agentGuidance: must be a mapping of guidance key -> text");
-        } else {
-          const out: Record<string, string> = {};
-          for (const [key, value] of Object.entries(raw.settings.agentGuidance)) {
-            if (!(AGENT_GUIDANCE_KEYS as readonly string[]).includes(key)) {
-              discarded.push(`settings.agentGuidance: unknown key '${key}' (expected ${AGENT_GUIDANCE_KEYS.join(", ")})`);
-              continue;
-            }
-            if (typeof value !== "string" || value.trim().length === 0) {
-              discarded.push(`settings.agentGuidance.${key}: must be a non-empty string`);
-              continue;
-            }
-            if (containsUnsafeFramingCharacter(value)) {
-              // The text is rendered inside the delimited brief sections agents learn to recognize.
-              discarded.push(`settings.agentGuidance.${key}: must not contain control characters`);
-              continue;
-            }
-            out[key] = value.trim();
-          }
-          if (Object.keys(out).length > 0) settings.agentGuidance = out;
         }
       }
       // t-5786bc — opt-in durable-state backup. Invalid input discards the WHOLE block: a half-read

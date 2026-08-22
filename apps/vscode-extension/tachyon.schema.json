@@ -479,48 +479,6 @@
           "description": "How many backup generations to keep at the destination. Default 30."
         }
       }
-    },
-    "agentGuidance": {
-      "type": "object",
-      "description": "This workspace's working methods for its agents — how work reaches them, how a records conflict settles, where they may write, what a completion notice carries. Tachyon ships a default for each; anything set here replaces it. Facts about Tachyon's mechanisms are stated by the product and are not configurable.",
-      "additionalProperties": false,
-      "properties": {
-        "dispatch": {
-          "type": "string",
-          "minLength": 1,
-          "description": "No task on record and no delegation brief: how work reaches an agent. Default: wait for an explicit assignment. A pull-model workspace replaces this."
-        },
-        "adoption": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Nothing assigned: whether an agent may serve itself from the board, the pins or another agent's continuity. Default: it may not."
-        },
-        "queueOrder": {
-          "type": "string",
-          "minLength": 1,
-          "description": "More tasks assigned than the current one: the ordering policy. Default: finish or hand back the current one first."
-        },
-        "worktreeWrites": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Session in its own worktree: the write policy for it. Default: change only the worktree, never the primary checkout."
-        },
-        "sharedCheckout": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Session sharing the primary checkout: the write policy for it. Default: create a separate checkout before changing tracked files."
-        },
-        "conflict": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The board and the brief name different work: how it settles. Default: report it to the spawner and pick neither."
-        },
-        "reporting": {
-          "type": "string",
-          "minLength": 1,
-          "description": "What a completion notice carries. Default: status + commit/tree + where the detail lives."
-        }
-      }
     }
   }
 }
