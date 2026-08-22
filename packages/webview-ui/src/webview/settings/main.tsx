@@ -255,8 +255,8 @@ export function SettingsApp({ model: m, strings: s, post }: SettingsAppProps) {
     const settingsWorkspace = m.control.workspaces.find((w) => w.wsHash === settingsWsHash) ?? m.control.workspaces[0];
     // Display path only — openConfigFile still resolves the live file through the host.
     const workspaceSettingsPath = settingsWorkspace
-      ? `${settingsWorkspace.workspaceRoot.replace(/[/\\]+$/, "")}/tachyon.yml`
-      : "tachyon.yml";
+      ? `${settingsWorkspace.workspaceRoot.replace(/[/\\]+$/, "")}/.tachyon/settings.yml`
+      : ".tachyon/settings.yml";
 
     return <><PageChrome title={s.settingsTitle} hint={s.settingsHint} actions={<Button variant="primary" onClick={p.onOpenDoctor}>{s.settingsDoctor}</Button>} /><div>
         <div class="ck-panel" data-testid="control-settings">

@@ -234,27 +234,7 @@ export function upsertAgent(
   return { text: String(doc), warnings };
 }
 
-/** Create or replace a schedule entry (approving an agent proposal, or the Studio). */
-export function upsertSchedule(
-  text: string | undefined,
-  name: string,
-  entry: Record<string, unknown>,
-  overwrite = false,
-): EditResult {
-  assertValidName(name);
-  const doc = load(text ?? "");
-  if (!overwrite && doc.hasIn(["schedules", name])) throw new Error(`schedule '${name}' already exists`);
-  doc.setIn(["schedules", name], doc.createNode(entry));
-  return { text: String(doc), warnings: [] };
-}
 
-/** Removes a schedule. */
-export function deleteSchedule(text: string, name: string): EditResult {
-  const doc = load(text ?? "");
-  if (!doc.hasIn(["schedules", name])) throw new Error(`schedule '${name}' does not exist`);
-  doc.deleteIn(["schedules", name]);
-  return { text: String(doc), warnings: [] };
-}
 
 /**
  * SDD 414 — set settings.companion.tabTools (human Control toggle).
@@ -350,22 +330,7 @@ export function setSettingsValue(text: string | undefined, keyPath: string[], va
   return { text: String(doc), warnings: [] };
 }
 
-/** 0-based line of a schedule's entry. */
-export function scheduleEntryLine(text: string, name: string): number | undefined {
-  return entryLineIn(text, "schedules", name);
-}
 
-function entryLineIn(text: string, section: string, name: string): number | undefined {
-  const doc = load(text ?? "");
-  const map = doc.get(section);
-  if (!(map instanceof YAMLMap)) return undefined;
-  const node = map.items.find(
-    (pair) => String((pair.key as { toJSON?: () => unknown }).toJSON?.() ?? pair.key) === name,
-  );
-  const offset = (node?.key as { range?: [number, number, number] })?.range?.[0];
-  if (offset === undefined) return undefined;
-  return text.slice(0, offset).split("\n").length - 1;
-}
 
 // spec 234 — upsertLayout removed (layouts feature retired).
 

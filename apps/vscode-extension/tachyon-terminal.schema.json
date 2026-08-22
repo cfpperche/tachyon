@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Tachyon terminal declaration (.tachyon/terminals/<name>.yml)",
+  "description": "One terminal (server, shell, build) — the file's mapping is the declaration; the name is the filename.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "cmd"
+  ],
+  "properties": {
+    "cmd": {
+      "description": "Shell command that runs the terminal.",
+      "type": "string",
+      "minLength": 1
+    },
+    "cwd": {
+      "description": "Working directory, relative to the workspace root or absolute.",
+      "type": "string"
+    },
+    "env": {
+      "description": "Extra environment variables for the terminal session. For Pi runtime commands, PI_CODING_AGENT_DIR and PI_CODING_AGENT_SESSION_DIR are Tachyon-owned private-home boundaries and must not be set here.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "autostart": {
+      "description": "Start this terminal when Tachyon starts.",
+      "type": "boolean",
+      "default": false
+    },
+    "watch": {
+      "description": "Glob(s) — restart the terminal when a matching file changes.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      ]
+    },
+    "attention": {
+      "description": "Needs-you detection. Defaults off for terminals. Object form tunes the idle threshold and adds prompt patterns.",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "silenceSec": {
+              "description": "Seconds of unchanged pane + idle CPU before the agent is marked idle.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "patterns": {
+              "description": "Extra prompt regexes (case-insensitive) that mark the agent as needing input.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "restart": {
+      "description": "Crash policy: on-crash auto-restarts when the process dies with a non-zero exit (backoff 2s/4s/8s, max 3 per minute). Clean exits (0) never auto-restart.",
+      "enum": [
+        "never",
+        "on-crash"
+      ],
+      "default": "never"
+    }
+  }
+}

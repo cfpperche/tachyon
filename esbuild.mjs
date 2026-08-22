@@ -564,6 +564,8 @@ if (existsSync(path.join(extensionRoot, "media/companion-mobile/index.html"))) {
 }
 buildTailwind();
 copyFileSync("apps/vscode-extension/tachyon.schema.json", "dist/tachyon.schema.json");
+copyFileSync("apps/vscode-extension/tachyon-terminal.schema.json", "dist/tachyon-terminal.schema.json");
+copyFileSync("apps/vscode-extension/tachyon-schedule.schema.json", "dist/tachyon-schedule.schema.json");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.css", "dist/webview/codicon.css");
 copyFileSync("packages/webview-ui/src/webview/shared/design-system.css", "dist/webview/design-system.css");
 copyFileSync("packages/webview-ui/src/webview/shared/tokens.css", "dist/webview/tokens.css"); // SDD 505 Slice 1 — shared token declarations

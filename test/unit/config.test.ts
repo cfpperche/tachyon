@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { agentsOf, asAgent, suggestKindForCommand, composeCommand, resolveBinary, instructionsDeliverable, openingPromptCapability, terminalsOf } from "@tachyon/engine/config/loadConfig.js";
+import { composeWorkspaceConfigText } from "@tachyon/engine/config/workspaceSettingsFile.js";
 import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 import { parseConfig as parseRawConfig } from "@tachyon/engine/config/loadConfig.js";
 import { PROJECT_GUIDANCE_MAX_FILES } from "@tachyon/engine/config/projectGuidance.js";
@@ -50,8 +50,10 @@ describe("parseConfig", () => {
     // SDD 478 M7 — the fixture used to declare the two observers inline, which no workspace will
     // load any more; they are created in Agent Studio at dogfood time. Inertness is what this case
     // guards, and it is now structural: nothing the fixture declares can start a runtime at all.
-    const yaml = readFileSync("test/fixtures/runtimeops-observability-dogfood/tachyon.yml", "utf8");
-    const { config, errors, warnings } = parseConfig(yaml);
+    // t-a65335 — the fixture's workspace is the new homes now; compose them like the loader does.
+    const composed = composeWorkspaceConfigText("test/fixtures/runtimeops-observability-dogfood");
+    expect(composed.errors).toEqual([]);
+    const { config, errors, warnings } = parseConfig(composed.yamlText);
 
     expect(errors).toEqual([]);
     expect(warnings).toEqual([]);

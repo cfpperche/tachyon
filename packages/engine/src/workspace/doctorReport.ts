@@ -79,20 +79,20 @@ export function buildDoctorReport(input: DoctorReportInput): DoctorReport {
     findings.push({
       id: "config.missing",
       severity: "warn",
-      title: "No tachyon.yml in workspace root",
+      title: "No .tachyon/settings.yml in workspace",
       action: "Run Tachyon: Init to generate a starter config",
     });
-    suggestions.push("Create tachyon.yml (Tachyon: Init)");
+    suggestions.push("Create .tachyon/settings.yml (Tachyon: Init)");
   } else if (!input.configValid || input.configFailure) {
     const errs = input.configFailure?.errors ?? ["unknown parse/validation error"];
     findings.push({
       id: "config.invalid",
       severity: "error",
-      title: `Invalid ${input.configFailure?.file ?? "tachyon.yml"}`,
+      title: `Invalid ${input.configFailure?.file ?? ".tachyon/settings.yml"}`,
       detail: errs.map((e, i) => `${i + 1}. ${e}`).join("\n"),
       action: "Open the config file, fix the listed errors, then reload the window or run Tachyon: Start",
     });
-    suggestions.push(`Open and fix ${input.configFailure?.file ?? "tachyon.yml"}`);
+    suggestions.push(`Open and fix ${input.configFailure?.file ?? ".tachyon/settings.yml"}`);
     suggestions.push("After fixing: Reload Window or Tachyon: Start");
   } else if (input.refusedProfiles?.length) {
     findings.push({
@@ -102,7 +102,7 @@ export function buildDoctorReport(input: DoctorReportInput): DoctorReport {
       detail: input.refusedProfiles.map(({ name, reason }, index) => `${index + 1}. ${name}: ${reason}`).join("\n"),
       action: "Fix the refused profile(s), then reload the window or run Tachyon: Start",
     });
-    suggestions.push("Fix the refused agent profile(s) in tachyon.yml");
+    suggestions.push("Fix the refused agent profile(s) in .tachyon/agents/");
   } else {
     findings.push({
       id: "config.ok",
@@ -117,9 +117,9 @@ export function buildDoctorReport(input: DoctorReportInput): DoctorReport {
       severity: "warn",
       title: `${input.configWarnings.length} ignored or deprecated config setting(s)`,
       detail: input.configWarnings.map((warning, index) => `${index + 1}. ${warning}`).join("\n"),
-      action: "Remove the ignored setting(s) from tachyon.yml; Tachyon is already running without them",
+      action: "Remove the ignored setting(s) from .tachyon/settings.yml; Tachyon is already running without them",
     });
-    suggestions.push("Remove ignored or deprecated settings from tachyon.yml");
+    suggestions.push("Remove ignored or deprecated settings from .tachyon/settings.yml");
   }
 
   // --- LKG ---

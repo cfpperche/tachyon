@@ -360,7 +360,7 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
 
   "config-invalid": (slot) =>
     slot.a.configInvalid ? (
-      <Badge tone="err" title="tachyon.yml is invalid — row shown from session ledger or last-known-good snapshot (read-only for spawn)">
+      <Badge tone="err" title="workspace settings are invalid — row shown from session ledger or last-known-good snapshot (read-only for spawn)">
         config invalid
       </Badge>
     ) : null,

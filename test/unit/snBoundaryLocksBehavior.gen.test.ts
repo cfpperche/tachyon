@@ -1,7 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildStarterYaml, type DetectedProject } from "../../apps/vscode-extension/src/init/initLogic.js";
+import { buildStarterFiles, type DetectedProject } from "../../apps/vscode-extension/src/init/initLogic.js";
+const starterText = (p: DetectedProject): string => {
+  const files = buildStarterFiles(p);
+  return [files.settingsYaml, ...files.terminals.map((t) => `# terminal ${t.name}\n${t.yaml}`)].join("\n");
+};
+
 
 /**
  * Markers that only make sense inside Tachyon's own dev/build/release pipeline.
@@ -46,7 +51,7 @@ describe("container-generated delegation behavior", () => {
       baseFixture({ files: ["package.json"], packageJson: { scripts: { dev: "vite", test: "vitest" }, dependencies: { vite: "^5" } } }),
     ];
     for (const fixture of fixtures) {
-      const yaml = buildStarterYaml(fixture);
+      const yaml = starterText(fixture);
       for (const marker of TACHYON_BUILD_MARKERS) {
         expect(yaml, `generated tachyon.yml (${fixture.files.join(",") || "no manifest"}) should not carry Tachyon-build marker "${marker}"`).not.toContain(marker);
       }

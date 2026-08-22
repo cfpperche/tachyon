@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { parse as parseYaml } from "yaml";
 import { beforeEach, describe, expect, it } from "vitest";
 import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import {
@@ -10,7 +9,12 @@ import {
   loadAndRenderProjectGuidance,
 } from "@tachyon/engine/config/projectGuidance.js";
 import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
-import { buildStarterYaml, type DetectedProject } from "../../apps/vscode-extension/src/init/initLogic.js";
+import { buildStarterFiles, type DetectedProject } from "../../apps/vscode-extension/src/init/initLogic.js";
+const starterText = (p: DetectedProject): string => {
+  const files = buildStarterFiles(p);
+  return [files.settingsYaml, ...files.terminals.map((t) => `# terminal ${t.name}\n${t.yaml}`)].join("\n");
+};
+
 import { PRIMER_OPEN, renderPrimer, type PrimerInput } from "@tachyon/engine/agents/primer.js";
 import { bridgeGuidanceTail } from "@tachyon/engine/agents/bridgeGuidance.js";
 import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
@@ -137,7 +141,7 @@ describe(`${"project-guidance-ownership"}: project-guidance ownership boundary`,
         "verify:full",
       ]) {
         expect(unconfiguredCommand).not.toContain(forbidden);
-        for (const fixture of INIT_FIXTURES) expect(buildStarterYaml(fixture)).not.toContain(forbidden);
+        for (const fixture of INIT_FIXTURES) expect(starterText(fixture)).not.toContain(forbidden);
       }
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -270,16 +274,12 @@ describe(`${"project-guidance-ownership"}: project-guidance ownership boundary`,
     });
   });
 
-  it("Tachyon's tracked shared template opts into its owned document with exact source provenance", () => {
-    // Evidence source is tachyon.yml.example (tracked shared template), not tachyon.yml (untracked
-    // local dogfood fleet config since 9186c73b). Ratified 2026-07-19 (t-8bb9cd): same promise and
-    // oracle strength, same files/order/bytes, evidence source moved to what every clone actually has.
+  it("Tachyon's owned guidance document renders with exact source provenance", () => {
+    // t-a65335 — tachyon.yml.example (the old tracked template evidence source, ratified t-8bb9cd)
+    // is retired with tachyon.yml itself; workspace settings are personal by design and no tracked
+    // file carries the opt-in anymore. The promise this file still measures is the RENDERING
+    // contract: the registry's files, in order, byte-exact, each with its Source line.
     const repoRoot = process.cwd();
-    const parsed = parseYaml(fs.readFileSync(path.join(repoRoot, "tachyon.yml.example"), "utf8")) as {
-      settings?: { projectGuidance?: { files?: unknown } };
-    };
-    const configuredFiles = parsed.settings?.projectGuidance?.files;
-    expect(configuredFiles).toEqual(TACHYON_PROJECT_GUIDANCE);
     const rendered = loadAndRenderProjectGuidance(repoRoot, { files: [...TACHYON_PROJECT_GUIDANCE] });
     expect(rendered).toBe(expectedRenderedGuidance(repoRoot, TACHYON_PROJECT_GUIDANCE));
 

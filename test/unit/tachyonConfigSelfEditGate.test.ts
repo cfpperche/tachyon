@@ -1,3 +1,5 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
+import { composeWorkspaceConfigText } from "@tachyon/engine/config/workspaceSettingsFile.js";
 import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
@@ -94,7 +96,7 @@ async function makeWs(
   // With canonical agents the caller passes only the roster TAIL; the pointer block is generated
   // from the profiles just written, so text and authority cannot drift apart.
   const roster = fixtures.length > 0 ? savedAgentsYaml(fixtures) + yml : yml;
-  fs.writeFileSync(path.join(root, "tachyon.yml"), roster, "utf8");
+  writeWorkspaceConfig(root, roster);
   const host = new FakeHost(path.join(root, ".storage"));
   for (const [key, value] of savedAgentSecrets(root, fixtures)) host.secrets.set(key, value);
   fs.mkdirSync(host.globalStoragePath(), { recursive: true });
@@ -110,28 +112,28 @@ describe("t-099be8 tachyon.yml self-edit gate", () => {
   });
 
   it("writeTachyonConfigText refuses invalid content and leaves the file unchanged", async () => {
-    // SDD 478 M7 — the old bad text was a self-referencing `subagents:`, which no text can carry
-    // any more: `subagents` is agent-only and an `agents:` entry is a pointer. The gate's guarantee
-    // is unchanged, so it is proven with a hard error the roster text can still express.
+    // t-a65335 — content is the SETTINGS file text now (top-level mapping); a discarded key refuses
+    // the save exactly as before (t-48dd8d), and the settings file on disk stays byte-identical.
     const base = "agents: {}\nterminals:\n  build:\n    cmd: sh\n  coder:\n    cmd: sh\n";
     const { ws, root } = await makeWs(base);
-    const before = fs.readFileSync(path.join(root, "tachyon.yml"), "utf8");
-    const bad = "agents: {}\nterminals:\n  build:\n    cmd: sh\n    restart: sometimes\n";
-    const result = ws.writeTachyonConfigText(bad);
+    const settingsFile = path.join(root, ".tachyon", "settings.yml");
+    const before = fs.readFileSync(settingsFile, "utf8");
+    const result = ws.writeTachyonConfigText("clipboard: bogus\n");
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected reject");
-    expect(result.errors.some((e) => e.includes("must be 'never' or 'on-crash'"))).toBe(true);
-    expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toBe(before);
+    expect(result.errors.some((e) => e.includes("clipboard"))).toBe(true);
+    expect(fs.readFileSync(settingsFile, "utf8")).toBe(before);
     expect(Object.keys(ws.config?.agents ?? {}).sort()).toEqual(["build", "coder"]);
   });
 
-  it("writeTachyonConfigText accepts valid content and reloads the roster", async () => {
+  it("writeTachyonConfigText accepts valid content and reloads the live config", async () => {
     const { ws, root } = await makeWs("agents: {}\nterminals:\n  build:\n    cmd: sh\n");
-    const next = "agents: {}\nterminals:\n  build:\n    cmd: sh\n  helper:\n    cmd: sh\n";
-    const result = ws.writeTachyonConfigText(next);
+    const result = ws.writeTachyonConfigText("auth: false\nmaxAgents: 4\n");
     expect(result.ok).toBe(true);
-    expect(Object.keys(ws.config?.agents ?? {}).sort()).toEqual(["build", "helper"]);
-    expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toContain("helper:");
+    expect(ws.config?.settings.maxAgents).toBe(4);
+    // terminals are declaration files, untouched by a settings write
+    expect(Object.keys(ws.config?.agents ?? {}).sort()).toEqual(["build"]);
+    expect(fs.readFileSync(path.join(root, ".tachyon", "settings.yml"), "utf8")).toContain("maxAgents: 4");
   });
 
   it("writeTachyonConfigText with dangling subagents saves, warns, and keeps the fleet", async () => {
@@ -141,15 +143,17 @@ describe("t-099be8 tachyon.yml self-edit gate", () => {
     const { ws, host, roster } = await makeWs("terminals:\n  coder:\n    cmd: sh\n", [
       { name: "claude", spec: { runtime: "claude", extra: { ownership: { subagents: ["reviewer"] } } } },
     ]);
-    const result = ws.writeTachyonConfigText(roster);
+    void roster;
+    // t-a65335 — the dangling reference lives in the PROFILE; any settings save recomposes the full
+    // config (profiles + declarations + settings), so the degradation surfaces on this write too.
+    const result = ws.writeTachyonConfigText("auth: true\n");
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected ok");
     expect(result.warnings.some((w) => w.includes("reviewer") && w.includes("dangling"))).toBe(true);
     expect(Object.keys(ws.config?.agents ?? {}).sort()).toEqual(["claude", "coder"]);
     expect(asAgent(ws.config?.agents.claude)?.subagents).toBeUndefined();
-    // reload from disk proves cold-load parity — through the profile-aware parse, since the roster
-    // on disk is a pointer that only resolves against the workspace's authorities.
-    const cold = ws.parseTrustedConfigText(fs.readFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "utf8"));
+    // reload from disk proves cold-load parity — through the composed profile-aware parse.
+    const cold = ws.parseTrustedConfigText(composeWorkspaceConfigText(ws.workspaceRoot).yamlText);
     expect(cold.errors).toEqual([]);
     expect(Object.keys(cold.config?.agents ?? {}).sort()).toEqual(["claude", "coder"]);
     expect(host.notices.some((n) => n.level === "warn" && n.message.includes("reviewer"))).toBe(true);
@@ -161,22 +165,21 @@ describe("t-099be8 tachyon.yml self-edit gate", () => {
   // text can still express — the same one the accept/refuse pair above uses.
   it("mutateConfig does not persist a hard-invalid mutation", async () => {
     const { ws, root } = await makeWs("terminals:\n  build:\n    cmd: sh\n");
-    const before = fs.readFileSync(path.join(root, "tachyon.yml"), "utf8");
-    const ok = ws.mutateConfig(() => ({
-      text: "terminals:\n  build:\n    cmd: sh\n    restart: sometimes\n",
-      warnings: [],
-    }));
+    const settingsFile = path.join(root, ".tachyon", "settings.yml");
+    const before = fs.readFileSync(settingsFile, "utf8");
+    const ok = ws.mutateConfig(() => ({ text: "clipboard: bogus\n", warnings: [] }));
     expect(ok).toBe(false);
-    expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toBe(before);
+    expect(fs.readFileSync(settingsFile, "utf8")).toBe(before);
   });
 
   it("agent-path gate function refuses invalid text (same seam Bridge write_tachyon_config uses)", async () => {
     const { ws, root } = await makeWs("terminals:\n  build:\n    cmd: sh\n");
-    const before = fs.readFileSync(path.join(root, "tachyon.yml"), "utf8");
+    const settingsFile = path.join(root, ".tachyon", "settings.yml");
+    const before = fs.readFileSync(settingsFile, "utf8");
     // Mirrors the Bridge tool body: validate → refuse → never write.
     const gate = (text: string) => ws.writeTachyonConfigText(text);
-    const bad = gate("terminals:\n  only:\n    cmd: sh\n    restart: sometimes\n");
+    const bad = gate("clipboard: bogus\n");
     expect(bad.ok).toBe(false);
-    expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toBe(before);
+    expect(fs.readFileSync(settingsFile, "utf8")).toBe(before);
   });
 });
