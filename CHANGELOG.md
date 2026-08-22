@@ -4,6 +4,39 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.30 — tachyon.yml aposentado: configuração e declarações ganham casas próprias em .tachyon
+
+### `.tachyon/settings.yml` — só configuração, e nada mais
+
+O `tachyon.yml` era uma coisa e tinha virado outra. Nasceu como o arquivo do workspace; com o tempo
+os agents migraram para `.tachyon/agents/<nome>/`, os terminais ganharam `.tachyon/terminals/<nome>.yml`,
+e o que sobrou era um arquivo de configuração não trackeado que ainda carregava declarações no corpo.
+Esta release completa o movimento:
+
+- **Configuração** vive em `.tachyon/settings.yml`, cujo topo É o mapping de settings — sem wrapper
+  `settings:`. O editor ganha schema dedicado para o arquivo.
+- **Schedules** viram arquivos: `.tachyon/schedules/<nome>.yml`, o molde exato dos terminais — o
+  mapping do arquivo é a declaração, o nome vive no filename. Aprovar uma proposta, salvar no Studio
+  ou deletar da sidebar opera no arquivo, sempre com a validação completa do loader antes da escrita.
+- **Terminais** completam a migração: o bloco legado `terminals:` deixa de ser lido; as declarações
+  por arquivo, que já eram canônicas, são a única fonte.
+
+### Migração automática — o upgrade não quebra ninguém
+
+Na primeira carga após o upgrade, um `tachyon.yml` existente é projetado para as casas novas
+(arquivo novo sempre vence o bloco legado), o original é preservado byte a byte em
+`.tachyon/tachyon.yml.pre-migration`, e o arquivo da raiz é removido. Um legado imparsável fica no
+lugar, com aviso alto — não se apaga o que não se conseguiu ler. `tachyon.yml.example` foi
+aposentado junto: o `Tachyon: Init` agora gera `.tachyon/settings.yml` + terminais por arquivo, e o
+schema no editor assume o papel de referência.
+
+### Superfícies acompanham
+
+`write_tachyon_config` (Bridge) valida e grava o texto do `settings.yml`; `Tachyon: Doctor`, a
+sidebar, o onboarding e a tela de Settings apontam para a casa nova; o backup de estado
+(`stateBackup`, 0.93.29) replica `settings.yml`, `terminals/` e `schedules/` — as declarações de
+terminal faltavam no allowlist e entraram.
+
 ## 0.93.29 — o estado durável ganha réplica fora da máquina, e um caminho de volta
 
 ### Backup opt-in do runtime: `settings.stateBackup`
