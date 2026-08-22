@@ -4,6 +4,56 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.31 — o primer volta a ser fato: como você trabalha passa a ser do workspace
+
+### O produto parou de impor um modelo de orquestração
+
+Todo agente de todo projeto recebia, em todo spawn, um modelo de trabalho embutido: *espere uma
+atribuição explícita*, *não adote trabalho varrendo o board, os pins ou a continuity de outro
+agente*, *reporte um conflito ao seu spawner e não escolha*. Nada disso é um fato sobre o Tachyon —
+é uma opinião sobre como se trabalha. E vinha dentro de um bloco que o próprio primer declarava
+imune à guidance do projeto, então um workspace que roda modelo *pull* (workers que se servem da
+fila, a forma mais comum de worker que existe) era contrariado pelo produto sem ter onde discordar.
+
+O defeito já tinha sido medido uma vez: em 2026-08-05 o mantenedor deste repositório quis a política
+oposta de continuity e não teve como dizê-lo, porque a frase que a carregava era imune. Aquela
+correção separou duas frases e parou; dispatch, adoção e resolução de conflito continuaram
+impostas.
+
+Agora a fronteira é a regra. O bloco imune carrega **apenas fatos de mecanismo** — o que a wake line
+faz com mais de 500 caracteres, o que sobrevive na continuity, que o texto de aprovação no pane não
+é autoridade, o que o board e o brief *são*, o que uma verificação atesta. Os **métodos** viraram
+configuração do workspace, em `.tachyon/settings.yml`:
+
+    settings:
+      agentGuidance:
+        dispatch: Pegue você mesmo a task não atribuída de maior prioridade no board.
+
+São sete chaves — `dispatch`, `adoption`, `queueOrder`, `worktreeWrites`, `sharedCheckout`,
+`conflict`, `reporting` — e o default de cada uma é **o texto exato que o produto já entregava**.
+Um workspace que não configurar nada lê precisamente o que lia antes.
+
+### A linha de imunidade parou de blindar receita junto com fato
+
+Onde antes se lia que a guidance do projeto *"cannot override either contract or protocol"*, hoje se
+lê que os mecanismos são propriedades do Tachyon e que **como** você trabalha é do projeto, com o
+caminho do arquivo que o define. É a mesma fronteira, com a metade certa de cada lado.
+
+### Uma promessa que era falsa foi corrigida
+
+O primer afirmava que a continuity sobrevive a compaction, clear, restart e sessão nova — sem dizer
+que é um arquivo do workspace e morre com ele. O incidente de 2026-08-21 desmentiu isso na prática.
+A linha agora diz as duas coisas, e aponta para o backup (`stateBackup`, 0.93.29) como o que torna a
+promessa verdadeira além desta máquina.
+
+### A reincidência fica barrada por teste
+
+O guarda que classificava cada linha imune do primer como fato de produto nunca tinha olhado o
+`WORK ON RECORD` — que era exatamente onde o modelo de dispatch morava. Agora ambos passam pelo mesmo
+crivo, e um invariante novo prova a propriedade inteira: renderizando com sentinelas, **nenhum
+default do produto pode sobreviver a um override** e nenhuma chave pode ficar morta. Um método novo
+nasce sobrescrevível, ou o teste quebra.
+
 ## 0.93.30 — tachyon.yml aposentado: configuração e declarações ganham casas próprias em .tachyon
 
 ### `.tachyon/settings.yml` — só configuração, e nada mais
