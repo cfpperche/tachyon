@@ -6,6 +6,7 @@ import {
 } from "../agents/stoppedTemporaryResidue.js";
 import { ideBrowserRequest, isIdeBrowserBridgeAvailable } from "../ide-browser/client.js";
 import { StateBackupService } from "../statesync/service.js";
+import { describeIdentityLoss, ensureWorkspaceIdentity, readIdentityState } from "./workspaceIdentity.js";
 import {
   IDE_BROWSER_DISABLED_CODE,
   IDE_BROWSER_DISABLED_ERROR,
@@ -340,6 +341,13 @@ export interface WorkspaceDeps {
   bridgeTransport: WorkspaceBridgePort;
   /** refresh the (global) sidebar providers + the attention badge */
   onViewsChanged: (view: ViewKind) => void;
+  /**
+   * t-af0d29 — the workspace this engine serves stopped being the one it started with (deleted,
+   * or replaced by a different workspace at the same path). The Workspace has already quiesced
+   * itself by the time this fires; the host decides what the PROCESS does — the daemon exits, an
+   * editor shell detaches the folder. Absent means "quiesce and say so", which is still correct.
+   */
+  onWorkspaceLost?: (ws: Workspace, reason: string) => void;
   /** host-side UI affordance for newly recorded human-approval requests. */
   onApprovalRequested?: (ws: Workspace, request: { id: string; requester: string }) => void;
   /** t-8e9b5e — a Saved Agent proposal needs a human, exactly like an approval does. */
@@ -689,6 +697,9 @@ export class Workspace {
   private lifecycleTrigger: NodeJS.Timeout | undefined;
   private taskFileRefreshTimer: NodeJS.Timeout | undefined;
   private ticker: NodeJS.Timeout | undefined;
+  /** t-af0d29 — the workspace incarnation this engine started serving; undefined when unknowable. */
+  private workspaceIdentityId: string | undefined;
+  private workspaceLostReported = false;
   private engineWarned = false;
   private readonly bridgeSlowRequestToasts = new BridgeSlowRequestToastPolicy();
   private lastBridgeStartFailure: BridgeStartFailureInfo | undefined;
@@ -3066,6 +3077,10 @@ export class Workspace {
 
     // Schedules tick on the heartbeat; activate anchors every-schedules + catch-up.
     ws.scheduler.activate();
+    // t-af0d29 — mint or read the workspace's identity BEFORE the heartbeat starts sampling it, so
+    // the first tick compares against a value this engine actually saw on disk.
+    ws.workspaceIdentityId = ensureWorkspaceIdentity(workspaceRoot)?.id;
+
     // t-5786bc — opt-in durable-state backup. Settings are read live, so declaring or removing
     // settings.stateBackup in tachyon.yml takes effect without an engine restart.
     const stateBackup = new StateBackupService(
@@ -4766,6 +4781,47 @@ export class Workspace {
   /** Automatic handoff reminders are hook-only. If the runtime cannot receive hooks, Tachyon stays quiet. */
   private async maybeRemindHandoff(agent: string): Promise<void> {
     void agent;
+  }
+
+  /**
+   * t-af0d29 — one sample of "am I still serving the workspace I started with", and the reaction.
+   *
+   * Reported and acted on ONCE: the reaction quiesces this Workspace, and a second report would
+   * only add noise to a fleet the human is already dismantling. `indeterminate` is never a reason
+   * to act — an unreadable marker is a filesystem hiccup, not a destroyed project.
+   */
+  private detectWorkspaceLoss(): boolean {
+    if (this.workspaceLostReported) return true;
+    if (this.workspaceIdentityId === undefined) return false;
+    const state = readIdentityState(this.workspaceRoot, this.workspaceIdentityId);
+    const reason = describeIdentityLoss(state, this.workspaceRoot);
+    if (!reason) return false;
+    this.workspaceLostReported = true;
+    // Stop the timers and watchers first: whatever the host decides next, nothing this engine owns
+    // should write into a workspace that is gone or into one that belongs to someone else.
+    this.quiesceAfterWorkspaceLoss();
+    try {
+      this.host.notify(this.t("Tachyon stopped serving this workspace — {0}", reason), "warn");
+    } catch {
+      /* a notify channel that is itself gone must not mask the loss */
+    }
+    this.deps.onWorkspaceLost?.(this, reason);
+    return true;
+  }
+
+  /** Everything that would keep touching the filesystem on a schedule. */
+  private quiesceAfterWorkspaceLoss(): void {
+    if (this.ticker) clearInterval(this.ticker);
+    this.ticker = undefined;
+    if (this.taskFileRefreshTimer) clearTimeout(this.taskFileRefreshTimer);
+    this.taskFileRefreshTimer = undefined;
+    for (const d of this.disposables.splice(0)) {
+      try { d.dispose(); } catch { /* teardown is best-effort by construction */ }
+    }
+    for (const d of this.profileDocumentWatches) {
+      try { d.dispose(); } catch { /* idem */ }
+    }
+    this.profileDocumentWatches = [];
   }
 
   configPath(): string | undefined {
@@ -6581,6 +6637,12 @@ export class Workspace {
 
   /** the 3s heartbeat (engine events make these happen sooner, never different) */
   async tick(): Promise<void> {
+    // t-af0d29 — first, and before anything that would touch the filesystem: is this still the
+    // workspace this engine was started for? Every store lazily mkdirs its own directory, so a
+    // heartbeat over a deleted workspace does not merely fail — it REBUILDS a skeleton of it, which
+    // is what fought the human's `rm -rf` on 2026-08-21. Stopping is the only reaction that leaves
+    // a deleted workspace deleted.
+    if (this.detectWorkspaceLoss()) return;
     void this.lifecycle.tick();
     // t-2656d7 — a login pane finishing is otherwise eventless: nothing else in the fleet moves when
     // a human finishes a device flow, so the offer of an explicit Retry would never be made.
