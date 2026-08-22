@@ -39,6 +39,7 @@
  * session map is never persisted) and dies with the process. Nothing is written into the live fleet's
  * workspace, so there is nothing to unpair by hand.
  */
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import net from "node:net";
@@ -320,7 +321,7 @@ async function startDaemon(): Promise<Daemon> {
   for (const directory of [workspaceRoot, storageRoot, mediaRoot, runtimeRoot, tmuxTmp, xdgRuntime]) {
     fs.mkdirSync(directory, { mode: 0o700 });
   }
-  fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), "agents: {}\n", "utf8");
+  writeWorkspaceConfig(workspaceRoot, "agents: {}\n");
   // t-70fda0 / t-93ec7f — never let the live fleet's identity reach a daemon fixture.
   const childEnv = isolatedDaemonChildEnv(tmuxChildEnv(), {
     TMUX_TMPDIR: tmuxTmp,

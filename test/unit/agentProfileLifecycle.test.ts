@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -29,7 +30,7 @@ const roots: string[] = [];
 function temporaryWorkspace(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-profile-lifecycle-"));
   roots.push(root);
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n");
+  writeWorkspaceConfig(root, "agents: {}\n");
   return root;
 }
 
@@ -57,10 +58,11 @@ class MemoryAuthority implements AgentProfileAuthorityPort {
 
 /**
  * t-ae221c — the config file is read ONLY to prove the transaction never touches it. It is not a
- * port any more: nothing in create, edit or set-enabled writes `tachyon.yml`.
+ * port any more: nothing in create, edit or set-enabled writes the workspace config.
+ * t-a65335 — the workspace config file is `.tachyon/settings.yml` now.
  */
 function configText(root: string): string {
-  return fs.readFileSync(path.join(root, "tachyon.yml"), "utf8");
+  return fs.readFileSync(path.join(root, ".tachyon", "settings.yml"), "utf8");
 }
 
 function commitAgentProfileLifecycle(input: Omit<CommitAgentProfileLifecycleInput, "activateState"> & {
@@ -136,6 +138,7 @@ describe("agent profile lifecycle kernel", () => {
 
   it("restores authority-only orphan state when create compensation runs", async () => {
     const root = temporaryWorkspace();
+    const original = configText(root); // t-a65335 — capture, then prove the file is never touched
     const authority = new MemoryAuthority();
     const orphan: AgentProfileAuthorityRecord = {
       schemaVersion: 1,
@@ -158,7 +161,7 @@ describe("agent profile lifecycle kernel", () => {
 
     expect(authority.records.get("claude")).toEqual(orphan);
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "claude", "agent.yml"))).toBe(false);
-    expect(configText(root)).toBe("agents: {}\n");
+    expect(configText(root)).toBe(original);
   });
 
   it("creates Grok authority with the measured private-home inspector", async () => {
@@ -295,6 +298,7 @@ describe("agent profile lifecycle kernel", () => {
 
   it("publishes digest-bound profile artifacts and compensates them with a failed create", async () => {
     const root = temporaryWorkspace();
+    const original = configText(root); // t-a65335
     const authority = new MemoryAuthority();
     const content = "Imported instructions\n";
     const artifact = { path: "instructions.md", text: content, sha256: sha256(content) };
@@ -313,7 +317,7 @@ describe("agent profile lifecycle kernel", () => {
     expect(authority.records.has("codex")).toBe(false);
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex", artifact.path))).toBe(false);
-    expect(configText(root)).toBe("agents: {}\n");
+    expect(configText(root)).toBe(original);
   });
 
   it("checks revisions under lock and preserves authority-owned grants during canonical edits", async () => {
@@ -431,7 +435,9 @@ describe("agent profile lifecycle kernel", () => {
     ["a legacy pointer block", "agents:\n  ghost:\n    profile: .tachyon/agents/ghost/agent.yml\n"],
   ])("t-ae221c: creates an agent even when the retired agents block is %s", async (_label, priorConfig) => {
     const root = temporaryWorkspace();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), priorConfig);
+    // t-a65335 — written RAW into .tachyon/settings.yml: whatever leftover `agents:` content the
+    // config file carries, the kernel treats it as inert bytes it never reads or rewrites.
+    fs.writeFileSync(path.join(root, ".tachyon", "settings.yml"), priorConfig, "utf8");
     const authority = new MemoryAuthority();
     // Fail-before: create used to write the pointer into this block, so a block it could not take —
     // and, for the third case, a name already in it — refused the whole create. The block is inert
@@ -523,7 +529,7 @@ describe("agent profile lifecycle kernel", () => {
     expect(fs.readdirSync(home)).toEqual(["notes.txt"]);
   });
 
-  it("sets canonical enablement without making it authorable in tachyon.yml", async () => {
+  it("sets canonical enablement without making it authorable in the workspace config", async () => { // t-a65335
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
     const created = await commitAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", operation: "create", createProfile: initialProfile, authority });

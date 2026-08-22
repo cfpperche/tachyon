@@ -5075,7 +5075,7 @@ export class Workspace {
     }
     const text = composed.yamlText;
     const { config, errors, warnings, discarded, profileErrors } = this.parseTrustedConfigText(text);
-    warnings.push(...composed.warnings);
+    for (const warning of composed.warnings) if (!warnings.includes(warning)) warnings.push(warning);
     // t-af6803 — a broken profile is ONE agent's problem. The loader keeps its actionable reason in
     // agentSources as `refused`; putting the same error into the FILE-wide configFailure slot marks
     // every healthy/running row `config invalid` and makes unrelated profiles unspawnable.

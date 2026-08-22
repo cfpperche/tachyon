@@ -377,13 +377,17 @@ function unquoteYamlScalar(raw) {
  * Understands the 2-space fixtures this lane actually copies; comments and blank
  * lines are skipped. Returns null when the key is absent.
  *
+ * t-a65335 — with `{ topLevel: true }` the text is a `.tachyon/settings.yml` (whose top level IS
+ * the settings mapping), so the path read is top-level `worktree.branch` with no `settings:` block.
+ *
  * @param {string} text
+ * @param {{ topLevel?: boolean }} [options]
  * @returns {string | null}
  */
-export function readWorktreeBranchTemplate(text) {
+export function readWorktreeBranchTemplate(text, { topLevel = false } = {}) {
   const lines = String(text).split(/\r?\n/);
-  let inSettings = false;
-  let settingsIndent = 0;
+  let inSettings = topLevel;
+  let settingsIndent = topLevel ? -1 : 0;
   let inWorktree = false;
   let worktreeIndent = 0;
   for (const line of lines) {
@@ -418,23 +422,27 @@ export function readWorktreeBranchTemplate(text) {
  * unless the fixture already set a non-empty template. Conservative on inline mappings
  * (`settings: {…}` / `worktree: {…}`): leave the file alone rather than emit invalid YAML.
  *
+ * t-a65335 — with `{ topLevel: true }` the text is a `.tachyon/settings.yml`, so the stamped path
+ * is top-level `worktree.branch` (no `settings:` wrapper is read or invented).
+ *
  * @param {string} text
+ * @param {{ topLevel?: boolean }} [options]
  * @returns {{ text: string, stamped: boolean, branch: string | null, skipped?: string }}
  */
-export function stampDevHostWorktreeBranch(text) {
-  const existing = readWorktreeBranchTemplate(text);
+export function stampDevHostWorktreeBranch(text, { topLevel = false } = {}) {
+  const existing = readWorktreeBranchTemplate(text, { topLevel });
   if (existing != null && existing.length > 0) {
     return { text, stamped: false, branch: existing };
   }
 
   const lines = String(text).split(/\r?\n/);
   let settingsIdx = -1;
-  let settingsIndent = 0;
+  let settingsIndent = topLevel ? -1 : 0;
   let settingsInline = "";
   let worktreeIdx = -1;
   let worktreeIndent = 0;
   let worktreeInline = "";
-  let inSettings = false;
+  let inSettings = topLevel;
   let inWorktree = false;
   for (let i = 0; i < lines.length; i++) {
     const parsed = parseYamlKeyLine(lines[i]);
@@ -479,15 +487,17 @@ export function stampDevHostWorktreeBranch(text) {
   } else {
     const body = [...lines];
     while (body.length && body[body.length - 1] === "") body.pop();
-    next = [...body, ...(body.length ? [""] : []), "settings:", ...worktreeBlock(2), ""];
+    next = topLevel
+      ? [...body, ...(body.length ? [""] : []), ...worktreeBlock(0), ""]
+      : [...body, ...(body.length ? [""] : []), "settings:", ...worktreeBlock(2), ""];
   }
   return { text: next.join("\n"), stamped: true, branch: DEV_HOST_WORKTREE_BRANCH };
 }
 
-/** Stamp a copied tachyon.yml in place. The tracked fixture source is never passed here. */
-export function stampDevHostWorktreeBranchFile(filePath) {
+/** Stamp a copied config file in place. The tracked fixture source is never passed here. */
+export function stampDevHostWorktreeBranchFile(filePath, options = {}) {
   const before = fs.readFileSync(filePath, "utf8");
-  const result = stampDevHostWorktreeBranch(before);
+  const result = stampDevHostWorktreeBranch(before, options);
   if (result.stamped) fs.writeFileSync(filePath, result.text, "utf8");
   return result;
 }
@@ -510,6 +520,12 @@ function mirrorFixtureEntry(fixtureDir, mirrorDir, name) {
   const dest = path.join(mirrorDir, name);
   if (name === ".tachyon" || name === ".codex" || name === ".claude") {
     fs.cpSync(src, dest, { recursive: true });
+    // t-a65335 — workspace config lives at .tachyon/settings.yml now; stamp the mirrored copy
+    // (top-level `worktree.branch`) exactly as the mirrored tachyon.yml used to be stamped.
+    if (name === ".tachyon") {
+      const settingsFile = path.join(dest, "settings.yml");
+      if (fs.existsSync(settingsFile)) stampDevHostWorktreeBranchFile(settingsFile, { topLevel: true });
+    }
     return;
   }
   if (name === "tachyon.yml" || name === ".mcp.json") {
@@ -1076,10 +1092,11 @@ export async function status(repoRoot, opts = {}) {
         if (fs.existsSync(tachyonDir) && fs.lstatSync(tachyonDir).isSymbolicLink()) {
           warnings.push(`multi-root folder ${entry.path}: .tachyon is a symlink (must be a real copy) — re-point`);
         }
-        // tachyon.yml is what makes a folder a Tachyon workspace at all; a root without one opens as
-        // an ordinary folder and the multi-root scenario silently tests less than it claims.
-        if (!fs.existsSync(path.join(abs, "tachyon.yml"))) {
-          warnings.push(`multi-root folder ${entry.path}: no tachyon.yml — that root is not a Tachyon workspace`);
+        // t-a65335 — .tachyon/settings.yml is what makes a folder a Tachyon workspace now (a legacy
+        // root tachyon.yml still counts: the engine migrates it on attach); a root with neither opens
+        // as an ordinary folder and the multi-root scenario silently tests less than it claims.
+        if (!fs.existsSync(path.join(abs, ".tachyon", "settings.yml")) && !fs.existsSync(path.join(abs, "tachyon.yml"))) {
+          warnings.push(`multi-root folder ${entry.path}: no .tachyon/settings.yml — that root is not a Tachyon workspace`);
         }
       }
     }

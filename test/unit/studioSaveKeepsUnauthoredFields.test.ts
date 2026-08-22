@@ -3,7 +3,9 @@ import { type AgentDef } from "@tachyon/engine/config/loadConfig.js";
 import { parseConfigFixture as parseConfig } from "../helpers/parseConfigFixture.js";
 import { upsertAgent } from "@tachyon/engine/config/YamlConfigEditor.js";
 import { fromTerminalDef, toTerminalEntry, type FormState } from "@tachyon/engine/webview/formLogic.js";
-import schema from "../../apps/vscode-extension/tachyon.schema.json";
+// t-a65335 — terminals are declaration files (.tachyon/terminals/<name>.yml) with their own schema,
+// whose TOP LEVEL is the entry mapping. tachyon.schema.json is the settings-file schema now.
+import terminalSchema from "../../apps/vscode-extension/tachyon-terminal.schema.json";
 import { canonicalAgentFields, serializeAgentPatch } from "@tachyon/webview-ui/webview/agent-studio-shell/domain.js";
 import {
   patchProfileFromStudioMutation,
@@ -131,11 +133,11 @@ const TERMINAL_PROBE_VALUES: Record<string, unknown> = {
   attention: { enabled: true, silenceSec: 30, patterns: ["waiting for approval"] },
 };
 
-/** Declared entry keys, read from the shipped schema rather than from a list in this file. */
+/** Declared entry keys, read from the shipped schema rather than from a list in this file.
+ *  t-a65335 — the shipped schema for a terminal entry is tachyon-terminal.schema.json, whose top
+ *  level IS the entry mapping (the declaration file's body). */
 function schemaEntryKeys(): string[] {
-  const entry = (schema as unknown as {
-    properties: { terminals: { additionalProperties: { properties: Record<string, unknown> } } };
-  }).properties.terminals.additionalProperties.properties;
+  const entry = (terminalSchema as unknown as { properties: Record<string, unknown> }).properties;
   return Object.keys(entry);
 }
 

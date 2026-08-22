@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
@@ -268,7 +269,7 @@ describe("DaemonEngineHost", () => {
 
   it("constructs the real Workspace composition without ExtensionContext or vscode", async () => {
     const f = fixture();
-    fs.writeFileSync(path.join(f.root, "tachyon.yml"), "agents: {}\nterminals:\n  test:\n    cmd: sh\n", "utf8");
+    writeWorkspaceConfig(f.root, "agents: {}\nterminals:\n  test:\n    cmd: sh\n");
     const tmux = new TmuxService(async () => ({ stdout: "", stderr: "" }));
     const ws = await createWorkspaceForTest(
       f.root,
@@ -285,7 +286,7 @@ describe("DaemonEngineHost", () => {
 
   it("watches a profile instruction file without treating it as a directory", async () => {
     const f = fixture();
-    fs.writeFileSync(path.join(f.root, "tachyon.yml"), "terminals: {}\n", "utf8");
+    writeWorkspaceConfig(f.root, "terminals: {}\n");
     const profileDir = path.join(f.root, ".tachyon", "agents", "claude");
     const instructionFile = path.join(profileDir, "instructions.md");
     fs.mkdirSync(profileDir, { recursive: true });
@@ -329,7 +330,7 @@ describe("DaemonEngineHost", () => {
 
   it("continues scanning a profile reference directory", async () => {
     const f = fixture();
-    fs.writeFileSync(path.join(f.root, "tachyon.yml"), "terminals: {}\n", "utf8");
+    writeWorkspaceConfig(f.root, "terminals: {}\n");
     const profileDir = path.join(f.root, ".tachyon", "agents", "claude");
     const capabilityDir = path.join(profileDir, "capabilities", "review");
     const capabilityFile = path.join(capabilityDir, "SKILL.md");

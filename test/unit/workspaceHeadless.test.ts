@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
@@ -286,7 +287,7 @@ function canonicalHost(
   settings: Record<string, unknown> = {},
 ): { host: SharedSecretHost; secrets: Map<string, string> } {
   const fixtures = agents.map((entry) => writeSavedAgent(root, entry.name, entry.spec ?? {}));
-  fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(fixtures) + extraYaml, "utf8");
+  writeWorkspaceConfig(root, savedAgentsYaml(fixtures) + extraYaml);
   const secrets = savedAgentSecrets(root, fixtures);
   return { host: new SharedSecretHost(mkdir(), secrets, settings), secrets };
 }
@@ -370,7 +371,7 @@ async function savedAgentStateWorkspace(
   // t-ae221c — the `agents:` block is written in full every time on purpose. It is retired: it can
   // no longer grant or withhold a roster row, and every fixture below proves that by producing its
   // state through the DIRECTORY while this block still names claude23.
-  fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(fixtures), "utf8");
+  writeWorkspaceConfig(root, savedAgentsYaml(fixtures));
   if (profileHidden) fs.rmSync(path.join(root, ".tachyon", "agents", "claude23"), { recursive: true, force: true });
   // The one way a roster row can still be withheld while the bytes stay: an `agent.yml` that is on
   // disk and cannot be read. A directory in its place is the deterministic version of that.
@@ -408,7 +409,7 @@ async function makeWorkspace(
   // host-custodied authority that attests it. `agents:` no longer accepts a definition.
   if (opts.canonical) {
     const fixtures = opts.canonical.map((entry) => writeSavedAgent(root, entry.name, entry.spec ?? {}));
-    fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(fixtures) + (opts.extraYaml ?? ""), "utf8");
+    writeWorkspaceConfig(root, savedAgentsYaml(fixtures) + (opts.extraYaml ?? ""));
     const host = new SharedSecretHost(mkdir(), savedAgentSecrets(root, fixtures));
     const fake = fakeTmux();
     const ws = await createWorkspaceForTest(root, { host, onViewsChanged }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
@@ -421,7 +422,7 @@ async function makeWorkspace(
   // does need `b` to be an agent asks for `bRuntime`, which declares it canonically.
   const terminals = `terminals:\n  a:\n    cmd: sh\n    autostart: true\n${opts.bRuntime ? "" : "  b:\n    cmd: sh\n"}`;
   const bAgent = opts.bRuntime ? [writeSavedAgent(root, "b", { runtime: opts.bRuntime })] : [];
-  fs.writeFileSync(path.join(root, "tachyon.yml"), opts.tachyonYaml ?? savedAgentsYaml(bAgent) + terminals, "utf8");
+  writeWorkspaceConfig(root, opts.tachyonYaml ?? savedAgentsYaml(bAgent) + terminals);
   const host = new SharedSecretHost(mkdir(), savedAgentSecrets(root, bAgent));
   const { tmux, sessions, sessionEnv, dead, sent, panes, calls } = fakeTmux();
   // SDD 368 T14/R4 — createForTest alone yields a ready empty snapshot; callers that need
@@ -561,7 +562,7 @@ it("discards an unreadable key on reload instead of taking the workspace down", 
   // is the whole owner decision of 2026-08-07, and this is where a reader will look for it.
   const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents: {}\nterminals:\n  dev:\n    cmd: npm run dev\n    restart: on-crash\n" });
   expect(ws.config?.agents.dev.restart).toBe("on-crash");
-  fs.writeFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "agents: {}\nterminals:\n  dev:\n    cmd: npm run dev\n    restart: sometimes\n", "utf8");
+  writeWorkspaceConfig(ws.workspaceRoot, "agents: {}\nterminals:\n  dev:\n    cmd: npm run dev\n    restart: sometimes\n");
 
   expect(ws.reloadConfig()).toBe(true);
   expect(ws.configFailure).toBeUndefined();
@@ -574,7 +575,7 @@ it("still retains the prior known-good config when the file cannot be read at al
   // not YAML leave nothing to salvage, so the reload is refused and the live config is untouched.
   const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents: {}\nterminals:\n  dev:\n    cmd: npm run dev\n    restart: on-crash\n" });
   expect(ws.config?.agents.dev.restart).toBe("on-crash");
-  fs.writeFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "terminals: [unclosed\n", "utf8");
+  writeWorkspaceConfig(ws.workspaceRoot, "terminals: [unclosed\n");
 
   expect(ws.reloadConfig()).toBe(false);
   expect(ws.configFailure?.errors[0]).toContain("invalid YAML");
@@ -586,7 +587,7 @@ it("still retains the prior known-good config when the file cannot be read at al
 it("t-af6803 isolates one invalid profile without invalidating or stopping the healthy fleet", async () => {
   const root = mkdir();
   const fixtures = [writeSavedAgent(root, "healthy"), writeSavedAgent(root, "broken")];
-  fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(fixtures), "utf8");
+  writeWorkspaceConfig(root, savedAgentsYaml(fixtures));
   const host = new SharedSecretHost(mkdir(), savedAgentSecrets(root, fixtures));
   const fake = fakeTmux();
   const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
@@ -623,10 +624,7 @@ it("loads a canonical agent profile only after host-custodied authority is avail
     displayName: "Reviewer",
   });
   fs.writeFileSync(path.join(profileDir, "agent.yml"), profile);
-  fs.writeFileSync(
-    path.join(root, "tachyon.yml"),
-    "agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\nsettings:\n  auth: false\n",
-  );
+  writeWorkspaceConfig(root, "agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\nsettings:\n  auth: false\n",);
   const secrets = new Map<string, string>();
   secrets.set(agentProfileAuthoritiesSecretKey(workspaceHash(root)), serializeAgentProfileAuthorityRegistry(new Map([
     ["codex", {
@@ -730,7 +728,7 @@ it("creates, edits and disables a canonical profile through the Workspace lifecy
   const homeDir = mkdir();
   fs.mkdirSync(path.join(homeDir, ".codex"));
   fs.writeFileSync(path.join(homeDir, ".codex", "config.toml"), 'model = "ambient-model"\n');
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  writeWorkspaceConfig(root, "agents: {}\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
   const fake = fakeTmux();
   const ws = await createWorkspaceForTest(
@@ -787,7 +785,7 @@ it("creates, edits and disables a canonical profile through the Workspace lifecy
 it("t-afc86e: an agent's setup commands survive a save that does not touch them", async () => {
   const root = mkdir();
   const homeDir = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  writeWorkspaceConfig(root, "agents: {}\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
   const ws = await createWorkspaceForTest(
     root,
@@ -870,7 +868,7 @@ it("t-afc86e: an agent's setup commands survive a save that does not touch them"
 it("t-d48775: persistent instructions written in Agent Studio survive a reload and reach the agent", async () => {
   const root = mkdir();
   const homeDir = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  writeWorkspaceConfig(root, "agents: {}\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
   const substrate = { tmux: fakeTmux().tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir };
   const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, substrate);
@@ -978,7 +976,7 @@ it("t-d48775: persistent instructions written in Agent Studio survive a reload a
 it("t-d48775: the Saved Agent creation door refuses instructions it cannot publish a document for", async () => {
   const root = mkdir();
   const homeDir = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  writeWorkspaceConfig(root, "agents: {}\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
   const ws = await createWorkspaceForTest(
     root,
@@ -1003,7 +1001,7 @@ it("t-d48775: the Saved Agent creation door refuses instructions it cannot publi
 it("t-204313: a changed declared document is withheld, reloads live, and remains repairable in Studio", async () => {
   const root = mkdir();
   const homeDir = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "settings:\n  auth: false\n");
+  writeWorkspaceConfig(root, "settings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
   const ws = await createWorkspaceForTest(
     root,
@@ -1066,9 +1064,10 @@ it("t-204313: a changed declared document is withheld, reloads live, and remains
     expect(repaired).toMatchObject({ kind: "snapshot", snapshot: { editable: { instructions: "human-approved replacement" } } });
     expect(repaired.kind === "snapshot" ? repaired.snapshot.bindings.withheldDocuments ?? [] : ["refused"]).toEqual([]);
 
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "settings: [invalid\n");
-    host.watches.find((watch) => watch.glob === "tachyon.{yml,yaml}")!.onEvent();
-    expect(ws.configFailure).toMatchObject({ file: "tachyon.yml" });
+    writeWorkspaceConfig(root, "settings: [invalid\n");
+    // t-a65335 — an unparseable workspace config surfaces from .tachyon/settings.yml, via its own watch.
+    host.watches.find((watch) => watch.glob === ".tachyon/settings.yml")!.onEvent();
+    expect(ws.configFailure).toMatchObject({ file: ".tachyon/settings.yml" });
   } finally {
     ws.dispose();
   }
@@ -1077,7 +1076,7 @@ it("t-204313: a changed declared document is withheld, reloads live, and remains
 it("creates and edits canonical Agent Studio profiles through a redacted CAS boundary", async () => {
   const root = mkdir();
   const homeDir = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  writeWorkspaceConfig(root, "agents: {}\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
   const ws = await createWorkspaceForTest(
     root,
@@ -1097,7 +1096,9 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
     });
     // t-ca9086: human-authorized Studio create writes enabled; start/autostart remain separate.
     expect(created.enabled).toBe(true);
-        expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).not.toContain("cmd:");
+    // t-a65335 — the workspace config is .tachyon/settings.yml; a Studio create still writes no
+    // roster entry into it (the profile home is the agent).
+    expect(fs.readFileSync(path.join(root, ".tachyon", "settings.yml"), "utf8")).not.toContain("cmd:");
 
     const edited = await ws.commitAgentProfileStudio({
       schemaVersion: 1,
@@ -1131,7 +1132,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
 it("runs canonical Agent Studio lifecycle actions with revision checks and explicit forget confirmation", async () => {
   const root = mkdir();
   const homeDir = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
+  writeWorkspaceConfig(root, "agents: {}\nterminals:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
   const ws = await createWorkspaceForTest(
     root,
     { host: new SharedSecretHost(mkdir(), new Map()), onViewsChanged: () => {} },
@@ -1211,7 +1212,7 @@ it("runs canonical Agent Studio lifecycle actions with revision checks and expli
 it("exports, imports and clones portable profiles through the Workspace boundary", async () => {
   const root = mkdir();
   const homeDir = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  writeWorkspaceConfig(root, "agents: {}\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
   const fake = fakeTmux();
   const ws = await createWorkspaceForTest(
@@ -1243,7 +1244,7 @@ it("exports, imports and clones portable profiles through the Workspace boundary
 it("renames a running canonical profile and keeps the same live session through the Workspace transaction boundary", async () => {
   const root = mkdir();
   const homeDir = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  writeWorkspaceConfig(root, "agents: {}\nsettings:\n  auth: false\n");
   const secrets = new Map<string, string>();
   const host = new SharedSecretHost(mkdir(), secrets);
   const fake = fakeTmux();
@@ -1280,7 +1281,7 @@ it("renames a running canonical profile and keeps the same live session through 
 it("forgets a stopped canonical profile while preserving its private runtime home", async () => {
   const root = mkdir();
   const homeDir = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
+  writeWorkspaceConfig(root, "agents: {}\nterminals:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
   const secrets = new Map<string, string>();
   const host = new SharedSecretHost(mkdir(), secrets);
   const fake = fakeTmux();
@@ -1419,14 +1420,18 @@ describe("SDD 494 Part 0 — Saved Agent removal actor x trigger", () => {
     }
   });
 
-  it("Human, text editor x edit tachyon.yml", async () => {
+  it("Human, text editor x edit workspace config", async () => {
+    // t-a65335 — tachyon.yml is retired and the legacy `agents:` block is dropped on projection:
+    // the workspace config (.tachyon/settings.yml) carries no roster row a text editor could
+    // remove. Membership IS the profile home, which an ordinary config edit never touches.
     const { root, ws } = await refusedSavedAgentWorkspace();
     try {
-      const file = path.join(root, "tachyon.yml");
+      const file = path.join(root, ".tachyon", "settings.yml");
       const text = fs.readFileSync(file, "utf8");
-      fs.writeFileSync(file, text.replace(/  claude23:\n    profile: .tachyon\/agents\/claude23\/agent.yml\n/u, ""));
-      expect(fs.readFileSync(file, "utf8")).not.toContain("claude23:");
+      expect(text).not.toContain("claude23");
+      fs.writeFileSync(file, `# hand edit\n${text}`);
       expect(fs.existsSync(path.join(root, ".tachyon", "agents", "claude23", "agent.yml"))).toBe(true);
+      expect(ws.isSavedAgentMember("claude23")).toBe(true);
     } finally {
       ws.dispose();
     }
@@ -1575,12 +1580,14 @@ describe("t-af4a5f — declared-terminal roster-row removal actor x trigger", ()
     }
   });
 
-  it("A4 Human or Agent, text editor x edit tachyon.yml", async () => {
+  it("A4 Human or Agent, text editor x delete .tachyon/terminals/b.yml", async () => {
     const { ws, root } = await terminalWithFootprint();
     try {
-      const file = path.join(root, "tachyon.yml");
-      fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("  b:\n    cmd: sh\n", ""));
-      expect(fs.readFileSync(file, "utf8")).not.toContain("  b:");
+      // t-a65335 — the roster row IS the declaration file now; the text-editor escape hatch is
+      // deleting it directly.
+      const file = path.join(root, ".tachyon", "terminals", "b.yml");
+      expect(fs.existsSync(file)).toBe(true);
+      fs.rmSync(file);
       // Nothing runs, by design — and the whole footprint stays. What the product owes this shape is
       // a name for it, which the sweep gives.
       expect(fs.existsSync(homeOf(root))).toBe(true);
@@ -1651,7 +1658,8 @@ describe("SDD 494 Part 4 — the five disagreement states", () => {
       expect(doorOf(report, "claude").state).toBe("consistent");
       // Read-only: the fixture is the acceptance fixture, and the tool must never be a removal door.
       expect(fs.existsSync(path.join(root, ".tachyon", "agents", "claude23", "agent.yml"))).toBe(true);
-      expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toContain("claude23:");
+      // t-a65335 — no root tachyon.yml exists to carry a roster row; the profile home above IS the row.
+      expect(fs.existsSync(path.join(root, "tachyon.yml"))).toBe(false);
       expect(ws.isSavedAgentMember("claude23")).toBe(true);
     } finally {
       ws.dispose();
@@ -1688,8 +1696,9 @@ describe("SDD 494 Part 4 — the five disagreement states", () => {
       expect(row.member).toBe(false);
       expect(row.facts).toEqual({ rosterRow: false, profileOnDisk: false, authorityRecord: true, projection: false, profileHomeOnDisk: false });
       expect(row.removal.door).toBeNull();
-      // The retired block still names it, and that changes nothing.
-      expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toContain("claude23:");
+      // t-a65335 — no config file is left to name it: the retired root tachyon.yml is gone, and the
+      // absent profile home IS the removal.
+      expect(fs.existsSync(path.join(root, "tachyon.yml"))).toBe(false);
       expect(ws.isSavedAgentMember("claude23")).toBe(false);
     } finally {
       ws.dispose();
@@ -1811,7 +1820,7 @@ describe("SDD 494 Part 4 — the five disagreement states", () => {
 it("refuses the bare canonical forget while a tmux binding exists, and plans the kill in the Studio door", async () => {
   const root = mkdir();
   const homeDir = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
+  writeWorkspaceConfig(root, "agents: {}\nterminals:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
   const fake = fakeTmux();
   const ws = await createWorkspaceForTest(
@@ -1890,7 +1899,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     // SDD 478 M7 — capture composition is a property of the Claude COMMAND LINE, and after the
     // legacy shim an authored command line belongs to a Temporary agent: `agents:` takes a Saved
     // profile pointer, whose runtime surface is typed selectors, not argv.
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n", "utf8");
+    writeWorkspaceConfig(root, "agents: {}\n");
     const host = new FakeHost(mkdir());
     const fake = fakeTmux();
     const requests: Array<{ workspaceRoot: string; agent: string; cwd: string; configHome?: string }> = [];
@@ -1932,7 +1941,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const root = mkdir();
     // SDD 478 M7 — see above: an explicit `--setting-sources` filter is argv, so the agent that
     // carries one is ad-hoc. A canonical profile has no way to express this flag at all.
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n", "utf8");
+    writeWorkspaceConfig(root, "agents: {}\n");
     const host = new FakeHost(mkdir());
     const fake = fakeTmux();
     const requests: unknown[] = [];
@@ -1961,7 +1970,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("t-d64332: a borrowed-provider spawn hands ANTHROPIC_BASE_URL into status-line capture", async () => {
     const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n", "utf8");
+    writeWorkspaceConfig(root, "agents: {}\n");
     const host = new FakeHost(mkdir());
     const fake = fakeTmux();
     const requests: Array<{
@@ -2034,7 +2043,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("recovers pending host-action reload only after the Bridge is ready", async () => {
     const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  idle:\n    cmd: sh\n", "utf8");
+    writeWorkspaceConfig(root, "agents: {}\nterminals:\n  idle:\n    cmd: sh\n");
     const storage = mkdir();
     const host = new FakeHost(storage);
     const hash = workspaceHash(root);
@@ -2062,9 +2071,9 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const auditLines = fs.readFileSync(path.join(storage, "host-actions", "audit.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
     expect(auditLines).toHaveLength(1);
     expect(auditLines[0].payload).toMatchObject({ kind: "outcome", actionId: "act-reload-recover", state: "reattached_verified" });
-    expect(host.notices.map((notice) => notice.message)).toContain(
-      "tachyon.yml: terminals: in tachyon.yml is legacy and continues to load; new declarations live at .tachyon/terminals/<name>.yml.",
-    );
+    // t-a65335 — the fixture's terminal is declared in its canonical home (.tachyon/terminals/), so
+    // the legacy-terminals warning is gone and recovery is notice-free again.
+    expect(host.notices).toEqual([]);
     ws.dispose();
   });
 
@@ -2474,7 +2483,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("restores persisted terminal tabs from Workspace.start after surviving tmux sessions are ready", async () => {
     const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n", "utf8");
+    writeWorkspaceConfig(root, "agents: {}\nterminals:\n  a:\n    cmd: sh\n");
     const host = new FakeHost(mkdir());
     const { tmux, sessions } = fakeTmux();
     const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
@@ -2661,7 +2670,7 @@ describe("Workspace — upgrade notice scoped to genuine stragglers (t-e5910c)",
 
   async function bootWithSurvivor(opts: { record: Record<string, unknown>; tachyonYaml?: string }) {
     const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), opts.tachyonYaml ?? "agents:\n  placeholder:\n    cmd: sh\n", "utf8");
+    writeWorkspaceConfig(root, opts.tachyonYaml ?? "agents:\n  placeholder:\n    cmd: sh\n");
     fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
     fs.writeFileSync(
       path.join(root, ".tachyon", "sessions.json"),
@@ -2986,7 +2995,9 @@ describe("Agent Studio — declaring ownership.subagents (t-4c113c)", () => {
 
   it("links the whole team in one transaction, touching no other profile and no YAML", async () => {
     const { ws } = await ownedFleet();
-    const yamlBefore = fs.readFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "utf8");
+    // t-a65335 — the workspace config is .tachyon/settings.yml now.
+    const configFile = path.join(ws.workspaceRoot, ".tachyon", "settings.yml");
+    const yamlBefore = fs.readFileSync(configFile, "utf8");
     const teamBefore = TEAM.map((name) => profileText(ws, name));
     expect(ws.config?.declaredOwner).toEqual({});
 
@@ -2997,9 +3008,9 @@ describe("Agent Studio — declaring ownership.subagents (t-4c113c)", () => {
     expect(ws.config?.declaredOwner).toEqual(Object.fromEntries(TEAM.map((name) => [name, OWNER])));
     expect(asAgent(ws.config?.agents[OWNER])?.subagents).toEqual(TEAM);
     expect(parseYaml(profileText(ws, OWNER)).ownership).toEqual({ subagents: TEAM });
-    // Nothing outside the owner's own profile was written — not the children, not tachyon.yml.
+    // Nothing outside the owner's own profile was written — not the children, not the settings file.
     expect(TEAM.map((name) => profileText(ws, name))).toEqual(teamBefore);
-    expect(fs.readFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "utf8")).toBe(yamlBefore);
+    expect(fs.readFileSync(configFile, "utf8")).toBe(yamlBefore);
     ws.dispose();
   });
 
@@ -3362,10 +3373,7 @@ it("t-d06da3/t-d29398: a launch that fails after `git worktree add` discards the
   const root = gitRepoWorkspace();
   const homeDir = mkdir();
   const worktreeBase = mkdir();
-  fs.writeFileSync(
-    path.join(root, "tachyon.yml"),
-    `agents: {}\nsettings:\n  auth: false\n  worktree:\n    base: ${worktreeBase}\n`,
-  );
+  writeWorkspaceConfig(root, `agents: {}\nsettings:\n  auth: false\n  worktree:\n    base: ${worktreeBase}\n`,);
   const host = new SharedSecretHost(mkdir(), new Map());
   // The failure: tmux refuses to create the session. That lands AFTER cwd resolution, which is where
   // a real launch spends most of its fallible steps, and it is the shape every one of them shares.
@@ -3423,10 +3431,7 @@ it("t-d29398: a failed launch preserves — and keeps registered — a checkout 
   const root = gitRepoWorkspace();
   const homeDir = mkdir();
   const worktreeBase = mkdir();
-  fs.writeFileSync(
-    path.join(root, "tachyon.yml"),
-    `agents: {}\nsettings:\n  auth: false\n  worktree:\n    base: ${worktreeBase}\n`,
-  );
+  writeWorkspaceConfig(root, `agents: {}\nsettings:\n  auth: false\n  worktree:\n    base: ${worktreeBase}\n`,);
   const host = new SharedSecretHost(mkdir(), new Map());
   // Someone writes into the fresh checkout before the launch fails. `worktreeSetup` is the realistic
   // author; the point under test is git's refusal, so the file is written by the failing step itself.

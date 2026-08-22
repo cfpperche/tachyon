@@ -25,6 +25,7 @@
  * open. Read the DEFECT marks below as "this door is still measured open", not as "this is unfixed
  * prose": the day t-5313dc lands, the reachability assertions go red and this file is the proof.
  */
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import net from "node:net";
@@ -276,7 +277,7 @@ async function startDaemon(): Promise<Daemon> {
   for (const directory of [workspaceRoot, storageRoot, mediaRoot, runtimeRoot, tmuxTmp, xdgRuntime]) {
     fs.mkdirSync(directory, { mode: 0o700 });
   }
-  fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), "agents: {}\n", "utf8");
+  writeWorkspaceConfig(workspaceRoot, "agents: {}\n");
   // t-70fda0 / t-93ec7f — never let the live fleet's identity reach a daemon fixture.
   const childEnv = isolatedDaemonChildEnv(tmuxChildEnv(), {
     TMUX_TMPDIR: tmuxTmp,

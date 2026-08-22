@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -69,7 +70,7 @@ describe("PollingFileWatcher", () => {
 
   it("coalesces bursts of native hints into one authoritative scan", async () => {
     const root = fixture();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n");
+    writeWorkspaceConfig(root, "agents: {}\n");
     const watcher = new PollingFileWatcher(root, "tachyon.{yml,yaml}", { change: true }, () => {}, {
       intervalMs: 1_000,
       nativeDebounceMs: 10,

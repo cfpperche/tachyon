@@ -22,6 +22,7 @@ import { parseLockfile } from "@tachyon/engine/plugins/lockfile.js";
 import { annotateAuthorized, listAuthorizableCapabilities } from "@tachyon/engine/config/agentCapabilityCandidates.js";
 import { authorizedSkillStates, skillOriginFor } from "@tachyon/engine/config/agentSkillAuthorizationService.js";
 import { inspectCapabilitySourceAtRoot } from "@tachyon/engine/config/agentCapabilitySource.js";
+import { composeWorkspaceConfigText } from "@tachyon/engine/config/workspaceSettingsFile.js";
 import { loadProfileAwareConfig } from "@tachyon/engine/config/agentProfileConfigLoader.js";
 import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "@tachyon/engine/config/agentProfileProjection.js";
 import type { AgentProfileAuthorityRecord } from "@tachyon/engine/config/agentProfileAuthority.js";
@@ -112,7 +113,10 @@ describe("agent-capability-reauth fixture (t-4a2a6f)", () => {
 
   it("walks Authorize -> Authorized -> Reauthorize, and leaves the control alone", () => {
     const root = mirror("agent-capability-reauth");
-    expect(parseConfig(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).errors).toEqual([]);
+    // t-a65335 — the fixture's workspace config composes from .tachyon/settings.yml + declarations.
+    const composed = composeWorkspaceConfigText(root);
+    expect(composed.errors).toEqual([]);
+    expect(parseConfig(composed.yamlText).errors).toEqual([]);
     expect(parseLockfile(fs.readFileSync(path.join(root, ".tachyon/plugins.lock.json"), "utf8")).errors).toEqual([]);
     for (const name of ["demo-stable", "demo-drifty"]) {
       expect(skillOriginFor(root, name, "claude")).toMatchObject({ kind: "plugin", plugin: name });

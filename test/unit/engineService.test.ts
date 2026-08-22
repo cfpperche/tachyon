@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
@@ -120,7 +121,7 @@ describe("daemon engine service", () => {
     for (const directory of [workspaceRoot, storageRoot, mediaRoot, runtimeRoot, tmuxTmp, xdgRuntime]) {
       fs.mkdirSync(directory, { mode: 0o700 });
     }
-    fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), "settings: {}\n", "utf8");
+    writeWorkspaceConfig(workspaceRoot, "settings: {}\n");
     const profileDir = path.join(workspaceRoot, ".tachyon", "agents", "claude");
     fs.mkdirSync(profileDir, { recursive: true, mode: 0o700 });
     const instructions = "Use evidence.\n";
@@ -216,8 +217,20 @@ describe("daemon engine service", () => {
     );
     childEnv.PATH = `${testBin}:${childEnv.PATH ?? process.env.PATH ?? ""}`;
     const isolatedTmux = new TmuxService(tmuxExecutorForEnv(childEnv));
-    const configPath = path.join(workspaceRoot, "tachyon.yml");
-    fs.writeFileSync(configPath, "agents: {}\nterminals:\n  bootstrap:\n    cmd: sh\nsettings:\n  delivery:\n    mode: legacy\n    handoffSafety: disabled\n", "utf8");
+    // t-a65335 — the workspace config lives in the new homes (.tachyon/settings.yml + declaration
+    // files); the helper projects this legacy-style document into them.
+    writeWorkspaceConfig(workspaceRoot, "agents: {}\nterminals:\n  bootstrap:\n    cmd: sh\nsettings:\n  delivery:\n    mode: legacy\n    handoffSafety: disabled\n");
+    const configState = (): Record<string, string> => {
+      const state: Record<string, string> = {
+        "settings.yml": fs.readFileSync(path.join(workspaceRoot, ".tachyon", "settings.yml"), "utf8"),
+      };
+      for (const dir of ["terminals", "schedules"]) {
+        const abs = path.join(workspaceRoot, ".tachyon", dir);
+        if (!fs.existsSync(abs)) continue;
+        for (const file of fs.readdirSync(abs).sort()) state[`${dir}/${file}`] = fs.readFileSync(path.join(abs, file), "utf8");
+      }
+      return state;
+    };
     const promptBody = "printf 'prompt-once\\n' >> .tachyon-prompt-proof";
     const promptSha256 = createHash("sha256").update(promptBody, "utf8").digest("hex");
     const promptDir = path.join(workspaceRoot, ".tachyon", "prompts");
@@ -719,7 +732,7 @@ describe("daemon engine service", () => {
     const closedBoard = await first.query({ schemaVersion: 1, method: "task.board", input: { liveTemporaryAgents: [] } });
     expect(closedBoard).toMatchObject({ status: "ok", view: { board: { validations: { pendingCount: 0, items: [] } } } });
 
-    const beforeInvalidStudio = fs.readFileSync(configPath, "utf8");
+    const beforeInvalidStudio = configState(); // t-a65335 — the whole declared state, not one file
     const invalidStudio = await first.invoke("operation-studio-invalid-0001", {
       schemaVersion: 1,
       method: "studio.submit",
@@ -728,7 +741,7 @@ describe("daemon engine service", () => {
     expect(invalidStudio).toMatchObject({ method: "studio.submit", status: "ok", truncated: false });
     if (invalidStudio.method !== "studio.submit" || invalidStudio.status !== "ok") throw new Error("unexpected Studio result");
     expect(invalidStudio.errors).toEqual([expect.stringMatching(/name/i)]);
-    expect(fs.readFileSync(configPath, "utf8")).toBe(beforeInvalidStudio);
+    expect(configState()).toEqual(beforeInvalidStudio);
 
     const createStudioCommand = {
       schemaVersion: 1 as const,
@@ -738,7 +751,8 @@ describe("daemon engine service", () => {
     const createdStudio = await first.invoke("operation-studio-create-0001", createStudioCommand);
     expectOk(createdStudio, "studio.submit", { errors: [], truncated: false });
     expect(await first.invoke("operation-studio-create-0001", createStudioCommand)).toEqual(createdStudio);
-    expect(fs.readFileSync(configPath, "utf8")).toContain("lint:");
+    // t-a65335 — a schedule persists as its own declaration file: name = filename, body = the def.
+    expect(fs.readFileSync(path.join(workspaceRoot, ".tachyon", "schedules", "lint.yml"), "utf8")).toContain("worker");
     await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "schedules");
     expect(await first.snapshot()).toMatchObject({
       projections: { agents: { items: [{ name: "worker", running: false }] } },

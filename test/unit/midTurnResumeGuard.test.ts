@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
@@ -128,11 +129,7 @@ useDisposableRuntimeAuth(["claude"]);
 async function makeWorkspace() {
   const root = mkdir("mid-turn-guard-");
   const fixtures = [writeSavedAgent(root, "worker", { runtime: "claude" })];
-  fs.writeFileSync(
-    path.join(root, "tachyon.yml"),
-    savedAgentsYaml(fixtures) + "terminals:\n  dev:\n    cmd: sh\n",
-    "utf8",
-  );
+  writeWorkspaceConfig(root, savedAgentsYaml(fixtures) + "terminals:\n  dev:\n    cmd: sh\n");
   const host = new FakeHost(mkdir("mid-turn-guard-storage-"), savedAgentSecrets(root, fixtures));
   const fake = fakeTmux();
   const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });

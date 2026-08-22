@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -20,7 +21,7 @@ const roots: string[] = [];
 function temporaryWorkspace(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-profile-forget-"));
   roots.push(root);
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  keeper:\n    cmd: sh\n");
+  writeWorkspaceConfig(root, "agents:\n  keeper:\n    cmd: sh\n");
   return root;
 }
 

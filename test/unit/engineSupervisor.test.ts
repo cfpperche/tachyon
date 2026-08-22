@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
@@ -905,13 +906,13 @@ function workspaceFixture(): {
   const storage = path.join(root, "state");
   const runtime = path.join(root, "runtime");
   for (const directory of [workspace, storage, runtime]) fs.mkdirSync(directory, { mode: 0o700 });
-  fs.writeFileSync(path.join(workspace, "tachyon.yml"), [
+  writeWorkspaceConfig(workspace, [
     "agents:",
     "  worker:",
     "    cmd: sh",
     "    autostart: false",
     "",
-  ].join("\n"), "utf8");
+  ].join("\n"));
   return {
     root,
     workspace,

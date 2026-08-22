@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -39,7 +40,7 @@ function fixture(options: { folders?: string[]; workspace?: unknown; name?: stri
   for (const folder of options.folders ?? ["alpha", "beta"]) {
     const root = path.join(dir, folder);
     fs.mkdirSync(path.join(root, ".tachyon", "tasks"), { recursive: true });
-    fs.writeFileSync(path.join(root, "tachyon.yml"), `agents:\n  ${folder}:\n    cmd: sh\n`);
+    writeWorkspaceConfig(root, `agents:\n  ${folder}:\n    cmd: sh\n`);
     fs.writeFileSync(path.join(root, ".tachyon", "tasks", "t-000001.json"), "{}\n");
     fs.writeFileSync(path.join(root, "README.md"), `# ${folder}\n`);
   }
@@ -58,7 +59,7 @@ describe("detecting a multi-root fixture", () => {
 
   it("says a plain fixture is not one", () => {
     const dir = tmp();
-    fs.writeFileSync(path.join(dir, "tachyon.yml"), "agents: {}\n");
+    writeWorkspaceConfig(dir, "agents: {}\n");
     expect(detectMultiRootFixture(dir)).toBeNull();
   });
 
@@ -123,25 +124,30 @@ describe("materializing the multi-root mirror", () => {
     const { mirror } = materialize();
     for (const folder of ["alpha", "beta"]) {
       const root = path.join(mirror, folder);
-      // tachyon.yml: a real file. The engine opens authoritative config no-follow, so a symlink fails
-      // closed with ELOOP during a real Studio save.
-      expect(fs.lstatSync(path.join(root, "tachyon.yml")).isSymbolicLink()).toBe(false);
+      // t-a65335 — .tachyon/settings.yml is the workspace config now: a real file inside a real
+      // .tachyon copy. The engine opens authoritative config no-follow, so a symlink fails closed
+      // with ELOOP during a real Studio save.
+      expect(fs.lstatSync(path.join(root, ".tachyon", "settings.yml")).isSymbolicLink()).toBe(false);
       // .tachyon: a real directory. AgentManager fails closed when it resolves outside the workspace.
       expect(fs.lstatSync(path.join(root, ".tachyon")).isSymbolicLink()).toBe(false);
       expect(fs.existsSync(path.join(root, ".tachyon", "tasks", "t-000001.json"))).toBe(true);
       // everything else stays a symlink so Explorer still shows the fixture's files
       expect(fs.lstatSync(path.join(root, "README.md")).isSymbolicLink()).toBe(true);
       // t-dc9cb0 — same stamp as a single-root mirror, per root, so Git Graph names stay distinct.
-      expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toContain("branch: tachyon/dev-host/{agent}");
+      // t-a65335 — the stamp lands in the settings file, at top-level `worktree.branch`.
+      expect(fs.readFileSync(path.join(root, ".tachyon", "settings.yml"), "utf8")).toContain("branch: tachyon/dev-host/{agent}");
     }
   });
 
   it("keeps a dogfood mutation inside the mirror, never in the tracked fixture", () => {
     // The whole reason config is copied rather than linked: this is what a dogfooder does.
+    // t-a65335 — the config a dogfooder mutates is .tachyon/settings.yml.
     const { mirror, fixtureDir } = materialize();
-    fs.writeFileSync(path.join(mirror, "alpha", "tachyon.yml"), "agents:\n  mutated:\n    cmd: sh\n");
-    expect(fs.readFileSync(path.join(fixtureDir, "alpha", "tachyon.yml"), "utf8")).toContain("alpha:");
-    expect(fs.readFileSync(path.join(fixtureDir, "alpha", "tachyon.yml"), "utf8")).not.toContain("mutated");
+    const settingsRel = path.join(".tachyon", "settings.yml");
+    const before = fs.readFileSync(path.join(fixtureDir, "alpha", settingsRel), "utf8");
+    expect(before).not.toContain("maxAgents: 9");
+    fs.writeFileSync(path.join(mirror, "alpha", settingsRel), "maxAgents: 9\n");
+    expect(fs.readFileSync(path.join(fixtureDir, "alpha", settingsRel), "utf8")).toBe(before);
   });
 
   it("records provenance for the whole mirror AND for each root", () => {

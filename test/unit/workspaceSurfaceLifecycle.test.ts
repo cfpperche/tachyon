@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
@@ -118,7 +119,7 @@ async function makeWorkspace() {
   // SDD 478 M7 — these cases are about the editor SURFACE, which the boundary marks shared: a
   // supervised process has one exactly like an agent does. `cmd: sh` is a terminal, so it is
   // declared as one instead of riding the retired inline-agents shim.
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  worker:\n    cmd: sh\n", "utf8");
+  writeWorkspaceConfig(root, "agents: {}\nterminals:\n  worker:\n    cmd: sh\n");
   const host = new FakeHost(mkdir());
   const fake = fakeTmux();
   const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });

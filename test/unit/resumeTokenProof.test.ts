@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, afterEach } from "vitest";
@@ -160,7 +161,7 @@ describe("resume env integration proof (spec 351 T6)", () => {
     // SDD 478 M7 — the token under proof is an AGENT's, so the agent is declared as one: a
     // canonical profile plus the host-custodied authority that attests it.
     const canonical = [writeSavedAgent(root, "claude", { runtime: "claude" })];
-    fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(canonical), "utf8");
+    writeWorkspaceConfig(root, savedAgentsYaml(canonical));
     const stateMap = new Map<string, unknown>();
     const secretsMap = new Map<string, string>(savedAgentSecrets(root, canonical));
     const host = new SharedHost(mkdir(), stateMap, secretsMap);
@@ -194,7 +195,7 @@ describe("resume env integration proof (spec 351 T6)", () => {
   it("stale-pane case: a tmux session surviving an extension-host reload keeps its PRE-reload token valid (does not silently strand)", async () => {
     const root = mkdir();
     const canonical = [writeSavedAgent(root, "claude", { runtime: "claude" })];
-    fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(canonical), "utf8");
+    writeWorkspaceConfig(root, savedAgentsYaml(canonical));
     const stateMap = new Map<string, unknown>(); // shared across "reload" — simulates the SAME machine's workspaceState
     // shared across "reload" — simulates the SAME machine's SecretStorage, including the agent authority
     const secretsMap = new Map<string, string>(savedAgentSecrets(root, canonical));

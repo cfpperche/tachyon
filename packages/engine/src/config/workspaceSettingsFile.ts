@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseDocument, stringify } from "yaml";
 import { scanScheduleDeclarations, upsertScheduleDeclaration } from "./scheduleDeclarations.js";
+import { scanTerminalDeclarations } from "./terminalDeclarations.js";
 import { upsertTerminalDeclaration } from "./terminalDeclarations.js";
 
 /**
@@ -69,8 +70,14 @@ export function composeWorkspaceConfigText(workspaceRoot: string, overrides: Com
   warnings.push(...schedules.warnings);
   const declarations = { ...schedules.declarations };
   if (overrides.schedule) declarations[overrides.schedule.name] = overrides.schedule.def;
+  // Terminals ride in the composed document too, so a syntax-only consumer (the editor-side Studio
+  // read) sees the same workspace the engine does. The engine loader re-injects the same scan over
+  // these keys — identical data, idempotent.
+  const terminals = scanTerminalDeclarations(workspaceRoot);
+  warnings.push(...terminals.warnings);
   const document: Record<string, unknown> = {};
   if (settings !== undefined) document.settings = settings;
+  if (Object.keys(terminals.declarations).length > 0) document.terminals = terminals.declarations;
   if (Object.keys(declarations).length > 0) document.schedules = declarations;
   return { yamlText: stringify(document), warnings, errors };
 }

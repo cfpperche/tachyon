@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -28,7 +29,7 @@ afterEach(() => {
 function workspace(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-proposal-bridge-"));
   dirs.push(dir);
-  fs.writeFileSync(path.join(dir, "tachyon.yml"), "agents:\n  boss:\n    cmd: claude\n", "utf8");
+  writeWorkspaceConfig(dir, "agents:\n  boss:\n    cmd: claude\n");
   return dir;
 }
 
@@ -188,10 +189,12 @@ describe("propose_saved_agent (SDD 482 phase 4B)", () => {
   it("still creates nothing: no profile, no roster entry, no authority", async () => {
     const root = workspace();
     profile(root, "claude-runtime", { proposeSavedAgent: true });
-    const configBefore = fs.readFileSync(path.join(root, "tachyon.yml"), "utf8");
+    // t-a65335 — the workspace config is .tachyon/settings.yml now.
+    const configFile = path.join(root, ".tachyon", "settings.yml");
+    const configBefore = fs.readFileSync(configFile, "utf8");
     await harness(root, { kind: "agent", name: "claude-runtime" }).call("propose_saved_agent", PROPOSAL);
 
-    expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toBe(configBefore);
+    expect(fs.readFileSync(configFile, "utf8")).toBe(configBefore);
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "importer"))).toBe(false);
     // …and the proposed agent has no grant to read, because it has no profile to read it from.
     expect(readAgentProfileGrants(root, "importer")).toBeUndefined();
