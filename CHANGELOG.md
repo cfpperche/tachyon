@@ -4,6 +4,36 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.38 — autorizar um plugin deixa de ser uma porta só de ida
+
+Autorizar o `agent-browser` num agente Codex deixava o agente **sem lançar e sem resumir**, e a tela
+não oferecia nenhum caminho de volta. Duas falhas somadas, e a segunda é o que transformava a
+primeira em armadilha.
+
+### A recusa estava certa — o momento é que estava errado
+
+As skills de um agente Codex são projetadas em `<cwd>/.agents/skills`. Com o worktree desligado esse
+`cwd` **é a raiz do workspace** — onde esse diretório pertence ao instalador de plugins e guarda o
+roster inteiro. Projetar ali apagaria todos os plugins instalados, então o launch recusa. Isso é
+correto e deliberado.
+
+O problema era descobrir isso tarde: o Agent Studio aceitava a concessão, salvava, e a
+incompatibilidade só aparecia no lançamento seguinte — quando o agente já estava inutilizável. Agora
+a mesma condição é verificada **onde a escolha é feita**, e a mensagem diz a saída: dar um worktree
+ao agente. Com worktree, a concessão é normal; outros runtimes não são afetados, porque a colisão é
+da projeção do Codex.
+
+### E o que foi concedido pode ser retirado
+
+Um plugin autorizado terminava num rótulo morto — "Authorized" e nada mais. Como o perfil de um
+agente é atestado, editar o arquivo à mão arrisca recusar o agente inteiro, então uma autorização
+feita por engano era, na prática, permanente.
+
+O botão **Revoke** agora fica ao lado, e retira as referências que o plugin concedeu junto com a
+seleção que dependia delas. O mecanismo já existia por dentro — revogar uma skill, ou revogar um
+plugin de todos os agentes quando ele é desinstalado; o que faltava era poder retirar **um plugin de
+um agente**, que é exatamente o gesto que a tela oferecia só na ida.
+
 ## 0.93.37 — a ponte de migração do tachyon.yml é retirada
 
 A 0.93.30 aposentou o `tachyon.yml` e deixou uma ponte: na primeira carga, um arquivo legado era
