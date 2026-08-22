@@ -549,6 +549,38 @@
               "description": "Consecutive failures that open the circuit."
             }
           }
+        },
+        "stateBackup": {
+          "type": "object",
+          "description": "Opt-in off-machine backup of the durable runtime state (Board tasks, pins, validations, evidence, continuity, handoff, studies, runs, agent identity, tachyon.yml). Local state stays primary; the destination is a one-way replica. Omit the block and nothing ever leaves the machine.",
+          "additionalProperties": false,
+          "required": [
+            "backend",
+            "path"
+          ],
+          "properties": {
+            "backend": {
+              "type": "string",
+              "enum": [
+                "filesystem"
+              ],
+              "description": "Backup destination kind. 'filesystem' is any locally-mounted path (NAS, SMB, external disk). s3-compatible and gdrive are planned."
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Destination directory for backup generations."
+            },
+            "every": {
+              "type": "string",
+              "description": "Backup interval like '10m' or '1h'. Default 10m."
+            },
+            "keep": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "How many backup generations to keep at the destination. Default 30."
+            }
+          }
         }
       }
     },

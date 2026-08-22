@@ -12,6 +12,8 @@ import { subtreeCpuTicks } from "@tachyon/engine/attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import type { TmuxServerSnapshot } from "@tachyon/webview-ui/inspector/model";
 import { asAgent, CONFIG_FILENAMES, loadConfigFile } from "@tachyon/engine/config/loadConfig.js";
+import { FilesystemBackupAdapter } from "@tachyon/engine/statesync/adapter.js";
+import { listGenerationIds, readGenerationManifest, runRestore } from "@tachyon/engine/statesync/backup.js";
 import { scheduleEntryLine, setSettingsValue } from "@tachyon/engine/config/YamlConfigEditor.js";
 import { type InspectorDeps } from "./webview/ServerInspector.js";
 import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
@@ -4555,6 +4557,80 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       await vscode.env.clipboard.writeText(tokenResult.token);
       notify(vscode.l10n.t("Bridge token copied — export it as TACHYON_BRIDGE_TOKEN for external agents"));
+    }),
+    // t-5786bc — the disaster-recovery surface: repopulate a FRESH checkout's durable state
+    // (Board, pins, continuity, handoff, tachyon.yml) from a stateBackup destination. Deliberately
+    // self-contained: it must work with no engine running and no tachyon.yml present, because that
+    // is exactly the state a destroyed workspace is in.
+    vscode.commands.registerCommand("tachyon.restoreStateBackup", async () => {
+      const folders = vscode.workspace.workspaceFolders ?? [];
+      if (folders.length === 0) {
+        void vscode.window.showErrorMessage(vscode.l10n.t("Open the workspace folder to restore into first."));
+        return;
+      }
+      const target =
+        folders.length === 1
+          ? folders[0]
+          : await vscode.window.showWorkspaceFolderPick({ placeHolder: vscode.l10n.t("Workspace folder to restore into") });
+      if (!target) return;
+
+      const picked = await vscode.window.showOpenDialog({
+        canSelectFiles: false,
+        canSelectFolders: true,
+        canSelectMany: false,
+        openLabel: vscode.l10n.t("Use backup folder"),
+        title: vscode.l10n.t("Select the state backup destination folder"),
+      });
+      const source = picked?.[0]?.fsPath;
+      if (!source) return;
+
+      try {
+        const adapter = new FilesystemBackupAdapter(source);
+        const ids = await listGenerationIds(adapter);
+        if (ids.length === 0) {
+          void vscode.window.showErrorMessage(vscode.l10n.t("No backup generations found in {0}", source));
+          return;
+        }
+        const latest = (await readGenerationManifest(adapter))?.id;
+        const pickedGen = await vscode.window.showQuickPick(
+          [...ids].reverse().map((id) => ({
+            label: id,
+            description: id === latest ? vscode.l10n.t("latest") : undefined,
+          })),
+          { placeHolder: vscode.l10n.t("Backup generation to restore (newest first)") },
+        );
+        if (!pickedGen) return;
+        const manifest = await readGenerationManifest(adapter, pickedGen.label);
+        if (!manifest) {
+          void vscode.window.showErrorMessage(vscode.l10n.t("Backup generation {0} is missing its manifest", pickedGen.label));
+          return;
+        }
+        const confirm = await vscode.window.showWarningMessage(
+          vscode.l10n.t("Restore {0} file(s) from {1} into {2}?", manifest.files.length, manifest.createdAt, target.uri.fsPath),
+          { modal: true },
+          vscode.l10n.t("Restore"),
+        );
+        if (confirm === undefined) return;
+
+        let stats;
+        try {
+          stats = await runRestore(target.uri.fsPath, adapter, { generationId: manifest.id });
+        } catch (error) {
+          if (!(error instanceof Error) || !error.message.includes("would overwrite")) throw error;
+          const force = await vscode.window.showWarningMessage(
+            vscode.l10n.t("{0} Overwrite them with the backup's copies?", error.message),
+            { modal: true },
+            vscode.l10n.t("Overwrite"),
+          );
+          if (force === undefined) return;
+          stats = await runRestore(target.uri.fsPath, adapter, { generationId: manifest.id, force: true });
+        }
+        notify(vscode.l10n.t("Restored {0} file(s) from backup generation {1}. Reload the window so Tachyon picks the state up.", stats.files, stats.generationId));
+      } catch (error) {
+        void vscode.window.showErrorMessage(
+          vscode.l10n.t("State restore failed: {0}", error instanceof Error ? error.message : String(error)),
+        );
+      }
     }),
     vscode.commands.registerCommand("tachyon.copyBridgeUrl", async (hash?: string) => {
       const ws = byHash(hash) ?? (await pickWorkspace());

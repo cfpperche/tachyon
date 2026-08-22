@@ -70,6 +70,11 @@ settings:
   #
   # Gitignored files/directories that need an independent copy in each worktree belong in the
   # repo-root .worktreeinclude (literal paths only), for example `.env` or `.vscode/settings.json`.
+  # stateBackup:                  # opt-in: replicate durable state (Board, pins, continuity,
+  #   backend: filesystem         #   handoff, tachyon.yml) to an off-machine disk. Local state
+  #   path: /mnt/nas/tachyon-bkp  #   stays primary; this is a one-way backup, never an authority.
+  #   every: 10m                  #   (default 10m)
+  #   keep: 30                    #   generations kept at the destination (default 30)
   # maxAgents: 8                  # fork-bomb guardrail (default 8)
   # agentMemoryMax: "2G"          # opt-in systemd --user MemoryMax per agent spawn tree (Linux only)
   # taskNotifications:            # human-facing toasts for task create/edit events

@@ -543,6 +543,12 @@ export interface TachyonConfig {
     /** spec 245 — project handoff: canonical file path (RELATIVE to workspace root, default .tachyon/HANDOFF.md)
      *  + the append-note nudge cadence (`off` | an interval like `30m`/`1h`; default `30m`, throttled per-workspace). */
     handoff?: { path?: string; nudgeEvery?: string };
+    /**
+     * t-5786bc — opt-in off-machine backup of the durable runtime state (Board, pins, continuity,
+     * handoff, tachyon.yml — the statesync manifest). Local state stays primary; the destination is
+     * a one-way replica. Absent = nothing ever leaves the machine.
+     */
+    stateBackup?: { backend: "filesystem"; path: string; every?: string; keep?: number };
     // t-7bcba6 — settings.persistence (silentHooks kill switch) removed. Silent hooks are always
     // the supported path for eligible agents; obsolete keys are rejected at parse time.
     /**
@@ -635,7 +641,7 @@ export const KNOWN_SETTINGS_KEYS = [
   "maxAgents", "checklist", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree",
   "projectGuidance", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection",
   "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind",
-  "gitDelivery", "delivery", "taskNotifications", "humanInbox", "agentNotifications",
+  "gitDelivery", "delivery", "taskNotifications", "humanInbox", "agentNotifications", "stateBackup",
 ] as const;
 
 /**
@@ -1747,6 +1753,30 @@ export function parseConfig(yamlText: string, options: ParseConfigOptions = {}):
           }
           if (Object.keys(h).length > 0) settings.handoff = h;
           for (const key of Object.keys(ho)) if (key !== "path" && key !== "nudgeEvery") discarded.push(`settings.handoff: unknown key '${key}'`);
+        }
+      }
+      // t-5786bc — opt-in durable-state backup. Invalid input discards the WHOLE block: a half-read
+      // backup destination silently pointed somewhere unintended is worse than no backup at all.
+      if (raw.settings.stateBackup !== undefined) {
+        if (!isPlainObject(raw.settings.stateBackup)) {
+          discarded.push("settings.stateBackup: must be a mapping with 'backend' and 'path'");
+        } else {
+          const sb = raw.settings.stateBackup;
+          const problems: string[] = [];
+          if (sb.backend !== "filesystem") problems.push("settings.stateBackup.backend: must be 'filesystem' (s3-compatible and gdrive are planned)");
+          if (typeof sb.path !== "string" || sb.path.trim() === "") problems.push("settings.stateBackup.path: must be a non-empty string");
+          const out: NonNullable<TachyonConfig["settings"]["stateBackup"]> = { backend: "filesystem", path: String(sb.path ?? "") };
+          if (sb.every !== undefined) {
+            if (parseEvery(String(sb.every)) === null) problems.push("settings.stateBackup.every: must be an interval like '10m' / '1h'");
+            else out.every = String(sb.every);
+          }
+          if (sb.keep !== undefined) {
+            if (typeof sb.keep !== "number" || !Number.isInteger(sb.keep) || sb.keep < 1) problems.push("settings.stateBackup.keep: must be a positive integer");
+            else out.keep = sb.keep;
+          }
+          for (const key of Object.keys(sb)) if (!["backend", "path", "every", "keep"].includes(key)) problems.push(`settings.stateBackup: unknown key '${key}'`);
+          if (problems.length > 0) discarded.push(...problems);
+          else settings.stateBackup = out;
         }
       }
       // t-7bcba6 — reject obsolete persistence kill switch so a false override cannot silently disable hooks.
