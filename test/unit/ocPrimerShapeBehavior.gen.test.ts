@@ -15,7 +15,8 @@ describe("container-generated delegation behavior", () => {
     const combined = `${primer}\n${beforeFinishing}`;
 
     expect(combined).not.toMatch(/git add|git commit|pathspec|cd-then-commit/i);
-    expect(primer).toMatch(/Tachyon primer governs orchestration protocol/);
-    expect(primer).toMatch(/project-owned guidance governs repository conventions/);
+    // t-a1ee7e — the boundary line is scoped to mechanism now; the project owns method.
+    expect(primer).toMatch(/Every statement above is a property of Tachyon, not a preference/);
+    expect(primer).toMatch(/HOW you work .* is this project's/);
   });
 });
