@@ -1,2 +1,8 @@
 # Any workspace-local state created by the Extension Development Host is evidence/runtime residue, not a fixture seed.
 .tachyon/
+# t-a65335 — the declared workspace itself is SOURCE (settings + per-file declarations).
+!.tachyon/
+.tachyon/*
+!.tachyon/settings.yml
+!.tachyon/terminals/
+!.tachyon/terminals/**

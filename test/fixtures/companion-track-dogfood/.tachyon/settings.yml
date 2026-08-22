@@ -1,0 +1,7 @@
+maxAgents: 8
+companion:
+  tabTools: true
+  lanAccess: true
+  allowedHosts:
+    - the-internet.herokuapp.com
+    - "*.herokuapp.com"

@@ -11,10 +11,12 @@ import { doctor, probeServer, TmuxService, workspaceHash, SOCKET_NAME, type Pane
 import { subtreeCpuTicks } from "@tachyon/engine/attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import type { TmuxServerSnapshot } from "@tachyon/webview-ui/inspector/model";
-import { asAgent, CONFIG_FILENAMES, loadConfigFile } from "@tachyon/engine/config/loadConfig.js";
+import { asAgent } from "@tachyon/engine/config/loadConfig.js";
+import { LEGACY_CONFIG_FILENAMES, WORKSPACE_SETTINGS_FILE, workspaceSettingsPath } from "@tachyon/engine/config/workspaceSettingsFile.js";
 import { FilesystemBackupAdapter } from "@tachyon/engine/statesync/adapter.js";
 import { listGenerationIds, readGenerationManifest, runRestore } from "@tachyon/engine/statesync/backup.js";
-import { scheduleEntryLine, setSettingsValue } from "@tachyon/engine/config/YamlConfigEditor.js";
+import { setSettingsValue } from "@tachyon/engine/config/YamlConfigEditor.js";
+import { parse as parseYaml } from "yaml";
 import { type InspectorDeps } from "./webview/ServerInspector.js";
 import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
 import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/RuntimeOpsPanel.js";
@@ -133,7 +135,7 @@ import {
 } from "./workspace/hostEventLoopLag.js";
 import { startHostSyncIoProbe, takeHostSyncIoHit } from "./workspace/hostSyncIoProbe.js";
 import { detectInstalledClis } from "@tachyon/engine/webview/cliDetect.js";
-import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
+import { buildStarterFiles, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
 import { registerDisposePanelSerializer, registerTrustedPanelSerializer } from "./webview/shared/panelSerializer.js";
 import { openRuntimeOps } from "./runtimeOps/openRuntimeOps.js";
 import type { InspectedSession } from "@tachyon/engine/runtimeOps/sessionInspection.js";
@@ -369,7 +371,10 @@ function tmuxHealthSnapshot(value: unknown): TmuxServerSnapshot {
 }
 
 function configPathOf(ws: WorkspaceShellHandle): string | undefined {
-  return CONFIG_FILENAMES.map((name) => path.join(ws.workspaceRoot, name)).find((file) => fs.existsSync(file));
+  const settings = workspaceSettingsPath(ws.workspaceRoot);
+  if (fs.existsSync(settings)) return settings;
+  // pre-migration window: a legacy root file still marks the workspace until the engine projects it
+  return LEGACY_CONFIG_FILENAMES.map((name) => path.join(ws.workspaceRoot, name)).find((file) => fs.existsSync(file));
 }
 
 async function extensionQuery(ws: WorkspaceShellHandle, input: ExtensionQueryV1): Promise<JsonValue> {
@@ -1313,7 +1318,9 @@ async function confirmAndRemoveWorktree(
 }
 
 function hasConfig(folderPath: string): boolean {
-  return CONFIG_FILENAMES.some((name) => fs.existsSync(path.join(folderPath, name)));
+  if (fs.existsSync(path.join(folderPath, WORKSPACE_SETTINGS_FILE))) return true;
+  // a legacy tachyon.yml still counts: attaching the engine migrates it into the new homes
+  return LEGACY_CONFIG_FILENAMES.some((name) => fs.existsSync(path.join(folderPath, name)));
 }
 
 /** t-be359b — STAYS NATIVE. All three callers (openAgentPane, restartAgent, openAgentTerminal) are
@@ -1415,29 +1422,30 @@ function importLegacyGlobalSettings(): void {
 }
 
 /**
- * The per-workspace half: values that describe how THIS project runs go into its `tachyon.yml`.
- *
- * `tachyon.yml` is tracked and shared with the team, so this is never silent — it names the file and
- * the keys it wrote. Importing a personal VS Code value into a shared file is a real trade, and the
- * person deserves to see it before it lands in their next commit.
+ * The per-workspace half: values that describe how THIS project runs go into `.tachyon/settings.yml`
+ * (t-a65335 — the retired tachyon.yml's settings block). The write is never silent — it names the
+ * file and the keys it wrote so the person sees what landed.
  */
 function importLegacyWorkspaceSettings(workspaceRoot: string): void {
   const markerPath = settingsImportMarkerPath(workspaceRoot);
   if (settingsImportAlreadyRan(markerPath)) return;
   try {
-    const file = ["tachyon.yml", "tachyon.yaml"]
-      .map((name) => path.join(workspaceRoot, name))
-      .find((candidate) => fs.existsSync(candidate));
-    if (!file) return; // no config yet: nothing to import into, and no marker so a later init still gets it
+    const file = workspaceSettingsPath(workspaceRoot);
+    if (!fs.existsSync(file)) return; // no settings yet: nothing to import into, and no marker so a later init still gets it
     let text = fs.readFileSync(file, "utf8");
-    const parsed = loadConfigFile(file);
-    // A config that did not parse cannot answer "is this key already set", and `already()` would
-    // then say "no" for every key — turning the import into an overwrite of project decisions it
-    // merely failed to read. Skip, and leave the marker unwritten so a later, healthy activation
-    // still gets its one chance.
-    if (!parsed.config) return;
+    let parsedSettings: unknown;
+    try {
+      parsedSettings = parseYaml(text) ?? {};
+    } catch {
+      // A file that did not parse cannot answer "is this key already set", and `already()` would
+      // then say "no" for every key — turning the import into an overwrite of decisions it merely
+      // failed to read. Skip, and leave the marker unwritten so a later, healthy activation still
+      // gets its one chance.
+      return;
+    }
+    if (parsedSettings === null || typeof parsedSettings !== "object" || Array.isArray(parsedSettings)) return;
     const already = (keyPath: string[]): boolean => {
-      let node: unknown = parsed.config?.settings;
+      let node: unknown = parsedSettings;
       for (const key of keyPath) {
         if (node === null || typeof node !== "object") return false;
         node = (node as Record<string, unknown>)[key];
@@ -1452,7 +1460,7 @@ function importLegacyWorkspaceSettings(workspaceRoot: string): void {
         "Tachyon wrote {0} setting(s) you had in VS Code into {1} ({2}) — review it before committing.",
         String(writes.length),
         path.basename(file),
-        writes.map((w) => `settings.${w.keyPath.join(".")}`).join(", "),
+        writes.map((w) => w.keyPath.join(".")).join(", "),
       ), "warn");
     }
     recordSettingsImport(markerPath, writes.map((w) => `settings.${w.keyPath.join(".")}`));
@@ -2652,8 +2660,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     openConfigFile: async (wsHash?: string) => {
       const ws = wsHash ? byHash(wsHash) : workspaces()[0];
       if (!ws) throw new Error("no Tachyon workspace attached");
-      const cfg = CONFIG_FILENAMES.map((name) => path.join(ws.workspaceRoot, name)).find((file) => fs.existsSync(file));
-      if (!cfg) throw new Error(`no tachyon config found under ${ws.workspaceRoot}`);
+      const cfg = configPathOf(ws);
+      if (!cfg) throw new Error(`no ${WORKSPACE_SETTINGS_FILE} found under ${ws.workspaceRoot}`);
       const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(cfg));
       await vscode.window.showTextDocument(doc, { preview: false });
     },
@@ -3487,19 +3495,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.editScheduleItem", async (item: ScheduleItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      const file = configPathOf(ws);
-      if (!file) {
-        notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
+      const file = path.join(ws.workspaceRoot, ".tachyon", "schedules", `${item.scheduleName}.yml`);
+      if (!fs.existsSync(file)) {
+        notify(vscode.l10n.t("schedule '{0}' has no declaration file in this workspace", item.scheduleName), "warn");
         return;
       }
       const doc = await vscode.workspace.openTextDocument(file);
-      const editor = await vscode.window.showTextDocument(doc, { preview: false });
-      const line = scheduleEntryLine(doc.getText(), item.scheduleName);
-      if (line !== undefined) {
-        const pos = new vscode.Position(line, 0);
-        editor.selection = new vscode.Selection(pos, pos);
-        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
-      }
+      await vscode.window.showTextDocument(doc, { preview: false });
     }),
     // ---- views ----
     vscode.commands.registerCommand("tachyon.refreshViews", refreshAll),
@@ -3715,7 +3717,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
         return;
       }
-      const file = configPathOf(ws) ?? path.join(ws.workspaceRoot, "tachyon.yml");
+      const file = configPathOf(ws) ?? workspaceSettingsPath(ws.workspaceRoot);
       try {
         const doc = await vscode.workspace.openTextDocument(file);
         await vscode.window.showTextDocument(doc, { preview: false });
@@ -3800,10 +3802,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (hasConfig(root)) {
         // Don't block the command on the user's click (it would hang headless) —
         // offer "Open it" as a fire-and-forget follow-up.
-        void showNotification(vscode.l10n.t("'{0}' already has a tachyon.yml.", folder.name), "info", [vscode.l10n.t("Open it")])
+        void showNotification(vscode.l10n.t("'{0}' is already a Tachyon workspace.", folder.name), "info", [vscode.l10n.t("Open settings")])
           .then(async (choice) => {
-            if (choice === vscode.l10n.t("Open it")) {
-              const existing = CONFIG_FILENAMES.map((n) => path.join(root, n)).find((p) => fs.existsSync(p))!;
+            if (choice === vscode.l10n.t("Open settings")) {
+              const existing = fs.existsSync(workspaceSettingsPath(root))
+                ? workspaceSettingsPath(root)
+                : LEGACY_CONFIG_FILENAMES.map((n) => path.join(root, n)).find((p) => fs.existsSync(p))!;
               await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(existing), { preview: false });
             }
           });
@@ -3828,11 +3832,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       detected.composerJson = readText("composer.json");
       detected.gemfile = readText("Gemfile");
 
-      const target = path.join(root, "tachyon.yml");
+      const starter = buildStarterFiles(detected);
+      const target = workspaceSettingsPath(root);
       try {
-        fs.writeFileSync(target, buildStarterYaml(detected), "utf8");
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, starter.settingsYaml, "utf8");
+        const terminalsDir = path.join(root, ".tachyon", "terminals");
+        fs.mkdirSync(terminalsDir, { recursive: true });
+        for (const terminal of starter.terminals) {
+          const declaration = path.join(terminalsDir, `${terminal.name}.yml`);
+          if (!fs.existsSync(declaration)) fs.writeFileSync(declaration, terminal.yaml, "utf8");
+        }
       } catch (err) {
-        notify(vscode.l10n.t("could not write tachyon.yml: {0}", err instanceof Error ? err.message : String(err)), "error");
+        notify(vscode.l10n.t("could not write {0}: {1}", WORKSPACE_SETTINGS_FILE, err instanceof Error ? err.message : String(err)), "error");
         return;
       }
       // Keep the machine-local resume ledger out of git (it carries session ids
@@ -3845,7 +3857,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         /* .gitignore is a courtesy, never block Init on it */
       }
       await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(target), { preview: false });
-      notify(vscode.l10n.t("tachyon.yml created — review it, then ▶ an agent in the sidebar (or reload to autostart)"));
+      notify(vscode.l10n.t("{0} created (terminals in .tachyon/terminals/) — review it, then ▶ an agent in the sidebar", WORKSPACE_SETTINGS_FILE));
       // Bring the folder under orchestration now (it wasn't a Workspace before).
       if (!registry.has(root)) await addWorkspace(root, true);
       refreshAll();

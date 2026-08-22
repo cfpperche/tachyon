@@ -10,7 +10,7 @@ export function registerScheduleTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Propose a scheduled action (a cron-like timer). The proposal is INERT — it never fires — " +
-        "until the HUMAN approves it in the sidebar; approving writes it into tachyon.yml. Use this " +
+        "until the HUMAN approves it in the sidebar; approving writes its declaration file under .tachyon/schedules/. Use this " +
         "when you notice something should run regularly (e.g. tests hourly, a daily standup summary). " +
         "The proposal is recorded under YOUR name, resolved by the Bridge from your token — there is no " +
         "author parameter, because the human approving it is authorizing a config-as-code write and must " +
@@ -62,7 +62,7 @@ export function registerScheduleTools(mcp: McpServer, deps: BridgeDeps): void {
     "list_schedules",
     {
       description:
-        "List schedules: the active ones (from tachyon.yml, with their next/last run) and any pending " +
+        "List schedules: the active ones (from .tachyon/schedules/, with their next/last run) and any pending " +
         "proposals still awaiting human approval. Pending proposals never fire until approved.",
       inputSchema: {},
     },

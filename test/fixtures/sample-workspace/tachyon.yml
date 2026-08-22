@@ -1,4 +1,0 @@
-layouts:
-  solo:
-    grid: 2up
-    agents: [ echoer ]

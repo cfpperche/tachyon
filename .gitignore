@@ -29,8 +29,8 @@ provenance.json
 .grok/
 .mcp.json
 
-# Local dogfood fleet / settings — machine-specific; not shared via git.
-# Template for new checkouts: tachyon.yml.example
+# Legacy root config (retired by t-a65335; the engine migrates one into .tachyon/settings.yml and
+# removes it). Still ignored so a transient legacy file never lands in git.
 tachyon.yml
 tachyon.yaml
 
@@ -43,7 +43,6 @@ tachyon.yaml
 # `.tachyon/` is re-opened and then re-closed, because most of what lands in it is exactly the
 # runtime state the rule was written for — activity/, *.sqlite3, sessions, continuity, config.lkg,
 # tasks a local run wrote. Only the plugin-install shape is source, so only that is named.
-!test/fixtures/**/tachyon.yml
 !test/fixtures/**/.claude/
 !test/fixtures/**/.agents/
 !test/fixtures/**/.grok/
@@ -52,6 +51,12 @@ test/fixtures/**/.tachyon/*
 !test/fixtures/**/.tachyon/plugins/
 !test/fixtures/**/.tachyon/plugins.lock.json
 !test/fixtures/**/.tachyon/vscode-settings-import.json
+# t-a65335 — the fixture's declared workspace is SOURCE: settings + per-file declarations.
+!test/fixtures/**/.tachyon/settings.yml
+!test/fixtures/**/.tachyon/terminals/
+!test/fixtures/**/.tachyon/terminals/**
+!test/fixtures/**/.tachyon/schedules/
+!test/fixtures/**/.tachyon/schedules/**
 # Canonical agent profiles shipped with dogfood fixtures (SDD 478 pointers under agents:).
 !test/fixtures/**/.tachyon/agents/
 !test/fixtures/**/.tachyon/agents/**
