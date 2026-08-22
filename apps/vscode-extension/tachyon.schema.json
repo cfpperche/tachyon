@@ -1,622 +1,482 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/cfpperche/tachyon/apps/vscode-extension/tachyon.schema.json",
-  "title": "Tachyon configuration (tachyon.yml)",
-  "description": "Declares agents, terminals, and settings Tachyon orchestrates in this workspace. An empty roster (no agents/terminals) is valid (t-f67185).",
+  "title": "Tachyon workspace settings (.tachyon/settings.yml)",
+  "description": "Workspace configuration. The file's top level IS the settings mapping — agents live in .tachyon/agents/<name>/, terminals in .tachyon/terminals/<name>.yml, schedules in .tachyon/schedules/<name>.yml.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "terminals": {
-      "description": "Terminals (servers, shells, builds) keyed by name (spec 215). May be empty or omitted. Each entry accepts only the fields consumed by the terminal declaration reader.",
-      "type": "object",
-      "propertyNames": {
-        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
-      },
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "cmd"
-        ],
-        "properties": {
-          "cmd": {
-            "description": "Shell command that runs the terminal.",
-            "type": "string",
-            "minLength": 1
-          },
-          "cwd": {
-            "description": "Working directory, relative to the workspace root or absolute.",
-            "type": "string"
-          },
-          "env": {
-            "description": "Extra environment variables for the terminal session. For Pi runtime commands, PI_CODING_AGENT_DIR and PI_CODING_AGENT_SESSION_DIR are Tachyon-owned private-home boundaries and must not be set here.",
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
-          },
-          "autostart": {
-            "description": "Start this terminal when Tachyon starts.",
-            "type": "boolean",
-            "default": false
-          },
-          "watch": {
-            "description": "Glob(s) — restart the terminal when a matching file changes.",
-            "oneOf": [
-              {
-                "type": "string",
-                "minLength": 1
-              },
-              {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "minItems": 1
-              }
-            ]
-          },
-          "attention": {
-            "description": "Needs-you detection. Defaults off for terminals. Object form tunes the idle threshold and adds prompt patterns.",
-            "oneOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "enabled": {
-                    "type": "boolean"
-                  },
-                  "silenceSec": {
-                    "description": "Seconds of unchanged pane + idle CPU before the agent is marked idle.",
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  "patterns": {
-                    "description": "Extra prompt regexes (case-insensitive) that mark the agent as needing input.",
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    }
-                  }
-                }
-              }
-            ]
-          },
-          "restart": {
-            "description": "Crash policy: on-crash auto-restarts when the process dies with a non-zero exit (backoff 2s/4s/8s, max 3 per minute). Clean exits (0) never auto-restart.",
-            "enum": [
-              "never",
-              "on-crash"
-            ],
-            "default": "never"
-          }
-        }
-      }
+    "maxAgents": {
+      "description": "Max concurrently running agents in this workspace (fork-bomb guardrail). Overrides the tachyon.maxAgents editor setting.",
+      "type": "integer",
+      "minimum": 1
     },
-    "layouts": {
-      "type": "object",
-      "deprecated": true,
-      "description": "Deprecated — the named-layouts feature was retired (use VS Code's native editor groups). This block is accepted for backward compatibility but ignored."
-    },
-    "settings": {
+    "checklist": {
+      "description": "When an agent's turn ends without a checklist, require one for the listed task kinds and reprompt once. Kind is a free string (not an enum). Comparison is case-insensitive with trim. '*' means every kind, including a task with no kind. '!kind' excludes that kind; exclusion wins. A list of only exclusions is treated as '* plus those exclusions'. Quote '*' and '!kind' in YAML. Absent or [] requires nobody. Invalid values warn and are ignored — the product never blocks on this block.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "maxAgents": {
-          "description": "Max concurrently running agents in this workspace (fork-bomb guardrail). Overrides the tachyon.maxAgents editor setting.",
-          "type": "integer",
-          "minimum": 1
-        },
-        "checklist": {
-          "description": "When an agent's turn ends without a checklist, require one for the listed task kinds and reprompt once. Kind is a free string (not an enum). Comparison is case-insensitive with trim. '*' means every kind, including a task with no kind. '!kind' excludes that kind; exclusion wins. A list of only exclusions is treated as '* plus those exclusions'. Quote '*' and '!kind' in YAML. Absent or [] requires nobody. Invalid values warn and are ignored — the product never blocks on this block.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "requireIn": {
-              "description": "Task kinds that require a checklist. Free strings, plus '*' (all) and '!kind' (exclude). Quote special tokens in YAML.",
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
-            }
-          }
-        },
-        "bridgePort": {
-          "description": "Fixed port for the Bridge MCP server. Default: a stable per-workspace port derived from the workspace path (41000-42999) — registrations survive editor restarts either way.",
-          "type": "integer",
-          "minimum": 1024,
-          "maximum": 65535
-        },
-        "auth": {
-          "description": "Require a Bearer token on every Bridge call (default true). The stable per-workspace token lives in extension storage and is injected as TACHYON_BRIDGE_TOKEN into every agent Tachyon spawns; registered configs reference the env var, so no secret lands in committable files.",
-          "type": "boolean",
-          "default": true
-        },
-        "legacyBridgeAuth": {
-          "description": "Accept the shared/legacy Bridge token as a caller identity (spec 351). Default true for existing workspaces during the per-agent-token migration window; every legacy-authenticated call is logged and cannot claim a currently-live agent's identity. Set false once every runtime you use has switched to per-agent tokens (TACHYON_AGENT_BRIDGE_TOKEN).",
-          "type": "boolean",
-          "default": true
-        },
-        "layout": {
-          "type": "string",
-          "deprecated": true,
-          "description": "Deprecated — the named-layouts feature was retired. Accepted for backward compatibility but ignored."
-        },
-        "tmux": {
-          "type": "object",
-          "description": "tmux server options applied to Tachyon's dedicated socket as `set -g <key> <value>`. Tachyon's defaults (mouse on, focus-events on, history-limit 10000) apply first and this overlays them; 'remain-on-exit' is reserved (crash detection depends on it). Your ~/.tmux.conf is never loaded. Values may be booleans (on/off), numbers, or strings.",
-          "additionalProperties": {
-            "type": [
-              "string",
-              "number",
-              "boolean"
-            ]
-          }
-        },
-        "worktree": {
-          "type": "object",
-          "description": "Global worktree settings (spec 210).",
-          "additionalProperties": false,
-          "properties": {
-            "base": {
-              "type": "string",
-              "description": "Location root for worktrees; path = <base>/<wsHash>/<agent>. Default ~/.cache/tachyon/worktrees (XDG-aware)."
-            },
-            "branch": {
-              "type": "string",
-              "description": "Global branch-name template; MUST contain {agent}. Default tachyon/{agent}.",
-              "pattern": ".*\\{agent\\}.*"
-            },
-            "revealInWorkspace": {
-              "type": "boolean",
-              "default": true,
-              "description": "Reveal each running agent's isolated git worktree as a folder in this multi-root workspace, and remove it on cleanup (self-heals stale entries left by a prior reload). Only applies when the window is already multi-root — a single-folder window is left untouched to avoid forcing a reload."
-            },
-            "shareDependencies": {
-              "type": "boolean",
-              "default": true,
-              "description": "Compatibility kill switch for settings.worktree.sharedDirectories. Set false to disable project-declared directory sharing without removing the declaration."
-            },
-            "sharedDirectories": {
-              "type": "array",
-              "description": "Repo-relative literal directories to symlink from the primary checkout into separate worktrees. Only entries that exist as directories and are gitignored are admitted; invalid entries warn and are skipped. There is no product default.",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              },
-              "uniqueItems": true
-            }
-          }
-        },
-        "bridgeGuidance": {
-          "type": "boolean",
-          "default": true,
-          "description": "Append Bridge-coordination guidance to agents spawned via the Bridge so delegated work stays visible in Tachyon (spec 216). Default true."
-        },
-        "agentHookProjection": {
-          "type": "object",
-          "description": "Which installed plugins' hooks reach an agent's OWN session, by name (t-09edf2). Only 'enforcement' is projected, and only on gate events (PreToolUse); an unlisted plugin projects nothing. Example: { \"secrets-guard\": \"enforcement\" } makes the layer-2 --no-verify shape-gate refuse the bypass inside a delegated worktree, where the workspace .claude/.codex trees do not exist.",
-          "additionalProperties": {
+        "requireIn": {
+          "description": "Task kinds that require a checklist. Free strings, plus '*' (all) and '!kind' (exclude). Quote special tokens in YAML.",
+          "type": "array",
+          "items": {
             "type": "string",
-            "enum": [
-              "capability",
-              "prompt-transform",
-              "observability",
-              "enforcement"
-            ]
-          }
-        },
-        "agentPermissionProjection": {
-          "type": "object",
-          "description": "Opt-in permission posture projected into one named managed agent. Absence preserves the runtime/class default. Grok takes one --permission-mode word; Codex takes one key per measured door (command approval, write sandbox, Bridge MCP tool approval).",
-          "additionalProperties": {
-            "oneOf": [
-              {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "runtime",
-                  "mode"
-                ],
-                "properties": {
-                  "runtime": {
-                    "const": "grok"
-                  },
-                  "mode": {
-                    "type": "string",
-                    "enum": [
-                      "default",
-                      "acceptEdits",
-                      "auto",
-                      "dontAsk",
-                      "bypassPermissions",
-                      "plan"
-                    ]
-                  }
-                }
-              },
-              {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "runtime"
-                ],
-                "minProperties": 2,
-                "properties": {
-                  "runtime": {
-                    "const": "codex"
-                  },
-                  "approvalPolicy": {
-                    "type": "string",
-                    "enum": [
-                      "untrusted",
-                      "on-failure",
-                      "on-request",
-                      "never"
-                    ]
-                  },
-                  "sandboxMode": {
-                    "type": "string",
-                    "enum": [
-                      "read-only",
-                      "workspace-write",
-                      "danger-full-access"
-                    ]
-                  },
-                  "bridgeToolApproval": {
-                    "type": "string",
-                    "enum": [
-                      "auto",
-                      "prompt",
-                      "writes",
-                      "approve"
-                    ]
-                  }
-                }
-              }
-            ]
-          }
-        },
-        "projectGuidance": {
-          "type": "object",
-          "description": "Opt-in, project-owned agent guidance loaded from explicitly declared source-workspace files. Tachyon transports the files in order and does not discover runtime-specific context files.",
-          "additionalProperties": false,
-          "required": [
-            "files"
-          ],
-          "properties": {
-            "files": {
-              "type": "array",
-              "description": "Ordered, non-empty list of unique workspace-relative guidance files. Runtime validation additionally enforces UTF-8 byte, containment, file-type and aggregate-content limits.",
-              "minItems": 1,
-              "maxItems": 8,
-              "uniqueItems": true,
-              "items": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 256
-              }
-            }
-          }
-        },
-        "clipboard": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "off"
-          ],
-          "default": "auto",
-          "description": "Clean clipboard copy (spec 219). 'auto' wires a UTF-8 copy-mode helper so a plain mouse drag-select (incl. scrollback) copies clean — no Shift, mouse stays on. 'off' leaves the OSC 52 default (use if copy already works or on a headless box)."
-        },
-        "taskNotifications": {
-          "type": "object",
-          "description": "Shared defaults for VS Code task mutation notifications. Explicit user and workspace editor settings take precedence.",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": true
-            },
-            "events": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "enum": [
-                  "created",
-                  "assigned",
-                  "statusChanged",
-                  "awaitingHuman",
-                  "journalAppended"
-                ]
-              },
-              "uniqueItems": true,
-              "default": [
-                "created",
-                "assigned",
-                "statusChanged",
-                "awaitingHuman",
-                "journalAppended"
-              ]
-            },
-            "suppressOwnChanges": {
-              "type": "boolean",
-              "default": true
-            },
-            "dedupeWindowMs": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 30000
-            }
-          }
-        },
-        "gitDelivery": {
-          "type": "object",
-          "deprecated": true,
-          "description": "RETIRED and ignored. It authorized git_delivery_integrate, git_delivery_prune and delivery_salvage, all removed with the Delivery subsystem. The key stays known so a workspace that declares it is told so by name instead of being told it misspelled something; remove it from tachyon.yml.",
-          "additionalProperties": false,
-          "properties": {
-            "prunePrincipals": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              },
-              "deprecated": true,
-              "description": "RETIRED and ignored — the pruning it authorized no longer exists."
-            },
-            "integratePrincipals": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              },
-              "deprecated": true,
-              "description": "RETIRED and ignored — the integration it authorized no longer exists."
-            }
-          }
-        },
-        "companion": {
-          "type": "object",
-          "description": "Tachyon Companion (browser / mobile shells). Human opt-in surfaces; paired device still required to execute companion operations.",
-          "additionalProperties": false,
-          "properties": {
-            "allowedHosts": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Optional host allowlist globs for Companion tab tools (e.g. example.com, *.example.com). Empty = all hosts."
-            },
-            "tabTools": {
-              "type": "boolean",
-              "default": false,
-              "description": "When true, register user_browser_* tools for agents (snapshot/screenshot/click/type/fill/eval/console). Calls fail with a clear not_paired error until Companion is paired to this engine. When false (default), tools are omitted from the tool list."
-            },
-            "lanAccess": {
-              "type": "boolean",
-              "default": false,
-              "description": "SDD 422 mobile Companion: when true, enable phone pairing via Tailscale (PC + phone on the same tailnet). Bridge binds 0.0.0.0 so the mesh can reach /companion/v1 and /companion/app; pair QR uses the Tailscale IP only (not multi-NIC Wi‑Fi). Requires the Tailscale app on both devices. Default false = loopback-only (browser Companion / same host). MCP still requires agent/bridge auth. Doctor warns when enabled without Tailscale."
-            }
-          }
-        },
-        "ideBrowser": {
-          "type": "object",
-          "description": "VS Code Integrated Browser (Tachyon Design Mode / ide_browser_* tools). Workspace-owned GA gate and defaults for the human surface.",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": false,
-              "description": "When true, show Integrated Browser status-bar controls and allow the bridge to start. When false (default), hide the human surface and fail ide_browser_* at call time with a clear disabled error. Tools always remain registered on the Bridge when the engine wires them (MCP catalogs freeze at connect)."
-            },
-            "homeUrl": {
-              "type": "string",
-              "minLength": 1,
-              "description": "Default URL opened when the human clicks the IDE Browser status-bar globe (or first Design Mode open). Absolute http(s) URL, or a host (https is assumed). When unset, opens about:blank."
-            }
-          }
-        },
-        "delivery": {
-          "deprecated": true,
-          "description": "Ignored compatibility key. Canonical Delivery with mechanism-only handoff is always active; remove this block from tachyon.yml."
-        },
-        "agentMemoryMax": {
-          "type": "string",
-          "description": "Opt-in systemd --user MemoryMax applied to each agent's spawn tree (Linux only). A systemd size like \"2G\", \"512M\", \"50%\", or \"off\" to disable. Absent = no limit."
-        },
-        "humanInbox": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "Control -> Inbox staleness marking (t-e4f662). Display only: nothing here approves, denies or closes anything.",
-          "properties": {
-            "staleAfterHours": {
-              "description": "Hours something may wait before it is MARKED stale (default 24), or \"never\" to stop marking for a fleet that parks work on purpose. 0 is refused: it reads as \"stale on arrival\", which is the opposite of the off it resembles.",
-              "anyOf": [
-                {
-                  "type": "number",
-                  "exclusiveMinimum": 0
-                },
-                {
-                  "type": "string",
-                  "enum": [
-                    "never",
-                    "off",
-                    "none"
-                  ]
-                },
-                {
-                  "type": "boolean",
-                  "const": false
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          }
-        },
-        "agentNotifications": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "How long a parented agent may sit idle before Tachyon nudges its parent (t-585d5c). Applies on the next tick — no restart, no recreating agents.",
-          "properties": {
-            "idleAfterMinutes": {
-              "description": "Minutes of idleness before the parent is nudged (default 10, maximum 10080 = 7 days), or \"never\" to stop notifying. 0 is refused: it reads as \"nudge immediately\", not off.",
-              "anyOf": [
-                {
-                  "type": "number",
-                  "exclusiveMinimum": 0,
-                  "maximum": 10080
-                },
-                {
-                  "type": "string",
-                  "enum": [
-                    "never",
-                    "off",
-                    "none"
-                  ]
-                },
-                {
-                  "type": "boolean",
-                  "const": false
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          }
-        },
-        "handoff": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "The durable project handoff note.",
-          "properties": {
-            "path": {
-              "type": "string",
-              "minLength": 1,
-              "description": "Workspace-relative path of the handoff document (default .tachyon/HANDOFF.md)."
-            },
-            "nudgeEvery": {
-              "type": "string",
-              "pattern": "^(off|[0-9]+ *[mh])$",
-              "description": "How often to nudge for a handoff update ('30m', '1h', ...), or 'off'."
-            }
-          }
-        },
-        "persistence": {
-          "deprecated": true,
-          "description": "OBSOLETE and refused by name (t-7bcba6). Silent hooks are always enabled for eligible declared Claude/Codex agents and there is no visible-legacy fallback; remove this block (including silentHooks) from tachyon.yml."
-        },
-        "bridgeClientRebind": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "What Bridge clients do when the host generation bumps after a reload (spec 364).",
-          "properties": {
-            "onHostGenerationBump": {
-              "type": "string",
-              "enum": [
-                "auto",
-                "notify",
-                "off"
-              ],
-              "description": "'auto' rebinds the client itself, 'notify' tells the human, 'off' does neither."
-            },
-            "graceMs": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Delay before a rebind starts."
-            },
-            "stopTimeoutMs": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "How long to wait for the old client to stop."
-            },
-            "maxConcurrentRebinds": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "Clients rebound at once."
-            },
-            "circuitFailCount": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "Consecutive failures that open the circuit."
-            }
-          }
-        },
-        "stateBackup": {
-          "type": "object",
-          "description": "Opt-in off-machine backup of the durable runtime state (Board tasks, pins, validations, evidence, continuity, handoff, studies, runs, agent identity, tachyon.yml). Local state stays primary; the destination is a one-way replica. Omit the block and nothing ever leaves the machine.",
-          "additionalProperties": false,
-          "required": [
-            "backend",
-            "path"
-          ],
-          "properties": {
-            "backend": {
-              "type": "string",
-              "enum": [
-                "filesystem"
-              ],
-              "description": "Backup destination kind. 'filesystem' is any locally-mounted path (NAS, SMB, external disk). s3-compatible and gdrive are planned."
-            },
-            "path": {
-              "type": "string",
-              "minLength": 1,
-              "description": "Destination directory for backup generations."
-            },
-            "every": {
-              "type": "string",
-              "description": "Backup interval like '10m' or '1h'. Default 10m."
-            },
-            "keep": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "How many backup generations to keep at the destination. Default 30."
-            }
+            "minLength": 1
           }
         }
       }
     },
-    "schedules": {
-      "description": "Recurring work: each entry fires on an interval ('every') or at a wall-clock time ('at') — exactly one — and spawns a declared agent ('spawn'). The 'exactly one of every/at' rule is enforced by the product with a message naming the schedule, not by this schema.",
+    "bridgePort": {
+      "description": "Fixed port for the Bridge MCP server. Default: a stable per-workspace port derived from the workspace path (41000-42999) — registrations survive editor restarts either way.",
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 65535
+    },
+    "auth": {
+      "description": "Require a Bearer token on every Bridge call (default true). The stable per-workspace token lives in extension storage and is injected as TACHYON_BRIDGE_TOKEN into every agent Tachyon spawns; registered configs reference the env var, so no secret lands in committable files.",
+      "type": "boolean",
+      "default": true
+    },
+    "legacyBridgeAuth": {
+      "description": "Accept the shared/legacy Bridge token as a caller identity (spec 351). Default true for existing workspaces during the per-agent-token migration window; every legacy-authenticated call is logged and cannot claim a currently-live agent's identity. Set false once every runtime you use has switched to per-agent tokens (TACHYON_AGENT_BRIDGE_TOKEN).",
+      "type": "boolean",
+      "default": true
+    },
+    "layout": {
+      "type": "string",
+      "deprecated": true,
+      "description": "Deprecated — the named-layouts feature was retired. Accepted for backward compatibility but ignored."
+    },
+    "tmux": {
       "type": "object",
-      "propertyNames": {
-        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
-      },
+      "description": "tmux server options applied to Tachyon's dedicated socket as `set -g <key> <value>`. Tachyon's defaults (mouse on, focus-events on, history-limit 10000) apply first and this overlays them; 'remain-on-exit' is reserved (crash detection depends on it). Your ~/.tmux.conf is never loaded. Values may be booleans (on/off), numbers, or strings.",
       "additionalProperties": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "every": {
+        "type": [
+          "string",
+          "number",
+          "boolean"
+        ]
+      }
+    },
+    "worktree": {
+      "type": "object",
+      "description": "Global worktree settings (spec 210).",
+      "additionalProperties": false,
+      "properties": {
+        "base": {
+          "type": "string",
+          "description": "Location root for worktrees; path = <base>/<wsHash>/<agent>. Default ~/.cache/tachyon/worktrees (XDG-aware)."
+        },
+        "branch": {
+          "type": "string",
+          "description": "Global branch-name template; MUST contain {agent}. Default tachyon/{agent}.",
+          "pattern": ".*\\{agent\\}.*"
+        },
+        "revealInWorkspace": {
+          "type": "boolean",
+          "default": true,
+          "description": "Reveal each running agent's isolated git worktree as a folder in this multi-root workspace, and remove it on cleanup (self-heals stale entries left by a prior reload). Only applies when the window is already multi-root — a single-folder window is left untouched to avoid forcing a reload."
+        },
+        "shareDependencies": {
+          "type": "boolean",
+          "default": true,
+          "description": "Compatibility kill switch for settings.worktree.sharedDirectories. Set false to disable project-declared directory sharing without removing the declaration."
+        },
+        "sharedDirectories": {
+          "type": "array",
+          "description": "Repo-relative literal directories to symlink from the primary checkout into separate worktrees. Only entries that exist as directories and are gitignored are admitted; invalid entries warn and are skipped. There is no product default.",
+          "items": {
             "type": "string",
-            "pattern": "^[0-9]+ *[mh]$",
-            "description": "Interval between runs: '30m', '1h', '2h'."
+            "minLength": 1
           },
-          "at": {
-            "type": "string",
-            "pattern": "^[0-9]{1,2}:[0-9]{2}$",
-            "description": "Wall-clock time of day, 'HH:MM' (24h)."
+          "uniqueItems": true
+        }
+      }
+    },
+    "bridgeGuidance": {
+      "type": "boolean",
+      "default": true,
+      "description": "Append Bridge-coordination guidance to agents spawned via the Bridge so delegated work stays visible in Tachyon (spec 216). Default true."
+    },
+    "agentHookProjection": {
+      "type": "object",
+      "description": "Which installed plugins' hooks reach an agent's OWN session, by name (t-09edf2). Only 'enforcement' is projected, and only on gate events (PreToolUse); an unlisted plugin projects nothing. Example: { \"secrets-guard\": \"enforcement\" } makes the layer-2 --no-verify shape-gate refuse the bypass inside a delegated worktree, where the workspace .claude/.codex trees do not exist.",
+      "additionalProperties": {
+        "type": "string",
+        "enum": [
+          "capability",
+          "prompt-transform",
+          "observability",
+          "enforcement"
+        ]
+      }
+    },
+    "agentPermissionProjection": {
+      "type": "object",
+      "description": "Opt-in permission posture projected into one named managed agent. Absence preserves the runtime/class default. Grok takes one --permission-mode word; Codex takes one key per measured door (command approval, write sandbox, Bridge MCP tool approval).",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "runtime",
+              "mode"
+            ],
+            "properties": {
+              "runtime": {
+                "const": "grok"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "default",
+                  "acceptEdits",
+                  "auto",
+                  "dontAsk",
+                  "bypassPermissions",
+                  "plan"
+                ]
+              }
+            }
           },
-          "spawn": {
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "runtime"
+            ],
+            "minProperties": 2,
+            "properties": {
+              "runtime": {
+                "const": "codex"
+              },
+              "approvalPolicy": {
+                "type": "string",
+                "enum": [
+                  "untrusted",
+                  "on-failure",
+                  "on-request",
+                  "never"
+                ]
+              },
+              "sandboxMode": {
+                "type": "string",
+                "enum": [
+                  "read-only",
+                  "workspace-write",
+                  "danger-full-access"
+                ]
+              },
+              "bridgeToolApproval": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "prompt",
+                  "writes",
+                  "approve"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "projectGuidance": {
+      "type": "object",
+      "description": "Opt-in, project-owned agent guidance loaded from explicitly declared source-workspace files. Tachyon transports the files in order and does not discover runtime-specific context files.",
+      "additionalProperties": false,
+      "required": [
+        "files"
+      ],
+      "properties": {
+        "files": {
+          "type": "array",
+          "description": "Ordered, non-empty list of unique workspace-relative guidance files. Runtime validation additionally enforces UTF-8 byte, containment, file-type and aggregate-content limits.",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
             "type": "string",
             "minLength": 1,
-            "description": "Name of an agent declared in this workspace."
-          },
-          "instructions": {
-            "type": "string",
-            "description": "Prompt handed to the spawned agent. Only valid alongside 'spawn'."
-          },
-          "catchUp": {
-            "type": "boolean",
-            "description": "Run once on startup when the window was missed while the editor was closed."
+            "maxLength": 256
           }
+        }
+      }
+    },
+    "clipboard": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "off"
+      ],
+      "default": "auto",
+      "description": "Clean clipboard copy (spec 219). 'auto' wires a UTF-8 copy-mode helper so a plain mouse drag-select (incl. scrollback) copies clean — no Shift, mouse stays on. 'off' leaves the OSC 52 default (use if copy already works or on a headless box)."
+    },
+    "taskNotifications": {
+      "type": "object",
+      "description": "Shared defaults for VS Code task mutation notifications. Explicit user and workspace editor settings take precedence.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "created",
+              "assigned",
+              "statusChanged",
+              "awaitingHuman",
+              "journalAppended"
+            ]
+          },
+          "uniqueItems": true,
+          "default": [
+            "created",
+            "assigned",
+            "statusChanged",
+            "awaitingHuman",
+            "journalAppended"
+          ]
+        },
+        "suppressOwnChanges": {
+          "type": "boolean",
+          "default": true
+        },
+        "dedupeWindowMs": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 30000
+        }
+      }
+    },
+    "gitDelivery": {
+      "type": "object",
+      "deprecated": true,
+      "description": "RETIRED and ignored. It authorized git_delivery_integrate, git_delivery_prune and delivery_salvage, all removed with the Delivery subsystem. The key stays known so a workspace that declares it is told so by name instead of being told it misspelled something; remove it from tachyon.yml.",
+      "additionalProperties": false,
+      "properties": {
+        "prunePrincipals": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deprecated": true,
+          "description": "RETIRED and ignored — the pruning it authorized no longer exists."
+        },
+        "integratePrincipals": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deprecated": true,
+          "description": "RETIRED and ignored — the integration it authorized no longer exists."
+        }
+      }
+    },
+    "companion": {
+      "type": "object",
+      "description": "Tachyon Companion (browser / mobile shells). Human opt-in surfaces; paired device still required to execute companion operations.",
+      "additionalProperties": false,
+      "properties": {
+        "allowedHosts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional host allowlist globs for Companion tab tools (e.g. example.com, *.example.com). Empty = all hosts."
+        },
+        "tabTools": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, register user_browser_* tools for agents (snapshot/screenshot/click/type/fill/eval/console). Calls fail with a clear not_paired error until Companion is paired to this engine. When false (default), tools are omitted from the tool list."
+        },
+        "lanAccess": {
+          "type": "boolean",
+          "default": false,
+          "description": "SDD 422 mobile Companion: when true, enable phone pairing via Tailscale (PC + phone on the same tailnet). Bridge binds 0.0.0.0 so the mesh can reach /companion/v1 and /companion/app; pair QR uses the Tailscale IP only (not multi-NIC Wi‑Fi). Requires the Tailscale app on both devices. Default false = loopback-only (browser Companion / same host). MCP still requires agent/bridge auth. Doctor warns when enabled without Tailscale."
+        }
+      }
+    },
+    "ideBrowser": {
+      "type": "object",
+      "description": "VS Code Integrated Browser (Tachyon Design Mode / ide_browser_* tools). Workspace-owned GA gate and defaults for the human surface.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, show Integrated Browser status-bar controls and allow the bridge to start. When false (default), hide the human surface and fail ide_browser_* at call time with a clear disabled error. Tools always remain registered on the Bridge when the engine wires them (MCP catalogs freeze at connect)."
+        },
+        "homeUrl": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Default URL opened when the human clicks the IDE Browser status-bar globe (or first Design Mode open). Absolute http(s) URL, or a host (https is assumed). When unset, opens about:blank."
+        }
+      }
+    },
+    "delivery": {
+      "deprecated": true,
+      "description": "Ignored compatibility key. Canonical Delivery with mechanism-only handoff is always active; remove this block from tachyon.yml."
+    },
+    "agentMemoryMax": {
+      "type": "string",
+      "description": "Opt-in systemd --user MemoryMax applied to each agent's spawn tree (Linux only). A systemd size like \"2G\", \"512M\", \"50%\", or \"off\" to disable. Absent = no limit."
+    },
+    "humanInbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Control -> Inbox staleness marking (t-e4f662). Display only: nothing here approves, denies or closes anything.",
+      "properties": {
+        "staleAfterHours": {
+          "description": "Hours something may wait before it is MARKED stale (default 24), or \"never\" to stop marking for a fleet that parks work on purpose. 0 is refused: it reads as \"stale on arrival\", which is the opposite of the off it resembles.",
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            {
+              "type": "string",
+              "enum": [
+                "never",
+                "off",
+                "none"
+              ]
+            },
+            {
+              "type": "boolean",
+              "const": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "agentNotifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How long a parented agent may sit idle before Tachyon nudges its parent (t-585d5c). Applies on the next tick — no restart, no recreating agents.",
+      "properties": {
+        "idleAfterMinutes": {
+          "description": "Minutes of idleness before the parent is nudged (default 10, maximum 10080 = 7 days), or \"never\" to stop notifying. 0 is refused: it reads as \"nudge immediately\", not off.",
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 10080
+            },
+            {
+              "type": "string",
+              "enum": [
+                "never",
+                "off",
+                "none"
+              ]
+            },
+            {
+              "type": "boolean",
+              "const": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The durable project handoff note.",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Workspace-relative path of the handoff document (default .tachyon/HANDOFF.md)."
+        },
+        "nudgeEvery": {
+          "type": "string",
+          "pattern": "^(off|[0-9]+ *[mh])$",
+          "description": "How often to nudge for a handoff update ('30m', '1h', ...), or 'off'."
+        }
+      }
+    },
+    "persistence": {
+      "deprecated": true,
+      "description": "OBSOLETE and refused by name (t-7bcba6). Silent hooks are always enabled for eligible declared Claude/Codex agents and there is no visible-legacy fallback; remove this block (including silentHooks) from tachyon.yml."
+    },
+    "bridgeClientRebind": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What Bridge clients do when the host generation bumps after a reload (spec 364).",
+      "properties": {
+        "onHostGenerationBump": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "notify",
+            "off"
+          ],
+          "description": "'auto' rebinds the client itself, 'notify' tells the human, 'off' does neither."
+        },
+        "graceMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Delay before a rebind starts."
+        },
+        "stopTimeoutMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How long to wait for the old client to stop."
+        },
+        "maxConcurrentRebinds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Clients rebound at once."
+        },
+        "circuitFailCount": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Consecutive failures that open the circuit."
+        }
+      }
+    },
+    "stateBackup": {
+      "type": "object",
+      "description": "Opt-in off-machine backup of the durable runtime state (Board tasks, pins, validations, evidence, continuity, handoff, studies, runs, agent identity, tachyon.yml). Local state stays primary; the destination is a one-way replica. Omit the block and nothing ever leaves the machine.",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "path"
+      ],
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "filesystem"
+          ],
+          "description": "Backup destination kind. 'filesystem' is any locally-mounted path (NAS, SMB, external disk). s3-compatible and gdrive are planned."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Destination directory for backup generations."
+        },
+        "every": {
+          "type": "string",
+          "description": "Backup interval like '10m' or '1h'. Default 10m."
+        },
+        "keep": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How many backup generations to keep at the destination. Default 30."
         }
       }
     }

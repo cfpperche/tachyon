@@ -33,6 +33,7 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
+    "workspaceContains:.tachyon/settings.yml",
     "workspaceContains:tachyon.yml",
     "onView:tachyonSidebarPrototype"
   ],
@@ -654,10 +655,21 @@
     "yamlValidation": [
       {
         "fileMatch": [
-          "tachyon.yml",
-          "tachyon.yaml"
+          ".tachyon/settings.yml"
         ],
         "url": "./dist/tachyon.schema.json"
+      },
+      {
+        "fileMatch": [
+          ".tachyon/terminals/*.yml"
+        ],
+        "url": "./dist/tachyon-terminal.schema.json"
+      },
+      {
+        "fileMatch": [
+          ".tachyon/schedules/*.yml"
+        ],
+        "url": "./dist/tachyon-schedule.schema.json"
       }
     ],
     "chatParticipants": [

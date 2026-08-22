@@ -18,20 +18,24 @@ import {
   settingsImportMarkerPath,
 } from "../../apps/vscode-extension/src/config/settingsImport.js";
 import { setSettingsValue } from "@tachyon/engine/config/YamlConfigEditor.js";
-import { loadConfigFile } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { composeWorkspaceConfigText, workspaceSettingsPath } from "@tachyon/engine/config/workspaceSettingsFile.js";
 
 const nothingSet = (): boolean => false;
 
 describe("the value that would otherwise be lost", () => {
-  it("carries a VS Code-only maxAgents into tachyon.yml, so the effective number does not move", () => {
+  it("carries a VS Code-only maxAgents into .tachyon/settings.yml, so the effective number does not move", () => { // t-a65335
     const writes = planYmlImport({ maxAgents: 3 }, nothingSet);
     expect(writes).toEqual([{ keyPath: ["maxAgents"], value: 3 }]);
   });
 
   it("survives a real round trip: VS Code-only value in, same effective value out of loadConfig", () => {
     const root = makeTempDir("tachyon-settings-import-");
-    const file = path.join(root, "tachyon.yml");
-    fs.writeFileSync(file, "agents:\n  ada:\n    cmd: codex\n", "utf8");
+    // t-a65335 — the import writes `.tachyon/settings.yml`, whose TOP LEVEL is the settings
+    // mapping, and the effective value comes out of the composed workspace load.
+    const file = workspaceSettingsPath(root);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, "# workspace settings\n", "utf8");
 
     let text = fs.readFileSync(file, "utf8");
     for (const write of planYmlImport({ maxAgents: 3, worktreesRevealInWorkspace: false }, nothingSet)) {
@@ -39,7 +43,9 @@ describe("the value that would otherwise be lost", () => {
     }
     fs.writeFileSync(file, text, "utf8");
 
-    const parsed = loadConfigFile(file);
+    const composed = composeWorkspaceConfigText(root);
+    expect(composed.errors).toEqual([]);
+    const parsed = parseConfig(composed.yamlText);
     expect(parsed.errors ?? []).toEqual([]);
     expect(parsed.config?.settings.maxAgents).toBe(3);
     expect(parsed.config?.settings.worktree?.revealInWorkspace).toBe(false);

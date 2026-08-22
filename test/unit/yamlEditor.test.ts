@@ -211,71 +211,69 @@ settings:
 
 });
 
+// t-a65335 — the settings mutators edit `.tachyon/settings.yml`, whose TOP LEVEL is the settings
+// mapping (no settings: wrapper), and they create the file's content from nothing: the "needs an
+// existing tachyon.yml" guard was an artifact of the retired single file.
+const SETTINGS_YML = "auth: true\n";
+function expectValidSettings(text: string) {
+  const { config, errors } = parseConfig(`settings:\n${text.split("\n").map((l) => (l.trim() ? `  ${l}` : l)).join("\n")}`);
+  expect(errors).toEqual([]);
+  return config!.settings;
+}
+
 describe("setCompanionTabTools (SDD 414)", () => {
-  it("writes settings.companion.tabTools true/false and stays loadable", () => {
-    const on = setCompanionTabTools(YML, true).text;
-    expect(expectValid(on).settings.companion?.tabTools).toBe(true);
-    expect(on).toMatch(/companion:[\s\S]*tabTools:\s*true/);
+  it("writes companion.tabTools true/false at the top level and stays loadable", () => {
+    const on = setCompanionTabTools(SETTINGS_YML, true).text;
+    expect(expectValidSettings(on).companion?.tabTools).toBe(true);
+    expect(on).toMatch(/^companion:/m);
     const off = setCompanionTabTools(on, false).text;
-    expect(expectValid(off).settings.companion?.tabTools).toBe(false);
+    expect(expectValidSettings(off).companion?.tabTools).toBe(false);
   });
 
-  it("refuses empty yml", () => {
-    expect(() => setCompanionTabTools(undefined, true)).toThrow("existing tachyon.yml");
+  it("creates the settings document from nothing", () => {
+    expect(expectValidSettings(setCompanionTabTools(undefined, true).text).companion?.tabTools).toBe(true);
   });
 });
 
 describe("setIdeBrowserEnabled (SDD 488 F4)", () => {
-  it("writes settings.ideBrowser.enabled true/false and stays loadable", () => {
-    const on = setIdeBrowserEnabled(YML, true).text;
-    expect(expectValid(on).settings.ideBrowser?.enabled).toBe(true);
-    expect(on).toMatch(/ideBrowser:[\s\S]*enabled:\s*true/);
+  it("writes ideBrowser.enabled true/false at the top level and stays loadable", () => {
+    const on = setIdeBrowserEnabled(SETTINGS_YML, true).text;
+    expect(expectValidSettings(on).ideBrowser?.enabled).toBe(true);
     const off = setIdeBrowserEnabled(on, false).text;
-    expect(expectValid(off).settings.ideBrowser?.enabled).toBe(false);
+    expect(expectValidSettings(off).ideBrowser?.enabled).toBe(false);
   });
 
-  it("refuses empty yml", () => {
-    expect(() => setIdeBrowserEnabled(undefined, true)).toThrow("existing tachyon.yml");
+  it("creates the settings document from nothing", () => {
+    expect(expectValidSettings(setIdeBrowserEnabled(undefined, true).text).ideBrowser?.enabled).toBe(true);
   });
 });
 
 describe("setCompanionAllowedHosts (SDD 420)", () => {
   it("writes hosts and clears when empty", () => {
-    const withHosts = setCompanionAllowedHosts(YML, [" example.com ", "example.com", "*.herokuapp.com"]).text;
-    expect(expectValid(withHosts).settings.companion?.allowedHosts).toEqual([
-      "example.com",
-      "*.herokuapp.com",
-    ]);
+    const withHosts = setCompanionAllowedHosts(SETTINGS_YML, [" example.com ", "example.com", "*.herokuapp.com", ""]).text;
+    expect(expectValidSettings(withHosts).companion?.allowedHosts).toEqual(["example.com", "*.herokuapp.com"]);
     const cleared = setCompanionAllowedHosts(withHosts, []).text;
-    expect(expectValid(cleared).settings.companion?.allowedHosts).toBeUndefined();
-    expect(cleared).not.toMatch(/allowedHosts/);
+    expect(expectValidSettings(cleared).companion?.allowedHosts).toBeUndefined();
   });
 
-  it("refuses empty yml", () => {
-    expect(() => setCompanionAllowedHosts(undefined, ["a.com"])).toThrow("existing tachyon.yml");
+  it("creates the settings document from nothing", () => {
+    expect(expectValidSettings(setCompanionAllowedHosts(undefined, ["a.com"]).text).companion?.allowedHosts).toEqual(["a.com"]);
   });
 });
 
 describe("setCompanionLanAccess (SDD 422)", () => {
-  it("writes settings.companion.lanAccess true/false and stays loadable", () => {
-    const on = setCompanionLanAccess(YML, true).text;
-    expect(expectValid(on).settings.companion?.lanAccess).toBe(true);
-    expect(on).toMatch(/companion:[\s\S]*lanAccess:\s*true/);
+  it("writes companion.lanAccess true/false at the top level and stays loadable", () => {
+    const on = setCompanionLanAccess(SETTINGS_YML, true).text;
+    expect(expectValidSettings(on).companion?.lanAccess).toBe(true);
     const off = setCompanionLanAccess(on, false).text;
-    expect(expectValid(off).settings.companion?.lanAccess).toBe(false);
+    expect(expectValidSettings(off).companion?.lanAccess).toBe(false);
   });
 
-  it("refuses empty yml", () => {
-    expect(() => setCompanionLanAccess(undefined, true)).toThrow("existing tachyon.yml");
+  it("creates the settings document from nothing", () => {
+    expect(expectValidSettings(setCompanionLanAccess(undefined, true).text).companion?.lanAccess).toBe(true);
   });
 });
 
-/**
- * t-359469 — the two blocks are one namespace to `sectionOf`, and every caller that treats them
- * differently needs to ask which one. `agentStanzaCasToken` deliberately does not answer that: it is
- * persisted inside profile-transaction journals and compared field by field, so a new field on it
- * would fail validation or CAS for every journal written before the change.
- */
 describe("agentStanzaSection", () => {
   const yml = "agents:\n  Ada:\n    cmd: codex\nterminals:\n  shell:\n    cmd: bash\n";
 

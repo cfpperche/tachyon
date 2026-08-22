@@ -28,6 +28,7 @@ import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "@tachyon/e
 import type { NotifyLevel } from "@tachyon/engine/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import { __resetVscodeMock } from "../mocks/vscode.js";
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 
 /**
  * The expensive case from the contract, verbatim: `sandboxMode` misspelled on a codex entry drops the
@@ -145,17 +146,19 @@ function fleetSource(ws: Workspace, tmux: TmuxService): SidebarFleetSource {
   } as unknown as SidebarFleetSource;
 }
 
-async function attach(yaml: string): Promise<{ ws: Workspace; host: FakeHost; tmux: TmuxService; file: string }> {
+// t-a65335 — the workspace config lives at .tachyon/settings.yml now; the helper projects the
+// legacy-style documents these tests are written in. `root` is returned so a test can rewrite the
+// config between reloads.
+async function attach(yaml: string): Promise<{ ws: Workspace; host: FakeHost; tmux: TmuxService; root: string }> {
   const root = mkdir();
-  const file = path.join(root, "tachyon.yml");
-  fs.writeFileSync(file, yaml, "utf8");
+  writeWorkspaceConfig(root, yaml);
   const host = new FakeHost(mkdir());
   const tmux = fakeTmux();
   const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
-  return { ws, host, tmux, file };
+  return { ws, host, tmux, root };
 }
 
-describe("t-7d6013 durable surface for discarded tachyon.yml declarations", () => {
+describe("t-7d6013 durable surface for discarded workspace-config declarations", () => { // t-a65335
   it("records what was dropped, keeps the file loaded, and degrades nothing", async () => {
     const { ws, host, tmux } = await attach(FILE_WITH_DISCARDS);
 
@@ -163,7 +166,8 @@ describe("t-7d6013 durable surface for discarded tachyon.yml declarations", () =
     expect(host.toasts.some((toast) => toast.level === "warn" && toast.message.includes("sandbox_mode"))).toBe(true);
 
     const discards = ws.configDiscards;
-    expect(discards?.file).toBe("tachyon.yml");
+    // t-a65335 — the record names the config's new home (Workspace uses basename(configPath)).
+    expect(discards?.file).toBe("settings.yml");
     expect(discards?.entries).toEqual([
       "settings.maxAgents: must be an integer >= 1",
       "settings.worktree.shareDependencies: must be a boolean",
@@ -222,12 +226,12 @@ describe("t-7d6013 durable surface for discarded tachyon.yml declarations", () =
   });
 
   it("comes back when what was discarded changes, including the same typo written again", async () => {
-    const { ws, tmux, file } = await attach(FILE_WITH_DISCARDS);
+    const { ws, tmux, root } = await attach(FILE_WITH_DISCARDS);
     const first = ws.configDiscards!.signature;
     expect(ws.dismissConfigDiscards(first)).toBe(true);
 
     // A DIFFERENT mistake is a different record — the dismissal covered the old set, not the file.
-    fs.writeFileSync(file, `${FILE_CLEAN}  companion:\n    allowedHost: [example.com]\n`, "utf8");
+    writeWorkspaceConfig(root, `${FILE_CLEAN}  companion:\n    allowedHost: [example.com]\n`);
     ws.reloadConfig();
     expect(ws.configDiscards?.entries).toEqual(["settings.companion: unknown key 'allowedHost'"]);
     expect(ws.configDiscards?.signature).not.toBe(first);
@@ -236,10 +240,10 @@ describe("t-7d6013 durable surface for discarded tachyon.yml declarations", () =
     // that was made about a file which no longer exists.
     const second = ws.configDiscards!.signature;
     expect(ws.dismissConfigDiscards(second)).toBe(true);
-    fs.writeFileSync(file, FILE_CLEAN, "utf8");
+    writeWorkspaceConfig(root, FILE_CLEAN);
     ws.reloadConfig();
     expect(ws.configDiscards).toBeUndefined();
-    fs.writeFileSync(file, `${FILE_CLEAN}  companion:\n    allowedHost: [example.com]\n`, "utf8");
+    writeWorkspaceConfig(root, `${FILE_CLEAN}  companion:\n    allowedHost: [example.com]\n`);
     ws.reloadConfig();
     expect(ws.configDiscards?.signature).toBe(second);
     expect((await buildSidebarFleet(fleetSource(ws, tmux))).configDiscards?.signature).toBe(second);
@@ -255,12 +259,12 @@ describe("t-7d6013 durable surface for discarded tachyon.yml declarations", () =
   });
 
   it("a fatal reload keeps the still-running config's discards instead of clearing them", async () => {
-    const { ws, file } = await attach(FILE_WITH_DISCARDS);
+    const { ws, root } = await attach(FILE_WITH_DISCARDS);
     const signature = ws.configDiscards!.signature;
 
     // Bytes that are not YAML: one of the two fatals t-48dd8d left standing. The previously loaded
     // config keeps running, so the record of what IT discarded is still true.
-    fs.writeFileSync(file, "agents: [unclosed\n", "utf8");
+    writeWorkspaceConfig(root, "agents: [unclosed\n");
     ws.reloadConfig();
     expect(ws.configFailure).toBeDefined();
     expect(ws.configDiscards?.signature).toBe(signature);

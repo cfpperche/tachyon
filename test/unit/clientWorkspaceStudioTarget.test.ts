@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -34,11 +35,7 @@ describe("ClientWorkspaceStudioTarget", () => {
       "schemaVersion: 1\nagentId: 11111111-1111-4111-8111-111111111111\nruntime:\n  adapter: codex\n  executable: codex\n",
       "utf8",
     );
-    fs.writeFileSync(
-      path.join(root, "tachyon.yml"),
-      "agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\n",
-      "utf8",
-    );
+    writeWorkspaceConfig(root, "agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\n");
     const identity = projectionIdentity(root);
     const fake = new FakeWorkspaceClient({ identity, snapshot: projectionSnapshot(identity) });
     const target = new ClientWorkspaceStudioTarget(fake, {
@@ -55,7 +52,7 @@ describe("ClientWorkspaceStudioTarget", () => {
   it("routes canonical Studio inspect/commit through typed extension operations", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-profile-studio-"));
     roots.push(root);
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n", "utf8");
+    writeWorkspaceConfig(root, "agents: {}\n");
     const identity = projectionIdentity(root);
     const snapshot: AgentProfileStudioSnapshotV1 = {
       schemaVersion: 1,
@@ -117,7 +114,7 @@ describe("ClientWorkspaceStudioTarget", () => {
   it("carries reachesAgentAtNextLaunch across the wire, and treats its absence as 'not said'", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-authorize-"));
     roots.push(root);
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n", "utf8");
+    writeWorkspaceConfig(root, "agents: {}\n");
     const identity = projectionIdentity(root);
     const fake = new FakeWorkspaceClient({
       identity,
@@ -151,8 +148,15 @@ describe("ClientWorkspaceStudioTarget", () => {
   it("loads forms locally but routes every save through one idempotency-keyed engine command", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-studio-"));
     roots.push(root);
-    const configPath = path.join(root, "tachyon.yml");
-    fs.writeFileSync(configPath, config("lint"), "utf8");
+    // t-a65335 — the workspace config lives in the new homes (.tachyon/settings.yml + one
+    // .tachyon/terminals/<name>.yml per declaration); the helper projects the legacy-style text.
+    writeWorkspaceConfig(root, config("lint"));
+    const settingsPath = path.join(root, ".tachyon", "settings.yml");
+    const configState = (): string => JSON.stringify({
+      settings: fs.readFileSync(settingsPath, "utf8"),
+      terminals: fs.readdirSync(path.join(root, ".tachyon", "terminals")).sort()
+        .map((file) => [file, fs.readFileSync(path.join(root, ".tachyon", "terminals", file), "utf8")]),
+    });
     fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ scripts: { test: "vitest run" } }), "utf8");
     const identity = projectionIdentity(root);
     const operations: string[] = [];
@@ -166,7 +170,7 @@ describe("ClientWorkspaceStudioTarget", () => {
           return workspaceCommandSuccessV1(command, ["forced validation failure"]);
         }
         expect(command.input.editingName).toBeUndefined();
-        fs.writeFileSync(configPath, config("lint", command.input.state.name), "utf8");
+        writeWorkspaceConfig(root, config("lint", command.input.state.name));
         return workspaceCommandSuccessV1(command);
       },
     });
@@ -188,23 +192,26 @@ describe("ClientWorkspaceStudioTarget", () => {
     expect(fake.invocations[0]?.command).toMatchObject({ method: "studio.submit", input: { state: { name: "deploy" } } });
     expect(target.config?.agents.deploy?.cmd).toBe("npm run deploy");
 
-    const beforeInvalid = fs.readFileSync(configPath, "utf8");
+    const beforeInvalid = configState();
     await expect(adapter.save(undefined, { ...blankTerminalFields(), name: "invalid", cmd: "" }))
       .resolves.toMatchObject({ status: "error", error: { source: "validation" } });
-    expect(fs.readFileSync(configPath, "utf8")).toBe(beforeInvalid);
+    expect(configState()).toBe(beforeInvalid);
     expect(operations).toEqual(["studio-operation-1", "studio-operation-2"]);
 
-    fs.writeFileSync(configPath, "not: [valid", "utf8");
+    // t-a65335 — an unparseable settings file is where invalid-config surfaces now; the last good
+    // config is kept.
+    fs.writeFileSync(settingsPath, "not: [valid", "utf8");
     expect(target.config?.agents.deploy?.cmd).toBe("npm run deploy");
 
-    fs.rmSync(configPath);
+    // t-a65335 — a workspace is configured iff .tachyon/settings.yml exists.
+    fs.rmSync(settingsPath);
     expect(target.config).toBeUndefined();
   });
 
   it("carries a partial Studio submit to the domain instead of failing it in transport (t-8247ec)", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-studio-partial-"));
     roots.push(root);
-    fs.writeFileSync(path.join(root, "tachyon.yml"), config("lint"), "utf8");
+    writeWorkspaceConfig(root, config("lint"));
     const identity = projectionIdentity(root);
     let submits = 0;
     const fake = new FakeWorkspaceClient({
@@ -234,7 +241,7 @@ describe("ClientWorkspaceStudioTarget", () => {
   it("refuses the editor-host legacy agent form as domain, not transport (t-f533f6)", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-studio-legacy-agent-"));
     roots.push(root);
-    fs.writeFileSync(path.join(root, "tachyon.yml"), config("lint"), "utf8");
+    writeWorkspaceConfig(root, config("lint"));
     const identity = projectionIdentity(root);
     const fake = new FakeWorkspaceClient({
       identity,
@@ -269,7 +276,7 @@ describe("ClientWorkspaceStudioTarget", () => {
   it("surfaces an engine command failure as transport failure instead of a validation error", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-studio-error-"));
     roots.push(root);
-    fs.writeFileSync(path.join(root, "tachyon.yml"), config("lint"), "utf8");
+    writeWorkspaceConfig(root, config("lint"));
     const identity = projectionIdentity(root);
     const fake = new FakeWorkspaceClient({
       identity,

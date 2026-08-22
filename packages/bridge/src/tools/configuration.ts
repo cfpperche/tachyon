@@ -4,17 +4,18 @@ import { type BridgeDeps, fail, ok } from "./shared.js";
 
 export function registerConfigurationTools(mcp: McpServer, deps: BridgeDeps): void {
 
-  // t-099be8 — mechanical gate for agent self-edits of tachyon.yml (do NOT use raw Write for this file).
+  // t-099be8 — mechanical gate for agent self-edits of .tachyon/settings.yml (do NOT use raw Write for this file).
   mcp.registerTool(
     "write_tachyon_config",
     {
       description:
-        "Validate and write the workspace tachyon.yml in one step. Runs the same loadConfig/schema/cross-ref checks " +
-        "the extension uses and REFUSES to save on hard errors (invalid YAML, schema, cycles, multi-owner, etc.). " +
-        "Dangling subagents names become warnings and are dropped rather than wiping the roster. " +
-        "Prefer this over raw filesystem Write when editing tachyon.yml so a bad edit cannot detonate only on next reload.",
+        "Validate and write the workspace settings file (.tachyon/settings.yml) in one step. The file's top level " +
+        "IS the settings mapping (no settings: wrapper; tachyon.yml is retired — terminals/schedules are per-file " +
+        "declarations under .tachyon/). Runs the same loadConfig/schema/cross-ref checks the extension uses and " +
+        "REFUSES to save on hard errors. Prefer this over raw filesystem Write when editing workspace settings " +
+        "so a bad edit cannot detonate only on next reload.",
       inputSchema: {
-        content: z.string().min(1).describe("Full tachyon.yml text to validate and persist"),
+        content: z.string().min(1).describe("Full .tachyon/settings.yml text to validate and persist (top-level settings mapping)"),
       },
     },
     async ({ content }) => {
@@ -24,7 +25,7 @@ export function registerConfigurationTools(mcp: McpServer, deps: BridgeDeps): vo
         if (!result.ok) {
           return fail(
             new Error(
-              `tachyon.yml rejected (not saved):\n${result.errors.join("\n")}${
+              `.tachyon/settings.yml rejected (not saved):\n${result.errors.join("\n")}${
                 result.warnings.length ? `\nwarnings:\n${result.warnings.join("\n")}` : ""
               }`,
             ),

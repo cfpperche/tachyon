@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -187,10 +188,7 @@ describe("native config source ownership (t-59a11b)", () => {
       runtime: { adapter: "claude", executable: "claude" },
       nativeConfig: { interface: policy },
     });
-    fs.writeFileSync(
-      path.join(root, "tachyon.yml"),
-      "agents:\n  claude:\n    profile: .tachyon/agents/claude/agent.yml\n",
-    );
+    writeWorkspaceConfig(root, "agents:\n  claude:\n    profile: .tachyon/agents/claude/agent.yml\n",);
     const authorityDir = path.join(root, ".tachyon", "authority");
     fs.mkdirSync(authorityDir, { recursive: true });
 
@@ -227,7 +225,7 @@ describe("native config source ownership (t-59a11b)", () => {
    */
   it("marks a profile-less Grok agent pending for the workspace source only", async () => {
     const root = temporaryRoot("tachyon-grok-pending-");
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  grokkie:\n    cmd: grok\n");
+    writeWorkspaceConfig(root, "agents:\n  grokkie:\n    cmd: grok\n");
 
     const ws = await createWorkspaceForTest(
       root,
@@ -273,10 +271,7 @@ describe("native config source ownership (t-59a11b)", () => {
       runtime: { adapter: "grok", executable: "grok" },
       nativeConfig: { interface: scalar },
     });
-    fs.writeFileSync(
-      path.join(root, "tachyon.yml"),
-      "agents:\n  grokkie:\n    profile: .tachyon/agents/grokkie/agent.yml\n",
-    );
+    writeWorkspaceConfig(root, "agents:\n  grokkie:\n    profile: .tachyon/agents/grokkie/agent.yml\n",);
 
     const ws = await createWorkspaceForTest(
       root,

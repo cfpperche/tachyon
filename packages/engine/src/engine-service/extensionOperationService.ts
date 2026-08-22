@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { composeWorkspaceConfigText } from "../config/workspaceSettingsFile.js";
 import net from "node:net";
 import { approvalResolutionPorts } from "../approvals/approvalResolutionPorts.js";
 import { createProfileFromStudioMutation } from "@tachyon/shared/config/agentProfileStudio.js";
@@ -750,7 +751,10 @@ async function doctorReport(workspace: Workspace): Promise<JsonValue> {
   // A loader failure is authoritative, especially when the file exists but cannot be read. Re-reading
   // here would either throw away that retained diagnostic or make the Doctor operation itself fail.
   if (configPath && fileExists && !workspace.configFailure) {
-    const { config, errors, warnings, profileErrors } = workspace.parseTrustedConfigText(fs.readFileSync(configPath, "utf8"));
+    const composed = composeWorkspaceConfigText(workspace.workspaceRoot);
+    const { config, errors, warnings, profileErrors } = composed.errors.length > 0
+      ? { config: undefined, errors: composed.errors, warnings: composed.warnings, profileErrors: [] }
+      : workspace.parseTrustedConfigText(composed.yamlText);
     configWarnings = [...warnings];
     const onlyRefusedProfiles = errors.length > 0 && errors.length === profileErrors.length && config !== undefined;
     if (errors.length > 0 && !onlyRefusedProfiles) {
@@ -886,7 +890,7 @@ function inspectPipeline(workspace: Workspace, name?: string, runId?: string): J
 function configMutation(workspace: Workspace, mutate: () => boolean): JsonValue {
   void workspace;
   const changed = mutate();
-  if (!changed) throw new Error("tachyon.yml mutation was refused");
+  if (!changed) throw new Error(".tachyon/settings.yml mutation was refused");
   return json({ changed: true });
 }
 

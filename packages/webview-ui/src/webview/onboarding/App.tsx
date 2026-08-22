@@ -43,13 +43,13 @@ function FolderRow({ folder, environmentReady, dispatch }: { folder: OnboardingF
       <div class="onb-env-head">
         <span class="onb-env-label"><Icon name="folder" /> {folder.name}</span>
         {folder.configured
-          ? <Badge tone="ok"><Icon name="check" /> tachyon.yml present</Badge>
+          ? <Badge tone="ok"><Icon name="check" /> workspace configured</Badge>
           : <Badge tone="warn"><Icon name="warning" /> not initialized</Badge>}
         <span class="onb-head-actions">
           {folder.configured
-            ? <Button data-testid="onb-open-config" onClick={() => dispatch({ type: "openConfig" })}>Open tachyon.yml</Button>
+            ? <Button data-testid="onb-open-config" onClick={() => dispatch({ type: "openConfig" })}>Open settings</Button>
             : <Button variant="primary" icon="rocket" disabled={!environmentReady} data-testid="onb-initialize"
-                title={environmentReady ? "Generate a starter tachyon.yml in this workspace" : "Fix the missing environment items first"}
+                title={environmentReady ? "Generate a starter .tachyon/settings.yml in this workspace" : "Fix the missing environment items first"}
                 onClick={() => dispatch({ type: "initialize" })}>Initialize this workspace</Button>}
         </span>
       </div>
@@ -115,7 +115,7 @@ export function App({ model, dispatch }: { model?: OnboardingModel; dispatch: (a
     <section class="onb-section" aria-label="Workspace">
       <h2>Workspace</h2>
       {!hasFolder
-        ? <EmptyState icon="folder" message={<>Open a folder first — then initialize it here.<br />The starter <code>tachyon.yml</code> is a teaching artifact: commented, valid, yours to edit.</>} />
+        ? <EmptyState icon="folder" message={<>Open a folder first — then initialize it here.<br />The starter <code>.tachyon/settings.yml</code> is a teaching artifact: commented, valid, yours to edit.</>} />
         : <div class="onb-folder-list">
             {folders.map((folder) => <FolderRow key={folder.root} folder={folder} environmentReady={env.ready} dispatch={dispatch} />)}
           </div>}

@@ -44,7 +44,9 @@ function seedWorkspace(root: string): void {
   write(root, ".tachyon/runs/r-1.json", "{}");
   write(root, ".tachyon/agents/claude/agent.yml", "schemaVersion: 1\n");
   write(root, ".tachyon/agents/claude/scratch.log", "runtime noise, not identity");
-  write(root, "tachyon.yml", "agents: {}\n");
+  write(root, ".tachyon/settings.yml", "auth: true\n");
+  write(root, ".tachyon/terminals/test.yml", "cmd: npm test\n");
+  write(root, ".tachyon/schedules/nightly.yml", "every: 1h\nspawn: claude\n");
   // Secrets that must NEVER reach a backup.
   write(root, ".tachyon/harness/claude/.credentials.json", "{\"token\":\"SECRET\"}");
   write(root, ".tachyon/harness/claude/history.jsonl", "machine-local");
@@ -75,7 +77,9 @@ describe("durable-state manifest", () => {
     expect(files).toContain(".tachyon/tasks/details/t-000001.json");
     expect(files).toContain(".tachyon/continuity/claude.md");
     expect(files).toContain(".tachyon/agents/claude/agent.yml");
-    expect(files).toContain("tachyon.yml");
+    expect(files).toContain(".tachyon/settings.yml");
+    expect(files).toContain(".tachyon/terminals/test.yml");
+    expect(files).toContain(".tachyon/schedules/nightly.yml");
     const flat = files.join("\n");
     expect(flat).not.toContain("credentials");
     expect(flat).not.toContain("secret");

@@ -27,7 +27,7 @@ describe("t-7b4bb5 — Settings scope copy", () => {
     expect(app).toContain('data-testid="control-settings-scope-workspace"');
     expect(app).toContain('data-testid="control-settings-global-path"');
     expect(app).toContain('data-testid="control-settings-workspace-path"');
-    expect(app).toContain("tachyon.yml");
+    expect(app).toContain(".tachyon/settings.yml");
     // Ambiguous side-by-side jump of both opens is gone; opens live inside the scope cards.
     expect(app).toContain('data-testid="control-settings-open-global"');
     expect(app).toContain('data-testid="control-settings-open-workspace"');

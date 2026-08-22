@@ -10,6 +10,7 @@
  * direct file edit can forge the record, but bypasses closeRound and therefore is not a caller of the
  * close mechanism measured here.
  */
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -154,7 +155,7 @@ async function startDaemon(): Promise<Daemon> {
   for (const directory of [workspaceRoot, storageRoot, mediaRoot, runtimeRoot, tmuxTmp, xdgRuntime]) {
     fs.mkdirSync(directory, { mode: 0o700 });
   }
-  fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), "agents: {}\n", "utf8");
+  writeWorkspaceConfig(workspaceRoot, "agents: {}\n");
   const childEnv = isolatedDaemonChildEnv(tmuxChildEnv(), {
     TMUX_TMPDIR: tmuxTmp,
     TACHYON_ENGINE_TMUX_TMPDIR: tmuxTmp,

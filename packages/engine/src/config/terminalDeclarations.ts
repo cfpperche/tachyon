@@ -1,12 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { parse, parseDocument, stringify } from "yaml";
+import { parse, stringify } from "yaml";
 import { AGENT_NAME_PATTERN } from "./nameValidation.js";
 
 export const TERMINAL_DECLARATIONS_DIRECTORY = ".tachyon/terminals";
-export const LEGACY_TERMINALS_BLOCK_WARNING =
-  "terminals: in tachyon.yml is legacy and continues to load; new declarations live at "
-  + ".tachyon/terminals/<name>.yml.";
 
 function assertName(name: string): void {
   if (!AGENT_NAME_PATTERN.test(name)) throw new Error(`invalid terminal name '${name}'`);
@@ -97,16 +94,6 @@ export function deleteTerminalDeclaration(workspaceRoot: string, name: string): 
   fs.unlinkSync(file);
 }
 
-/** Compatibility mutation for a legacy hand-authored block. It remains readable forever. */
-export function deleteLegacyTerminalDeclaration(text: string, name: string): { text: string; warnings: string[] } {
-  const doc = parseDocument(text);
-  if (doc.errors.length > 0) throw new Error(`tachyon.yml is not parseable: ${doc.errors[0]!.message}`);
-  if (!doc.hasIn(["terminals", name])) throw new Error(`terminal '${name}' does not exist`);
-  doc.deleteIn(["terminals", name]);
-  const terminals = doc.get("terminals") as { items?: unknown[] } | undefined;
-  if (terminals?.items?.length === 0) doc.delete("terminals");
-  return { text: String(doc), warnings: [] };
-}
 
 export interface TerminalDeclarationScan {
   declarations: Record<string, Record<string, unknown>>;

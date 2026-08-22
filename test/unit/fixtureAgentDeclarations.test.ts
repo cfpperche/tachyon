@@ -22,9 +22,10 @@ import { makeTempDir } from "../helpers/tempDir.js";
  *     sweep that cannot see, so the detector is run against a fixture tree built to be wrong.
  *  2. **No fixture in the tree violates it.**
  *
- * SCOPE, deliberately: fixture FILES (`test/fixtures/**​/tachyon.yml`). Inline YAML inside test
- * sources is not swept, because a large share of it is negative cases — suites that assert the
- * loader's refusal must be free to write the refused shape.
+ * SCOPE, deliberately: fixture FILES — the workspace config surface, which post-t-a65335 is
+ * `test/fixtures/**​/.tachyon/settings.yml` (plus any legacy `tachyon.yml` a migration fixture may
+ * still carry). Inline YAML inside test sources is not swept, because a large share of it is
+ * negative cases — suites that assert the loader's refusal must be free to write the refused shape.
  */
 
 const FIXTURES_ROOT = path.resolve(__dirname, "..", "fixtures");
@@ -69,12 +70,18 @@ function inlineAgentDeclarations(yamlText: string, file: string): InlineAgent[] 
   });
 }
 
-/** Every `tachyon.yml` under `root`, deepest included, as paths relative to `root`. */
+/**
+ * Every workspace config file under `root`, deepest included, as paths relative to `root`:
+ * `.tachyon/settings.yml` (the current home) and any legacy `tachyon.yml` a migration fixture
+ * still carries. // t-a65335
+ */
 function fixtureConfigs(root: string, prefix = ""): string[] {
   return fs.readdirSync(path.join(root, prefix), { withFileTypes: true }).flatMap((entry) => {
     const relative = prefix ? path.join(prefix, entry.name) : entry.name;
     if (entry.isDirectory()) return fixtureConfigs(root, relative);
-    return entry.isFile() && entry.name === "tachyon.yml" ? [relative] : [];
+    if (!entry.isFile()) return [];
+    if (entry.name === "tachyon.yml") return [relative];
+    return entry.name === "settings.yml" && path.basename(prefix) === ".tachyon" ? [relative] : [];
   });
 }
 
@@ -100,12 +107,15 @@ describe("SDD 478 M8 — the fixture guard is worth trusting", () => {
     }]);
   });
 
+  // t-a65335 — the guard tests write the swept files directly (writeWorkspaceConfig would drop the
+  // legacy agents: block, and the detector's input is the file on disk, not the loader's view).
   it("reports an attested runtime declared inline too — the banned thing is the shape, not the binary", () => {
     const root = makeTempDir("tachyon-fixture-guard-");
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  reviewer:\n    cmd: claude\n", "utf8");
+    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".tachyon", "settings.yml"), "agents:\n  reviewer:\n    cmd: claude\n", "utf8");
 
     expect(sweep(root)).toEqual([{
-      file: "tachyon.yml",
+      file: path.join(".tachyon", "settings.yml"),
       agent: "reviewer",
       reason: "declares 'cmd: claude' inline instead of pointing at a canonical profile",
     }]);
@@ -113,8 +123,9 @@ describe("SDD 478 M8 — the fixture guard is worth trusting", () => {
 
   it("accepts a canonical pointer, an empty roster, and any terminal — a process declared as one is correct", () => {
     const root = makeTempDir("tachyon-fixture-guard-");
+    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
     fs.writeFileSync(
-      path.join(root, "tachyon.yml"),
+      path.join(root, ".tachyon", "settings.yml"),
       "agents:\n  reviewer:\n    profile: .tachyon/agents/reviewer/agent.yml\nterminals:\n  dev:\n    cmd: sh\n",
       "utf8",
     );
@@ -126,10 +137,11 @@ describe("SDD 478 M8 — the fixture guard is worth trusting", () => {
 
   it("does not let an unreadable or malformed roster pass silently", () => {
     const root = makeTempDir("tachyon-fixture-guard-");
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  - not\n  - a mapping\n", "utf8");
+    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".tachyon", "settings.yml"), "agents:\n  - not\n  - a mapping\n", "utf8");
 
     expect(sweep(root)).toEqual([{
-      file: "tachyon.yml",
+      file: path.join(".tachyon", "settings.yml"),
       agent: "(whole file)",
       reason: "declares 'agents:' as something other than a mapping",
     }]);
@@ -137,7 +149,7 @@ describe("SDD 478 M8 — the fixture guard is worth trusting", () => {
 });
 
 describe("SDD 478 M8 — no product fixture declares an agent inline", () => {
-  it("every test/fixtures/**/tachyon.yml declares agents only as canonical profile pointers", () => {
+  it("every fixture workspace config declares agents only as canonical profile pointers", () => { // t-a65335
     const violations = sweep(FIXTURES_ROOT);
 
     expect(
@@ -154,7 +166,8 @@ describe("SDD 478 M8 — no product fixture declares an agent inline", () => {
     // must not require editing this test.
     const swept = fixtureConfigs(FIXTURES_ROOT);
     expect(swept.length).toBeGreaterThanOrEqual(16);
-    expect(swept).toContain(path.join("multiroot", "alpha", "tachyon.yml"));
-    expect(swept).toContain(path.join("sample-workspace", "tachyon.yml"));
+    // t-a65335 — fixture configs live at .tachyon/settings.yml now.
+    expect(swept).toContain(path.join("multiroot", "alpha", ".tachyon", "settings.yml"));
+    expect(swept).toContain(path.join("sample-workspace", ".tachyon", "settings.yml"));
   });
 });

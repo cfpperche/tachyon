@@ -3,7 +3,7 @@ import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import { parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
 import { validateTerminalForm, type FormState } from "@tachyon/engine/webview/formLogic.js";
 import { blankTerminalFields } from "@tachyon/webview-ui/webview/terminal-studio-shell/domain.js";
-import { buildStarterYaml, type DetectedProject } from "../../apps/vscode-extension/src/init/initLogic.js";
+import { buildStarterFiles, type DetectedProject } from "../../apps/vscode-extension/src/init/initLogic.js";
 
 /**
  * SDD 478 M6 — one rule at every door that can create or import a managed entry: a generic command
@@ -124,16 +124,17 @@ describe("door: tachyon.init scaffold", () => {
       project({ files: ["Cargo.toml"] }),
       project({ installedClis: [] }),
     ]) {
-      const yaml = buildStarterYaml(p);
-      expect(parseProfileAwareConfigSyntax(yaml).errors, yaml).toEqual([]);
+      const starter = buildStarterFiles(p);
+      // the settings file's top level IS the settings mapping; wrap it the way the composer does
+      const composed = `settings:\n${starter.settingsYaml.split("\n").map((l) => (l.trim() ? `  ${l}` : l)).join("\n")}\nterminals:\n${starter.terminals.map((t) => `  ${t.name}:\n${t.yaml.split("\n").filter((l) => l.trim() && !l.trim().startsWith("#")).map((l) => `    ${l}`).join("\n")}`).join("\n")}`;
+      expect(parseProfileAwareConfigSyntax(composed).errors, composed).toEqual([]);
     }
   });
 
   it("emits terminals: for generic commands and points at Agent Studio for agents", () => {
-    const yaml = buildStarterYaml(project({ files: ["package.json"], packageJson: { scripts: { dev: "vite" } } } as Partial<DetectedProject>));
-    expect(yaml).toContain("terminals:");
-    expect(yaml).toContain("npm run dev");
-    expect(yaml).toContain("Agent Studio");
-    expect(yaml).not.toMatch(/^agents:/m);
+    const starter = buildStarterFiles(project({ files: ["package.json"], packageJson: { scripts: { dev: "vite" } } } as Partial<DetectedProject>));
+    expect(starter.terminals.map((t) => t.yaml).join("\n")).toContain("npm run dev");
+    expect(starter.settingsYaml).toContain("Agent Studio");
+    expect(starter.settingsYaml).not.toMatch(/^agents:/m);
   });
 });

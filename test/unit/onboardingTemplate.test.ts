@@ -4,31 +4,34 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadProfileAwareConfig } from "@tachyon/engine/config/agentProfileConfigLoader.js";
+import { composeWorkspaceConfigText, workspaceSettingsPath } from "@tachyon/engine/config/workspaceSettingsFile.js";
+import { agentsOf, terminalsOf } from "@tachyon/engine/config/loadConfig.js";
+import { buildStarterFiles, type DetectedProject } from "../../apps/vscode-extension/src/init/initLogic.js";
 
 /**
  * t-fe772a — the ONBOARDING ARTIFACT, exercised the way a newcomer exercises it.
  *
- * `tachyon.yml.example` is the only file a person who clones this repository reads before anything
- * runs, and it is the one file nobody here ever opens: we all have a live `tachyon.yml` already. It
- * broke exactly that way once — it declared retired inline agents, so `cp tachyon.yml.example
- * tachyon.yml` produced a config that did not load AT ALL. A template read only by humans rots; a
- * template a test loads does not.
+ * t-a65335 — `tachyon.yml.example` was removed together with the file it documented. The onboarding
+ * path is now `Tachyon: Init`, which writes `.tachyon/settings.yml` (top level IS the settings
+ * mapping) plus one `.tachyon/terminals/<name>.yml` per detected process. The artifact rotting the
+ * same way is still the risk: everyone here has a live workspace already, so nobody re-runs Init.
  *
- * The path has TWO doors and this file walks both, because passing one proves nothing about the
- * other:
- *   1. the loader — does the copied file produce a usable config?
- *   2. the editor — `package.json` binds `dist/tachyon.schema.json` to `tachyon.yml` through
- *      `contributes.yamlValidation`, and that schema closes `settings:` with
- *      `additionalProperties: false`. Measured 2026-08-10: the template loaded perfectly and still
- *      lit up with two "must NOT have additional properties" errors the moment it was opened,
- *      because `humanInbox` and `agentNotifications` had been added to the parser and not to the
- *      schema. Green on door 1, red on door 2, and door 2 is the one the newcomer sees first.
+ * The path still has TWO doors and this file walks both, because passing one proves nothing about
+ * the other:
+ *   1. the loader — do the files Init writes produce a usable config?
+ *   2. the editor — `package.json` binds `dist/tachyon.schema.json` to `.tachyon/settings.yml`
+ *      through `contributes.yamlValidation`, and that schema closes the mapping with
+ *      `additionalProperties: false`. Measured 2026-08-10 (on the old template): the file loaded
+ *      perfectly and still lit up with "must NOT have additional properties" errors the moment it
+ *      was opened, because keys had been added to the parser and not to the schema. Green on door 1,
+ *      red on door 2, and door 2 is the one the newcomer sees first.
  */
 
 const repoRoot = process.cwd();
-const exampleText = fs.readFileSync(path.join(repoRoot, "tachyon.yml.example"), "utf8");
+// t-a65335 — the schema's top level IS the settings subtree now (no `settings:` wrapper).
 const schema = JSON.parse(fs.readFileSync(path.join(repoRoot, "apps", "vscode-extension", "tachyon.schema.json"), "utf8")) as {
-  properties: Record<string, { properties?: Record<string, unknown> }>;
+  properties: Record<string, unknown>;
+  additionalProperties?: boolean;
 };
 
 const roots: string[] = [];
@@ -42,67 +45,96 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
-function loadAsFreshCheckout(yamlText: string) {
-  // The TRACKED template is the subject; the fleet on the runner's disk is not. Since t-ae221c the
-  // roster is `.tachyon/agents/`, so `workspaceRoot` has to be a disposable empty directory —
-  // pointing it at this checkout would make the assertion about whoever ran it (green in an agent
-  // worktree, red in the primary checkout, where real agents get refused against an empty authority
-  // map).
+/** A representative newcomer project: Node with dev/test scripts, one detected CLI. */
+const DETECTED: DetectedProject = {
+  files: ["package.json"],
+  packageJson: { scripts: { dev: "vite", test: "vitest" } },
+  installedClis: ["claude"],
+};
+
+/** Write the starter files exactly as the `tachyon.init` command handler does. */
+function initWorkspace(detected: DetectedProject = DETECTED): { root: string; starter: ReturnType<typeof buildStarterFiles> } {
+  const root = temporaryRoot("tachyon-onboarding-init-workspace-");
+  const starter = buildStarterFiles(detected);
+  const target = workspaceSettingsPath(root);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, starter.settingsYaml, "utf8");
+  const terminalsDir = path.join(root, ".tachyon", "terminals");
+  fs.mkdirSync(terminalsDir, { recursive: true });
+  for (const terminal of starter.terminals) {
+    fs.writeFileSync(path.join(terminalsDir, `${terminal.name}.yml`), terminal.yaml, "utf8");
+  }
+  return { root, starter };
+}
+
+/** Load the workspace through the production composition + loader, as an attach would. */
+function loadAsFreshCheckout(root: string) {
+  const composed = composeWorkspaceConfigText(root);
+  expect(composed.errors).toEqual([]);
+  expect(composed.warnings).toEqual([]);
   return loadProfileAwareConfig({
-    yamlText,
-    workspaceRoot: temporaryRoot("tachyon-onboarding-example-workspace-"),
+    yamlText: composed.yamlText,
+    workspaceRoot: root,
     authorities: new Map(),
-    homeDir: temporaryRoot("tachyon-onboarding-example-home-"),
+    homeDir: temporaryRoot("tachyon-onboarding-init-home-"),
   });
 }
 
-describe("tachyon.yml.example — the documented onboarding path", () => {
+describe("Tachyon: Init starter files — the documented onboarding path (t-a65335)", () => {
   it("door 1: loads through the production loader with nothing refused and nothing ignored", () => {
-    const result = loadAsFreshCheckout(exampleText);
+    const { root, starter } = initWorkspace();
+    const result = loadAsFreshCheckout(root);
 
-    expect(result.errors, exampleText).toEqual([]);
+    expect(result.errors, starter.settingsYaml).toEqual([]);
     expect(result.config).toBeDefined();
-    // Not just "it loaded": every setting the template declares has to ARRIVE. `discarded` and
+    // Not just "it loaded": every setting the starter declares has to ARRIVE. `discarded` and
     // `warnings` are where a retired key lands (the product warns, never blocks — so a dead key in
-    // the template leaves `errors` empty and would sail past a test that only checked errors).
-    expect(result.discarded, exampleText).toEqual([]);
-    expect(result.warnings, exampleText).toEqual([]);
-    expect(result.config?.settings).toEqual((parseYaml(exampleText) as { settings: unknown }).settings);
-    // t-ae221c — the template declares no roster on purpose: an agent IS a directory under
+    // the starter leaves `errors` empty and would sail past a test that only checked errors).
+    expect(result.discarded, starter.settingsYaml).toEqual([]);
+    expect(result.warnings, starter.settingsYaml).toEqual([]);
+    expect(result.config?.settings).toEqual(parseYaml(starter.settingsYaml));
+    // t-ae221c — Init declares no roster on purpose: an agent IS a directory under
     // `.tachyon/agents/`, created in Agent Studio. An empty checkout is an empty fleet, not a failure.
-    expect(result.config?.agents).toEqual({});
+    expect(agentsOf(result.config)).toEqual({});
+    // The detected processes arrive as terminal declarations, one file each.
+    expect(Object.keys(terminalsOf(result.config)).sort()).toEqual(["dev", "shell", "test"]);
   });
 
-  it("t-4ab1d8: a clone receives the empty sharedDirectories declaration, not a node_modules share", () => {
-    const result = loadAsFreshCheckout(exampleText);
-    expect(result.config?.settings.worktree?.sharedDirectories).toEqual([]);
-    expect(exampleText).toMatch(/t-4ab1fb/);
-    // The pre-monorepo comment listed `- node_modules` as a share to copy. That is the defect
-    // this guard exists to keep dead: uncommenting it would recreate 2.368 redirected imports.
-    expect(exampleText).not.toMatch(/^\s*#?\s*-\s*node_modules\s*$/m);
+  it("t-4ab1d8: the starter never suggests a node_modules share", () => {
+    const { starter } = initWorkspace();
+    // The pre-monorepo template listed `- node_modules` as a share to copy. That is the defect this
+    // guard keeps dead: resurrecting it would recreate 2.368 redirected imports.
+    expect(starter.settingsYaml).not.toMatch(/node_modules/);
+    for (const terminal of starter.terminals) expect(terminal.yaml).not.toMatch(/node_modules/);
   });
 
-  it("door 2: every key the template declares is published by the schema VS Code validates it with", () => {
-    const declared = parseYaml(exampleText) as Record<string, Record<string, unknown>>;
-    const publishedTopLevel = Object.keys(schema.properties);
-    const publishedSettings = Object.keys(schema.properties.settings?.properties ?? {});
+  it("door 2: every key the starter declares OR invites is published by the schema VS Code validates with", () => {
+    const { starter } = initWorkspace();
+    const published = Object.keys(schema.properties);
 
-    expect(Object.keys(declared).filter((key) => !publishedTopLevel.includes(key))).toEqual([]);
-    expect(Object.keys(declared.settings ?? {}).filter((key) => !publishedSettings.includes(key))).toEqual([]);
+    const declared = Object.keys((parseYaml(starter.settingsYaml) ?? {}) as Record<string, unknown>);
+    expect(declared.filter((key) => !published.includes(key))).toEqual([]);
+    // The commented suggestions are part of the artifact too: uncommenting one must not light up
+    // "must NOT have additional properties" in the newcomer's editor.
+    for (const invited of ["maxAgents", "bridgePort", "tmux", "worktree"]) {
+      expect(published, starter.settingsYaml).toContain(invited);
+    }
+    expect(schema.additionalProperties).toBe(false);
   });
 
-  it("a retired key in the template would be warned about, never blocked — and door 1 would catch it", () => {
+  it("a retired key in the starter would be warned about, never blocked — and door 1 would catch it", () => {
     // The guard from the test above, proven red rather than trusted. `settings.verify` is the real
-    // recurrence: t-f559b6 removed it from the product on 2026-08-09, one day before this file was
-    // written, and the template happened to have already dropped it. Had it not, the config would
-    // still load — which is the owner's rule, invalid config WARNS and never blocks — and only the
-    // `discarded` assertion above would have noticed.
-    const withRetiredKey = `${exampleText}\n  verify:\n    command: npm test\n`;
-    const result = loadAsFreshCheckout(withRetiredKey);
+    // recurrence: t-f559b6 removed it from the product on 2026-08-09, and the template of the day
+    // happened to have already dropped it. Had it not, the config would still load — invalid config
+    // WARNS and never blocks — and only the `discarded` assertion above would have noticed.
+    const { root } = initWorkspace();
+    const target = workspaceSettingsPath(root);
+    fs.appendFileSync(target, "\nverify:\n  command: npm test\n", "utf8");
+    const result = loadAsFreshCheckout(root);
 
     expect(result.errors).toEqual([]);
     expect(result.config).toBeDefined();
     expect(result.discarded).toEqual(["settings: unknown key 'verify'"]);
-    expect(Object.keys(schema.properties.settings?.properties ?? {})).not.toContain("verify");
+    expect(Object.keys(schema.properties)).not.toContain("verify");
   });
 });

@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -27,7 +28,7 @@ function sha256(value: string): string {
 function temporaryWorkspace(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-profile-bundle-"));
   roots.push(root);
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n");
+  writeWorkspaceConfig(root, "agents: {}\n");
   return root;
 }
 

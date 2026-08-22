@@ -1,8 +1,0 @@
-# Disposable Dev Host fixture for canonical Agent Studio create/edit dogfood.
-#
-# t-f67185 — empty roster is loadable. Agents in this scenario are created through Agent Studio;
-# starting from zero declared agents is the point of the fixture.
-settings:
-  maxAgents: 8
-
-agents: {}

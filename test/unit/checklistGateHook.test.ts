@@ -4,8 +4,8 @@
  * The framing error this file exists to prevent: `t-cb684f` proved the reminder never reached a
  * Temporary agent, and the first answer was to write the requirement into this repository's
  * `docs/project-guidance.md` — which fixed our workspace and left the product broken, because that
- * file does not ship. So the fixture below is a bare temp directory holding one `tachyon.yml` and
- * nothing else: no `docs/project-guidance.md`, no plugin lockfile, no `.claude`/`.codex` tree. If any
+ * file does not ship. So the fixture below is a bare temp directory holding one `.tachyon/settings.yml`
+ * and nothing else: no `docs/project-guidance.md`, no plugin lockfile, no `.claude`/`.codex` tree. If any
  * of these tests needed a file that only exists in this checkout, it would not be evidence about the
  * product.
  *
@@ -20,6 +20,7 @@
  * tells the two apart.
  */
 
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { describe, it, expect, beforeAll } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
@@ -27,7 +28,8 @@ import { spawnSync } from "node:child_process";
 import TOML from "@iarna/toml";
 import { HarnessManager, bridgeGrokHome } from "@tachyon/engine/harness/HarnessManager.js";
 import { codexToolHookFile, type OwnershipHookGroup } from "@tachyon/engine/activity/sessionOwners.js";
-import { loadConfigFile } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { composeWorkspaceConfigText } from "@tachyon/engine/config/workspaceSettingsFile.js";
 import {
   CHECKLIST_GATE_SCRIPT_SOURCE,
   checklistGateRefusal,
@@ -39,7 +41,7 @@ import { makeTempDir } from "../helpers/tempDir.js";
 const SESSION = "01a01582-a2bf-7b42-a1a9-8a986db1a2ee";
 
 interface Fixture {
-  /** The workspace someone who just installed Tachyon has: a `tachyon.yml`, and nothing else. */
+  /** The workspace someone who just installed Tachyon has: a `.tachyon/settings.yml`, and nothing else. */
   root: string;
   /** The agent's cwd — a delegated worktree, with no configuration of its own. */
   worktree: string;
@@ -51,19 +53,20 @@ interface Fixture {
 
 let fixture: Fixture;
 
-/** The clean workspace: one `tachyon.yml` that declares the capability, and deliberately nothing else. */
+/** The clean workspace: one settings file that declares the capability, and deliberately nothing else. */
 function writeWorkspace(root: string, requireIn: readonly string[]): void {
   const list = requireIn.length === 0 ? "[]" : `[${requireIn.map((kind) => `"${kind}"`).join(", ")}]`;
-  fs.writeFileSync(
-    path.join(root, "tachyon.yml"),
-    ["agents: {}", "settings:", "  checklist:", `    requireIn: ${list}`, ""].join("\n"),
-  );
+  writeWorkspaceConfig(root, ["agents: {}", "settings:", "  checklist:", `    requireIn: ${list}`, ""].join("\n"),);
 }
 
-/** Read `requireIn` back through the SHIPPED loader, so the test proves the tachyon.yml key reaches it. */
+/**
+ * Read `requireIn` back through the SHIPPED pipeline, so the test proves the settings key reaches it.
+ * t-a65335 — the workspace config composes from `.tachyon/settings.yml` into the same parser.
+ */
 function requireInFromDisk(root: string): readonly string[] | undefined {
-  const parsed = loadConfigFile(path.join(root, "tachyon.yml"));
-  return parsed.config?.settings.checklist?.requireIn;
+  const composed = composeWorkspaceConfigText(root);
+  expect(composed.errors).toEqual([]);
+  return parseConfig(composed.yamlText).config?.settings.checklist?.requireIn;
 }
 
 beforeAll(() => {

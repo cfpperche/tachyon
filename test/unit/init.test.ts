@@ -1,9 +1,20 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { describe, it, expect } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { detectStack, buildStarterYaml, ensureTachyonGitignore, TACHYON_GITIGNORE_ENTRIES, type DetectedProject } from "../../apps/vscode-extension/src/init/initLogic.js";
+import { detectStack, buildStarterFiles, ensureTachyonGitignore, TACHYON_GITIGNORE_ENTRIES, type DetectedProject, type StarterFiles } from "../../apps/vscode-extension/src/init/initLogic.js";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+
+/** t-a65335 — the starter is files now; compose them into the document shape the loader validates. */
+function composeStarter(starter: StarterFiles): string {
+  return stringifyYaml({
+    settings: parseYaml(starter.settingsYaml) ?? {},
+    terminals: Object.fromEntries(starter.terminals.map((t) => [t.name, parseYaml(t.yaml)])),
+  });
+}
+const buildStarterYaml = (p: DetectedProject): string => composeStarter(buildStarterFiles(p));
 import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import { parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
 
@@ -78,8 +89,11 @@ describe("buildStarterYaml", () => {
     expect(config.agents.dev.cmd).toBe("npm run dev");
     expect(config.agents.dev.kind).toBe("terminal");
     expect(config.agents.test.cmd).toBe("npm test");
-    expect(yaml).toContain("Detected stack: Node.js (Next.js)");
-    expect(yaml).toContain("Agent Studio");
+    expect(buildStarterFiles(base({
+      files: ["package.json"],
+      packageJson: { scripts: { dev: "next dev", test: "jest" }, dependencies: { next: "^14" } },
+    })).settingsYaml).toContain("Detected stack: Node.js (Next.js)");
+    expect(buildStarterFiles(base({ files: [] })).settingsYaml).toContain("Agent Studio");
   });
 
   it("no-manifest starter is minimal but valid (shell only)", () => {
@@ -88,8 +102,8 @@ describe("buildStarterYaml", () => {
   });
 
   it("names the detected CLI in the Agent Studio pointer; says so honestly when none is detected", () => {
-    expect(buildStarterYaml(base({ files: [], installedClis: ["codex"] }))).toContain("codex was detected");
-    const none = buildStarterYaml(base({ files: [], installedClis: [] }));
+    expect(buildStarterFiles(base({ files: [], installedClis: ["codex"] })).settingsYaml).toContain("codex was detected");
+    const none = buildStarterFiles(base({ files: [], installedClis: [] })).settingsYaml;
     expect(none).toContain("no supported AI CLI was detected"); // honest comment
     expect(none).not.toContain("was detected on this machine)"); // and no false claim of detection
   });
@@ -183,7 +197,7 @@ describe("Init gitignore vs credential-class paths in a fresh workspace (t-4290d
       fs.mkdirSync(path.join(repo, path.dirname(rel)), { recursive: true });
       fs.writeFileSync(path.join(repo, rel), "");
     }
-    fs.writeFileSync(path.join(repo, "tachyon.yml"), buildStarterYaml(base()));
+    writeWorkspaceConfig(repo, buildStarterYaml(base()));
     const gitignore = ensureTachyonGitignore(undefined);
     expect(gitignore).not.toBeNull();
     fs.writeFileSync(path.join(repo, ".gitignore"), gitignore!);
@@ -210,9 +224,12 @@ describe("Init gitignore vs credential-class paths in a fresh workspace (t-4290d
       // The two untracked Tachyon files are committed BY DESIGN; -uall enumerates them instead of
       // letting git collapse the directory in its default display.
       const status = execFileSync("git", ["status", "--porcelain", "-uall"], { cwd: repo, encoding: "utf8" }).trim().split("\n").sort();
-      expect(status).toEqual(["?? .gitignore", "?? .tachyon/HANDOFF.md", "?? .tachyon/plugins.lock.json", "?? tachyon.yml"]);
+      expect(status).toEqual(["?? .gitignore", "?? .tachyon/HANDOFF.md", "?? .tachyon/plugins.lock.json"]);
       expect(isIgnored(repo, ".tachyon/plugins.lock.json")).toBe(false);
       expect(isIgnored(repo, ".tachyon/HANDOFF.md")).toBe(false);
+      // t-a65335 — the workspace settings file is personal, machine-local configuration BY DESIGN:
+      // it must stay out of git, unlike the two committed-by-design files above.
+      expect(isIgnored(repo, ".tachyon/settings.yml")).toBe(true);
     } finally {
       fs.rmSync(repo, { recursive: true, force: true });
     }

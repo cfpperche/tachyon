@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, afterEach } from "vitest";
@@ -101,7 +102,7 @@ describe("t-084b28 — Saved Agent bypass consent is seeded, not asked every lau
   it("writes skipDangerousModePermissionPrompt into the per-spawn settings a Saved Agent launches with", async () => {
     const root = mkdir();
     const canonical = [writeSavedAgent(root, "claude", { runtime: "claude" })];
-    fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(canonical), "utf8");
+    writeWorkspaceConfig(root, savedAgentsYaml(canonical));
     const host = new HeadlessHost(mkdir());
     for (const [key, value] of savedAgentSecrets(root, canonical)) host.secrets.set(key, value);
     const { tmux } = fakeTmux();

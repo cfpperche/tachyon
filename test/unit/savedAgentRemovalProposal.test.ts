@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { afterEach, describe, expect, it } from "vitest";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -42,7 +43,7 @@ afterEach(() => {
 function workspace(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-removal-proposal-"));
   dirs.push(dir);
-  fs.writeFileSync(path.join(dir, "tachyon.yml"), "agents:\n  boss:\n    cmd: claude\n  target:\n    cmd: grok\n", "utf8");
+  writeWorkspaceConfig(dir, "agents:\n  boss:\n    cmd: claude\n  target:\n    cmd: grok\n");
   return dir;
 }
 
@@ -264,7 +265,8 @@ describe("store + commit — digest bind and fail-closed cascade", () => {
     // Durable marker the cascade must not touch on refusal.
     const marker = path.join(root, ".tachyon", "agents", "target", "agent.yml");
     const before = fs.readFileSync(marker, "utf8");
-    const ymlBefore = fs.readFileSync(path.join(root, "tachyon.yml"), "utf8");
+    // t-a65335 — the workspace config is .tachyon/settings.yml now.
+    const ymlBefore = fs.readFileSync(path.join(root, ".tachyon", "settings.yml"), "utf8");
 
     const recorded = recordSavedAgentRemovalProposal({
       workspaceRoot: root,
@@ -300,7 +302,7 @@ describe("store + commit — digest bind and fail-closed cascade", () => {
     expect(readSavedAgentRemovalProposal(root, recorded.proposal.id).id).toBe(recorded.proposal.id);
     // Nothing durable moved.
     expect(fs.readFileSync(marker, "utf8")).toBe(before);
-    expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toBe(ymlBefore);
+    expect(fs.readFileSync(path.join(root, ".tachyon", "settings.yml"), "utf8")).toBe(ymlBefore);
     expect(readSavedAgentRemovalProposalReceipt(root, recorded.proposal.digest)?.outcome).toBe("failed");
   });
 

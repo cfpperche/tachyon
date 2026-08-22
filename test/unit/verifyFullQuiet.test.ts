@@ -416,7 +416,9 @@ describe("quiet full verification", () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
     expect(packageJson.scripts["verify:full"]).toBe("node scripts/run-workspace-script.mjs scripts/verify-full.mjs");
     expect(packageJson.scripts["verify:full:quiet"]).toBe("node scripts/run-workspace-script.mjs scripts/verify-full.mjs");
-    const config = fs.readFileSync(path.join(repoRoot, "tachyon.yml.example"), "utf8");
-    expect(config).not.toContain("full: npm run verify:full:quiet");
+    // t-a65335 — tachyon.yml.example retired with the root config file (Init generates
+    // .tachyon/settings.yml now), so the repo tracks no config template that could point a
+    // project verify entry back at the quiet runner.
+    expect(fs.existsSync(path.join(repoRoot, "tachyon.yml.example"))).toBe(false);
   });
 });

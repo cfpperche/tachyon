@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Ajv from "ajv";
 import { describe, expect, it } from "vitest";
-import { KNOWN_SETTINGS_KEYS, KNOWN_TOP_LEVEL_KEYS } from "@tachyon/engine/config/loadConfig.js";
+import { KNOWN_SETTINGS_KEYS } from "@tachyon/engine/config/loadConfig.js";
 
 interface SchemaNode {
   type?: string;
@@ -24,9 +24,15 @@ interface SchemaNode {
   deprecated?: boolean;
 }
 
+// t-a65335 — tachyon.yml retired: the settings schema's TOP LEVEL is the settings mapping
+// (.tachyon/settings.yml), and terminal/schedule declarations carry their own per-file schemas.
 const schemaPath = path.join(process.cwd(), "apps", "vscode-extension", "tachyon.schema.json");
 const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as SchemaNode;
-const validateConfig = new Ajv({ allErrors: true }).compile(schema);
+const terminalSchema = JSON.parse(fs.readFileSync(path.join(process.cwd(), "apps", "vscode-extension", "tachyon-terminal.schema.json"), "utf8")) as SchemaNode;
+const scheduleSchema = JSON.parse(fs.readFileSync(path.join(process.cwd(), "apps", "vscode-extension", "tachyon-schedule.schema.json"), "utf8")) as SchemaNode;
+const validateSettings = new Ajv({ allErrors: true }).compile(schema);
+const validateTerminal = new Ajv({ allErrors: true }).compile(terminalSchema);
+const validateSchedule = new Ajv({ allErrors: true }).compile(scheduleSchema);
 
 const validTerminal = {
   cmd: "npm run dev",
@@ -40,7 +46,7 @@ const validTerminal = {
 
 describe("tachyon.schema.json — settings.companion", () => {
   it("publishes tabTools, allowedHosts, and lanAccess for Companion shells", () => {
-    const settings = schema.properties?.settings;
+    const settings = schema;
     const companion = settings?.properties?.companion;
     const allowedHosts = companion?.properties?.allowedHosts;
     const tabTools = companion?.properties?.tabTools;
@@ -67,7 +73,7 @@ describe("tachyon.schema.json — settings.companion", () => {
 
 describe("tachyon.schema.json — settings.ideBrowser (SDD 488 F4)", () => {
   it("publishes enabled + homeUrl; tools stay listed when disabled", () => {
-    const settings = schema.properties?.settings;
+    const settings = schema;
     const ideBrowser = settings?.properties?.ideBrowser;
     const enabled = ideBrowser?.properties?.enabled;
     const homeUrl = ideBrowser?.properties?.homeUrl;
@@ -83,7 +89,7 @@ describe("tachyon.schema.json — settings.ideBrowser (SDD 488 F4)", () => {
 
 describe("tachyon.schema.json — settings.projectGuidance", () => {
   it("publishes the closed opt-in file-list contract without an implicit default", () => {
-    const settings = schema.properties?.settings;
+    const settings = schema;
     const guidance = settings?.properties?.projectGuidance;
     const files = guidance?.properties?.files;
 
@@ -113,7 +119,7 @@ describe("tachyon.schema.json — settings.projectGuidance", () => {
 
 describe("tachyon.schema.json — settings.checklist.requireIn (t-73885b)", () => {
   it("publishes a free-string list, not an enum", () => {
-    const checklist = schema.properties?.settings?.properties?.checklist;
+    const checklist = schema.properties?.checklist;
     const requireIn = checklist?.properties?.requireIn;
     expect(checklist).toMatchObject({ type: "object", additionalProperties: false });
     expect(requireIn).toMatchObject({ type: "array", items: { type: "string", minLength: 1 } });
@@ -138,36 +144,45 @@ describe("tachyon.schema.json — the parser and the editor publish the same key
    * `schedules` had drifted the same way. Every one of them was added to the parser by someone who
    * did not know this file existed.
    */
-  it("publishes exactly the top-level and settings keys parseConfig knows", () => {
-    expect(Object.keys(schema.properties ?? {}).sort()).toEqual([...KNOWN_TOP_LEVEL_KEYS].sort());
-    expect(Object.keys(schema.properties?.settings?.properties ?? {}).sort()).toEqual([...KNOWN_SETTINGS_KEYS].sort());
+  it("publishes exactly the settings keys parseConfig knows", () => {
+    // t-a65335 — the settings file's top level IS the settings mapping; KNOWN_TOP_LEVEL_KEYS is the
+    // INTERNAL composed-document vocabulary and no longer a published editor contract.
+    expect(Object.keys(schema.properties ?? {}).sort()).toEqual([...KNOWN_SETTINGS_KEYS].sort());
   });
 
   it("publishes exactly the seven terminal keys parseTerminalDeclaration knows", () => {
-    const entry = schema.properties?.terminals?.additionalProperties;
-    expect(typeof entry).toBe("object");
-    expect(Object.keys(typeof entry === "object" ? entry.properties ?? {} : {}).sort())
+    expect(Object.keys(terminalSchema.properties ?? {}).sort())
       .toEqual(["attention", "autostart", "cmd", "cwd", "env", "restart", "watch"]);
   });
 });
 
-describe("tachyon.schema.json — terminal declarations", () => {
+describe("terminal + schedule declaration schemas", () => {
   it("validates a terminal containing all seven parser-supported fields", () => {
-    expect(validateConfig({ terminals: { dev: validTerminal } })).toBe(true);
+    expect(validateTerminal(validTerminal)).toBe(true);
   });
 
   it("rejects agent-only fields inside a terminal", () => {
-    expect(validateConfig({ terminals: { dev: { cmd: "npm run dev", worktree: true } } })).toBe(false);
+    expect(validateTerminal({ cmd: "npm run dev", worktree: true })).toBe(false);
+  });
+
+  it("validates a schedule declaration and rejects unknown keys", () => {
+    expect(validateSchedule({ every: "30m", spawn: "claude" })).toBe(true);
+    expect(validateSchedule({ every: "30m", spawn: "claude", bogus: 1 })).toBe(false);
   });
 
   it("contains no removed agent schema key anywhere", () => {
     expect(JSON.stringify(schema)).not.toContain("x-removed-agents");
   });
+
+  it("the settings schema validates a top-level settings mapping and refuses unknown keys", () => {
+    expect(validateSettings({ auth: true, stateBackup: { backend: "filesystem", path: "/mnt/bkp" } })).toBe(true);
+    expect(validateSettings({ terminals: {} })).toBe(false); // declarations no longer live here
+  });
 });
 
 describe("tachyon.schema.json — retired verify surfaces", () => {
   it("publishes no workspace, worktree, or per-agent execution verify setting", () => {
-    const settings = schema.properties?.settings;
+    const settings = schema;
     const entrySchema = schema.properties?.["x-removed-agents"]?.additionalProperties;
     const agentVerify = typeof entrySchema === "object" ? entrySchema.properties?.verify : undefined;
 

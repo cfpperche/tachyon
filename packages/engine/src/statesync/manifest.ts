@@ -92,9 +92,12 @@ const MANIFEST_ENTRIES: DurableEntry[] = [
     relPath: ".tachyon/agents",
     include: (relPath) => path.posix.basename(relPath) === "agent.yml",
   },
-  // The workspace config is gitignored BY DESIGN (personal), which is exactly why it needs the
-  // replica: it has no other copy anywhere.
-  { id: "workspace-config", kind: "file", relPath: "tachyon.yml" },
+  // Declarations and workspace config live under .tachyon and are gitignored BY DESIGN (personal),
+  // which is exactly why they need the replica: they have no other copy anywhere. (t-a65335 —
+  // tachyon.yml retired; settings.yml + per-file terminal/schedule declarations replace it.)
+  { id: "workspace-settings", kind: "file", relPath: ".tachyon/settings.yml" },
+  { id: "terminals", kind: "dir", relPath: ".tachyon/terminals" },
+  { id: "schedules", kind: "dir", relPath: ".tachyon/schedules" },
 ];
 
 export const DURABLE_STATE_MANIFEST: readonly DurableEntry[] = MANIFEST_ENTRIES.map(assertOutsideSecretPaths);

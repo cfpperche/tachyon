@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 /**
  * t-2656d7 (SDD 495, first slice) — the owner's case, through the door production uses.
@@ -122,7 +123,7 @@ async function unauthenticatedGrokWorkspace() {
   vi.stubEnv("GROK_HOME", emptyGrokHome);
 
   const fixture = writeSavedAgent(root, "grok-builder", { runtime: "grok" });
-  fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml([fixture]), "utf8");
+  writeWorkspaceConfig(root, savedAgentsYaml([fixture]));
   const host = new RecordingHost(mkdir(), savedAgentSecrets(root, [fixture]));
   const fake = fakeTmux();
   const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
@@ -260,7 +261,7 @@ describe("t-2656d7 — starting an unauthenticated agent", () => {
     vi.stubEnv("GROK_HOME", emptyGrokHome);
 
     const fixture = writeSavedAgent(root, "grok-builder", { runtime: "grok", autostart: true });
-    fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml([fixture]), "utf8");
+    writeWorkspaceConfig(root, savedAgentsYaml([fixture]));
     const host = new RecordingHost(mkdir(), savedAgentSecrets(root, [fixture]));
     const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux: fakeTmux().tmux, startBridge: false });
     try {

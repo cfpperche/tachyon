@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import { describe, it, expect } from "vitest";
 import { type AgentAttention } from "@tachyon/shared/attention/AttentionMonitor.js";
 import {
@@ -187,9 +189,12 @@ describe("t-585d5c — writing it from Control → Settings", () => {
     expect(out).toContain("maxAgents: 4");
   });
 
-  it("refuses to write into a workspace with no tachyon.yml yet", async () => {
+  it("bootstraps a workspace with no settings file yet instead of refusing", async () => {
+    // t-a65335 — the old refusal ("create an agent first") guarded the retired root tachyon.yml.
+    // The editor now writes .tachyon/settings.yml TEXT (top-level mapping) and Workspace.mutateConfig
+    // creates the file on first write, so an unconfigured workspace bootstraps from empty text.
     const { setIdleAfterMinutes } = await import("@tachyon/engine/config/YamlConfigEditor.js");
-    expect(() => setIdleAfterMinutes(undefined, 5)).toThrow(/create an agent first/);
+    expect(setIdleAfterMinutes(undefined, 5).text).toContain("idleAfterMinutes: 5");
   });
 
   it("bounds the runtime-api operation too, since it is a separate entrance", async () => {
@@ -209,9 +214,15 @@ describe("t-585d5c — writing it from Control → Settings", () => {
   });
 
   it("round-trips through the loader, so what Settings writes is what the engine reads", async () => {
+    // t-a65335 — the editor writes settings-file TEXT (top-level mapping). The engine reads it via
+    // composeWorkspaceConfigText, which synthesizes the parser document — so the round-trip runs
+    // through that same composition, exactly as Workspace.mutateConfig does.
     const { setIdleAfterMinutes } = await import("@tachyon/engine/config/YamlConfigEditor.js");
-    const written = setIdleAfterMinutes("agents:\n  a:\n    cmd: claude\n", 4).text;
-    const reloaded = parseConfig(written);
+    const { composeWorkspaceConfigText } = await import("@tachyon/engine/config/workspaceSettingsFile.js");
+    const written = setIdleAfterMinutes("maxAgents: 4\n", 4).text;
+    const composed = composeWorkspaceConfigText(path.join(os.tmpdir(), "tachyon-idle-threshold-empty-workspace"), { settingsText: written });
+    expect(composed.errors).toEqual([]);
+    const reloaded = parseConfig(composed.yamlText);
     expect(reloaded.errors).toEqual([]);
     expect(reloaded.config?.settings.agentNotifications?.idleAfterMinutes).toBe(4);
     expect(idleNotifyThresholdMs(reloaded.config?.settings.agentNotifications?.idleAfterMinutes)).toBe(240_000);

@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -69,7 +70,7 @@ describe("dev-host pointer", () => {
     writePkg(worktree);
     fs.mkdirSync(path.join(repo, "node_modules"), { recursive: true });
     fs.mkdirSync(fixture, { recursive: true });
-    fs.writeFileSync(path.join(fixture, "tachyon.yml"), "agents:\n  a:\n    cmd: x\n");
+    writeWorkspaceConfig(fixture, "agents:\n  a:\n    cmd: x\n");
     fs.writeFileSync(path.join(fixture, "README.md"), "# fixture\n");
     fs.writeFileSync(path.join(fixture, ".tachyon-dev-host.json"), JSON.stringify({ spoofed: true }));
     fs.mkdirSync(path.join(fixture, ".tachyon", "prompts"), { recursive: true });
@@ -141,7 +142,7 @@ describe("dev-host pointer", () => {
     const otherFixture = path.join(other, "test", "fixtures", "other-dogfood");
     writePkg(other);
     fs.mkdirSync(otherFixture, { recursive: true });
-    fs.writeFileSync(path.join(otherFixture, "tachyon.yml"), "agents:\n  b:\n    cmd: y\n");
+    writeWorkspaceConfig(otherFixture, "agents:\n  b:\n    cmd: y\n");
 
     point({ repoRoot: worktree, primaryRepo: repo, worktree, workspace: fixture });
     point({ repoRoot: other, primaryRepo: repo, worktree: other, workspace: otherFixture });
@@ -179,11 +180,15 @@ describe("dev-host pointer", () => {
 
     // Authoritative config is a real disposable copy: the engine opens it no-follow and dogfood
     // mutations must not write back into a tracked fixture. Non-authoritative files stay linked.
+    // t-a65335 — the workspace config is .tachyon/settings.yml now; the retired root tachyon.yml
+    // must not reappear in the mirror.
     const ws = p.workspace;
-    expect(fs.lstatSync(path.join(ws, "tachyon.yml")).isSymbolicLink()).toBe(false);
-    expect(fs.lstatSync(path.join(ws, "tachyon.yml")).isFile()).toBe(true);
+    expect(fs.lstatSync(path.join(ws, ".tachyon", "settings.yml")).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(path.join(ws, ".tachyon", "settings.yml")).isFile()).toBe(true);
+    expect(fs.existsSync(path.join(ws, "tachyon.yml"))).toBe(false);
     expect(fs.lstatSync(path.join(ws, "README.md")).isSymbolicLink()).toBe(true);
-    expect(fs.readFileSync(path.join(ws, "tachyon.yml"), "utf8")).toContain("agents:");
+    // t-dc9cb0 — the disposable settings copy carries the dev-host branch stamp (top-level path).
+    expect(fs.readFileSync(path.join(ws, ".tachyon", "settings.yml"), "utf8")).toContain("branch: tachyon/dev-host/{agent}");
     expect(fs.existsSync(path.join(ws, ".tachyon", "prompts", "hi.md"))).toBe(true);
     // Spec 393 / 390: mirror `.tachyon` must be a REAL directory (not a symlink) for managed state.
     expect(fs.lstatSync(path.join(ws, ".tachyon")).isSymbolicLink()).toBe(false);
@@ -446,12 +451,14 @@ describe("dev-host pointer", () => {
     });
 
     it("stamps the mirror copy and never the tracked fixture", () => {
-      const sourceYml = fs.readFileSync(path.join(fixture, "tachyon.yml"), "utf8");
-      expect(readWorktreeBranchTemplate(sourceYml)).toBeNull();
+      // t-a65335 — the stamped file is the mirrored .tachyon/settings.yml (top-level worktree.branch).
+      const settingsRel = path.join(".tachyon", "settings.yml");
+      const sourceSettings = fs.readFileSync(path.join(fixture, settingsRel), "utf8");
+      expect(readWorktreeBranchTemplate(sourceSettings, { topLevel: true })).toBeNull();
       const mirror = path.join(repo, ".tachyon", "dev-host", "workspace");
       materializeWorkspaceMirror(mirror, fixture);
-      expect(fs.readFileSync(path.join(fixture, "tachyon.yml"), "utf8")).toBe(sourceYml);
-      expect(readWorktreeBranchTemplate(fs.readFileSync(path.join(mirror, "tachyon.yml"), "utf8")))
+      expect(fs.readFileSync(path.join(fixture, settingsRel), "utf8")).toBe(sourceSettings);
+      expect(readWorktreeBranchTemplate(fs.readFileSync(path.join(mirror, settingsRel), "utf8"), { topLevel: true }))
         .toBe(DEV_HOST_WORKTREE_BRANCH);
     });
   });

@@ -1,12 +1,7 @@
 import fs from "node:fs";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
-import {
-  asAgent,
-  CONFIG_FILENAMES,
-  suggestKindForCommand,
-  type TachyonConfig,
-} from "@tachyon/engine/config/loadConfig.js";
+import { asAgent, suggestKindForCommand, type TachyonConfig,  } from "@tachyon/engine/config/loadConfig.js";
+import { composeWorkspaceConfigText, workspaceSettingsPath } from "@tachyon/engine/config/workspaceSettingsFile.js";
 import type { AuthorizableCapabilities } from "@tachyon/engine/config/agentCapabilityCandidates.js";
 import { agentForgetPlanResultSchemaV1, type AgentForgetPlanResultV1 } from "@tachyon/shared/config/agentForgetPlan.js";
 import { parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
@@ -441,22 +436,22 @@ function legacyAgentStudioKind(submit: StudioSubmit): boolean {
 }
 
 function readWorkspaceConfig(workspaceRoot: string): WorkspaceConfigReadResult {
-  for (const fileName of CONFIG_FILENAMES) {
-    const file = path.join(workspaceRoot, fileName);
-    if (!fs.existsSync(file)) continue;
-    const yamlText = fs.readFileSync(file, "utf8");
-    // t-ae221c — the roster is measured off `.tachyon/agents/`, not read out of the file. The syntax
-    // pass takes no filesystem reads of its own on purpose, so the names are measured here and
-    // passed in; the retired `agents:` block, if the human still has one, is ignored with a warning.
-    const roster = scanAgentRosterDirectory(workspaceRoot).members;
-    const loaded = parseProfileAwareConfigSyntax(yamlText, roster);
-    if (!loaded.config) return { status: "invalid" };
-    for (const name of roster) {
-      // A canonical profile is an Agent-arm marker; a terminal entry can never carry one.
-      const def = asAgent(loaded.config.agents[name]);
-      if (def) def.profilePointer = true;
-    }
-    return { status: "valid", config: loaded.config };
+  // t-a65335 — the editor-side read composes the new homes (.tachyon/settings.yml + schedule
+  // declarations) exactly like the engine does; there is no single file to read anymore. A
+  // workspace is configured iff the settings file exists.
+  if (!fs.existsSync(workspaceSettingsPath(workspaceRoot))) return { status: "missing" };
+  const composed = composeWorkspaceConfigText(workspaceRoot);
+  if (composed.errors.length > 0) return { status: "invalid" };
+  // t-ae221c — the roster is measured off `.tachyon/agents/`, not read out of the file. The syntax
+  // pass takes no filesystem reads of its own on purpose, so the names are measured here and
+  // passed in.
+  const roster = scanAgentRosterDirectory(workspaceRoot).members;
+  const loaded = parseProfileAwareConfigSyntax(composed.yamlText, roster);
+  if (!loaded.config) return { status: "invalid" };
+  for (const name of roster) {
+    // A canonical profile is an Agent-arm marker; a terminal entry can never carry one.
+    const def = asAgent(loaded.config.agents[name]);
+    if (def) def.profilePointer = true;
   }
-  return { status: "missing" };
+  return { status: "valid", config: loaded.config };
 }

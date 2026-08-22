@@ -84,10 +84,9 @@ describe("inspectAgentIsolation", () => {
 
   it("refuses isolate:transcript — private configHome is not a complete harness", () => {
     const ws = tmp("tachyon-ws-");
-    fs.writeFileSync(
-      path.join(ws, "tachyon.yml"),
-      "schemaVersion: 1\nagents:\n  slim:\n    kind: agent\n    cmd: claude\n    isolate: transcript\n    autostart: false\n    watch: []\n    attention:\n      enabled: false\n    restart: never\n",
-    );
+    // t-a65335 — yaml-declared agents are a retired shape that only ever lived in a workspace-root
+    // tachyon.yml; readYamlAgent still probes exactly that legacy file, so this test writes it raw.
+    fs.writeFileSync(path.join(ws, "tachyon.yml"), "schemaVersion: 1\nagents:\n  slim:\n    kind: agent\n    cmd: claude\n    isolate: transcript\n    autostart: false\n    watch: []\n    attention:\n      enabled: false\n    restart: never\n");
     const r = inspectAgentIsolation(ws, "slim");
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/isolate:transcript/);
@@ -107,10 +106,8 @@ describe("inspectAgentIsolation", () => {
 
   it("accepts yaml harness:{} as complete isolated harness", () => {
     const ws = tmp("tachyon-ws-");
-    fs.writeFileSync(
-      path.join(ws, "tachyon.yml"),
-      "schemaVersion: 1\nagents:\n  boxed:\n    kind: agent\n    cmd: claude\n    harness:\n      inherit: none\n      mcp: {}\n    autostart: false\n    watch: []\n    attention:\n      enabled: false\n    restart: never\n",
-    );
+    // t-a65335 — legacy yaml-agent shape, probed from the legacy root file (see above).
+    fs.writeFileSync(path.join(ws, "tachyon.yml"), "schemaVersion: 1\nagents:\n  boxed:\n    kind: agent\n    cmd: claude\n    harness:\n      inherit: none\n      mcp: {}\n    autostart: false\n    watch: []\n    attention:\n      enabled: false\n    restart: never\n");
     const r = inspectAgentIsolation(ws, "boxed");
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.identity.kind).toBe("yaml-harness");
@@ -330,10 +327,9 @@ describe("applyInstall agent dest — red proof", () => {
     const preview = previewInstall(plugin!, ws, target, undefined, undefined, undefined, scope);
     expect(preview.errors).toEqual([]);
     fs.rmSync(path.join(ws, ".tachyon/agents/alice"), { recursive: true, force: true });
-    fs.writeFileSync(
-      path.join(ws, "tachyon.yml"),
-      "schemaVersion: 1\nagents:\n  alice:\n    kind: agent\n    cmd: claude\n    isolate: transcript\n    autostart: false\n    watch: []\n    attention:\n      enabled: false\n    restart: never\n",
-    );
+    // t-a65335 — the identity flip is to the legacy yaml isolate:transcript shape, which lives in
+    // the legacy root file readYamlAgent still probes.
+    fs.writeFileSync(path.join(ws, "tachyon.yml"), "schemaVersion: 1\nagents:\n  alice:\n    kind: agent\n    cmd: claude\n    isolate: transcript\n    autostart: false\n    watch: []\n    attention:\n      enabled: false\n    restart: never\n");
     const applied = await applyInstall(plugin!, preview, ws, target, { mcpConfirmed: true, scope });
     expect(applied.installed).toBe(false);
     expect(applied.errors.length).toBeGreaterThan(0);

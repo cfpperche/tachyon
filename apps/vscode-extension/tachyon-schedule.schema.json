@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Tachyon schedule declaration (.tachyon/schedules/<name>.yml)",
+  "description": "One schedule — fires on an interval ('every') or at a wall-clock time ('at'), exactly one, and spawns a declared agent ('spawn'). The exactly-one rule is enforced by the product, not this schema. The file's mapping is the declaration; the name is the filename.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "every": {
+      "type": "string",
+      "pattern": "^[0-9]+ *[mh]$",
+      "description": "Interval between runs: '30m', '1h', '2h'."
+    },
+    "at": {
+      "type": "string",
+      "pattern": "^[0-9]{1,2}:[0-9]{2}$",
+      "description": "Wall-clock time of day, 'HH:MM' (24h)."
+    },
+    "spawn": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Name of an agent declared in this workspace."
+    },
+    "instructions": {
+      "type": "string",
+      "description": "Prompt handed to the spawned agent. Only valid alongside 'spawn'."
+    },
+    "catchUp": {
+      "type": "boolean",
+      "description": "Run once on startup when the window was missed while the editor was closed."
+    }
+  }
+}

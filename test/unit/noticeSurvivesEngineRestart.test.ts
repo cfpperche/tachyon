@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, expect, it, afterEach } from "vitest";
@@ -165,7 +166,7 @@ async function ring(ws: Workspace, root: string, from: string, to: string, summa
 describe("t-b47fb2 — a pending notice survives the engine instance swap", () => {
   it("POSITIVE: a notice queued by instance 1 is delivered after instance 2 boots", async () => {
     const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  coord:\n    cmd: sh\n", "utf8");
+    writeWorkspaceConfig(root, "agents: {}\nterminals:\n  coord:\n    cmd: sh\n");
     const host = new FakeHost(mkdir());
     const server = fakeTmuxServer();
 
@@ -209,7 +210,7 @@ describe("t-b47fb2 — a pending notice survives the engine instance swap", () =
 
   it("NEGATIVE CONTROL: a notice instance 1 already delivered is NOT delivered again", async () => {
     const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  coord:\n    cmd: sh\n", "utf8");
+    writeWorkspaceConfig(root, "agents: {}\nterminals:\n  coord:\n    cmd: sh\n");
     const host = new FakeHost(mkdir());
     const server = fakeTmuxServer();
 
@@ -241,7 +242,7 @@ describe("t-b47fb2 — a pending notice survives the engine instance swap", () =
     // The upgrade case. This workspace's `doorbells.jsonl` has 3,291 rows; a boot that read them as
     // pending would open with thousands of notices, which the card names as worse than the loss.
     const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  coord:\n    cmd: sh\n", "utf8");
+    writeWorkspaceConfig(root, "agents: {}\nterminals:\n  coord:\n    cmd: sh\n");
     for (let index = 0; index < 40; index += 1) {
       appendDoorbellEvent(root, {
         from: "child",

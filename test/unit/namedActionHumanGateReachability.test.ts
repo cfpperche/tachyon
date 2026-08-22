@@ -39,6 +39,7 @@
  * `isolatedDaemonChildEnv` + `assertNoFleetLeak`, and is killed in `afterEach`. Nothing is written
  * into the live fleet's workspace.
  */
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import net from "node:net";
@@ -139,7 +140,10 @@ describe("t-dd27f1 — named actions that produce a human-only effect", () => {
     }));
     expect(approved).toMatchObject({ changed: true });
     // The durable effect: a recurring autonomous schedule in the workspace config.
-    expect(fs.readFileSync(path.join(daemon.workspaceRoot, "tachyon.yml"), "utf8")).toContain("selfscheduled");
+    // t-a65335 — schedules are declaration files now: .tachyon/schedules/<name>.yml (name = filename).
+    const scheduleFile = path.join(daemon.workspaceRoot, ".tachyon", "schedules", "selfscheduled.yml");
+    expect(fs.existsSync(scheduleFile)).toBe(true);
+    expect(fs.readFileSync(scheduleFile, "utf8")).toContain("selfgranting");
   }, 120_000);
 
   it("DEFECT: an agent authorizes a workspace skill into a profile — the 'Authorize' click is a named action", async () => {
@@ -175,7 +179,9 @@ describe("t-dd27f1 — named actions that produce a human-only effect", () => {
     const daemon = await startDaemon();
     const speaker = await attach(daemon, "shell-not-an-extension-host");
 
-    expect(fs.readFileSync(path.join(daemon.workspaceRoot, "tachyon.yml"), "utf8")).not.toContain("allowedHosts");
+    // t-a65335 — the human-owned config is .tachyon/settings.yml now (top level = the settings mapping).
+    const settingsFile = path.join(daemon.workspaceRoot, ".tachyon", "settings.yml");
+    expect(fs.readFileSync(settingsFile, "utf8")).not.toContain("allowedHosts");
 
     // DEFECT: the guardrail the agent-facing documentation calls "human-owned config, which you
     // cannot widen" is a named action on the same socket.
@@ -183,7 +189,7 @@ describe("t-dd27f1 — named actions that produce a human-only effect", () => {
       action: "config.companion.allowedHosts",
       hosts: ["evil.example", "internal.corp"],
     }));
-    const config = fs.readFileSync(path.join(daemon.workspaceRoot, "tachyon.yml"), "utf8");
+    const config = fs.readFileSync(settingsFile, "utf8");
     expect(config).toContain("evil.example");
     expect(config).toContain("internal.corp");
   }, 120_000);
@@ -374,7 +380,7 @@ async function startDaemon(): Promise<Daemon> {
   for (const directory of [workspaceRoot, storageRoot, mediaRoot, runtimeRoot, tmuxTmp, xdgRuntime]) {
     fs.mkdirSync(directory, { mode: 0o700 });
   }
-  fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), "agents: {}\n", "utf8");
+  writeWorkspaceConfig(workspaceRoot, "agents: {}\n");
   // t-70fda0 / t-93ec7f — never let the live fleet's identity reach a daemon fixture.
   const childEnv = isolatedDaemonChildEnv(tmuxChildEnv(), {
     TMUX_TMPDIR: tmuxTmp,

@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { createWorkspaceForTest } from "@tachyon/bridge/workspaceComposition.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
@@ -195,7 +196,7 @@ function ageQueuePastTtl(ws: Workspace, target: string): void {
  */
 async function withCoordAndChild(composerLine = EMPTY_COMPOSER) {
   const root = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n", "utf8");
+  writeWorkspaceConfig(root, "agents: {}\n");
   const host = new FakeHost(mkdir());
   const { tmux, sent, panes, keys } = fakeTmux();
   const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });

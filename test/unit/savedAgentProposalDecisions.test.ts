@@ -1,3 +1,4 @@
+import { writeWorkspaceConfig } from "../helpers/writeWorkspaceConfig.js";
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -32,7 +33,7 @@ afterEach(() => {
 function workspace(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-proposal-decisions-"));
   dirs.push(dir);
-  fs.writeFileSync(path.join(dir, "tachyon.yml"), "agents:\n  boss:\n    cmd: claude\n  target:\n    cmd: grok\n", "utf8");
+  writeWorkspaceConfig(dir, "agents:\n  boss:\n    cmd: claude\n  target:\n    cmd: grok\n");
   return dir;
 }
 

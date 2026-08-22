@@ -205,7 +205,7 @@ export function upsertAgent(
   if (text === undefined || text.trim().length === 0) {
     return { text: stringify({ [section]: { [name]: sanitizeForSection(section, entry) } }), warnings: [] };
   }
-  const doc = load(text);
+  const doc = load(text ?? "");
   const warnings: string[] = [];
 
   // An EDIT acts in the entry's CURRENT block; a CREATE uses the caller-selected section.
@@ -234,30 +234,7 @@ export function upsertAgent(
   return { text: String(doc), warnings };
 }
 
-/** Create or replace a schedule entry (approving an agent proposal, or the Studio). */
-export function upsertSchedule(
-  text: string | undefined,
-  name: string,
-  entry: Record<string, unknown>,
-  overwrite = false,
-): EditResult {
-  assertValidName(name);
-  if (text === undefined || text.trim().length === 0) {
-    throw new Error("create an agent first — schedules need an existing tachyon.yml");
-  }
-  const doc = load(text);
-  if (!overwrite && doc.hasIn(["schedules", name])) throw new Error(`schedule '${name}' already exists`);
-  doc.setIn(["schedules", name], doc.createNode(entry));
-  return { text: String(doc), warnings: [] };
-}
 
-/** Removes a schedule. */
-export function deleteSchedule(text: string, name: string): EditResult {
-  const doc = load(text);
-  if (!doc.hasIn(["schedules", name])) throw new Error(`schedule '${name}' does not exist`);
-  doc.deleteIn(["schedules", name]);
-  return { text: String(doc), warnings: [] };
-}
 
 /**
  * SDD 414 — set settings.companion.tabTools (human Control toggle).
@@ -265,11 +242,8 @@ export function deleteSchedule(text: string, name: string): EditResult {
  * Persists explicit true/false so the opt-in is visible in the file.
  */
 export function setCompanionTabTools(text: string | undefined, enabled: boolean): EditResult {
-  if (text === undefined || text.trim().length === 0) {
-    throw new Error("create an agent first — Companion settings need an existing tachyon.yml");
-  }
-  const doc = load(text);
-  doc.setIn(["settings", "companion", "tabTools"], enabled);
+  const doc = load(text ?? "");
+  doc.setIn(["companion", "tabTools"], enabled);
   return { text: String(doc), warnings: [] };
 }
 
@@ -279,11 +253,8 @@ export function setCompanionTabTools(text: string | undefined, enabled: boolean)
  * Requires an existing tachyon.yml. Persists explicit true/false so the opt-in is visible in the file.
  */
 export function setIdeBrowserEnabled(text: string | undefined, enabled: boolean): EditResult {
-  if (text === undefined || text.trim().length === 0) {
-    throw new Error("create an agent first — Integrated Browser settings need an existing tachyon.yml");
-  }
-  const doc = load(text);
-  doc.setIn(["settings", "ideBrowser", "enabled"], enabled);
+  const doc = load(text ?? "");
+  doc.setIn(["ideBrowser", "enabled"], enabled);
   return { text: String(doc), warnings: [] };
 }
 
@@ -292,11 +263,8 @@ export function setIdeBrowserEnabled(text: string | undefined, enabled: boolean)
  * Persists explicit true/false so the opt-in is visible in tachyon.yml.
  */
 export function setCompanionLanAccess(text: string | undefined, enabled: boolean): EditResult {
-  if (text === undefined || text.trim().length === 0) {
-    throw new Error("create an agent first — Companion settings need an existing tachyon.yml");
-  }
-  const doc = load(text);
-  doc.setIn(["settings", "companion", "lanAccess"], enabled);
+  const doc = load(text ?? "");
+  doc.setIn(["companion", "lanAccess"], enabled);
   return { text: String(doc), warnings: [] };
 }
 
@@ -306,9 +274,6 @@ export function setCompanionLanAccess(text: string | undefined, enabled: boolean
  * Hosts are trimmed, de-duped; invalid empty entries dropped.
  */
 export function setCompanionAllowedHosts(text: string | undefined, hosts: string[]): EditResult {
-  if (text === undefined || text.trim().length === 0) {
-    throw new Error("create an agent first — Companion settings need an existing tachyon.yml");
-  }
   const cleaned = [
     ...new Set(
       hosts
@@ -316,13 +281,13 @@ export function setCompanionAllowedHosts(text: string | undefined, hosts: string
         .filter((h) => h.length > 0 && h.length <= 253),
     ),
   ];
-  const doc = load(text);
+  const doc = load(text ?? "");
   if (cleaned.length === 0) {
-    if (doc.hasIn(["settings", "companion", "allowedHosts"])) {
-      doc.deleteIn(["settings", "companion", "allowedHosts"]);
+    if (doc.hasIn(["companion", "allowedHosts"])) {
+      doc.deleteIn(["companion", "allowedHosts"]);
     }
   } else {
-    doc.setIn(["settings", "companion", "allowedHosts"], cleaned);
+    doc.setIn(["companion", "allowedHosts"], cleaned);
   }
   return { text: String(doc), warnings: [] };
 }
@@ -338,16 +303,13 @@ export function setCompanionAllowedHosts(text: string | undefined, hosts: string
  * gate, and a second rule at this layer is how two validators come to disagree.
  */
 export function setIdleAfterMinutes(text: string | undefined, minutes: number | "never" | undefined): EditResult {
-  if (text === undefined || text.trim().length === 0) {
-    throw new Error("create an agent first — notification settings need an existing tachyon.yml");
-  }
-  const doc = load(text);
+  const doc = load(text ?? "");
   if (minutes === undefined) {
-    if (doc.hasIn(["settings", "agentNotifications", "idleAfterMinutes"])) {
-      doc.deleteIn(["settings", "agentNotifications", "idleAfterMinutes"]);
+    if (doc.hasIn(["agentNotifications", "idleAfterMinutes"])) {
+      doc.deleteIn(["agentNotifications", "idleAfterMinutes"]);
     }
   } else {
-    doc.setIn(["settings", "agentNotifications", "idleAfterMinutes"], minutes);
+    doc.setIn(["agentNotifications", "idleAfterMinutes"], minutes);
   }
   return { text: String(doc), warnings: [] };
 }
@@ -362,37 +324,19 @@ export function setIdleAfterMinutes(text: string | undefined, minutes: number | 
  * that already passed its own checks.
  */
 export function setSettingsValue(text: string | undefined, keyPath: string[], value: string | number | boolean | string[]): EditResult {
-  if (text === undefined || text.trim().length === 0) {
-    throw new Error("create an agent first — settings need an existing tachyon.yml");
-  }
-  if (keyPath.length === 0) throw new Error("setSettingsValue needs a key path under 'settings'");
-  const doc = load(text);
-  doc.setIn(["settings", ...keyPath], value);
+  if (keyPath.length === 0) throw new Error("setSettingsValue needs a key path");
+  const doc = load(text ?? "");
+  doc.setIn(keyPath, value);
   return { text: String(doc), warnings: [] };
 }
 
-/** 0-based line of a schedule's entry. */
-export function scheduleEntryLine(text: string, name: string): number | undefined {
-  return entryLineIn(text, "schedules", name);
-}
 
-function entryLineIn(text: string, section: string, name: string): number | undefined {
-  const doc = load(text);
-  const map = doc.get(section);
-  if (!(map instanceof YAMLMap)) return undefined;
-  const node = map.items.find(
-    (pair) => String((pair.key as { toJSON?: () => unknown }).toJSON?.() ?? pair.key) === name,
-  );
-  const offset = (node?.key as { range?: [number, number, number] })?.range?.[0];
-  if (offset === undefined) return undefined;
-  return text.slice(0, offset).split("\n").length - 1;
-}
 
 // spec 234 — upsertLayout removed (layouts feature retired).
 
 export function cloneAgent(text: string, source: string, newName: string): EditResult {
   assertValidName(newName);
-  const doc = load(text);
+  const doc = load(text ?? "");
   const section = legacyManagedSectionOf(doc, source); // retired compatibility seam
   if (!section) throw new Error(`agent '${source}' does not exist`);
   if (legacyManagedSectionOf(doc, newName)) throw new Error(`agent '${newName}' already exists`);
@@ -404,7 +348,7 @@ export function cloneAgent(text: string, source: string, newName: string): EditR
 }
 
 export function deleteAgent(text: string, name: string): EditResult {
-  const doc = load(text);
+  const doc = load(text ?? "");
   const section = legacyManagedSectionOf(doc, name);
   if (!section) throw new Error(`agent '${name}' does not exist`);
   // t-ae221c — the "you cannot delete the last one" guard is gone, and it had to be.
@@ -426,7 +370,7 @@ export function deleteAgent(text: string, name: string): EditResult {
 
 export function renameAgent(text: string, oldName: string, newName: string): EditResult {
   assertValidName(newName);
-  const doc = load(text);
+  const doc = load(text ?? "");
   const section = legacyManagedSectionOf(doc, oldName);
   if (!section) throw new Error(`agent '${oldName}' does not exist`);
   if (legacyManagedSectionOf(doc, newName)) throw new Error(`agent '${newName}' already exists`);
@@ -445,7 +389,7 @@ export function renameAgent(text: string, oldName: string, newName: string): Edi
 
 /** 0-based line of an agent/terminal's entry — lets "Edit" open tachyon.yml at the right place. */
 export function agentEntryLine(text: string, name: string): number | undefined {
-  const doc = load(text);
+  const doc = load(text ?? "");
   const section = legacyManagedSectionOf(doc, name);
   const node = section
     ? mapOf(doc, section)?.items.find(
