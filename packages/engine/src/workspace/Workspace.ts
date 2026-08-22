@@ -21,7 +21,7 @@ import { isDeepStrictEqual, promisify } from "node:util";
 import { DEFAULT_SOCKET_NAME, TmuxService, workspaceHash, SESSION_PREFIX, type SubmitReceipt } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { parseEvery, agentsOf, asAgent, suggestKindForCommand, terminalsOf, type TachyonConfig } from "../config/loadConfig.js";
-import { composeWorkspaceConfigText, migrateLegacyWorkspaceConfig, workspaceSettingsPath, WORKSPACE_SETTINGS_FILE } from "../config/workspaceSettingsFile.js";
+import { composeWorkspaceConfigText, workspaceSettingsPath, WORKSPACE_SETTINGS_FILE } from "../config/workspaceSettingsFile.js";
 import { deleteScheduleDeclaration, upsertScheduleDeclaration } from "../config/scheduleDeclarations.js";
 import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
 import { closeAgentToolSessions } from "../agents/closeAgentToolSessions.js";
@@ -781,9 +781,6 @@ export class Workspace {
     // Auth: stable per-workspace token (extension storage — never in a committable file).
     let earlyConfig: TachyonConfig | undefined;
     try {
-      // t-a65335 — a legacy tachyon.yml is projected into .tachyon/settings.yml BEFORE the first
-      // read, so a freshly-upgraded workspace keeps its auth posture from the very first launch.
-      migrateLegacyWorkspaceConfig(this.workspaceRoot);
       const canonicalSyntax = parseProfileAwareConfigSyntax(composeWorkspaceConfigText(this.workspaceRoot).yamlText);
       earlyConfig = canonicalSyntax.config;
     } catch {
@@ -3050,9 +3047,7 @@ export class Workspace {
     ws.profileDocumentReload = onConfigChange;
     ws.disposables.push(ws.host.watch(workspaceRoot, WORKSPACE_SETTINGS_FILE, { change: true, create: true, delete: true }, onConfigChange));
     ws.disposables.push(ws.host.watch(workspaceRoot, ".tachyon/schedules/*.yml", { change: true, create: true, delete: true }, onConfigChange));
-    // A legacy tachyon.yml appearing (an old agent or script still writing one) triggers a reload,
-    // whose first step is the migration that projects and removes it.
-    ws.disposables.push(ws.host.watch(workspaceRoot, "tachyon.{yml,yaml}", { change: true, create: true }, onConfigChange));
+
     ws.disposables.push(ws.host.watch(
       workspaceRoot,
       ".tachyon/agents/*/agent.yml",
@@ -5113,17 +5108,6 @@ export class Workspace {
   }
 
   reloadConfig(): boolean {
-    // t-a65335 — one-shot projection of a legacy root tachyon.yml into the new homes. Idempotent:
-    // after the first pass the root file is gone and this is a single existsSync.
-    try {
-      const migration = migrateLegacyWorkspaceConfig(this.workspaceRoot);
-      if (migration.migrated) {
-        this.host.notify(this.t("tachyon.yml migrated: {0}", migration.actions.join("; ")), "info");
-      }
-      for (const warning of migration.warnings) this.host.notify(warning, "warn");
-    } catch (error) {
-      this.host.notify(this.t("tachyon.yml migration failed: {0}", error instanceof Error ? error.message : String(error)), "error");
-    }
     const file = this.configPath();
     const prevCompanionTabTools = this.config?.settings.companion?.tabTools === true;
     const prevCompanionLanAccess = this.config?.settings.companion?.lanAccess === true;

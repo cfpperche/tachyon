@@ -48,15 +48,10 @@ for (const directory of [workspaceRoot, storageRoot, fakeBin]) fs.mkdirSync(dire
 const fakeCodex = path.join(fakeBin, "codex");
 fs.writeFileSync(fakeCodex, "#!/bin/sh\nsleep 300\n", { mode: 0o700 });
 process.env.PATH = `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`;
-fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), [
-  "agents:",
-  "  dogfood-worker:",
-  "    cmd: codex",
-  "    kind: agent",
-  "    autostart: false",
-  "    restart: on-crash",
-  "",
-].join("\n"), "utf8");
+// t-987825 — a configured workspace is `.tachyon/settings.yml`; the retired `agents:` block this
+// used to write was already dropped by the loader (agents come from `.tachyon/agents/<name>/`).
+fs.mkdirSync(path.join(workspaceRoot, ".tachyon"), { recursive: true });
+fs.writeFileSync(path.join(workspaceRoot, ".tachyon", "settings.yml"), "# dogfood workspace (persistent-engine-runner)\n", "utf8");
 const dogfoodTaskStore = new TaskStore(workspaceRoot);
 let dogfoodTask = await dogfoodTaskStore.create({
   id: "t-d06f00",

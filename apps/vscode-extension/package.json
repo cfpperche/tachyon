@@ -34,7 +34,6 @@
   "main": "./dist/extension.js",
   "activationEvents": [
     "workspaceContains:.tachyon/settings.yml",
-    "workspaceContains:tachyon.yml",
     "onView:tachyonSidebarPrototype"
   ],
   "contributes": {

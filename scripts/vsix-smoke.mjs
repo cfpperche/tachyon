@@ -18,7 +18,7 @@
  *      door per live surface (`test/vsix-smoke/probe/suite.js`). This is the layer that proves the
  *      package STARTS — the floor layer 1 cannot reach, because a bundle can be closed and still throw.
  *
- * t-a8e1f7 — LAYER 2 RUNS TWICE, and the workspace carries a `tachyon.yml`.
+ * t-a8e1f7 — LAYER 2 RUNS TWICE, and the workspace is a CONFIGURED one.
  *
  * Until now the workspace was empty, so no engine was ever requested and every door was an engine-free
  * door. That left the packaged engine untouched until a human installed it. The disposable editor is
@@ -73,9 +73,13 @@ const ENGINE_COMMAND = "vsix-smoke-engine-door";
  * file and project it — which is the whole claim.
  */
 const SMOKE_CONFIG = `# Written by scripts/vsix-smoke.mjs (t-a8e1f7). Presence is what requests the engine.
-terminals:
-  ${ENGINE_COMMAND}:
-    cmd: "echo vsix-smoke"
+# t-987825 — the workspace is configured the way the product configures one: a settings file plus
+# one terminal DECLARATION file. The legacy single-file form is gone, and so is the migration that
+# used to translate it, so seeding it here would seed a workspace the engine no longer reads.
+`;
+
+/** The terminal declaration the engine door asks the daemon to report back. */
+const SMOKE_TERMINAL = `cmd: "echo vsix-smoke"
 `;
 
 /** Every engine this run started, keyed the way the product keys it. Teardown reads this list. */
@@ -345,7 +349,9 @@ function childEnv(work) {
 function configuredWorkspace(work, label) {
   const workspace = path.join(work, `workspace-${label}`);
   fs.mkdirSync(workspace, { recursive: true });
-  fs.writeFileSync(path.join(workspace, "tachyon.yml"), SMOKE_CONFIG, "utf8");
+  fs.mkdirSync(path.join(workspace, ".tachyon", "terminals"), { recursive: true });
+  fs.writeFileSync(path.join(workspace, ".tachyon", "settings.yml"), SMOKE_CONFIG, "utf8");
+  fs.writeFileSync(path.join(workspace, ".tachyon", "terminals", `${ENGINE_COMMAND}.yml`), SMOKE_TERMINAL, "utf8");
   startedEngines.push(engineWorkspaceKey(workspace));
   return workspace;
 }

@@ -12,7 +12,7 @@ import { subtreeCpuTicks } from "@tachyon/engine/attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import type { TmuxServerSnapshot } from "@tachyon/webview-ui/inspector/model";
 import { asAgent } from "@tachyon/engine/config/loadConfig.js";
-import { LEGACY_CONFIG_FILENAMES, WORKSPACE_SETTINGS_FILE, workspaceSettingsPath } from "@tachyon/engine/config/workspaceSettingsFile.js";
+import { WORKSPACE_SETTINGS_FILE, workspaceSettingsPath } from "@tachyon/engine/config/workspaceSettingsFile.js";
 import { FilesystemBackupAdapter } from "@tachyon/engine/statesync/adapter.js";
 import { listGenerationIds, readGenerationManifest, runRestore } from "@tachyon/engine/statesync/backup.js";
 import { reclaimQuarantineRoot, runReclaim } from "@tachyon/engine/reclaim/reclaimService.js";
@@ -373,9 +373,7 @@ function tmuxHealthSnapshot(value: unknown): TmuxServerSnapshot {
 
 function configPathOf(ws: WorkspaceShellHandle): string | undefined {
   const settings = workspaceSettingsPath(ws.workspaceRoot);
-  if (fs.existsSync(settings)) return settings;
-  // pre-migration window: a legacy root file still marks the workspace until the engine projects it
-  return LEGACY_CONFIG_FILENAMES.map((name) => path.join(ws.workspaceRoot, name)).find((file) => fs.existsSync(file));
+  return fs.existsSync(settings) ? settings : undefined;
 }
 
 async function extensionQuery(ws: WorkspaceShellHandle, input: ExtensionQueryV1): Promise<JsonValue> {
@@ -1319,9 +1317,7 @@ async function confirmAndRemoveWorktree(
 }
 
 function hasConfig(folderPath: string): boolean {
-  if (fs.existsSync(path.join(folderPath, WORKSPACE_SETTINGS_FILE))) return true;
-  // a legacy tachyon.yml still counts: attaching the engine migrates it into the new homes
-  return LEGACY_CONFIG_FILENAMES.some((name) => fs.existsSync(path.join(folderPath, name)));
+  return fs.existsSync(path.join(folderPath, WORKSPACE_SETTINGS_FILE));
 }
 
 /** t-be359b — STAYS NATIVE. All three callers (openAgentPane, restartAgent, openAgentTerminal) are
@@ -3806,10 +3802,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         void showNotification(vscode.l10n.t("'{0}' is already a Tachyon workspace.", folder.name), "info", [vscode.l10n.t("Open settings")])
           .then(async (choice) => {
             if (choice === vscode.l10n.t("Open settings")) {
-              const existing = fs.existsSync(workspaceSettingsPath(root))
-                ? workspaceSettingsPath(root)
-                : LEGACY_CONFIG_FILENAMES.map((n) => path.join(root, n)).find((p) => fs.existsSync(p))!;
-              await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(existing), { preview: false });
+              await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(workspaceSettingsPath(root)), { preview: false });
             }
           });
         return;

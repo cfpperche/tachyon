@@ -234,19 +234,23 @@ describe("dev-host pointer", () => {
   it("fixtureNew scaffolds focus intent with .tachyon seeds", () => {
     const r = fixtureNew({ repoRoot: repo, worktree, slug: "demo", spec: "393", intent: "focus" });
     expect(r.root).toContain("demo-dogfood");
-    expect(fs.existsSync(path.join(r.root, "tachyon.yml"))).toBe(true);
+    // t-987825 — a fixture workspace is configured the way the product reads one.
+    expect(fs.existsSync(path.join(r.root, ".tachyon", "settings.yml"))).toBe(true);
+    expect(fs.existsSync(path.join(r.root, "tachyon.yml"))).toBe(false);
     expect(fs.existsSync(path.join(r.root, "README.md"))).toBe(true);
     expect(fs.existsSync(path.join(r.root, ".tachyon", "tasks", "t-fixture1.json"))).toBe(true);
     expect(fs.readFileSync(path.join(r.root, "README.md"), "utf8")).toMatch(/intent: focus/);
     expect(fs.readFileSync(path.join(r.root, "README.md"), "utf8")).toMatch(/metrics/);
     // t-dc9cb0 — new fixtures name dogfood branches so they cannot be mistaken for fleet work.
-    expect(readWorktreeBranchTemplate(fs.readFileSync(path.join(r.root, "tachyon.yml"), "utf8")))
+    // the branch template is a TOP-LEVEL key of the settings file now (t-a65335)
+    expect(readWorktreeBranchTemplate(fs.readFileSync(path.join(r.root, ".tachyon", "settings.yml"), "utf8"), { topLevel: true }))
       .toBe(DEV_HOST_WORKTREE_BRANCH);
   });
 
   it("fixtureNew metrics intent also names dogfood branches", () => {
     const r = fixtureNew({ repoRoot: repo, worktree, slug: "load", spec: "386", intent: "metrics" });
-    expect(readWorktreeBranchTemplate(fs.readFileSync(path.join(r.root, "tachyon.yml"), "utf8")))
+    // the branch template is a TOP-LEVEL key of the settings file now (t-a65335)
+    expect(readWorktreeBranchTemplate(fs.readFileSync(path.join(r.root, ".tachyon", "settings.yml"), "utf8"), { topLevel: true }))
       .toBe(DEV_HOST_WORKTREE_BRANCH);
   });
 

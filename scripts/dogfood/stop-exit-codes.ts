@@ -111,10 +111,12 @@ async function main(): Promise<void> {
   delete process.env.TMUX;
   delete process.env.TMUX_PANE;
 
+  // t-987825 — settings and declarations have separate homes; the composed document below is what
+  // the loader would build from them, kept here because this fixture asserts on parseConfig.
   const yaml = [
     "settings:",
     "  maxAgents: 8",
-    "agents:",
+    "terminals:",
     ...runtimes.flatMap((runtime) => [
       `  ${runtime}:`,
       `    cmd: ${runtime}`,
@@ -122,7 +124,14 @@ async function main(): Promise<void> {
       "    autostart: false",
     ]),
   ].join("\n");
-  fs.writeFileSync(path.join(workspace, "tachyon.yml"), `${yaml}\n`);
+  fs.mkdirSync(path.join(workspace, ".tachyon", "terminals"), { recursive: true });
+  fs.writeFileSync(path.join(workspace, ".tachyon", "settings.yml"), "maxAgents: 8\n");
+  for (const runtime of runtimes) {
+    fs.writeFileSync(
+      path.join(workspace, ".tachyon", "terminals", `${runtime}.yml`),
+      [`cmd: ${runtime}`, `cwd: ${repoRoot}`, "autostart: false", ""].join("\n"),
+    );
+  }
   const { config, errors } = parseConfig(yaml);
   if (!config || errors.length) throw new Error(`fixture config invalid: ${errors.join("; ")}`);
 
