@@ -5,7 +5,7 @@
  * .vsix, not the bytes in the checkout. Nothing here imports from `src/`, on purpose — the moment it
  * did, it would be reading the development tree again, which is the whole failure this exists to end.
  *
- * t-a8e1f7 — THE WORKSPACE NOW CARRIES A `tachyon.yml`, so the persistent engine is required.
+ * t-a8e1f7 — THE WORKSPACE NOW CARRIES A `.tachyon/settings.yml`, so the persistent engine is required.
  *
  * The disposable editor is real Electron. Its extension host reports `process.versions.electron`, so
  * the packaged shell takes the Electron branch of `resolveEngineRuntimeSource`. That branch is the
@@ -39,7 +39,7 @@ const fs = require("node:fs");
 
 const EXTENSION_ID = "cfpperche.tachyon";
 
-/** The runner declares this command in the workspace `tachyon.yml`. The daemon must report it back. */
+/** The runner declares this command in the workspace `.tachyon/terminals`. The daemon must report it back. */
 const ENGINE_COMMAND = "vsix-smoke-engine-door";
 
 /**
@@ -100,7 +100,7 @@ exports.run = async function run() {
   }
 
   // DOOR 1 — the package starts. Everything the bundle imports at load time resolves, or this throws
-  // exactly the way a user's first Reload Window would. With a `tachyon.yml` present it also means the
+  // exactly the way a user's first Reload Window would. With a workspace config present it also means the
   // engine became ready: activation awaits the workspace attach and rethrows what that attach raises.
   try {
     await extension.activate();

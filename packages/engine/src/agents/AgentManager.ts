@@ -110,14 +110,14 @@ function probeRememberedRootProcess(
 
 export class MaxAgentsError extends Error {
   constructor(max: number) {
-    super(`maxAgents limit reached (${max}); kill an agent or raise settings.maxAgents in tachyon.yml`);
+    super(`maxAgents limit reached (${max}); kill an agent or raise maxAgents in .tachyon/settings.yml`);
     this.name = "MaxAgentsError";
   }
 }
 
 export class UnknownAgentError extends Error {
   constructor(name: string) {
-    super(`unknown agent '${name}': not declared in tachyon.yml and not running`);
+    super(`unknown agent '${name}': not declared in .tachyon/agents and not running`);
     this.name = "UnknownAgentError";
   }
 }

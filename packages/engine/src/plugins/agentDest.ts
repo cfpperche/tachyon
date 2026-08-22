@@ -35,7 +35,6 @@ const HARNESS_REL = ".tachyon/harness";
 
 export type IsolationKind =
   | "canonical-profile"
-  | "yaml-harness"
   | "codex-home"
   | "transcript"
   | "none";
@@ -168,51 +167,6 @@ function readAgentProfile(workspaceRoot: string, agent: string): ProfileProbe | 
   }
 }
 
-interface YamlAgentProbe {
-  hasHarness: boolean;
-  isolateTranscript: boolean;
-  cmd: string | null;
-}
-
-function readYamlAgent(workspaceRoot: string, agent: string): YamlAgentProbe | null {
-  for (const name of ["tachyon.yml", "tachyon.yaml"]) {
-    const file = path.join(workspaceRoot, name);
-    let text: string;
-    try {
-      const st = fs.lstatSync(file);
-      if (st.isSymbolicLink() || !st.isFile()) continue;
-      text = fs.readFileSync(file, "utf8");
-    } catch {
-      continue;
-    }
-    try {
-      const parsed = parseYaml(text) as unknown;
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
-      const agents = (parsed as Record<string, unknown>).agents;
-      if (!agents || typeof agents !== "object" || Array.isArray(agents)) continue;
-      const entry = (agents as Record<string, unknown>)[agent];
-      if (entry === undefined) return null;
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
-      const rec = entry as Record<string, unknown>;
-      return {
-        hasHarness: rec.harness !== undefined && rec.harness !== null,
-        isolateTranscript: rec.isolate === "transcript",
-        cmd: typeof rec.cmd === "string" ? rec.cmd : null,
-      };
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-function adapterOfCmd(cmd: string | null): string | null {
-  if (!cmd) return null;
-  const bin = cmd.trim().split(/\s+/)[0]?.replace(/.*\//, "") ?? "";
-  if (bin === "claude" || bin === "codex" || bin === "grok") return bin;
-  return null;
-}
-
 export function inspectAgentIsolation(workspaceRoot: string, agent: string): {
   ok: true;
   identity: HarnessIdentity;
@@ -257,39 +211,11 @@ export function inspectAgentIsolation(workspaceRoot: string, agent: string): {
     };
   }
 
-  const yaml = readYamlAgent(workspaceRoot, agent);
-  if (!yaml) {
-    return { ok: false, error: `agent '${agent}' does not exist` };
-  }
-  if (yaml.isolateTranscript && !yaml.hasHarness) {
-    return {
-      ok: false,
-      error: `agent '${agent}' has isolate:transcript only — private configHome is not a complete isolated harness; refusing agent-scoped plugin dest (no workspace fallback)`,
-    };
-  }
-  if (!yaml.hasHarness) {
-    return {
-      ok: false,
-      error: `agent '${agent}' has no isolated harness (harness:{} or canonical profile); refusing agent-scoped plugin dest (no workspace fallback)`,
-    };
-  }
-  const adapter = adapterOfCmd(yaml.cmd);
-  if (adapter === "codex") {
-    return {
-      ok: true,
-      identity: { agent, kind: "codex-home", adapter, destRootRel, worktree: false },
-    };
-  }
-  return {
-    ok: true,
-    identity: {
-      agent,
-      kind: "yaml-harness",
-      adapter,
-      destRootRel,
-      worktree: false,
-    },
-  };
+  // No canonical profile is the whole answer: `.tachyon/agents/<name>/agent.yml` is the only place a
+  // Saved Agent is declared. The `agents:` block of `tachyon.yml` used to be a second answer here, and
+  // outlived both the file (0.93.30) and the inline species itself (legacyFleetGate) as a fallback that
+  // could no longer fire (t-987825).
+  return { ok: false, error: `agent '${agent}' does not exist` };
 }
 
 function agentDestsFor(identity: HarnessIdentity): Record<Runtime, RuntimeDestLayout> {

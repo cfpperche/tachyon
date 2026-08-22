@@ -358,7 +358,7 @@ describe("SidebarPrototypeProvider", () => {
     await flushPromises();
     expect(calls).toEqual([]);
     expect(__getWarningMessageCalls()).toEqual([
-      { message: "Tachyon: Delete schedule 'nightly' from tachyon.yml?", options: { modal: true }, actions: ["Delete"] },
+      { message: "Tachyon: Delete schedule 'nightly'?", options: { modal: true }, actions: ["Delete"] },
       { message: "Tachyon: Reject the proposed schedule 'abcdef123457'?", options: { modal: true }, actions: ["Reject"] },
     ]);
 

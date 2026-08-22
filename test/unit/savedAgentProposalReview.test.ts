@@ -76,7 +76,7 @@ describe("Saved Agent proposal review (SDD 482 phase 4C)", () => {
     expect(vm.affected).toEqual([
       ".tachyon/agents/importer/agent.yml (new canonical profile, lifecycle.enabled=true)",
       ".tachyon/agents/importer/authority.json (new authority record)",
-      "tachyon.yml → agents.importer (new roster pointer)",
+      ".tachyon/agents/importer/agent.yml (new roster entry)",
       "claude-runtime → ownership.subagents adds importer",
       // t-4071e4 — where the agent would RUN belongs next to "not started": both describe the posture
       // the approval commits to, and an approval screen that omits it hides the whole impact.

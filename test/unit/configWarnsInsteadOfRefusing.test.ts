@@ -90,7 +90,7 @@ describe("an unreadable key is discarded and the rest of the file loads", () => 
 
     const scalar = parseRawConfig("just-a-string\n");
     expect(scalar.config).toBeUndefined();
-    expect(scalar.errors).toEqual(["tachyon.yml must be a YAML mapping"]);
+    expect(scalar.errors).toEqual([".tachyon/settings.yml must be a YAML mapping"]);
   });
 });
 

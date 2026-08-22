@@ -1268,7 +1268,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(declared.isError).toBe(true);
     // SDD 482 phase 5 — new vocabulary, old term retained in the same sentence so this assertion (and
     // anyone grepping logs) keeps working across the rename.
-    expect(JSON.stringify(declared.content)).toContain("Saved Agent (declared in tachyon.yml)");
+    expect(JSON.stringify(declared.content)).toContain("Saved Agent (declared in .tachyon/agents)");
 
     const missing = await client.callTool({ name: "dismiss_agent", arguments: { name: "missing" } });
     expect(missing.isError).toBe(true);

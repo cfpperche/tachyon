@@ -1009,7 +1009,7 @@ async function promoteAgent(
   if (record?.worktree) {
     throw new Error(
       `'${agent}' runs in its own git worktree (${record.worktree.path}, branch ${record.worktree.branch}) and saving it to `
-      + "tachyon.yml here would leave that checkout behind: this promotion writes a terminal entry, and a terminal entry "
+      + "a terminal declaration here would leave that checkout behind: this promotion writes a terminal entry, and a terminal entry "
       + "cannot declare a worktree. Create the Saved Agent in Agent Studio, where a profile can declare its own worktree, "
       + "or dismiss the instance — dismissing removes the checkout with it.",
     );

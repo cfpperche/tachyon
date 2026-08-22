@@ -48,7 +48,7 @@ export function registerTachyonChatBridge(
       async invoke(_options, _token) {
         const ws = ops.resolveWorkspace();
         if (!ws) {
-          return textResult("No Tachyon workspace is active. Open a folder with tachyon.yml and Start Tachyon.");
+          return textResult("No Tachyon workspace is active. Open a folder with .tachyon/settings.yml and Start Tachyon.");
         }
         const agents = await ops.listAgents(ws.wsHash);
         return textResult(formatAgentListMarkdown(agents, ws.folderName));
@@ -104,7 +104,7 @@ async function handleParticipant(
   const ws = ops.resolveWorkspace();
   if (!ws) {
     stream.markdown(
-      "No Tachyon workspace is connected. Open a folder with `tachyon.yml` and run **Tachyon: Start** (or use Dev Host F5).",
+      "No Tachyon workspace is connected. Open a folder with `.tachyon/settings.yml` and run **Tachyon: Start** (or use Dev Host F5).",
     );
     return;
   }
@@ -130,7 +130,7 @@ async function handleParticipant(
       `Agent \`${parsed.agent}\` not found in **${ws.folderName}**.\n\n` +
         (runnable.length
           ? `Known: ${runnable.map((n) => `\`${n}\``).join(", ")}`
-          : "No agents listed — check Control / tachyon.yml."),
+          : "No agents listed — check Control."),
     );
     return;
   }

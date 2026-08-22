@@ -113,7 +113,7 @@ describe("t-6fe04b — spawn_agent refuses parent+cwd at the entry", () => {
 
       // The whole reason the refusal moved: a caller who is only told "don't" invents a way around.
       expect(result.content[0]?.text).toContain("spawn without parent");
-      expect(result.content[0]?.text).toContain("declare it in tachyon.yml");
+      expect(result.content[0]?.text).toContain("make it a Saved Agent (.tachyon/agents/<name>/agent.yml)");
     });
 
     /**
@@ -239,7 +239,7 @@ describe("t-5f823a — the refusal an AGENT caller receives", () => {
       const offersUnparented = parentCwdExitsFor(kind).includes("unparented-spawn");
 
       expect(text.includes("spawn without parent"), `caller kind '${kind}'`).toBe(offersUnparented);
-      expect(text).toContain("declare it in tachyon.yml");
+      expect(text).toContain("make it a Saved Agent (.tachyon/agents/<name>/agent.yml)");
     }
   });
 

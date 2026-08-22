@@ -79,7 +79,7 @@ export function cockpitStrings(): CockpitStrings {
     settingsScopeGlobalTitle: t("Global (personal)"),
     settingsScopeGlobalHint: t("Your machine preferences — agent pane, git path, theme."),
     settingsScopeWorkspaceTitle: t("Workspace (project)"),
-    settingsScopeWorkspaceHint: t("Shared project policy in tachyon.yml — versioned with the repo."),
+    settingsScopeWorkspaceHint: t("Shared project policy in .tachyon/settings.yml — versioned with the repo."),
     settingsFileLabel: t("File:"),
     settingsOpenTachyon: t("Open global settings"),
     settingsOpenConfig: t("Open workspace settings"),
@@ -90,10 +90,10 @@ export function cockpitStrings(): CockpitStrings {
     companionTitle: t("Companion"),
     companionHint: t("Pair devices, manage access, and keep trusted connections in view."),
     companionTabTools: t("List Companion tab tools for agents"),
-    companionTabToolsHelp: t("Writes settings.companion.tabTools in tachyon.yml and refreshes the Bridge tool list."),
+    companionTabToolsHelp: t("Writes companion.tabTools in .tachyon/settings.yml and refreshes the Bridge tool list."),
     companionAllowedHosts: t("Allowed hosts (optional)"),
     companionAllowedHostsHelp: t(
-      "One host or glob per line (example.com, *.herokuapp.com). Empty = all hosts. Writes settings.companion.allowedHosts in tachyon.yml.",
+      "One host or glob per line (example.com, *.herokuapp.com). Empty = all hosts. Writes companion.allowedHosts in .tachyon/settings.yml.",
     ),
     companionAllowedHostsPlaceholder: t("example.com\n*.herokuapp.com"),
     // SDD 488 F4 — Integrated Browser GA gate (human surface + call-time; tools stay listed).
@@ -103,15 +103,15 @@ export function cockpitStrings(): CockpitStrings {
       "When enabled, the Design Mode launcher tile arms the overlay and opens the browser. Closing the browser disarms it. Agents always see ide_browser_* tools; calls fail until you enable this and open the bridge.",
     ),
     ideBrowserEnabled: t("Enable Integrated Browser"),
-    ideBrowserEnabledHelp: t("Writes settings.ideBrowser.enabled in tachyon.yml. Does not remove tools from the Bridge catalog."),
+    ideBrowserEnabledHelp: t("Writes ideBrowser.enabled in .tachyon/settings.yml. Does not remove tools from the Bridge catalog."),
     // t-585d5c — the unit and the bounds are IN the strings, because a bare number field is where a
     // person guesses seconds and gets minutes.
     idleNotifyTitle: t("Idle agent notifications"),
     idleNotifyHelp: t(
-      "How long a child agent may sit idle before Tachyon notifies its parent. 1-10080 minutes (7 days). Writes settings.agentNotifications.idleAfterMinutes in tachyon.yml and applies on the next check — no restart.",
+      "How long a child agent may sit idle before Tachyon notifies its parent. 1-10080 minutes (7 days). Writes agentNotifications.idleAfterMinutes in .tachyon/settings.yml and applies on the next check — no restart.",
     ),
     idleNotifyUnit: t("minutes"),
-    idleNotifyUsingDefault: t("Using the default ({0} min) — nothing written in tachyon.yml"),
+    idleNotifyUsingDefault: t("Using the default ({0} min) — nothing written in .tachyon/settings.yml"),
     idleNotifyOff: t("Notifications are off for this workspace"),
     idleNotifyOffLabel: t("Turn notifications off"),
     idleNotifySave: t("Save"),
