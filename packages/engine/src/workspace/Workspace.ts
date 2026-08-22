@@ -5,6 +5,7 @@ import {
   partitionStoppedTemporaryResidue,
 } from "../agents/stoppedTemporaryResidue.js";
 import { ideBrowserRequest, isIdeBrowserBridgeAvailable } from "../ide-browser/client.js";
+import { StateBackupService } from "../statesync/service.js";
 import {
   IDE_BROWSER_DISABLED_CODE,
   IDE_BROWSER_DISABLED_ERROR,
@@ -16,7 +17,7 @@ import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { DEFAULT_SOCKET_NAME, TmuxService, workspaceHash, SESSION_PREFIX, type SubmitReceipt } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { agentsOf, asAgent, CONFIG_FILENAMES, suggestKindForCommand, terminalsOf, type TachyonConfig } from "../config/loadConfig.js";
+import { parseEvery, agentsOf, asAgent, CONFIG_FILENAMES, suggestKindForCommand, terminalsOf, type TachyonConfig } from "../config/loadConfig.js";
 import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
 import { closeAgentToolSessions } from "../agents/closeAgentToolSessions.js";
 import { projectAgentForgetPlan, type AgentForgetPlanV1 } from "@tachyon/shared/config/agentForgetPlan.js";
@@ -3062,6 +3063,16 @@ export class Workspace {
 
     // Schedules tick on the heartbeat; activate anchors every-schedules + catch-up.
     ws.scheduler.activate();
+    // t-5786bc — opt-in durable-state backup. Settings are read live, so declaring or removing
+    // settings.stateBackup in tachyon.yml takes effect without an engine restart.
+    const stateBackup = new StateBackupService(
+      workspaceRoot,
+      () => ws.config?.settings.stateBackup,
+      (every) => (every === undefined ? null : (parseEvery(every) ?? null)),
+    );
+    stateBackup.start();
+    ws.disposables.push(stateBackup);
+
     ws.ticker = setInterval(() => void ws.tick(), ATTENTION_POLL_MS);
 
     // Upgrade notice: MCP clients cache the Bridge tool schema at THEIR session start. t-e5910c —

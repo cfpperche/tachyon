@@ -546,6 +546,26 @@ describe("parseConfig", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    bogus: 1\n`).warnings.some((e) => e.includes("handoff: unknown key 'bogus'"))).toBe(true);
   });
 
+  // t-5786bc — settings.stateBackup (opt-in durable-state backup)
+  it("parses settings.stateBackup and discards the whole block on any invalid input", () => {
+    const ok = parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  stateBackup:\n    backend: filesystem\n    path: /mnt/nas/bkp\n    every: 30m\n    keep: 10\n`);
+    expect(ok.config?.settings.stateBackup).toEqual({ backend: "filesystem", path: "/mnt/nas/bkp", every: "30m", keep: 10 });
+    // minimal form: backend + path only
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  stateBackup:\n    backend: filesystem\n    path: /d\n`).config?.settings.stateBackup).toEqual({ backend: "filesystem", path: "/d" });
+    // a half-valid backup destination must not survive: whole block discarded, warning names the field
+    const badBackend = parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  stateBackup:\n    backend: s3\n    path: /d\n`);
+    expect(badBackend.config?.settings).not.toHaveProperty("stateBackup");
+    expect(badBackend.warnings.some((e) => e.includes("stateBackup.backend"))).toBe(true);
+    const badEvery = parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  stateBackup:\n    backend: filesystem\n    path: /d\n    every: soon\n`);
+    expect(badEvery.config?.settings).not.toHaveProperty("stateBackup");
+    expect(badEvery.warnings.some((e) => e.includes("stateBackup.every"))).toBe(true);
+    const badKeep = parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  stateBackup:\n    backend: filesystem\n    path: /d\n    keep: 0\n`);
+    expect(badKeep.config?.settings).not.toHaveProperty("stateBackup");
+    expect(badKeep.warnings.some((e) => e.includes("stateBackup.keep"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  stateBackup:\n    backend: filesystem\n    path: /d\n    bogus: 1\n`).warnings.some((e) => e.includes("stateBackup: unknown key 'bogus'"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  stateBackup: yes\n`).warnings.some((e) => e.includes("stateBackup: must be a mapping"))).toBe(true);
+  });
+
   // t-7bcba6 — obsolete silentHooks kill switch is rejected (cannot disable silent hooks)
   it("rejects obsolete settings.persistence / silentHooks", () => {
     const r = parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  persistence:\n    silentHooks: false\n`);

@@ -15,6 +15,7 @@ import {
   runBackup,
   runRestore,
 } from "@tachyon/engine/statesync/backup.js";
+import { StateBackupService, type StateBackupSettings } from "@tachyon/engine/statesync/service.js";
 
 let workspace: string;
 let dest: string;
@@ -154,5 +155,41 @@ describe("backup → destroy → restore (the 2026-08-21 incident, reversed)", (
     // Latest still resolves to a complete, restorable generation.
     const manifest = await readGenerationManifest(adapter);
     expect(manifest?.id).toBe(ids[3]);
+  });
+});
+
+describe("StateBackupService", () => {
+  const everyMsOf = () => 1; // effectively "always due" — the tests drive tick() directly
+
+  it("does nothing while settings are absent, and starts backing up when they appear (live opt-in)", async () => {
+    let settings: StateBackupSettings | undefined;
+    const service = new StateBackupService(workspace, () => settings, everyMsOf, 3600_000);
+    await service.tick();
+    expect(service.lastResult).toBeUndefined();
+    expect(fs.readdirSync(dest)).toEqual([]);
+
+    settings = { backend: "filesystem", path: dest };
+    await service.tick();
+    expect(service.lastResult?.files).toBeGreaterThan(0);
+    expect(await listGenerationIds(new FilesystemBackupAdapter(dest))).toHaveLength(1);
+    service.dispose();
+  });
+
+  it("respects the configured interval between passes", async () => {
+    const settings: StateBackupSettings = { backend: "filesystem", path: dest };
+    const service = new StateBackupService(workspace, () => settings, () => 3600_000, 3600_000);
+    await service.tick();
+    await service.tick();
+    expect(await listGenerationIds(new FilesystemBackupAdapter(dest))).toHaveLength(1);
+    service.dispose();
+  });
+
+  it("survives a broken destination and keeps the engine alive", async () => {
+    const settings: StateBackupSettings = { backend: "filesystem", path: path.join(dest, "not-a-dir-file") };
+    fs.writeFileSync(path.join(dest, "not-a-dir-file"), "a plain file where a directory must go");
+    const service = new StateBackupService(workspace, () => settings, everyMsOf, 3600_000);
+    await service.tick(); // must not throw
+    expect(service.lastResult).toBeUndefined();
+    service.dispose();
   });
 });
