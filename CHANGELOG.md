@@ -4,6 +4,48 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.29 — o estado durável ganha réplica fora da máquina, e um caminho de volta
+
+### Backup opt-in do runtime: `settings.stateBackup`
+
+Um `rm -rf` no checkout levava junto tudo que o runtime tinha de insubstituível: o Board com suas
+tasks e journals, os pins, a continuity dos agentes, o HANDOFF e o próprio `tachyon.yml` — que é
+gitignored por design e portanto não tinha cópia em lugar nenhum. Aconteceu em 2026-08-21, com um
+board de mais de quarenta tasks.
+
+Agora o `tachyon.yml` aceita um bloco opt-in:
+
+    settings:
+      stateBackup:
+        backend: filesystem     # qualquer path montado: NAS, SMB, segundo disco
+        path: /mnt/nas/tachyon-bkp
+        every: 10m              # default 10m
+        keep: 30                # gerações mantidas no destino (default 30)
+
+O estado local segue sendo o primário e o do runtime; o destino é uma réplica one-way, nunca uma
+autoridade que o engine consulta. Sem o bloco, nada sai da máquina.
+
+O que sai é um allowlist declarado como dado, nunca uma varredura de `.tachyon/`: um segredo só
+chegaria ao destino sendo adicionado explicitamente à lista — o módulo do manifest recusa entradas
+que alcancem `harness/`, `secrets/` ou qualquer `.credentials.json`, e o teste mede isso. Cada
+passe grava uma geração inteira e autocontida com manifest e sha256 de cada arquivo; o ponteiro
+`latest` só avança depois do manifest, então um backup rasgado nunca é o que um restore enxerga.
+O conjunto durável mede kilobytes: sem dedup, sem incremental, de propósito.
+
+O serviço lê a configuração ao vivo — declarar ou remover o bloco tem efeito sem reiniciar o
+engine — e nada dele toca o caminho de escrita dos stores: um passe de backup apenas LÊ. Destino
+fora do ar avisa uma vez e segue tentando.
+
+### "Tachyon: Restore State Backup" — a superfície de desastre
+
+O comando repovoa um checkout fresco a partir de um destino de backup: escolhe a pasta, escolhe a
+geração (as mais novas primeiro), confirma com contagem e data, e restaura verificando o sha256 de
+cada arquivo. Ele é deliberadamente autocontido — funciona sem engine rodando e sem `tachyon.yml`
+presente, porque esse é exatamente o estado de um workspace destruído. Sobrescrever arquivos
+existentes exige um segundo modal explícito.
+
+Os backends `s3-compatible` e `gdrive` entram na mesma interface em release futura.
+
 ## 0.93.28 — os painéis do Lifecycle viram diálogo, e o produto para de explicar o que já se vê
 
 ### Rename, Forget e Clone deixam de empilhar no corpo da página
