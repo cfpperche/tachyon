@@ -282,9 +282,37 @@ wrong, each paid for.
 ## Visual and UI work
 
 A green functional suite is not visual judgment. Any change a human LOOKS at — a new surface, a
-layout, a shared token, a refinement — carries visual evidence from the headless browser harness or
-the `visual-qa` skill. This lived in the verification list and kept being missed there, so it says
-how, not only that.
+layout, a shared token, a refinement — carries visual evidence captured from this repo's preview
+harness with the `agent-browser` plugin. This lived in the verification list and kept being missed
+there, so it says how, not only that.
+
+**How to run it here.** Tachyon's surfaces are VS Code webviews with no URL of their own, so they
+are reached through the dev harness, which renders the SAME fixtures the unit tests use — what you
+judge is what ships, not a mock of it.
+
+1. **Build first.** The harness serves the built bundles at `dist/webview/*`, so a fresh worktree
+   (which has no `dist`) needs `npm run build`. Skip it and you either judge stale CSS or read the
+   harness's own red "PREVIEW SHELL DID NOT MOUNT" notice. It is dev-only output: a workspace built
+   by `npm run release` does not carry it.
+2. **Serve and resolve the surface.** `node scripts/webview-preview/serve.mjs` (port 5174,
+   `PREVIEW_PORT` overrides). `scripts/webview-preview/routes.json` is the catalog: every
+   `view`/`fixture` pair with its natural `frame` and its aliases, so a surface is reached by name
+   instead of a hand-kept URL list. The URL shape is
+   `<base>/scripts/webview-preview/index.html?view=<view>&fixture=<fixture>`.
+3. **Verify INSIDE the iframe before you capture.** The harness page sets its marker on the TOP
+   document and renders the surface in a sized iframe pointing at `surface.html`. Measured on
+   2026-08-22: `document.body.dataset.previewView` said "right surface" while the iframe was still
+   empty, and a screenshot taken on that signal was a blank page that looked like a real result.
+   Assert through `frame.contentDocument` — the element you came to judge is present — and only
+   then shoot. A check that validates the container instead of the content is worse than none: it
+   buys false confidence.
+4. **Capture at the frame the catalog declares**, plus the second width below. A 340px sidebar
+   judged at 1440 shows a stretched box and hides the wrapping defects that only appear when the
+   column is narrow.
+
+Reads are free; the capture needs no write action. If a state can only be reached by clicking
+(a disclosure that starts closed, a menu), say so and either ask, or verify the mechanism by
+reading the CSSOM — never automate a click flow to manufacture a screenshot.
 
 - **Write the anchor BEFORE you build.** It states the intent the screen has to satisfy, in the
   reader's terms, and it comes from the task's problem statement — never from what the screen ended
@@ -303,7 +331,8 @@ how, not only that.
   neighbours too, and anchor on NOT regressing them.
 - **If the browser is unavailable, say so in the report.** Never skip in silence and never describe
   a screen you did not measure. "I could not run it" is information; an invented visual verdict is
-  worse than none.
+  worse than none. The same applies to a state you could not reach: report it unjudged rather than
+  judging the state you could reach and calling it the one that mattered.
 
 ## Review and reporting
 
