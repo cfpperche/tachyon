@@ -4,6 +4,42 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.34 — o estado machine-local ganha dono, e o disco ganha coleta
+
+Medido numa máquina em 2026-08-22: **cerca de 5 GB** de estado que o Tachyon guarda fora do
+repositório e que nada jamais coletava. 1,8 GB em 362 builds do engine — `engineBundleStore` tinha
+`stage`, `load` e `verify`, e nenhuma remoção. 1,7 GB em worktrees de workspaces que não existem
+mais. E 217 diretórios de estado por workspace cujo dono era, literalmente, indeterminável.
+
+### Um estado passa a saber a que workspace pertence
+
+O diretório de estado é nomeado pelo hash do caminho do workspace — um digest de mão única — e nada
+dentro dele registrava esse caminho. Não havia como perguntar "este estado ainda tem workspace?",
+e por isso nada podia ser coletado com segurança: 35 MB carregando chaves de API, registros de
+identidade e cabeças de autoridade, crescendo para sempre.
+
+Agora o engine carimba, a cada início, **onde** serve e **qual** encarnação é aquela (a identidade
+introduzida na 0.93.33). Com isso: caminho sumiu → workspace morto; caminho existe com id diferente
+→ encarnação substituída; id igual → vivo, ninguém toca. Estado sem carimbo é reportado como
+desconhecido e **nunca** coletado — um engine servindo workspace vivo carimba em um start, então o
+que segue desconhecido é o que deixou de ser servido, e chutar aqui apagaria credenciais.
+
+### Coletar é um plano que você lê antes
+
+`Tachyon: Reclaim Disk` mostra quanto libera e, principalmente, **o que está poupando e por quê** —
+worktrees com alterações não commitadas ou commits que ninguém levou, estado sem proveniência,
+builds que um engine está executando agora. Só age depois da confirmação. O mesmo plano roda no
+início do engine, ligado por padrão (`settings.reclaim`), reportando o que recuperou.
+
+Duas regras dão forma a tudo: **nada que um engine vivo usa é candidato**, e **o que pode conter
+trabalho que ninguém salvou é relatado, nunca coletado**.
+
+### E nada é destruído
+
+O estado de uma encarnação morta não é apagado: vai para uma quarentena com data, fora de qualquer
+workspace. Ele guarda chaves de API — a decisão foi que nada é herdado em silêncio, não que algo
+seja perdido.
+
 ## 0.93.33 — o engine para de servir um workspace que deixou de existir
 
 Quando o workspace de 2026-08-21 foi apagado com o engine rodando, o `rm -rf` não conseguiu
