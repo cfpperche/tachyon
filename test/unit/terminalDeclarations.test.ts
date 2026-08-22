@@ -51,10 +51,13 @@ describe("terminal declaration actor × trigger doors", () => {
     expect(load(workspaceRoot).config?.agents.promoted?.cmd).toBe("bash");
   });
 
-  it("bloco legado editado à mão", () => {
+  it("terminals: no documento interno segue parseavel, sem aviso de legado (t-a65335)", () => {
+    // The composed pipeline writes declaration files INTO the document as a terminals: block, so the
+    // block stays part of the internal vocabulary — but tachyon.yml is retired, no caller feeds a
+    // hand-authored one anymore, and the legacy warning is gone with it.
     const result = load(root(), "terminals:\n  legacy:\n    cmd: bash\n");
     expect(result.config?.agents.legacy?.kind).toBe("terminal");
-    expect(result.warnings.join("\n")).toContain(".tachyon/terminals/<name>.yml");
+    expect(result.warnings.join("\n")).not.toContain("legacy and continues to load");
   });
 
   it("clone", () => {

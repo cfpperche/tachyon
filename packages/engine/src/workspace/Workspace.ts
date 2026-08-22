@@ -17,7 +17,9 @@ import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { DEFAULT_SOCKET_NAME, TmuxService, workspaceHash, SESSION_PREFIX, type SubmitReceipt } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { parseEvery, agentsOf, asAgent, CONFIG_FILENAMES, suggestKindForCommand, terminalsOf, type TachyonConfig } from "../config/loadConfig.js";
+import { parseEvery, agentsOf, asAgent, suggestKindForCommand, terminalsOf, type TachyonConfig } from "../config/loadConfig.js";
+import { composeWorkspaceConfigText, migrateLegacyWorkspaceConfig, workspaceSettingsPath, WORKSPACE_SETTINGS_FILE } from "../config/workspaceSettingsFile.js";
+import { deleteScheduleDeclaration, upsertScheduleDeclaration } from "../config/scheduleDeclarations.js";
 import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
 import { closeAgentToolSessions } from "../agents/closeAgentToolSessions.js";
 import { projectAgentForgetPlan, type AgentForgetPlanV1 } from "@tachyon/shared/config/agentForgetPlan.js";
@@ -111,10 +113,8 @@ import {
   lkgSpawnRefusalMessage,
 } from "../config/configFailure.js";
 import { makeConfigDiscards, type ConfigDiscards } from "../config/configDiscards.js";
-import { upsertSchedule, deleteSchedule } from "../config/YamlConfigEditor.js";
 import {
   cloneTerminalDeclaration,
-  deleteLegacyTerminalDeclaration,
   deleteTerminalDeclaration,
   renameTerminalDeclaration,
   upsertTerminalDeclaration,
@@ -766,16 +766,15 @@ export class Workspace {
       ?? new HeadlessTerminalPresentation();
 
     // Auth: stable per-workspace token (extension storage — never in a committable file).
-    const earlyFile = this.configPath();
     let earlyConfig: TachyonConfig | undefined;
-    if (earlyFile) {
-      try {
-        const earlyText = fs.readFileSync(earlyFile, "utf8");
-        const canonicalSyntax = parseProfileAwareConfigSyntax(earlyText);
-        earlyConfig = canonicalSyntax.config;
-      } catch {
-        // Preserve the historical default-on auth behavior when the file cannot be read.
-      }
+    try {
+      // t-a65335 — a legacy tachyon.yml is projected into .tachyon/settings.yml BEFORE the first
+      // read, so a freshly-upgraded workspace keeps its auth posture from the very first launch.
+      migrateLegacyWorkspaceConfig(this.workspaceRoot);
+      const canonicalSyntax = parseProfileAwareConfigSyntax(composeWorkspaceConfigText(this.workspaceRoot).yamlText);
+      earlyConfig = canonicalSyntax.config;
+    } catch {
+      // Preserve the historical default-on auth behavior when the settings cannot be read.
     }
     this.bridgeTransport = deps.bridgeTransport.createWorkspaceTransport({
       workspaceId: this.wsHash,
@@ -3036,6 +3035,10 @@ export class Workspace {
       }
     };
     ws.profileDocumentReload = onConfigChange;
+    ws.disposables.push(ws.host.watch(workspaceRoot, WORKSPACE_SETTINGS_FILE, { change: true, create: true, delete: true }, onConfigChange));
+    ws.disposables.push(ws.host.watch(workspaceRoot, ".tachyon/schedules/*.yml", { change: true, create: true, delete: true }, onConfigChange));
+    // A legacy tachyon.yml appearing (an old agent or script still writing one) triggers a reload,
+    // whose first step is the migration that projects and removes it.
     ws.disposables.push(ws.host.watch(workspaceRoot, "tachyon.{yml,yaml}", { change: true, create: true }, onConfigChange));
     ws.disposables.push(ws.host.watch(
       workspaceRoot,
@@ -4766,11 +4769,8 @@ export class Workspace {
   }
 
   configPath(): string | undefined {
-    for (const name of CONFIG_FILENAMES) {
-      const candidate = path.join(this.workspaceRoot, name);
-      if (fs.existsSync(candidate)) return candidate;
-    }
-    return undefined;
+    const candidate = workspaceSettingsPath(this.workspaceRoot);
+    return fs.existsSync(candidate) ? candidate : undefined;
   }
 
   /**
@@ -5025,6 +5025,17 @@ export class Workspace {
   }
 
   reloadConfig(): boolean {
+    // t-a65335 — one-shot projection of a legacy root tachyon.yml into the new homes. Idempotent:
+    // after the first pass the root file is gone and this is a single existsSync.
+    try {
+      const migration = migrateLegacyWorkspaceConfig(this.workspaceRoot);
+      if (migration.migrated) {
+        this.host.notify(this.t("tachyon.yml migrated: {0}", migration.actions.join("; ")), "info");
+      }
+      for (const warning of migration.warnings) this.host.notify(warning, "warn");
+    } catch (error) {
+      this.host.notify(this.t("tachyon.yml migration failed: {0}", error instanceof Error ? error.message : String(error)), "error");
+    }
     const file = this.configPath();
     const prevCompanionTabTools = this.config?.settings.companion?.tabTools === true;
     const prevCompanionLanAccess = this.config?.settings.companion?.lanAccess === true;
@@ -5050,20 +5061,21 @@ export class Workspace {
       }
       return false;
     }
-    let text: string;
-    try {
-      text = fs.readFileSync(file, "utf8");
-    } catch (error) {
+    const composed = composeWorkspaceConfigText(this.workspaceRoot);
+    if (composed.errors.length > 0) {
       this.configFailure = {
         path: file,
-        file: path.basename(file),
-        errors: [`cannot read ${file}: ${error instanceof Error ? error.message : String(error)}`],
+        file: WORKSPACE_SETTINGS_FILE,
+        errors: [...composed.errors],
         at: new Date().toISOString(),
       };
       this.blockProfileSpawnsFromLiveConfig();
+      this.host.notify(this.t("invalid {0} — {1}{2}", WORKSPACE_SETTINGS_FILE, composed.errors[0], composed.errors.length > 1 ? this.t(" (+{0} more)", composed.errors.length - 1) : ""), "error");
       return false;
     }
+    const text = composed.yamlText;
     const { config, errors, warnings, discarded, profileErrors } = this.parseTrustedConfigText(text);
+    warnings.push(...composed.warnings);
     // t-af6803 — a broken profile is ONE agent's problem. The loader keeps its actionable reason in
     // agentSources as `refused`; putting the same error into the FILE-wide configFailure slot marks
     // every healthy/running row `config invalid` and makes unrelated profiles unspawnable.
@@ -6811,7 +6823,29 @@ export class Workspace {
     this.refreshAgentsViews();
   }
 
-  /** Approve a pending agent proposal: write it into tachyon.yml, drop the proposal. */
+  /**
+   * t-a65335 — validate-then-write for ONE schedule declaration file. The candidate is composed AS
+   * IF already on disk and run through the ordinary loader (same gate mutateConfig has), so a bad
+   * spawn reference or interval never lands in `.tachyon/schedules/`.
+   */
+  private saveScheduleDeclaration(name: string, def: Record<string, unknown>, overwrite: boolean): string[] | undefined {
+    const candidate = composeWorkspaceConfigText(this.workspaceRoot, { schedule: { name, def } });
+    const check = candidate.errors.length > 0
+      ? { errors: candidate.errors, discarded: [] }
+      : this.parseTrustedConfigText(candidate.yamlText);
+    const refusals = [...check.errors, ...check.discarded].filter((message) => message.includes(`schedules.${name}`));
+    const hard = check.errors.length > 0 && candidate.errors.length > 0 ? check.errors : refusals;
+    if (hard.length > 0) return hard;
+    try {
+      upsertScheduleDeclaration(this.workspaceRoot, name, def, { overwrite });
+      if (!this.reloadConfig()) throw new Error("schedule declaration did not reload");
+    } catch (err) {
+      return [err instanceof Error ? err.message : String(err)];
+    }
+    return undefined;
+  }
+
+  /** Approve a pending schedule proposal: write its declaration file, drop the proposal. */
   approveProposal(id: string): boolean {
     const proposal = this.proposals.get(id);
     if (!proposal) {
@@ -6826,11 +6860,11 @@ export class Workspace {
     // proposing a Saved Agent, not a schedule; reusing it here was the forgotten commit-time half of
     // the gate reverted by t-d4f246. Human approval is the authority that makes this inert proposal
     // active, while expiry and full resulting-config validation remain enforced below.
-    const ok = this.mutateConfig(
-      (text) => upsertSchedule(text, proposal.name, proposal.schedule as Record<string, unknown>, true),
-      () => {},
-    );
-    if (!ok) return false;
+    const failures = this.saveScheduleDeclaration(proposal.name, proposal.schedule as Record<string, unknown>, true);
+    if (failures) {
+      this.host.notify(failures[0]!, "error");
+      return false;
+    }
     this.proposals.remove(id);
     this.scheduler.activate(); // pick up the freshly-approved schedule's anchor
     this.deps.onViewsChanged("schedules");
@@ -6846,7 +6880,13 @@ export class Workspace {
   }
 
   deleteScheduleEntry(name: string): void {
-    this.mutateConfig((text) => deleteSchedule(text ?? "", name), () => this.deps.onViewsChanged("schedules"));
+    try {
+      deleteScheduleDeclaration(this.workspaceRoot, name);
+      this.reloadConfig();
+      this.deps.onViewsChanged("schedules");
+    } catch (err) {
+      this.host.notify(err instanceof Error ? err.message : String(err), "error");
+    }
   }
 
   toggleSchedulePause(name: string): void {
@@ -7234,21 +7274,25 @@ export class Workspace {
     mutate: (text: string | undefined) => { text: string; warnings: string[] },
     afterReload?: () => void,
   ): boolean {
-    const file = this.configPath() ?? path.join(this.workspaceRoot, "tachyon.yml");
+    const file = workspaceSettingsPath(this.workspaceRoot);
     const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined;
     try {
       const { text, warnings } = mutate(existing);
-      // t-099be8 — validate the full resulting file BEFORE write (same gate as Studio submit / Bridge tool).
-      // Never persist a config that loadConfig would reject; the delayed-detonation window (invalid on disk
-      // until next reload) is the incident class this blocks for UI-driven edits.
+      // t-099be8 — validate the full resulting configuration BEFORE write (same gate as Studio
+      // submit / Bridge tool): the candidate settings text is composed with the on-disk schedule
+      // declarations and run through the ordinary loader. Never persist what it would reject.
       // t-48dd8d — a DISCARD refuses the write too. Reading forgives a file a human already wrote;
       // writing bytes we have just been told are partly unreadable is the delayed detonation this
       // gate exists to stop, and it would be this surface writing them.
-      const check = this.parseTrustedConfigText(text);
+      const candidate = composeWorkspaceConfigText(this.workspaceRoot, { settingsText: text });
+      const check = candidate.errors.length > 0
+        ? { errors: candidate.errors, warnings: [], discarded: [] }
+        : this.parseTrustedConfigText(candidate.yamlText);
       const refusals = [...check.errors, ...check.discarded];
       if (refusals.length > 0) {
-        throw new Error(`invalid tachyon.yml (not saved): ${refusals[0]}${refusals.length > 1 ? ` (+${refusals.length - 1} more)` : ""}`);
+        throw new Error(`invalid ${WORKSPACE_SETTINGS_FILE} (not saved): ${refusals[0]}${refusals.length > 1 ? ` (+${refusals.length - 1} more)` : ""}`);
       }
+      fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, text, "utf8");
       this.reloadConfig();
       this.rebuildWatches();
@@ -7266,18 +7310,21 @@ export class Workspace {
    * Refuses to save on parse/schema/cross-ref hard errors; returns structured result (no throw).
    */
   writeTachyonConfigText(yamlText: string): { ok: true; warnings: string[] } | { ok: false; errors: string[]; warnings: string[] } {
-    const check = this.parseTrustedConfigText(yamlText);
+    const candidate = composeWorkspaceConfigText(this.workspaceRoot, { settingsText: yamlText });
+    if (candidate.errors.length > 0) return { ok: false, errors: candidate.errors, warnings: [] };
+    const check = this.parseTrustedConfigText(candidate.yamlText);
     // t-48dd8d — errors AND discards refuse the save. The loader forgives what it READS so a typo
     // cannot take a workspace down; it does not follow that a caller may WRITE a file whose keys it
     // has just been told are unreadable. Advisory warnings (a deprecation, a retired key) still ride
     // along with a successful write, which is why they are a separate channel from `discarded`.
     const refusals = [...check.errors, ...check.discarded];
     if (refusals.length > 0) return { ok: false, errors: refusals, warnings: check.warnings };
-    const file = this.configPath() ?? path.join(this.workspaceRoot, "tachyon.yml");
+    const file = workspaceSettingsPath(this.workspaceRoot);
     try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, yamlText.endsWith("\n") ? yamlText : `${yamlText}\n`, "utf8");
     } catch (err) {
-      return { ok: false, errors: [`cannot write tachyon.yml: ${err instanceof Error ? err.message : String(err)}`], warnings: check.warnings };
+      return { ok: false, errors: [`cannot write ${WORKSPACE_SETTINGS_FILE}: ${err instanceof Error ? err.message : String(err)}`], warnings: check.warnings };
     }
     this.reloadConfig();
     this.rebuildWatches();
@@ -7411,28 +7458,17 @@ export class Workspace {
         : this.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name));
       return undefined;
     }
-    const doUpsert = (text: string | undefined) =>
-      upsertSchedule(text, submit.state.name, entry, submit.editingName !== undefined);
-    // codex 228-review B1 — validate the resulting FULL config BEFORE persisting. The harness form is
-    // intentionally shallow (loadConfig is authoritative for ${VAR}-env / server shape), so a
-    // structurally-valid-YAML-but-invalid harness must not silently break the whole tachyon.yml. Surface
-    // the real config errors back to the form; write nothing on failure.
-    const file = this.configPath() ?? path.join(this.workspaceRoot, "tachyon.yml");
-    const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined;
-    let candidate: { text: string; warnings: string[] };
-    try {
-      candidate = doUpsert(existing);
-    } catch (err) {
-      return [err instanceof Error ? err.message : String(err)];
-    }
-    const cfg = this.parseTrustedConfigText(candidate.text);
-    if (cfg.errors.length > 0) return cfg.errors;
-    const ok = this.mutateConfig(
-      () => candidate,
-      () => this.deps.onViewsChanged(kind === "schedule" ? "schedules" : "agents"),
+    // codex 228-review B1 — validate the resulting FULL config BEFORE persisting (kept across the
+    // t-a65335 move to declaration files): the form is intentionally shallow, loadConfig stays
+    // authoritative, and nothing lands in .tachyon/schedules/ that the loader would discard.
+    const failures = this.saveScheduleDeclaration(
+      submit.state.name,
+      entry as Record<string, unknown>,
+      submit.editingName !== undefined,
     );
-    if (!ok) return [this.t("could not write tachyon.yml — see the notification")];
-    if (kind === "schedule") this.scheduler.activate(); // anchor a freshly-created schedule
+    if (failures) return failures;
+    this.deps.onViewsChanged("schedules");
+    this.scheduler.activate(); // anchor a freshly-created schedule
     this.host.notify(this.t("schedule '{0}' saved — it's now active", submit.state.name));
     return undefined;
   };
@@ -7590,8 +7626,6 @@ export class Workspace {
   }
 
   deleteTerminalDeclaration(name: string): boolean {
-    const file = path.join(this.workspaceRoot, ".tachyon", "terminals", `${name}.yml`);
-    if (!fs.existsSync(file)) return this.mutateConfig((text) => deleteLegacyTerminalDeclaration(text ?? "", name));
     deleteTerminalDeclaration(this.workspaceRoot, name);
     return this.reloadConfig();
   }

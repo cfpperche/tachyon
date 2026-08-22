@@ -35,14 +35,27 @@ export interface ComposedWorkspaceConfig {
   errors: string[];
 }
 
-/** Read `.tachyon/settings.yml` + `.tachyon/schedules/*.yml` into ONE parser-ready document. */
-export function composeWorkspaceConfigText(workspaceRoot: string): ComposedWorkspaceConfig {
+export interface ComposeOverrides {
+  /** validate-before-write: use this text INSTEAD of the on-disk settings file. */
+  settingsText?: string;
+  /** validate-before-write: as if this schedule declaration were already on disk. */
+  schedule?: { name: string; def: Record<string, unknown> };
+}
+
+/**
+ * Read `.tachyon/settings.yml` + `.tachyon/schedules/*.yml` into ONE parser-ready document.
+ * Overrides exist for the write gates: a candidate edit is composed AS IF saved, validated through
+ * the ordinary parser, and only then written — the same refuse-before-persist discipline
+ * mutateConfig always had (t-099be8).
+ */
+export function composeWorkspaceConfigText(workspaceRoot: string, overrides: ComposeOverrides = {}): ComposedWorkspaceConfig {
   const warnings: string[] = [];
   const errors: string[] = [];
   let settings: unknown;
   const settingsFile = workspaceSettingsPath(workspaceRoot);
-  if (fs.existsSync(settingsFile)) {
-    const doc = parseDocument(fs.readFileSync(settingsFile, "utf8"), { uniqueKeys: true });
+  const settingsText = overrides.settingsText ?? (fs.existsSync(settingsFile) ? fs.readFileSync(settingsFile, "utf8") : undefined);
+  if (settingsText !== undefined) {
+    const doc = parseDocument(settingsText, { uniqueKeys: true });
     if (doc.errors.length > 0) {
       errors.push(`${WORKSPACE_SETTINGS_FILE}: invalid YAML: ${doc.errors[0]!.message}`);
     } else {
@@ -54,9 +67,11 @@ export function composeWorkspaceConfigText(workspaceRoot: string): ComposedWorks
   }
   const schedules = scanScheduleDeclarations(workspaceRoot);
   warnings.push(...schedules.warnings);
+  const declarations = { ...schedules.declarations };
+  if (overrides.schedule) declarations[overrides.schedule.name] = overrides.schedule.def;
   const document: Record<string, unknown> = {};
   if (settings !== undefined) document.settings = settings;
-  if (Object.keys(schedules.declarations).length > 0) document.schedules = schedules.declarations;
+  if (Object.keys(declarations).length > 0) document.schedules = declarations;
   return { yamlText: stringify(document), warnings, errors };
 }
 

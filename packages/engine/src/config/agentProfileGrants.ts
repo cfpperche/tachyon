@@ -1,10 +1,8 @@
 import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
+import { composeWorkspaceConfigText } from "./workspaceSettingsFile.js";
 import { parseDocument } from "yaml";
 import { agentProfileSchemaV1 } from "./agentProfileSchema.js";
 import { closeCanonicalAgentProfile, readCanonicalAgentProfile } from "./agentProfileReader.js";
-import { CONFIG_FILENAMES } from "./loadConfig.js";
 
 /**
  * SDD 482 phase 4 slice B (`t-5e1113`) — the ONE question the creation door asks about a proposer.
@@ -56,10 +54,8 @@ export function readAgentProfileGrants(workspaceRoot: string, agentName: string)
  * config appears in the meantime.
  */
 export function workspaceConfigSha256(workspaceRoot: string): string {
-  for (const name of CONFIG_FILENAMES) {
-    const file = path.join(workspaceRoot, name);
-    if (!fs.existsSync(file)) continue;
-    return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
-  }
-  return crypto.createHash("sha256").update("").digest("hex");
+  // t-a65335 — the config is no longer one file: hash the COMPOSED document (settings + schedule
+  // declarations), which is deterministic (sorted scan, stable stringify) and moves whenever any
+  // piece a proposal was computed against moves.
+  return crypto.createHash("sha256").update(composeWorkspaceConfigText(workspaceRoot).yamlText).digest("hex");
 }

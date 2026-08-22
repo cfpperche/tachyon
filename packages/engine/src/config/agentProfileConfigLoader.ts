@@ -4,7 +4,7 @@ import type { WorkspaceProfileDefaults } from "./agentProfileResolver.js";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import { agentRosterDirectoryWarning, scanAgentRosterDirectory } from "./agentRosterDirectory.js";
 import { projectCanonicalAgentProfile } from "./agentProfileProjection.js";
-import { LEGACY_TERMINALS_BLOCK_WARNING, scanTerminalDeclarations } from "./terminalDeclarations.js";
+import { scanTerminalDeclarations } from "./terminalDeclarations.js";
 import { withheldCapabilityNotice } from "./withheldCapability.js";
 
 export type AgentConfigSource =
@@ -184,14 +184,9 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   // projected roster takes its place. A refused agent is simply never written back, which is what
   // keeps it out of `config.agents` while `agentSources` still remembers its name (t-0ad300).
   replaceAgentsBlock(doc);
-  const legacyTerminals = doc.get("terminals", true);
-  if (legacyTerminals !== undefined && legacyTerminals !== null) {
-    profileWarnings.push(LEGACY_TERMINALS_BLOCK_WARNING);
-  }
+  // t-a65335 — the composed document carries no terminals: block anymore (tachyon.yml is retired);
+  // the declaration files are the only source and are written into the document here.
   for (const [terminalName, definition] of Object.entries(terminalRoster.declarations)) {
-    if (doc.hasIn(["terminals", terminalName])) {
-      profileWarnings.push(`terminals.${terminalName}: legacy declaration ignored because .tachyon/terminals/${terminalName}.yml exists`);
-    }
     doc.setIn(["terminals", terminalName], definition);
   }
   const canonicalAgents = Object.fromEntries(projected);
@@ -216,9 +211,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   for (const name of Object.keys(parsed.config.agents)) {
     agentSources[name] = profileSources[name] ?? {
       mode: "terminal",
-      source: terminalRoster.declarations[name] !== undefined
-        ? `.tachyon/terminals/${name}.yml`
-        : `tachyon.yml#terminals.${name}`,
+      source: `.tachyon/terminals/${name}.yml`,
     };
   }
   // t-0ad300 — the refused entries go in LAST and never overwrite a projected one. A name cannot be
