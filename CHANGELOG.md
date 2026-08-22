@@ -4,6 +4,44 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.41 — entregar o que o instalador deixou tem uma premissa
+
+A 0.93.39 trocou posse por exatidão: na raiz do workspace o lançamento parou de escrever a árvore de
+skills e passou a **entregar o que o instalador deixou**, nomeando por caminho o que o agente não
+pode ver. A premissa disso é que o que o instalador deixou ainda está lá, do jeito que ele deixou.
+Duas coisas sobre esse "jeito" não estavam no desenho, e cada uma sozinha bastava para recusar uma
+concessão saudável no resume.
+
+### Um dest instalado é um link, não um diretório
+
+O instalador materializa o dest como **symlink** para o payload do plugin — zero bytes duplicados. A
+varredura pulava tudo que não fosse diretório de verdade, então um skill de plugin não era nem
+entregue nem suprimido: sumia da conta. E a captura de custódia recusa symlink por desenho, então o
+digest também não fechava.
+
+Medido na codex-cli 0.149.0: o Codex segue o link, descobre o skill e o reporta sob o **caminho de
+descoberta** — que é exatamente o caminho que o suprime. O link é, portanto, uma entrada descoberta
+como qualquer outra, e passa a ser tratada como uma. O digest é conferido no diretório real por trás
+do link: o conteúdo que o agente vai ler **neste** lançamento é a pergunta que importa.
+
+### O registro podia afirmar um dest que o disco não tinha
+
+O lockfile é o registro custodiado do que o humano instalou, e nada nunca o conferiu contra o disco.
+Medido neste workspace: três dests registrados como materializados, nenhum dos três presente. Essa
+falta não tinha dente enquanto um agente Codex no checkout compartilhado não podia ter concessão
+nenhuma — ganhou dente na 0.93.39, e apareceu como a recusa que um `agent-browser` legitimamente
+concedido levava ao ser retomado.
+
+Um dest que a concessão nomeia e o disco perdeu é restaurado do payload que o registro aponta.
+Reparo, não posse: só a entrada nomeada, só quando ausente, só de onde o lockfile manda, e só para um
+dest que ele já declara. O que está no disco nunca é tocado — e é essa a diferença inteira entre isto
+e a substituição de árvore que não pode rodar nessa raiz.
+
+### E os botões colados
+
+`.ash-native-config-actions` era uma classe que a folha do Agent Studio nunca definiu, então
+"Authorized" e "Revoke" saíam encostados um no outro.
+
 ## 0.93.40 — o que ainda lia, e o que ainda dizia
 
 A 0.93.37 retirou a ponte de migração do `tachyon.yml`. A promessa era maior que isso: que um
