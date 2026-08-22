@@ -37,7 +37,7 @@ import { removeDerivedAgentFiles, writePrivateFileAtomic } from "./derivedFile.j
 import { persistentInstructionsLaunchArgs } from "./persistentInstructionsLaunch.js";
 import { PI_SESSION_DIR_ENV, piSessionDir } from "./piSession.js";
 import { explicitReasoningEffortProjection } from "../config/explicitReasoningEffortProjection.js";
-import { wrapWithPrimer, renderPrimer } from "./primer.js";
+import { wrapWithPrimer, renderPrimer, type PrimerInput } from "./primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
 import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "./briefFile.js";
 import {
@@ -1973,12 +1973,7 @@ export class AgentManager {
       prompt: composed.manifest,
     };
     const frame = (deliverable: string | undefined): string | undefined => agent
-      ? wrapWithPrimer(deliverable ?? "", {
-          agentName: name,
-          delegator: primerCtx?.delegator,
-          parent,
-          guidance: this.opts.getConfig()?.settings.agentGuidance,
-        })
+      ? wrapWithPrimer(deliverable ?? "", this.primerInputFor(name, primerCtx?.delegator, parent))
       : deliverable;
     // Size-check the exact successful-write pointer before deliverableBody atomically replaces any
     // prior brief. Thus an oversized dynamic fact cannot change what the still-running pane's old
@@ -2003,6 +1998,25 @@ export class AgentManager {
    * before the first live-pane mutation, the running agent is left exactly as it was rather than
    * replaced with a session that cannot say what it is for.
    */
+  /**
+   * t-a1ee7e — the ONE place a PrimerInput is assembled.
+   *
+   * Two call sites build one (the spawn/restart frame and the opt-in resume re-orientation), and
+   * when they assembled it independently the second one silently omitted `guidance` — pasting the
+   * product's default working methods into a workspace that had replaced them. The omission was
+   * invisible because every field is optional and the render still succeeds; a workspace would
+   * simply read a policy it had overridden. One seam removes the class: a caller supplies only the
+   * facts it actually knows (the name and its lineage), and the workspace's methods ride along.
+   */
+  private primerInputFor(name: string, delegator: string | undefined, parent: string | undefined): PrimerInput {
+    return {
+      agentName: name,
+      delegator,
+      parent,
+      guidance: this.opts.getConfig()?.settings.agentGuidance,
+    };
+  }
+
   private sessionWorkRecordFor(
     name: string,
     def: AgentDef,
@@ -5297,11 +5311,7 @@ export class AgentManager {
     // Opt-in injectPrimer:true remains for rare deliberate re-orientation after resume.
     // Advisory/best-effort: never blocks a resume.
     if (opts?.injectPrimer !== true) return;
-    const { primer, beforeFinishing } = renderPrimer({
-      agentName: name,
-      delegator: this.delegators.get(name),
-      parent: this.lineage.get(name),
-    });
+    const { primer, beforeFinishing } = renderPrimer(this.primerInputFor(name, this.delegators.get(name), this.lineage.get(name)));
     const receipt = await this.opts.tmux.sendSubmittedLine(session, `${primer}\n\n${beforeFinishing}`, {
       composer: composerProfileFor(cmd),
     });
