@@ -125,6 +125,17 @@ describe("migrateLegacyWorkspaceConfig", () => {
     expect(migrateLegacyWorkspaceConfig(root).migrated).toBe(false);
   });
 
+  it("a legacy file with no settings block still materializes settings.yml — the configured-workspace marker", () => {
+    // vsix-smoke on 0.93.30: a terminals-only tachyon.yml migrated into an UNCONFIGURED workspace
+    // (no settings.yml → configPath undefined → empty roster). The marker must carry over.
+    write("tachyon.yml", "terminals:\n  door:\n    cmd: echo hi\n");
+    const result = migrateLegacyWorkspaceConfig(root);
+    expect(result.migrated).toBe(true);
+    expect(fs.existsSync(path.join(root, WORKSPACE_SETTINGS_FILE))).toBe(true);
+    expect(result.actions.some((a) => a.includes(WORKSPACE_SETTINGS_FILE))).toBe(true);
+    expect(fs.existsSync(path.join(root, ".tachyon/terminals/door.yml"))).toBe(true);
+  });
+
   it("an existing new-home file wins over the legacy block", () => {
     write(WORKSPACE_SETTINGS_FILE, "auth: false\n");
     write("tachyon.yml", "settings:\n  auth: true\n");

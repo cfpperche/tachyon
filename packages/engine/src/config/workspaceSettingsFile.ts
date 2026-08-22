@@ -118,14 +118,21 @@ export function migrateLegacyWorkspaceConfig(workspaceRoot: string): LegacyConfi
 
   const settingsTarget = workspaceSettingsPath(workspaceRoot);
   const settings = raw.settings;
-  if (settings && typeof settings === "object" && !Array.isArray(settings) && Object.keys(settings).length > 0) {
-    if (fs.existsSync(settingsTarget)) {
-      warnings.push(`settings: block kept out of ${WORKSPACE_SETTINGS_FILE} — the file already exists and wins`);
-    } else {
-      fs.mkdirSync(path.dirname(settingsTarget), { recursive: true });
-      fs.writeFileSync(settingsTarget, stringify(settings), "utf8");
-      actions.push(`settings → ${WORKSPACE_SETTINGS_FILE}`);
-    }
+  const hasSettingsBlock = !!settings && typeof settings === "object" && !Array.isArray(settings) && Object.keys(settings).length > 0;
+  if (fs.existsSync(settingsTarget)) {
+    if (hasSettingsBlock) warnings.push(`settings: block kept out of ${WORKSPACE_SETTINGS_FILE} — the file already exists and wins`);
+  } else {
+    // ALWAYS materialize the settings file, even when the legacy document carried no settings:
+    // block — its PRESENCE is what marked the workspace as configured, and settings.yml is that
+    // marker now. A legacy workspace holding only terminals must not migrate into an unconfigured
+    // one (caught by vsix-smoke on 0.93.30: engine up, roster empty).
+    fs.mkdirSync(path.dirname(settingsTarget), { recursive: true });
+    fs.writeFileSync(
+      settingsTarget,
+      hasSettingsBlock ? stringify(settings) : "# Tachyon workspace settings — migrated from tachyon.yml, which carried no settings block.\n",
+      "utf8",
+    );
+    actions.push(`settings → ${WORKSPACE_SETTINGS_FILE}`);
   }
 
   for (const [blockName, upsert] of [
