@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { renderPrimer, type PrimerInput } from "@tachyon/engine/agents/primer.js";
 import { renderSessionWorkRecord, type SessionWorkRecord } from "@tachyon/engine/agents/sessionWorkRecord.js";
@@ -125,6 +127,24 @@ describe("t-a1ee7e: orchestration is the workspace's, not the product's", () => 
         ).toBe(true);
       }
     }
+  });
+
+  it("every primer an agent can receive is assembled through the one seam that carries guidance", () => {
+    // The gap this closes was measured on 2026-08-22, right after the feature landed: the opt-in
+    // resume re-orientation built its own PrimerInput and omitted `guidance`, so that one path
+    // would paste the product's methods into a workspace that had replaced them. Every field of
+    // PrimerInput is optional, so nothing failed — the brief was simply wrong. The seam is the fix;
+    // this is the guard that keeps a third call site from re-opening it.
+    const source = fs.readFileSync(
+      path.join(process.cwd(), "packages/engine/src/agents/AgentManager.ts"),
+      "utf8",
+    );
+    const assembles = source.match(/(?:renderPrimer|wrapWithPrimer)\(/g) ?? [];
+    expect(assembles.length, "AgentManager renders a primer somewhere").toBeGreaterThan(0);
+    // No call site may pass an object literal: the seam is the only assembler.
+    expect(source).not.toMatch(/(?:renderPrimer|wrapWithPrimer)\([^)]*\{\s*$/m);
+    expect(source).not.toMatch(/(?:renderPrimer|wrapWithPrimer)\(\s*\{/);
+    for (const _ of assembles) expect(source).toContain("this.primerInputFor(");
   });
 
   it("the workspace configures the methods through settings.agentGuidance", () => {
