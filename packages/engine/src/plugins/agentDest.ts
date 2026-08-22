@@ -314,6 +314,43 @@ function destOwnedByAgent(file: string, agent: string): boolean {
  * are re-linked to the shared payload (zero extra plugin bytes). MCP/hooks merge; `tachyon_bridge`
  * is never overwritten.
  */
+/**
+ * t-318d7d — re-link a WORKSPACE-scoped skill dest the lockfile declares but the disk no longer has.
+ *
+ * The lockfile is the custodied record of what the human installed, and until now nothing ever checked
+ * it against the disk. That gap had no teeth while a Codex agent on the shared checkout could hold no
+ * grant at all; it grew them in 0.93.39, when the launch stopped writing the tree and started
+ * DELIVERING WHAT THE INSTALLER LEFT. Measured on this workspace: `.claude/skills`, `.agents/skills`
+ * and `.grok/skills` were all recorded as materialized and none of the three was on disk, so a Codex
+ * agent granted `agent-browser` was refused at resume by the fail-closed digest check.
+ *
+ * Repair, not ownership: only the ONE entry the caller names, only when it is absent, only from the
+ * plugin payload the lockfile points at, and only for a dest that lockfile already declares. An entry
+ * that is present — the human's, another plugin's, anything — is never touched, which is the whole
+ * difference between this and the tree replacement that must not run at the workspace root.
+ *
+ * Returns true when a dest was restored. A silent `false` is the honest answer for "nothing in the
+ * record says this skill belongs here" — the caller's own check then refuses by name.
+ */
+export function restoreWorkspaceSkillDest(workspaceRoot: string, runtime: Runtime, skill: string): boolean {
+  const lockfile = readLockfileSafe(workspaceRoot);
+  if (!lockfile) return false;
+  for (const plugin of Object.values(lockfile.plugins)) {
+    for (const target of plugin.targets) {
+      if (target.kind !== "skill-dir" || target.runtime !== runtime) continue;
+      if (target.scope !== undefined && target.scope !== null) continue; // agent-scoped dests are overlayAgentPluginDests's
+      if (path.posix.basename(target.file) !== skill) continue;
+      const destAbs = path.join(workspaceRoot, target.file);
+      if (fs.existsSync(destAbs)) return false; // already there: never replace what is present
+      const srcAbs = path.join(workspaceRoot, pluginSkillPayloadRel(plugin.name, skill));
+      if (!fs.existsSync(srcAbs)) return false; // payload gone too — nothing honest to restore from
+      materializeSkillDest(srcAbs, destAbs, "link");
+      return true;
+    }
+  }
+  return false;
+}
+
 export function overlayAgentPluginDests(workspaceRoot: string, agent: string): void {
   const lockfile = readLockfileSafe(workspaceRoot);
   if (!lockfile) return;
