@@ -1001,6 +1001,67 @@ describe("HarnessManager materialize (fs)", () => {
       .toThrow(/research .* not present at the content this profile authorized|not present at the content/);
   });
 
+  it("t-318d7d: an installed dest is a SYMLINK, and a dest the lockfile declares but the disk lost is restored", () => {
+    // The 0.93.39 launch stopped writing the tree and started DELIVERING WHAT THE INSTALLER LEFT.
+    // Two things about what the installer leaves were not in that design and are measured here:
+    // a workspace dest is a symlink into the plugin payload (not a real directory), and the
+    // lockfile can declare one the disk no longer has — which is the state that refused a healthy
+    // grant at resume on this very workspace.
+    const codexHome = path.join(path.dirname(realHome), "realcodex-318d7d");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+
+    const payload = path.join(ws, ".tachyon", "plugins", "agent-browser", "skills", "agent-browser");
+    fs.mkdirSync(payload, { recursive: true });
+    fs.writeFileSync(path.join(payload, "SKILL.md"), "---\nname: agent-browser\ndescription: drive a browser\n---\nbody\n");
+    fs.mkdirSync(path.join(ws, ".tachyon"), { recursive: true });
+    fs.writeFileSync(path.join(ws, ".tachyon", "plugins.lock.json"), JSON.stringify({
+      schemaVersion: 1,
+      plugins: {
+        "agent-browser": {
+          name: "agent-browser",
+          version: "3.2.0",
+          runtimes: ["codex"],
+          targets: [{ runtime: "codex", kind: "skill-dir", file: ".agents/skills/agent-browser" }],
+          source: { type: "git", spec: "github:owner/repo#path=agent-browser", remote: "https://github.com/owner/repo.git", ref: "v1", resolvedCommit: "0".repeat(40), subdir: "agent-browser" },
+          integrity: { algorithm: "sha256", payload: "d".repeat(64) },
+        },
+      },
+    }));
+    const grantedDigest = inspectCapabilitySourceAtRoot(path.dirname(payload), "agent-browser");
+    const projection: ResolvedAgentCapabilityProjection = {
+      schemaVersion: 1,
+      adapter: "codex",
+      sha256: "a".repeat(64),
+      effectiveProfileSha256: "b".repeat(64),
+      sources: [{ referenceId: "agent-browser", kind: "skill", scope: "project", owner: "plugin:agent-browser", path: ".tachyon/plugins/agent-browser/skills/agent-browser", sha256: grantedDigest.sha256 }],
+      skills: [{ name: "agent-browser", source: grantedDigest }],
+      mcp: {},
+      hooks: {},
+      pi: { extensions: [], prompts: [], themes: [], packages: [] },
+    };
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const nativeConfig = { adapter: "codex" as const, selectors: { model: "gpt-5.6" } };
+    const dest = path.join(ws, ".agents", "skills", "agent-browser");
+
+    // 1. as the installer leaves it: a symlink. Codex follows it and reports the discovery path
+    //    (measured 0.149.0), so it is a discoverable entry — delivered, never suppressed.
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.symlinkSync(payload, dest);
+    mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, ws);
+    let config = fs.readFileSync(harnessCodexConfigPath(ws, "coder"), "utf8");
+    expect(config).not.toContain(JSON.stringify(path.join(dest, "SKILL.md")));
+
+    // 2. the dest the lockfile declares is gone — the state that turned a healthy grant into a
+    //    refusal. It is restored from the payload the record points at, and the launch proceeds.
+    fs.rmSync(dest, { recursive: true, force: true });
+    mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, ws);
+    expect(fs.existsSync(path.join(dest, "SKILL.md"))).toBe(true);
+    expect(fs.realpathSync(dest)).toBe(fs.realpathSync(payload));
+    config = fs.readFileSync(harnessCodexConfigPath(ws, "coder"), "utf8");
+    expect(config).not.toContain(JSON.stringify(path.join(dest, "SKILL.md")));
+  });
+
   it("t-f842f0: empty Codex selection purges the worktree skill tree and never the plugin roster", () => {
     // ACTOR × TRIGGER. Actor: the profile lost its skill selection. Trigger: any door that
     // rematerializes the Codex home (`materializeCanonicalCodexHome` and `materializeHomeOnly`

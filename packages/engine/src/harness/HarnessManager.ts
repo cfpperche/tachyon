@@ -54,7 +54,7 @@ import { NOTICE_DRAIN_CODEX_AGENT_ARG, NOTICE_DRAIN_SCRIPT_SOURCE, noticeDrainAg
 import { renderCodexMcpBlock } from "../plugins/adapters/codex.js";
 import { setCodexMcpServer, setOpencodeMcpServer, expectedAgentOpencodeEntry } from "../registration/adapters.js";
 import { materializePiAgentHome, materializePiSessionDir, PI_AGENT_DIR_ENV, PI_SESSION_DIR_ENV } from "../agents/piSession.js";
-import { overlayAgentPluginDests } from "../plugins/agentDest.js";
+import { overlayAgentPluginDests, restoreWorkspaceSkillDest } from "../plugins/agentDest.js";
 
 /** What a materialized harness contributes to the spawn: the config home, the env that redirects to
  *  it, and the MCP args. Threaded into the spawn/restart/resume/fork command (H3). */
@@ -1787,6 +1787,16 @@ export class HarnessManager {
     // deliberately: `replaceCapturedSkillTree` never covered it, so a hand-written skill in the
     // human's own home reached a Codex agent that was granted none of it.
     const roots = [path.join(path.resolve(cwd), ".agents", "skills"), path.join(os.homedir(), ".agents", "skills")];
+
+    // Deliver-what-the-installer-left has a premise: that what the installer left is still there.
+    // It was not (t-318d7d) — the lockfile declared three materialized skill dests and the disk had
+    // none of them, which turned a healthy grant into a refusal at resume. Restore, from the record
+    // and the payload, exactly the granted entries that are missing. Anything already on disk is left
+    // untouched, so this cannot become the tree replacement that must not run at this root.
+    for (const name of granted.keys()) {
+      if (fs.existsSync(path.join(roots[0]!, name, "SKILL.md"))) continue;
+      restoreWorkspaceSkillDest(this.workspaceRoot, "codex", name);
+    }
     for (const root of roots) {
       let entries: fs.Dirent[];
       try {
@@ -1795,15 +1805,23 @@ export class HarnessManager {
         continue; // an absent root discovers nothing
       }
       for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const manifest = path.join(root, entry.name, "SKILL.md");
+        // A dest the installer wrote is a SYMLINK into the plugin payload, and codex follows it: it
+        // discovers the skill and reports it under the discovery path (measured 0.149.0), which is
+        // also the path that suppresses it. So the link is a discoverable entry, not a skipped one.
+        const entryPath = path.join(root, entry.name);
+        if (!entry.isDirectory() && !this.resolvesToDirectory(entryPath)) continue;
+        const manifest = path.join(entryPath, "SKILL.md");
         if (!fs.existsSync(manifest) || seen.has(manifest)) continue;
         seen.add(manifest);
         const source = granted.get(entry.name);
         if (source && !delivered.has(entry.name)) {
           let live: CapturedCapabilitySource | undefined;
           try {
-            live = inspectCapabilitySourceAtRoot(root, entry.name);
+            // Digest what the agent will actually read. Custody capture refuses a symbolic link by
+            // design, so a linked dest is resolved first — the content behind the link at THIS launch
+            // is what the attestation is checked against, which is the question that matters.
+            const real = fs.realpathSync(entryPath);
+            live = inspectCapabilitySourceAtRoot(path.dirname(real), path.basename(real));
           } catch {
             live = undefined;
           }
@@ -1828,6 +1846,14 @@ export class HarnessManager {
     return disabled
       .map((manifest) => `[[skills.config]]\npath = ${JSON.stringify(manifest)}\nenabled = false\n`)
       .join("\n");
+  }
+
+  private resolvesToDirectory(entryPath: string): boolean {
+    try {
+      return fs.statSync(entryPath).isDirectory();
+    } catch {
+      return false; // a broken link discovers nothing
+    }
   }
 
   private writeProfileCapabilityManifest(agent: string, home: string, projection: ResolvedAgentCapabilityProjection): void {

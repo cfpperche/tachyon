@@ -81,6 +81,9 @@
    family rows and give the consequence copy the warning colour. */
 .ash-native-config-authorization { display: grid; gap: var(--ds-spacing-size40); padding-top: var(--ds-spacing-size80); border-top: 1px solid var(--ds-border); }
 .ash-native-config-authorization .check { font-weight: 600; }
+/* t-d697c7 residue — the grant/withdraw pair shipped with a container class that this sheet never
+   defined, so "Authorized" and Revoke rendered touching. Same shape as `.ash-identity-actions`. */
+.ash-native-config-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--ds-spacing-size80); }
 /* t-f45320 — `--ds-danger` / `--ds-success` are not tokens. Fall back to `--ds-err` / `--ds-ok`
    so a missing VS Code testing-icon colour cannot degrade risk or status copy to inherited body text. */
 .ash-native-config-risk { color: var(--ds-err); font-size: var(--ds-reading-body3); line-height: var(--ds-reading-body3-line); }
