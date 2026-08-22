@@ -4,6 +4,38 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.33 — o engine para de servir um workspace que deixou de existir
+
+Quando o workspace de 2026-08-21 foi apagado com o engine rodando, o `rm -rf` não conseguiu
+terminar: abortou com *"Directory not empty"* porque o engine recriava `.tachyon/` debaixo dele —
+são 154 pontos no código onde um store cria o próprio diretório sob demanda — e seguiu servindo um
+projeto que não existia mais. Depois, um clone novo no mesmo caminho herdou em silêncio o estado
+machine-local daquele engine.
+
+Os dois efeitos vêm de um fato só: a identidade de um engine era `workspaceHash(path)`, um digest do
+**caminho**. Destruir e recriar no mesmo lugar era, para o produto, indistinguível de continuidade.
+
+### Um workspace agora tem identidade própria
+
+`.tachyon/workspace.json` guarda um id escrito **uma vez**, na primeira vez que um engine serve
+aquele workspace. É uma certidão de nascimento, não um lock: o caminho diz *onde*, o id diz *qual*.
+Com ele, três situações que eram uma só passam a se distinguir — *ainda é o meu*, *sumiu*, *agora é
+outro*.
+
+### E o engine para, em vez de reconstruir
+
+A verificação acontece no início do heartbeat que já existia, antes de qualquer coisa tocar o disco.
+Quando o workspace some ou é substituído, o engine silencia seus timers e watchers, avisa o humano e
+encerra — no daemon, saída limpa do processo. Não havia como conter isso por baixo: um heartbeat
+sobre um workspace apagado não apenas falha, ele **reconstrói** o que a pessoa acabou de apagar.
+Parar é a única reação que deixa um workspace apagado apagado.
+
+Um marcador ilegível nunca dispara nada: soluço de filesystem não é projeto destruído.
+
+Esta release entrega a metade da **detecção**. O que fazer com o estado machine-local quando um
+caminho é reusado — as chaves de provider devem sobreviver, o registro de autoridade de uma
+encarnação anterior provavelmente não — depende do inventário que está sendo levantado em separado.
+
 ## 0.93.32 — o produto para de dizer como se trabalha, e não inventa onde dizer
 
 A 0.93.31 tirou os métodos de trabalho do primer e os pôs numa chave nova,
