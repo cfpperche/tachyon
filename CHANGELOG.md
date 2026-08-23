@@ -4,6 +4,39 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.55 — um plugin também entra por arquivo
+
+Instalar um plugin custava resolver um endereço de git, clonar numa tag fixada, conferir checksum,
+calcular impressão digital e transacionar. Agora também se instala um `.zip` que você escolheu no
+próprio disco — e daí para a frente o caminho é **o mesmo**: a mesma prévia, a mesma gaveta de
+consentimento, a mesma aplicação transacional.
+
+A costura já estava lá. Quem carrega de um endereço faz três coisas em sequência — resolve, busca,
+e carrega o diretório. Só as duas primeiras são de git; tudo depois da terceira opera sobre um plugin
+já carregado e nunca pergunta de onde ele veio. A porta nova produz o diretório de outro jeito e
+para por aí.
+
+### O que não vem junto, de propósito
+
+Procedência. Um plugin lido de arquivo é gravado **sem** origem e sem integridade, e o resto do
+sistema já aceitava isso antes desta versão — a checagem de atualização já pulava quem não tem origem,
+e o card já sabia se desenhar sem ela. Um checksum de um arquivo que você mesmo escolheu não prova
+nada: não há editor a quem vinculá-lo e não há segunda parte que pudesse reverificá-lo depois.
+Registrar uma origem sintética seria registrar que um arquivo existiu em algum lugar uma vez.
+
+### O que continua vindo junto, também de propósito
+
+Consentir **execução**. Um zip que provisiona binário, instala git hook ou registra um servidor MCP
+passa pela mesma gaveta de aceite que um plugin vindo de git, porque a consequência é idêntica:
+código de terceiro roda na sua máquina. Origem local dispensa provar de onde veio; nunca dispensa
+saber o que faz.
+
+### Onde o manifesto pode estar
+
+Na raiz do arquivo, ou dentro de **uma única** pasta — que é o que todo "baixe esta release" produz.
+Obrigar você a achatar a pasta seria transferir um detalhe do empacotador. Um arquivo com dois
+manifestos é recusado pelo nome dos dois, em vez de adivinhado.
+
 ## 0.93.54 — o sobrevivente de um reinício volta a ser reconhecido
 
 Um agente vivo podia ficar mudo com o motor de pé. A cura já existia — há um mecanismo que lê a
