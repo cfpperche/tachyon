@@ -4,6 +4,42 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.48 — o mesmo `+`, o nosso picker, e a extensão dentro do portão
+
+Três correções logo depois do primeiro uso da instalação de apps.
+
+**O botão estava errado.** "Add app" saiu como um botão de linha inteira acima da grade — lia como um
+banner sobre as telas, não como uma ação da seção. Agora é o mesmo `+` que Agentes e Terminais usam,
+no cabeçalho, ao lado do controle de ordenação. A mesma coisa merece a mesma affordance.
+
+**O seletor de arquivo era do editor.** Escolher qual `.zip` instalar é uma decisão do Tachyon e
+estava sendo feita na chrome do VS Code. Passa a usar o picker do próprio produto, exatamente como já
+havia sido feito quando "novo …" deixou de usar a lista nativa: o motor varre alguns lugares óbvios —
+o projeto, Downloads, Desktop e a pasta temporária — com profundidade e contagem limitadas, pulando
+as árvores ruidosas que todo projeto carrega e sobrevivendo a um laço de atalhos, e devolve o
+**conjunto de candidatos**, que é a forma com que todo picker deste produto trabalha. A porta da
+paleta de comandos mantém o diálogo nativo, porque lá não há superfície nossa na tela.
+
+### E o portão que não cobria a extensão
+
+`apps/vscode-extension/src` não estava em nenhum projeto de verificação de tipos. O portão só o
+alcançava pelo que os testes importam — e o que nenhum teste importa não era verificado. Foi assim
+que, nesta mesma spec, um símbolo referenciado antes de existir passou uma rodada inteira despercebido
+no arquivo de ativação da extensão.
+
+Agora está coberto, e a cobertura foi provada carregando peso: com um símbolo inexistente plantado, o
+portão falha nomeando o símbolo e a linha.
+
+Ele achou um defeito real no primeiro segundo: duas ramificações liam um campo `run` de um agendamento
+que não existe há tempos — a forma "rodar um comando no relógio" foi retirada quando um agendamento
+passou a acordar um agente declarado. Código morto, inalcançável, sobrevivendo por estar fora do
+alcance da verificação.
+
+E o pacote da tela de plugin sai da lista de empacotamento: retirar o alvo do build impede que ele
+seja **construído**; só essa lista impede que ele seja **empacotado** a partir de um diretório de
+build reaproveitado — que foi como a 0.93.47 embarcou o pacote de uma capacidade que ela mesma acabara
+de remover.
+
 ## 0.93.47 — o usuário ganha a tela, e o plugin devolve a que ninguém usava
 
 Tachyon tinha duas maneiras de desenhar uma tela e nenhuma delas era do usuário. Doze telas embutidas,
