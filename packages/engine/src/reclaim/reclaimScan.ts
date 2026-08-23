@@ -30,6 +30,8 @@ export interface ReclaimScanOptions {
   worktreesRoot?: string;
   globalStorageRoot?: string;
   keepBundles?: number;
+  /** override the kernel process tree (tests); production reads `/proc`. */
+  procRoot?: string;
   /** bundle ids a running engine is executing (from the unit's ExecStart / live processes). */
   liveBundleIds?: ReadonlySet<string>;
   now?: Date;
@@ -109,6 +111,38 @@ async function inspectWorktree(worktreePath: string): Promise<{ dirty: boolean; 
   }
 }
 
+/**
+ * The runtimes some live engine is EXECUTING, read from the kernel rather than from a record anyone
+ * had to remember to write. An engine process carries `tachyon-engine:<hash>` as its title, and its
+ * `/proc/<pid>/exe` resolves to the staged runtime's `node`.
+ *
+ * `measured` separates "looked, found none running" from "could not look at all". Only the first is
+ * evidence; the second holds everything, because a runtime deleted out from under a starting engine
+ * is a broken install, and disk is cheaper than that.
+ */
+function liveEngineRuntimeIds(runtimesRoot: string, procRoot: string): { measured: boolean; ids: Set<string> } {
+  const ids = new Set<string>();
+  let pids: string[];
+  try {
+    pids = fs.readdirSync(procRoot).filter((name) => /^\d+$/.test(name));
+  } catch {
+    return { measured: false, ids };
+  }
+  const root = path.resolve(runtimesRoot);
+  for (const pid of pids) {
+    let title: string;
+    try { title = fs.readFileSync(path.join(procRoot, pid, "cmdline"), "utf8"); } catch { continue; }
+    if (!title.startsWith("tachyon-engine:")) continue;
+    let executable: string;
+    try { executable = fs.realpathSync(path.join(procRoot, pid, "exe")); } catch { continue; }
+    const rel = path.relative(root, executable);
+    if (rel.length === 0 || rel.startsWith("..") || path.isAbsolute(rel)) continue;
+    const id = rel.split(path.sep)[0];
+    if (id !== undefined && id.length > 0) ids.add(id);
+  }
+  return { measured: true, ids };
+}
+
 export async function scanReclaim(options: ReclaimScanOptions = {}): Promise<ReclaimPlan> {
   const bundlesRoot = options.bundlesRoot ?? engineBundleInstallRoot();
   const runtimesRoot = options.runtimesRoot ?? engineRuntimeInstallRoot();
@@ -125,26 +159,34 @@ export async function scanReclaim(options: ReclaimScanOptions = {}): Promise<Rec
 
   const liveBundleIds = options.liveBundleIds ?? new Set<string>();
   const keepBundles = options.keepBundles ?? 3;
-  const retainedIds = new Set([
-    ...liveBundleIds,
-    ...[...bundles].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, Math.max(1, keepBundles)).map((bundle) => bundle.id),
-  ]);
-  // A runtime is in use when a bundle we are keeping declares it.
-  const runtimesInUse = new Set<string>();
-  for (const bundle of bundles) {
-    if (!retainedIds.has(bundle.id)) continue;
-    try {
-      const manifest = JSON.parse(fs.readFileSync(path.join(bundle.path, "engine-manifest.json"), "utf8")) as { runtimeId?: string };
-      if (typeof manifest.runtimeId === "string") runtimesInUse.add(manifest.runtimeId);
-    } catch { /* a bundle without a readable manifest pins nothing */ }
-  }
-  const runtimes: RuntimeEntry[] = listDirectories(runtimesRoot).map((entry) => ({
+  // t-7e1b68 — a runtime is in use when a LIVE ENGINE IS EXECUTING IT.
+  //
+  // This used to ask each retained bundle's manifest for a `runtimeId`, and no manifest has ever
+  // carried that key, so the set was always empty and the conservative fallback below marked every
+  // runtime in use. The rule could not fire: measured on this machine, 5 runtimes and 760MB, one of
+  // them live, none ever collectable.
+  //
+  // The key was not missing by accident — it was unfillable. A bundle is BUILT (by `npm run release`,
+  // on a machine that is not the user's); a runtime is the user's own Extension Host node, copied at
+  // activation and content-addressed by its bytes (`stageEngineRuntime`). The pair is per INSTALL,
+  // never per build, so the bundle manifest is the wrong place to look and always was.
+  //
+  // The kernel already answers the real question: `/proc/<pid>/exe` of a live engine IS the runtime
+  // binary it is running. That fact needs no producer to remember to write it.
+  const runtimeEntries = listDirectories(runtimesRoot);
+  const newestRuntimeId = [...runtimeEntries].sort((a, b) => b.mtimeMs - a.mtimeMs)[0]?.name;
+  const live = liveEngineRuntimeIds(runtimesRoot, options.procRoot ?? "/proc");
+  const runtimes: RuntimeEntry[] = runtimeEntries.map((entry) => ({
     id: entry.name,
     path: entry.path,
     bytes: directoryBytes(entry.path),
-    // Conservative: with no manifest anywhere naming runtimes, keep them all rather than delete a
-    // runtime a bundle silently needs.
-    inUse: runtimesInUse.size === 0 || runtimesInUse.has(entry.name),
+    // Where the kernel cannot be read (no /proc: not Linux, or a sandbox), nothing was measured and
+    // the old conservative answer stands — this must never guess a runtime dead.
+    inUse: !live.measured
+      || live.ids.has(entry.name)
+      // Keep-one belt: the newest is what the next activation would re-stage anyway, and it makes
+      // the rule safe to run while no engine happens to be up.
+      || entry.name === newestRuntimeId,
   }));
 
   const engineStates: EngineStateEntry[] = listDirectories(enginesStateRoot).map((entry) => ({
