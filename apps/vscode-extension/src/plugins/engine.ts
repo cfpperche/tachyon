@@ -413,6 +413,13 @@ export async function loadPluginFromSource(spec: string, git: GitRun = defaultGi
 }
 
 /**
+ * 515 — the zip door, re-exported from here so a caller has ONE module to reach for whichever way a
+ * plugin arrives. The implementation lives apart because unpacking an archive has nothing to do with
+ * this file's subject, which is what a plugin IS once it has been read.
+ */
+export { loadPluginFromZipFile } from "./zipSource.js";
+
+/**
  * spec 266 — pick the source-spec the update check should EVALUATE. For a plugin pinned to a semver tag, probe
  * the source repo's highest semver tag; if it is strictly higher than the current pin, return the spec rewritten
  * to that higher tag (a still-IMMUTABLE pin — reproducibility preserved). Otherwise (the pin is a branch / HEAD /

@@ -28,6 +28,7 @@ import {
   type LoadedPlugin,
   type InstallPreview,
   type InstallProvenance,
+  loadPluginFromZipFile,
 } from "../plugins/engine.js";
 import { loadManifest, SUPPORTED_RUNTIMES, type Runtime, type PackageManager, type ExternalToolInstall } from "@tachyon/engine/plugins/manifest.js";
 import { pluginsMessage, consentMessage, busyMessage, resultMessage, POLL, READY, type PluginsActionType } from "@tachyon/webview-ui/webview/plugins/messages";
@@ -343,6 +344,11 @@ export class PluginsPanelManager {
       case "install":
         if (m.spec) await this.guard(io, () => this.previewInstallOp(ws, m.spec as string, io));
         return;
+      // 515 — the second door. It asks the human for a file and then joins the SAME preview/consent
+      // path a git install takes: what differs is how the directory was produced, nothing after it.
+      case "installZip":
+        await this.guard(io, () => this.previewInstallZipOp(ws, io));
+        return;
       case "installExternal":
         // spec 287 — `pluginName` present ⇒ the installed-card path (resolve from the lockfile); else the drawer path.
         if (m.externalTool && m.pluginName) await this.guard(io, () => this.installExternalFromCardOp(ws, m.pluginName as string, m.externalTool as string, io));
@@ -446,6 +452,38 @@ export class PluginsPanelManager {
     io.postBusy(`Checking ${name} for updates…`);
     io.setChecks({ ...io.getChecks(), [name]: await this.checkOnePluginUpdate(ws, p) });
     io.post();
+  }
+
+  /**
+   * 515 — install from a `.zip` the human picks.
+   *
+   * Everything after the load is shared with the git door on purpose: the same preview, the same
+   * consent drawer, the same apply. The only difference is that there is no provenance to show, which
+   * the drawer already tolerates (its parameter is optional) and which is the honest answer for a
+   * file someone chose on their own disk.
+   */
+  private async previewInstallZipOp(ws: WorkspaceGitPresentationTarget, io: PanelIO): Promise<void> {
+    const picked = await vscode.window.showOpenDialog({
+      canSelectMany: false,
+      openLabel: "Install plugin",
+      filters: { "Plugin package": ["zip"] },
+    });
+    const zip = picked?.[0];
+    if (!zip) return;
+    io.postBusy(`Reading ${path.basename(zip.fsPath)}…`);
+    const loaded = await loadPluginFromZipFile(zip.fsPath);
+    if (!loaded.plugin) {
+      io.postResult(false, `Could not load '${path.basename(zip.fsPath)}': ${loaded.errors.join("; ")}`);
+      return;
+    }
+    const present = detectRuntimes(ws.workspaceRoot);
+    const target = new Set(loaded.plugin.manifest.runtimes);
+    const gitState = await this.gitState(ws, loaded.plugin);
+    const toolPlan = await this.toolPlan(loaded.plugin);
+    const dataPlan = Object.keys(loaded.plugin.manifest.data).length > 0 ? await gatherDataPlan(loaded.plugin) : undefined;
+    const preview = previewInstall(loaded.plugin, ws.workspaceRoot, target, gitState, toolPlan, dataPlan);
+    io.setPending({ kind: "install", plugin: loaded.plugin, preview });
+    io.postConsent(buildInstallConsent(preview, undefined, present));
   }
 
   private async previewInstallOp(ws: WorkspaceGitPresentationTarget, spec: string, io: PanelIO): Promise<void> {
