@@ -4,6 +4,33 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.56 — escolher um plugin acontece no picker do Tachyon
+
+A versão anterior abriu a porta por arquivo com o diálogo do editor. Numa janela remota ou WSL esse
+diálogo não é um seletor de arquivos: é um campo de texto "Folder path" solto por cima do editor, que
+abre onde esteve por último em vez de onde os arquivos estão e não faz ideia do que é um pacote de
+plugin. Agora a escolha acontece no mesmo seletor que o instalador de apps usa — dentro do painel, já
+com os arquivos que estão por perto listados, e navegando dali quando o que você quer não apareceu.
+
+O seletor tem duas telas e as duas são o desenho: ele **abre** nos `.zip` que já estão por perto (o
+que você acabou de baixar ou empacotar costuma ser o que você quer) e **navega** a partir daí quando
+não estão. ↑↓ move, Enter entra numa pasta ou pega o arquivo, Backspace sobe, Esc fecha, e um caminho
+digitado ganha da linha destacada — quem escreveu um endereço quis o endereço.
+
+### Dois defeitos que só a tela revelava
+
+A prova visual desta versão é screenshot do componente real, e pagou na hora. Os dois vinham do
+seletor de apps e estavam em produção desde então:
+
+A trilha imprimia `/ / home / goat / Downloads`. A migalha da raiz **é** uma barra, e o desenho punha
+um separador antes de toda migalha a partir da segunda.
+
+Os caminhos apareciam como `home/goat/Downloads/`, com a barra inicial no fim. A coluna do caminho é
+escrita da direita para a esquerda de propósito, para a reticência comer a **cabeça** e a cauda — a
+parte que distingue duas pastas — sobreviver. O preço é que `/` é um caractere neutro e migra para o
+outro extremo. Nenhuma verificação de código pegaria esse: o texto sempre foi `/home/goat/Downloads`,
+a diferença só existe depois que o navegador ordena a linha, ou seja, só na tela.
+
 ## 0.93.55 — um plugin também entra por arquivo
 
 Instalar um plugin custava resolver um endereço de git, clonar numa tag fixada, conferir checksum,
