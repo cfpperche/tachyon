@@ -133,9 +133,13 @@ function liveEngineRuntimeIds(runtimesRoot: string, procRoot: string): { measure
     let title: string;
     try { title = fs.readFileSync(path.join(procRoot, pid, "cmdline"), "utf8"); } catch { continue; }
     if (!title.startsWith("tachyon-engine:")) continue;
+    // `readlink`, not `realpath`: the kernel keeps the ORIGINAL path in the link and appends
+    // " (deleted)" once the file is unlinked. Resolving would throw exactly when the answer matters
+    // most — a live engine whose runtime someone already removed still names the runtime it needs,
+    // and a measurement that goes blind there would invite the same deletion twice.
     let executable: string;
-    try { executable = fs.realpathSync(path.join(procRoot, pid, "exe")); } catch { continue; }
-    const rel = path.relative(root, executable);
+    try { executable = fs.readlinkSync(path.join(procRoot, pid, "exe")); } catch { continue; }
+    const rel = path.relative(root, path.resolve(executable.replace(/ \(deleted\)$/, "")));
     if (rel.length === 0 || rel.startsWith("..") || path.isAbsolute(rel)) continue;
     const id = rel.split(path.sep)[0];
     if (id !== undefined && id.length > 0) ids.add(id);
@@ -173,20 +177,27 @@ export async function scanReclaim(options: ReclaimScanOptions = {}): Promise<Rec
   //
   // The kernel already answers the real question: `/proc/<pid>/exe` of a live engine IS the runtime
   // binary it is running. That fact needs no producer to remember to write it.
-  const runtimeEntries = listDirectories(runtimesRoot);
-  const newestRuntimeId = [...runtimeEntries].sort((a, b) => b.mtimeMs - a.mtimeMs)[0]?.name;
   const live = liveEngineRuntimeIds(runtimesRoot, options.procRoot ?? "/proc");
-  const runtimes: RuntimeEntry[] = runtimeEntries.map((entry) => ({
+  const runtimes: RuntimeEntry[] = listDirectories(runtimesRoot).map((entry) => ({
     id: entry.name,
     path: entry.path,
     bytes: directoryBytes(entry.path),
-    // Where the kernel cannot be read (no /proc: not Linux, or a sandbox), nothing was measured and
-    // the old conservative answer stands — this must never guess a runtime dead.
-    inUse: !live.measured
-      || live.ids.has(entry.name)
-      // Keep-one belt: the newest is what the next activation would re-stage anyway, and it makes
-      // the rule safe to run while no engine happens to be up.
-      || entry.name === newestRuntimeId,
+    // An EMPTY answer is not an answer (0.93.46). The first shipped version treated "looked, found no
+    // engine running" as evidence and kept "the newest by mtime" as a belt. Both were wrong, and
+    // together they deleted the runtime of a live engine on the author's machine: the scan ran in the
+    // activation window — old engine already stopped, new one not yet started — so nothing was
+    // identified, and the newest DIRECTORY was an older runtime, not the one about to be used.
+    //
+    // A runtime is collected only when this scan positively identified some runtime as in use: the
+    // t-f5769a method applied to the empty case, where not knowing is a reason to keep.
+    inUse: !live.measured || live.ids.size === 0 || live.ids.has(entry.name),
+    whyInUse: !live.measured
+      ? "the process table could not be read here, so nothing about runtimes was measured"
+      : live.ids.size === 0
+        ? "no engine was running when this was measured, and an empty answer is not evidence of disuse"
+        : live.ids.has(entry.name)
+          ? "a live engine is running on this runtime"
+          : undefined,
   }));
 
   const engineStates: EngineStateEntry[] = listDirectories(enginesStateRoot).map((entry) => ({

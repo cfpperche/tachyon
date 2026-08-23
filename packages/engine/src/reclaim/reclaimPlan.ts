@@ -46,7 +46,16 @@ export interface ReclaimPlan {
 }
 
 export interface BundleEntry { id: string; path: string; bytes: number; mtimeMs: number }
-export interface RuntimeEntry { id: string; path: string; bytes: number; inUse: boolean }
+export interface RuntimeEntry {
+  id: string;
+  path: string;
+  bytes: number;
+  inUse: boolean;
+  /** Why it is held, in the words the human reads. Kept apart from `inUse` because "a live engine
+   *  runs on it" and "nothing was measured, so nothing is provably unused" are different facts that
+   *  a single boolean would report as the same sentence (0.93.46). */
+  whyInUse?: string;
+}
 export interface EngineStateEntry { hash: string; path: string; bytes: number; provenance?: WorkspaceProvenance }
 export interface WorktreeEntry {
   path: string;
@@ -104,7 +113,7 @@ export function planReclaim(input: ReclaimInput): ReclaimPlan {
 
   for (const runtime of input.runtimes) {
     if (runtime.inUse) {
-      hold.push({ kind: "runtime", path: runtime.path, bytes: runtime.bytes, reason: "a live engine is running on this runtime, or it is the one the next launch reuses" });
+      hold.push({ kind: "runtime", path: runtime.path, bytes: runtime.bytes, reason: runtime.whyInUse ?? "a live engine is running on this runtime" });
       continue;
     }
     collect.push({ kind: "runtime", path: runtime.path, bytes: runtime.bytes, reason: "no live engine runs on this runtime — a copy of an older editor's Node, re-staged on demand" });
