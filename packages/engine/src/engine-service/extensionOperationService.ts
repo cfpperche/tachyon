@@ -232,7 +232,7 @@ export async function executeExtensionQuery(
     }
     case "apps.zip-candidates": {
       const roots = zipSearchRoots(workspace.workspaceRoot, os.homedir(), os.tmpdir());
-      return json({ candidates: findZipCandidates(roots).map((c) => ({ path: c.path, name: c.name, dir: c.dir })), roots });
+      return json({ candidates: findZipCandidates(roots, undefined, undefined, "app").map((c) => ({ path: c.path, name: c.name, dir: c.dir })), roots });
     }
     case "apps.browse": {
       const listing = browseForZip(query.dir);

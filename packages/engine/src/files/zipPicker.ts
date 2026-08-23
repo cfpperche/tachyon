@@ -13,6 +13,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { zipPayloadKind, type ZipPayloadKind } from "./zipEntries.js";
 
 /** One archive the human could install from, as the picker needs it. */
 export interface ZipCandidate {
@@ -36,13 +37,23 @@ export function zipSearchRoots(workspaceRoot: string, home: string, tmp: string)
  * 514 — the archives the product's own picker offers.
  *
  * A BOUNDED scan, not a filesystem browser: depth and count are capped, and the noisy trees every
- * project carries are skipped. The point is to hand the picker a candidate set it can filter — the
+ * project carries are skipped.
+ *
+ * 515 — `wanted` is what the door installs, and passing it is what stops an APP package from being
+ * offered where plugins install. The check reads each candidate's central directory, which costs the
+ * tail of the file rather than the file, so a scan that already walked the disk does not become
+ * expensive for asking what it found. The point is to hand the picker a candidate set it can filter — the
  * same shape every other QuickPicker in this product works with — rather than to reimplement a file
  * dialog in a webview.
  *
  * Newest first, because the archive someone just built or downloaded is the one they mean.
  */
-export function findZipCandidates(roots: readonly string[], limit = 200, maxDepth = 6): ZipCandidate[] {
+export function findZipCandidates(
+  roots: readonly string[],
+  limit = 200,
+  maxDepth = 6,
+  wanted?: ZipPayloadKind,
+): ZipCandidate[] {
   const skip = new Set([".git", "node_modules", ".vscode-server", "dist", "out", ".cache"]);
   const seen = new Set<string>();
   const found: ZipCandidate[] = [];
@@ -70,7 +81,15 @@ export function findZipCandidates(roots: readonly string[], limit = 200, maxDept
   };
   for (const root of roots) walk(root, 0);
   const unique = new Map(found.map((entry) => [entry.path, entry]));
-  return [...unique.values()].sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const all = [...unique.values()].sort((a, b) => b.mtimeMs - a.mtimeMs);
+  if (!wanted) return all;
+  // An archive is dropped only when it was MEASURED to be something else. One that could not be read
+  // stays: hiding a real plugin because its archive was unusual would be an unmeasured "no" dressed as
+  // a measured one, and the door still validates properly when the human picks it.
+  return all.filter((entry) => {
+    const kind = zipPayloadKind(entry.path);
+    return kind === undefined || kind === wanted;
+  });
 }
 
 /** One row of the picker's directory view. */

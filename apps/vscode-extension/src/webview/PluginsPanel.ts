@@ -34,6 +34,7 @@ import { loadManifest, SUPPORTED_RUNTIMES, type Runtime, type PackageManager, ty
 import { pluginsMessage, consentMessage, busyMessage, resultMessage, zipsMessage, type ZipsMessage, POLL, READY, type PluginsActionType } from "@tachyon/webview-ui/webview/plugins/messages";
 import { browseForZip, findZipCandidates, zipSearchRoots } from "@tachyon/engine/files/zipPicker.js";
 import * as os from "node:os";
+import { chooseZipWithSystemDialog } from "./shared/systemFileDialog.js";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
 import type { GitRun } from "../plugins/fetcher.js";
 import { gatherToolPlan } from "../plugins/toolPlan.js";
@@ -359,6 +360,13 @@ export class PluginsPanelManager {
       case "browseZips":
         if (m.dir) this.openZipPicker(ws, io, m.dir);
         return;
+      // 515 — the human asked for the system's own dialog. It is a door out of OUR picker, never the
+      // door in: the picker is what opens, and this is one of the two ways it lets you answer.
+      case "systemBrowseZip": {
+        const chosen = await chooseZipWithSystemDialog("Install plugin");
+        if (chosen) await this.guard(io, () => this.previewInstallZipOp(ws, chosen, io));
+        return;
+      }
       case "installZipFrom":
         if (m.zipPath) await this.guard(io, () => this.previewInstallZipOp(ws, m.zipPath as string, io));
         return;
@@ -484,7 +492,7 @@ export class PluginsPanelManager {
       return;
     }
     const roots = zipSearchRoots(ws.workspaceRoot, os.homedir(), os.tmpdir());
-    const candidates = findZipCandidates(roots).map((c) => ({ path: c.path, name: c.name, dir: c.dir }));
+    const candidates = findZipCandidates(roots, undefined, undefined, "plugin").map((c) => ({ path: c.path, name: c.name, dir: c.dir }));
     io.postZips(zipsMessage(candidates, roots));
   }
 

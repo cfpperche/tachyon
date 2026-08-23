@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { chooseZipWithSystemDialog } from "./webview/shared/systemFileDialog.js";
 import { engineSystemdUnitName } from "@tachyon/engine/engine-service/engineSupervisor.js";
 import { reapOrphanedEngineDaemons } from "@tachyon/engine/engine-service/engineOrphanHygiene.js";
 import path from "node:path";
@@ -3762,18 +3763,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("No Tachyon workspace is attached in this window, so there is nowhere to install an app."), "warn");
         return;
       }
-      // 514 — the path is chosen in OUR picker and arrives here. The Command Palette door has no
-      // surface of ours on screen, so it (and only it) falls back to the editor's file dialog — the
-      // same split t-be359b made for "new …".
+      // 514/515 — the path is chosen in OUR picker and arrives here. Two doors reach this without one:
+      // the Command Palette, which has no surface of ours on screen, and the picker's own "Browse…",
+      // where the human explicitly asked for the system dialog. Both land on the same handoff, which
+      // lives in ONE module so "the native dialog is never the default door" stays checkable.
       let zipPath = typeof zipArg === "string" && zipArg.trim() ? zipArg : undefined;
-      if (!zipPath) {
-        const picked = await vscode.window.showOpenDialog({
-          canSelectMany: false,
-          openLabel: vscode.l10n.t("Install app"),
-          filters: { "App package": ["zip"] },
-        });
-        zipPath = picked?.[0]?.fsPath;
-      }
+      if (!zipPath) zipPath = await chooseZipWithSystemDialog(vscode.l10n.t("Install app"));
       if (!zipPath) return;
       try {
         const payload = jsonObject(await extensionInvoke(ws, { action: "app.install", zipPath }), "app.install");

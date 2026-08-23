@@ -24,6 +24,8 @@ export interface PluginsDispatch {
   /** 515 — open the product's own file chooser (never the editor's dialog). */
   installZip(): void;
   browseZips(dir: string): void;
+  /** 515 — hand off to the operating system's dialog, because the human clicked Browse…. */
+  systemBrowseZip(): void;
   installZipFrom(zipPath: string): void;
   closeZips(): void;
   update(name: string): void;
@@ -667,6 +669,7 @@ export function App({ vm, consent, busy, zips, dispatch }: { vm?: PluginsViewMod
           suggestions={zips.candidates.map((c) => ({ name: c.name, path: c.path, kind: "zip" as const }))}
           listing={zips.listing}
           onBrowse={(dir) => dispatch.browseZips(dir)}
+          onSystemBrowse={() => dispatch.systemBrowseZip()}
           onClose={() => dispatch.closeZips()}
           onSelect={(filePath) => dispatch.installZipFrom(filePath)}
         />

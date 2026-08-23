@@ -387,6 +387,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       // 514 — browsing is the same door answered again, with a directory this time.
       if (m.op === "browseApps") return void this.pushAppZips(typeof m.hash === "string" ? m.hash : undefined);
       if (m.op === "installAppFrom") return void vscode.commands.executeCommand("tachyon.installApp", m.hash);
+      // 515 — "Browse…": the human asked for the system's own dialog. No path, so the command falls
+      // through to the same handoff the Command Palette door uses.
+      if (m.op === "systemBrowseApp") return void vscode.commands.executeCommand("tachyon.installApp");
       // 514 — one op for every tile action. The sidebar names the TILE and the ACTION and knows
       // nothing about what either means; the host owns that routing, which is what lets a new action
       // be a line in a table instead of a branch in the webview.

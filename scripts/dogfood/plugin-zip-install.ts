@@ -49,7 +49,7 @@ console.log(`     skills: ${loaded.plugin.skills.map((s) => s.name).join(", ") |
 // is the nearby scan the picker opens on; the second is browsing to the directory by hand, which is
 // what the scan's bounded depth exists to make survivable rather than sufficient.
 const roots = zipSearchRoots(process.cwd(), os.homedir(), os.tmpdir());
-const suggested = findZipCandidates(roots).some((c) => c.path === out);
+const suggested = findZipCandidates(roots, undefined, undefined, "plugin").some((c) => c.path === out);
 const browsed = browseForZip(path.dirname(out)).entries.some((e) => e.path === out && e.kind === "zip");
 if (!browsed) {
   console.error(`FAILED: the picker cannot browse to ${out}`);
@@ -57,5 +57,23 @@ if (!browsed) {
 }
 console.log(`ok — the product picker reaches it: ${suggested ? "offered by the nearby scan and " : ""}listed when browsed to`);
 console.log(`     roots scanned: ${roots.join(", ")}`);
+
+// And prove the door does not suggest the wrong artefact: an APP package next to the plugin one must
+// be offered by the app installer and NOT by this one. The owner hit exactly this with hello-fleet.zip.
+const appZip = new JSZip();
+appZip.file("hello-fleet/app.json", JSON.stringify({ id: "hello-fleet", title: "Hello Fleet", icon: "rocket", entry: "index.html" }));
+appZip.file("hello-fleet/index.html", "<p>hi</p>");
+const appOut = path.join(path.dirname(out), "hello-fleet.zip");
+fs.writeFileSync(appOut, await appZip.generateAsync({ type: "nodebuffer" }));
+
+const asPlugin = browseForZip(path.dirname(out)).entries.map((e) => e.name);
+const pluginOffers = findZipCandidates([path.dirname(out)], undefined, undefined, "plugin").map((c) => c.name);
+const appOffers = findZipCandidates([path.dirname(out)], undefined, undefined, "app").map((c) => c.name);
+if (pluginOffers.includes("hello-fleet.zip") || !appOffers.includes("hello-fleet.zip")) {
+  console.error(`FAILED: app package classified wrong — plugin door offered ${pluginOffers}, app door offered ${appOffers}`);
+  process.exit(1);
+}
+console.log(`ok — an app package is not suggested here: plugin door offers [${pluginOffers}], app door offers [${appOffers}]`);
+console.log(`     browsing still lists everything in the folder: [${asPlugin}]`);
 if (loaded.stagingDir) fs.rmSync(loaded.stagingDir, { recursive: true, force: true });
 fs.rmSync(path.dirname(out), { recursive: true, force: true });
