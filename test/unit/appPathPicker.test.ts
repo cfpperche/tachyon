@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { browseForAppZip } from "@tachyon/engine/apps/index.js";
-import { EXTENSION_QUERY_ACTIONS, extensionQuerySchema } from "@tachyon/engine/runtime-api/extensionOperations.js";
+import { EXTENSION_COMMAND_ACTIONS, EXTENSION_QUERY_ACTIONS, extensionCommandSchema, extensionQuerySchema } from "@tachyon/engine/runtime-api/extensionOperations.js";
 import { breadcrumbSegments, looksLikePath } from "@tachyon/webview-ui/webview/shared/ui/pathPickerModel";
 
 const made: string[] = [];
@@ -21,20 +21,34 @@ function temp(): string {
   return dir;
 }
 
-describe("every query action is in the allowlist the RESULT is validated against", () => {
-  it("has no action that parses on the way in and is refused on the way out", () => {
-    // `apps.list` and `apps.zip-candidates` shipped in the union and NOT here. The request parsed,
-    // the engine answered, and the response was rejected against this enum — so the extension saw a
-    // failure and rendered it as an empty catalog. Silent divergence, which is why this is a test and
-    // not a convention.
+/** Every `action` literal a union accepts, read out of the schema rather than hand-listed. */
+function actionsInUnion(schema: { options: readonly unknown[] }): string[] {
+  const out: string[] = [];
+  for (const option of schema.options) {
+    const shape = (option as { shape?: { action?: { value?: unknown } } }).shape;
+    const literal = shape?.action?.value;
+    if (typeof literal === "string" && !out.includes(literal)) out.push(literal);
+  }
+  return out.sort();
+}
+
+describe("every action is in the allowlist its RESULT is validated against", () => {
+  // BOTH halves, and that is the point. `apps.list` and `apps.zip-candidates` shipped in the query
+  // union and not in its list; `app.install` shipped in the command union and not in ITS list. The
+  // request parses, the engine answers, and the response is refused on the way back — which reaches
+  // the human as "extension command result is invalid", or worse, as an empty catalog.
+  //
+  // The first version of this test checked queries only, so the command half shipped broken behind a
+  // green suite. A guard that covers one of two symmetric lists is a guard that teaches the wrong
+  // lesson about which one is safe.
+  it("queries: no action parses on the way in and is refused on the way out", () => {
     const declared = new Set<string>(EXTENSION_QUERY_ACTIONS);
-    const inUnion = new Set<string>();
-    for (const option of extensionQuerySchema.options) {
-      const shape = (option as unknown as { shape?: { action?: { value?: unknown } } }).shape;
-      const literal = shape?.action?.value;
-      if (typeof literal === "string") inUnion.add(literal);
-    }
-    expect([...inUnion].filter((action) => !declared.has(action)).sort()).toEqual([]);
+    expect(actionsInUnion(extensionQuerySchema).filter((action) => !declared.has(action))).toEqual([]);
+  });
+
+  it("commands: no action parses on the way in and is refused on the way out", () => {
+    const declared = new Set<string>(EXTENSION_COMMAND_ACTIONS);
+    expect(actionsInUnion(extensionCommandSchema).filter((action) => !declared.has(action))).toEqual([]);
   });
 });
 

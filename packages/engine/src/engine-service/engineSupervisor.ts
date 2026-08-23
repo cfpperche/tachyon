@@ -1016,6 +1016,13 @@ async function waitForExactEngine(input: UpgradeDaemonEngineInput & {
       return identity;
     }
     await delay(input.pollMs);
+    // The same grace as `waitForCompatibleEngine`, and THIS is the loop an upgrade actually runs.
+    // Shipping it on the other one alone left the install path exactly as it was: measured after
+    // 0.93.49, the failure still read "did not answer within 10s" — the grace existed and never ran.
+    if (!extended && Date.now() >= deadline && await unitStillActive(engineSystemdUnitName(input.canonicalRoot))) {
+      extended = true;
+      deadline = Date.now() + ALIVE_START_GRACE_MS;
+    }
   }
   if (lastUnverifiable) throw lastUnverifiable;
   throw new EngineSupervisorError(
