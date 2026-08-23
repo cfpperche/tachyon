@@ -4,6 +4,25 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.49 — lento não é quebrado
+
+Instalar a versão anterior podia terminar em "Tachyon não conseguiu iniciar nem o motor novo nem o seu
+retorno verificado", com o humano clicando em Repetir até pegar. A frase é de catástrofe. O que estava
+acontecendo era outra coisa.
+
+Medido no diário do sistema e na trilha de transições: três partidas seguidas morreram **exatamente**
+aos 10,0 segundos, cada uma consumindo cerca de um segundo de CPU em dez de relógio — famintas, não
+quebradas. O retorno bateu no mesmo limite. A quarta tentativa subiu, nas mesmas condições. A trilha
+registrava a causa que a tela não dizia: o motor não ficou pronto dentro do prazo.
+
+O prazo era o defeito. Dez segundos é um **piso** razoável para o arranque a frio de um pacote de
+megabytes; é um teto péssimo. Agora o prazo é estendido uma vez, e apenas enquanto o supervisor do
+sistema ainda reporta o processo ativo: quem está lento ganha folga, quem morreu falha na hora —
+exatamente como antes.
+
+E a mensagem passa a dizer **quanto** esperou. Anunciar falha total de um arranque que apenas demorava
+manda a pessoa repetir às cegas, que foi precisamente o que aconteceu.
+
 ## 0.93.48 — o mesmo `+`, o nosso picker, e a extensão dentro do portão
 
 Três correções logo depois do primeiro uso da instalação de apps.
