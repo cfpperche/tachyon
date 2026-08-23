@@ -4,6 +4,39 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.50 — o seletor de arquivo passa a ser um seletor de arquivo
+
+O que a versão anterior chamava de seletor era uma lista chapada do que uma varredura tinha achado.
+Não fazia a única coisa para a qual um seletor existe: alcançar um arquivo que a varredura **não**
+achou. E dizia "nenhum .zip encontrado em" — com nada depois.
+
+### O nada depois era o defeito de verdade
+
+Existe uma lista explícita de ações de consulta, e o **resultado** de cada consulta é validado contra
+ela. As duas ações novas de apps foram acrescentadas ao formato da requisição e não a essa lista: o
+pedido entrava, o motor respondia, e a resposta era recusada na volta. O catálogo de apps nunca
+funcionou — o ladrilho de um app instalado também nunca teria aparecido. E o `catch` que engolia isso
+devolvia uma lista vazia, que é uma resposta vazia vestida de resposta medida.
+
+Agora as ações estão na lista, a falha viaja como **razão** e aparece na tela, e um teste compara o
+formato com a lista — porque as duas podiam divergir caladas, e foi o que fizeram.
+
+### O seletor novo
+
+Pesquisadas as referências de interface para seletores de arquivo e aplicado o que elas concordam,
+na largura de uma barra lateral:
+
+- **Trilha de navegação** clicável em cada nível; numa coluna estreita só a cauda cabe, então a
+  cabeça vira reticências em vez de quebrar linha.
+- **Uma caixa que filtra e endereça.** Texto filtra a pasta atual; algo que começa com `/` ou `~` é um
+  caminho, e Enter navega até ele. Duas caixas custariam uma linha cada.
+- **A primeira tela são os arquivos por perto**, não a raiz do sistema — a ideia de "recentes": o
+  arquivo que alguém quer costuma ser um que acabou de construir ou baixar.
+- **Teclado primeiro:** setas movem, Enter entra numa pasta ou leva o arquivo, Backspace sobe, Esc
+  fecha, e a linha ativa tem anel de foco visível, nunca só cor.
+- Pastas antes de arquivos, ambos em ordem alfabética. Uma pasta ilegível diz **por que** está vazia,
+  em vez de parecer vazia.
+
 ## 0.93.49 — lento não é quebrado
 
 Instalar a versão anterior podia terminar em "Tachyon não conseguiu iniciar nem o motor novo nem o seu
