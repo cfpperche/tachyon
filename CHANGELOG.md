@@ -4,6 +4,32 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.54 — o sobrevivente de um reinício volta a ser reconhecido
+
+Um agente vivo podia ficar mudo com o motor de pé. A cura já existia — há um mecanismo que lê a
+credencial do próprio processo do painel gerenciado e a readota, escrito exatamente para "o processo
+ainda tem um token que o registro esqueceu". O gatilho é que estava estreito: só o caso em que o
+registro **desconhece** o token.
+
+E não é esse o estado que um reinício do motor produz. Ele aposenta toda credencial viva, com uma hora
+de tolerância, e emite uma nova dentro de um ambiente que nenhum painel vivo pode receber — variáveis
+de ambiente são fixadas no nascimento do processo. Passada a tolerância, o painel passa a ser
+**expirado**, e a cura recusava exatamente aí. Medido na sessão do autor, no meio de uma tarefa: o
+agente de pé, o motor de pé, e sem voz.
+
+Expirado passa a curar junto com desconhecido. São o mesmo fato: artefato de ter reiniciado, nunca
+evidência sobre quem segura a credencial. O que prova a identidade não afrouxou — o portador tem de
+estar dentro da árvore de processos de um painel gerenciado, e a identidade adotada é a do **cadastro**
+daquele painel, jamais a que o processo declara de si.
+
+### E o que continua sem cura, agora garantido no lugar certo
+
+Uma credencial **revogada**. Revogar é uma decisão — encerrar, dispensar, uma retirada consumada, uma
+morte observada — e curar significaria ler o texto puro de um processo vivo, que é precisamente a
+situação que essas decisões existem para anular. A recusa passou a morar no próprio registro, não
+apenas no ponto de chamada, para que um curador futuro não desfaça por acidente as garantias das duas
+versões anteriores.
+
 ## 0.93.53 — o dado que a página de um app guarda passa a ter dono
 
 A última afirmação da spec de apps que ainda não tinha sido medida: o que acontece com o que a página
