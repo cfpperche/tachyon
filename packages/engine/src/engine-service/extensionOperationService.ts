@@ -1,3 +1,4 @@
+import os from "node:os";
 import fs from "node:fs";
 import { composeWorkspaceConfigText } from "../config/workspaceSettingsFile.js";
 import net from "node:net";
@@ -22,7 +23,7 @@ import {
 } from "../config/YamlConfigEditor.js";
 import { isIdeBrowserEnabled } from "../ide-browser/settings.js";
 import { isResumable } from "../resume/sessionRecord.js";
-import { installAppZip, readInstalledApps } from "../apps/index.js";
+import { appZipSearchRoots, findAppZipCandidates, installAppZip, readInstalledApps } from "../apps/index.js";
 import { PromptStore } from "../prompts/PromptStore.js";
 import { injectTargets, submitRefuseReason } from "../prompts/injectFlow.js";
 import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
@@ -220,6 +221,10 @@ export async function executeExtensionQuery(
         apps: catalog.apps.map((app) => ({ id: app.id, title: app.title, icon: app.icon, entry: app.entry, root: app.root })),
         warnings: catalog.warnings,
       });
+    }
+    case "apps.zip-candidates": {
+      const roots = appZipSearchRoots(workspace.workspaceRoot, os.homedir(), os.tmpdir());
+      return json({ candidates: findAppZipCandidates(roots).map((c) => ({ path: c.path, name: c.name, dir: c.dir })), roots });
     }
     case "worktrees.list": {
       // Agent ledger worktrees + spec 392 registry (change + agent). Drop registry rows whose path is gone

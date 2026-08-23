@@ -131,6 +131,10 @@ export const extensionQuerySchema = z.union([
   /** 514 — the installed apps of this workspace, read from `.tachyon/apps` on every call. There is no
    *  index and no cache: the disk is the catalog, so the answer cannot drift from what is installed. */
   z.object({ action: z.literal("apps.list") }).strict(),
+  /** 514 — the zip archives an app could be installed from, so the PRODUCT's own picker can offer them.
+   *  A bounded scan of a few obvious places, never a filesystem browser: the answer is a candidate set,
+   *  which is exactly what the in-webview QuickPicker is for. */
+  z.object({ action: z.literal("apps.zip-candidates") }).strict(),
   z.object({ action: z.literal("worktrees.list") }).strict(),
   // spec 444 — registry entries + fail-closed hygiene classification (Control Worktrees tab).
   z.object({ action: z.literal("worktrees.classified") }).strict(),

@@ -74,5 +74,22 @@ export function fleetMessage(
   };
 }
 
+/**
+ * 514 — host → webview: the archives an app could be installed from.
+ *
+ * Sent only in answer to the install door being opened, never on the fleet heartbeat: it is the result
+ * of a bounded filesystem scan, and nobody needs it until they ask.
+ */
+export const APP_ZIPS = "appZips" as const;
+export interface AppZipsMessage {
+  type: typeof APP_ZIPS;
+  candidates: Array<{ path: string; name: string; dir: string }>;
+  /** where the scan looked — the empty state has to say it, or "no zips" reads as a bug. */
+  roots: string[];
+}
+export function appZipsMessage(candidates: AppZipsMessage["candidates"], roots: string[]): AppZipsMessage {
+  return { type: APP_ZIPS, candidates, roots };
+}
+
 /** the union the sidebar webview listens for (host → webview). */
-export type SidebarHostMessage = FleetMessage;
+export type SidebarHostMessage = FleetMessage | AppZipsMessage;

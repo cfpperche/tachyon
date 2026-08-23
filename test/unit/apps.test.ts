@@ -7,6 +7,8 @@ import {
   installAppZip,
   readInstalledApps,
   validateAppManifest,
+  appZipSearchRoots,
+  findAppZipCandidates,
 } from "@tachyon/engine/apps/index.js";
 
 const roots: string[] = [];
@@ -135,5 +137,54 @@ describe("zip installation", () => {
     await expect(installAppZip(root, zip)).rejects.toThrow(/path/i);
     expect(fs.existsSync(path.join(root, ".tachyon", "escape.txt"))).toBe(false);
     expect(fs.existsSync(path.join(root, "escape.txt"))).toBe(false);
+  });
+});
+
+/**
+ * 514 — the candidate set OUR picker filters, instead of the editor's file dialog.
+ *
+ * The scan is deliberately not a filesystem browser: it is bounded in depth and count, skips the trees
+ * every project carries, and orders newest-first because the archive someone just built is the one they
+ * mean. What it must never do is hang or explode on a real machine, which is what these pin.
+ */
+describe("findAppZipCandidates", () => {
+  it("finds archives across roots, newest first, and ignores everything that is not a zip", () => {
+    const root = temp();
+    fs.mkdirSync(path.join(root, "a", "b"), { recursive: true });
+    fs.writeFileSync(path.join(root, "a", "old.zip"), "x");
+    fs.writeFileSync(path.join(root, "a", "b", "new.zip"), "x");
+    fs.writeFileSync(path.join(root, "a", "notes.txt"), "x");
+    fs.utimesSync(path.join(root, "a", "old.zip"), new Date("2026-01-01"), new Date("2026-01-01"));
+    fs.utimesSync(path.join(root, "a", "b", "new.zip"), new Date("2026-08-01"), new Date("2026-08-01"));
+
+    const found = findAppZipCandidates([root]);
+    expect(found.map((c) => c.name)).toEqual(["new.zip", "old.zip"]);
+    expect(found[0]!.dir).toBe(path.join(root, "a", "b"));
+  });
+
+  it("skips the noisy trees and stops at the depth cap, so a big checkout cannot stall the picker", () => {
+    const root = temp();
+    fs.mkdirSync(path.join(root, "node_modules", "pkg"), { recursive: true });
+    fs.writeFileSync(path.join(root, "node_modules", "pkg", "vendored.zip"), "x");
+    const deep = path.join(root, "1", "2", "3", "4", "5", "6", "7");
+    fs.mkdirSync(deep, { recursive: true });
+    fs.writeFileSync(path.join(deep, "buried.zip"), "x");
+
+    const names = findAppZipCandidates([root]).map((c) => c.name);
+    expect(names).not.toContain("vendored.zip");
+    expect(names).not.toContain("buried.zip");
+  });
+
+  it("survives a symlink loop — a hang here is a picker that never opens", () => {
+    const root = temp();
+    fs.mkdirSync(path.join(root, "here"), { recursive: true });
+    fs.writeFileSync(path.join(root, "here", "app.zip"), "x");
+    fs.symlinkSync(root, path.join(root, "here", "back"));
+    expect(findAppZipCandidates([root]).map((c) => c.name)).toEqual(["app.zip"]);
+  });
+
+  it("names the places it looked, because an empty picker has to say where it searched", () => {
+    const roots = appZipSearchRoots("/ws", "/home/someone", "/tmp");
+    expect(roots).toEqual(["/ws", "/home/someone/Downloads", "/home/someone/Desktop", "/tmp"]);
   });
 });

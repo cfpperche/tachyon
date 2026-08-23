@@ -81,7 +81,7 @@ export interface Dispatch {
 // SDD 504 — `retryStart` and `openOutput` are the failed state's two actions. Both are new here
 // because the failed state itself is new: before this change an attach failure fell through to the
 // welcome, so the sidebar offered to CREATE a workspace whose startup had just been rejected.
-export type GlobalOp = "addPin" | "copyBridge" | "init" | "onboarding" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "retryStart" | "openOutput" | "installApp" | "studio:agents" | "studio:terminals" | "studio:schedules";
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "onboarding" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "retryStart" | "openOutput" | "installApp" | "installAppFrom" | "studio:agents" | "studio:terminals" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/remove etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -1585,6 +1585,8 @@ export function App({
   boot,
   /** 514 — the apps installed in this workspace; their tiles follow the twelve built-in ones. */
   apps,
+  /** 514 — the archives the install picker offers, pushed when the door is opened. */
+  zipCandidates,
   /** Test / visual-QA seam — production always starts with rearranging off. */
   initialReorderMode = false,
   /** Test / visual-QA seam — production has no in-flight drag. */
@@ -1600,6 +1602,7 @@ export function App({
   initialTab?: TabId;
   selectedWsHash?: string;
   apps?: InstalledAppTile[];
+  zipCandidates?: { candidates: Array<{ path: string; name: string; dir: string }>; roots: string[] } | null;
   /**
    * SDD 504 — the host's discovery result. `undefined` means the host has not spoken yet, which is
    * exactly the first frame of every reload, and is why absence can no longer be read off `fleets`.
@@ -1643,6 +1646,12 @@ export function App({
   // t-be359b — pending "new …" studio waiting on a folder choice. Set only when more than one root is
   // configured; with a single root there is nothing to ask and the op is posted straight through.
   const [studioPick, setStudioPick] = useState<GlobalOp | null>(null);
+  /**
+   * 514 — the install door asks WHICH archive in our own chrome, the way "new …" asks which folder
+   * (t-be359b). The host answers with a candidate set; the picker filters it. A file dialog was the
+   * first shape and the wrong one: it hands the human the editor's chrome for a Tachyon decision.
+   */
+  const [appZips, setAppZips] = useState<{ candidates: Array<{ path: string; name: string; dir: string }>; roots: string[] } | null>(null);
   // The annotation is the guard: it is what keeps `studioFolders.ts` (which cannot import the JSX
   // module's type) structurally compatible with the picker it feeds.
   const studioFolders = useMemo<QuickPickerItem[]>(() => studioFolderItems(fleets), [fleets]);
@@ -1652,6 +1661,9 @@ export function App({
    * The host command still resolves the folder when no hash arrives, so the Command Palette door —
    * which has no surface of ours on screen — keeps the native list. Only this door changed.
    */
+  useEffect(() => {
+    if (zipCandidates) setAppZips(zipCandidates);
+  }, [zipCandidates]);
   const openStudio = (op: GlobalOp): void => {
     if (studioFolders.length > 1) setStudioPick(op);
     else dispatch?.global(op);
@@ -2013,6 +2025,10 @@ export function App({
                   ? <Icon name="gripper" />
                   : <SortIcon dir={launcherParsed.kind === "name" ? launcherParsed.mode : "name-asc"} />}
               </button>
+              {/* 514 — the install door is the SAME affordance Agents/Terminals use to add one: the
+                  section header's `+`. It shipped as a full-width button in a row of its own, which
+                  read as a banner over the grid instead of an action on the section. */}
+              <Act icon="add" title="Add app" on={() => dispatch?.global("installApp")} />
             </span>
           );
         })()}
@@ -2100,12 +2116,6 @@ export function App({
           <AttentionStack fleets={fleets} dispatch={dispatch} />
         ) : tab === "Apps" ? (
           // t-6e2952 — one grid for the window (Control is a singleton), so no folder header above it.
-          <>
-          {/* 514 — the install door sits BESIDE the grid, never inside it: the grid is a labelled
-              group of destinations, and an action in it reads as a thirteenth destination. */}
-          <div class="ctl-grid-actions">
-            <Button class="ctl-add-app" data-testid="launcher-add-app" icon="add" onClick={() => dispatch?.global("installApp")}>Add app</Button>
-          </div>
           <ControlGrid
             onOpen={(section) => dispatch?.global("openControl", undefined, section)}
             engineHasError={engineHasError}
@@ -2116,7 +2126,6 @@ export function App({
             draggingSection={initialDraggingSection}
             dropTargetSection={initialDropTarget}
           />
-          </>
         ) : selected ? (
           // t-72ff5a — the seven scoped tabs render exactly the selected project, with no folder
           // header and no aggregation.
@@ -2144,6 +2153,22 @@ export function App({
             const from = continuePick;
             setContinuePick(null);
             dispatch?.continueTask?.(from, toName, selectedHash);
+          }}
+        />
+      ) : null}
+      {appZips ? (
+        <QuickPicker
+          open
+          data-testid="app-zip-picker"
+          title="Install an app"
+          subtitle="Choose the .zip to install. Reinstalling the same app replaces it."
+          placeholder="Filter archives by name or folder"
+          emptyText={`No .zip found in ${appZips.roots.join(", ")}`}
+          items={appZips.candidates.map((c) => ({ id: c.path, label: c.name, description: c.dir }))}
+          onClose={() => setAppZips(null)}
+          onSelect={(item) => {
+            setAppZips(null);
+            dispatch?.global("installAppFrom", item.id);
           }}
         />
       ) : null}
