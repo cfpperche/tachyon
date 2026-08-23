@@ -203,3 +203,59 @@ export function findAppZipCandidates(roots: readonly string[], limit = 200, maxD
   const unique = new Map(found.map((entry) => [entry.path, entry]));
   return [...unique.values()].sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
+
+/** One row of the app picker's directory view. */
+export interface AppBrowseEntry {
+  name: string;
+  path: string;
+  kind: "dir" | "zip";
+}
+
+export interface AppBrowseListing {
+  dir: string;
+  /** the parent directory, or undefined at the filesystem root. */
+  parent?: string;
+  entries: AppBrowseEntry[];
+  /** why the listing is empty, when it is not simply empty. */
+  error?: string;
+}
+
+/**
+ * 514 — one directory, as a picker needs to draw it.
+ *
+ * Directories first, then archives, both alphabetical — the order every file picker uses, because a
+ * human scanning a narrow list is looking for a folder to enter or a file to take, in that order.
+ * Hidden entries are skipped unless the human typed a path into one: `.tachyon`, `.git` and their
+ * kind are noise in a chooser, but a path someone deliberately entered is not noise.
+ *
+ * An unreadable directory answers with a REASON rather than an empty list. "Nothing here" and
+ * "permission denied" look identical in a list and are not the same fact.
+ */
+export function browseForAppZip(dir: string, limit = 500): AppBrowseListing {
+  const resolved = path.resolve(dir);
+  const parent = path.dirname(resolved);
+  const listing: AppBrowseListing = {
+    dir: resolved,
+    ...(parent !== resolved ? { parent } : {}),
+    entries: [],
+  };
+  let raw: fs.Dirent[];
+  try {
+    raw = fs.readdirSync(resolved, { withFileTypes: true });
+  } catch (error) {
+    return { ...listing, error: error instanceof Error ? error.message : String(error) };
+  }
+  const dirs: AppBrowseEntry[] = [];
+  const zips: AppBrowseEntry[] = [];
+  for (const entry of raw) {
+    if (entry.name.startsWith(".")) continue;
+    const full = path.join(resolved, entry.name);
+    let stat: fs.Stats;
+    try { stat = fs.statSync(full); } catch { continue; } // a broken link is not a choice
+    if (stat.isDirectory()) dirs.push({ name: entry.name, path: full, kind: "dir" });
+    else if (stat.isFile() && entry.name.toLowerCase().endsWith(".zip")) zips.push({ name: entry.name, path: full, kind: "zip" });
+  }
+  const byName = (a: AppBrowseEntry, b: AppBrowseEntry): number => a.name.localeCompare(b.name);
+  listing.entries = [...dirs.sort(byName), ...zips.sort(byName)].slice(0, limit);
+  return listing;
+}

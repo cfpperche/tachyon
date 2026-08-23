@@ -86,9 +86,17 @@ export interface AppZipsMessage {
   candidates: Array<{ path: string; name: string; dir: string }>;
   /** where the scan looked — the empty state has to say it, or "no zips" reads as a bug. */
   roots: string[];
+  /** 514 — set once the human starts browsing; absent while the nearby archives are showing. */
+  listing?: { dir: string; parent?: string; entries: Array<{ name: string; path: string; kind: "dir" | "zip" }>; error?: string };
+  /** the query failed — said out loud, because an empty list is not the same fact. */
+  error?: string;
 }
-export function appZipsMessage(candidates: AppZipsMessage["candidates"], roots: string[]): AppZipsMessage {
-  return { type: APP_ZIPS, candidates, roots };
+export function appZipsMessage(
+  candidates: AppZipsMessage["candidates"],
+  roots: string[],
+  extra: { listing?: AppZipsMessage["listing"]; error?: string } = {},
+): AppZipsMessage {
+  return { type: APP_ZIPS, candidates, roots, ...(extra.listing ? { listing: extra.listing } : {}), ...(extra.error ? { error: extra.error } : {}) };
 }
 
 /** the union the sidebar webview listens for (host → webview). */

@@ -40,6 +40,12 @@ export const EXTENSION_QUERY_ACTIONS = [
   "agent-profile.forget-plan",
   "agent-profile.authorizable-capabilities",
   "secrets.inventory",
+  // 514 — the app catalog and the archives its picker offers. This list is not documentation: the
+  // RESULT of a query is validated against it (`protocol.ts`), so an action that exists in the union
+  // below and is missing here parses on the way in and is refused on the way out. That is exactly how
+  // both of these shipped broken in 0.93.48 — the picker rendered "no .zip found" for a query that
+  // had been rejected, which is an empty answer wearing a measured one's clothes.
+  "apps.list", "apps.zip-candidates", "apps.browse",
   "tmux.snapshot", "tmux.health", "tmux.capture",
 ] as const;
 
@@ -135,6 +141,8 @@ export const extensionQuerySchema = z.union([
    *  A bounded scan of a few obvious places, never a filesystem browser: the answer is a candidate set,
    *  which is exactly what the in-webview QuickPicker is for. */
   z.object({ action: z.literal("apps.zip-candidates") }).strict(),
+  /** 514 — one directory for the app picker to draw: folders to enter, archives to take. */
+  z.object({ action: z.literal("apps.browse"), dir: text(4_096, 1) }).strict(),
   z.object({ action: z.literal("worktrees.list") }).strict(),
   // spec 444 — registry entries + fail-closed hygiene classification (Control Worktrees tab).
   z.object({ action: z.literal("worktrees.classified") }).strict(),

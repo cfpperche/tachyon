@@ -61,3 +61,112 @@
 .ds-qp-detail { font-size: 11px; color: var(--ds-muted); line-height: 1.3; }
 .ds-qp-foot { display: flex; gap: 14px; padding: 6px 12px; border-top: 1px solid var(--ds-border); color: var(--ds-muted); font-size: 10px; }
 .ds-qp-foot kbd { font-family: inherit; border: 1px solid var(--ds-border); border-radius: 3px; padding: 0 4px; margin-right: 3px; }
+
+/* ── PathPicker (514 — a browsing file chooser that fits a sidebar rail) ──────────────────────
+ * Same scrim and card as the QuickPicker above, because they are the same GESTURE: an overlay that
+ * takes the surface until a choice is made. What differs is the body — a breadcrumb, a directory
+ * list, and rows tall enough to be hit at rail width.
+ */
+.pp-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ds-z-dialog, 40);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--ds-spacing-size160) var(--ds-spacing-size80) var(--ds-spacing-size80);
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--vscode-editor-background, #1e1e1e) 42%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
+}
+.pp-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  max-height: 78vh;
+  overflow: hidden;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--ds-card);
+  box-shadow: 0 12px 32px color-mix(in srgb, #000 45%, transparent);
+}
+.pp-head { padding: var(--ds-spacing-size120) var(--ds-spacing-size120) var(--ds-spacing-size80); }
+.pp-title { font-weight: 600; font-size: var(--ds-operator-label1); }
+.pp-subtitle { color: var(--ds-muted); font-size: var(--ds-reading-body3); line-height: var(--ds-reading-body3-line); }
+.pp-crumbs {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--ds-spacing-size20);
+  overflow-x: auto;
+  padding: 0 var(--ds-spacing-size120) var(--ds-spacing-size40);
+  font-size: var(--ds-operator-label1);
+}
+.pp-crumb {
+  background: none;
+  border: 0;
+  padding: var(--ds-spacing-size20) var(--ds-spacing-size40);
+  border-radius: var(--ds-radius);
+  color: var(--ds-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  font: inherit;
+}
+.pp-crumb:hover { color: var(--vscode-foreground); background: var(--ds-hover-row); }
+.pp-crumb:focus-visible { outline: 2px solid var(--ds-focus); outline-offset: 1px; }
+.pp-crumb-sep, .pp-crumb-more { color: var(--ds-muted); }
+.pp-input {
+  margin: 0 var(--ds-spacing-size120) var(--ds-spacing-size80);
+  padding: var(--ds-spacing-size80);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--vscode-input-background, transparent);
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+  font: inherit;
+}
+.pp-input:focus-visible { outline: 2px solid var(--ds-focus); outline-offset: -1px; }
+.pp-list { overflow-y: auto; padding: 0 var(--ds-spacing-size80) var(--ds-spacing-size80); }
+.pp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-spacing-size80);
+  width: 100%;
+  padding: var(--ds-spacing-size80);
+  border: 0;
+  border-radius: var(--ds-radius);
+  background: none;
+  color: var(--vscode-foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pp-row.is-active { background: var(--ds-hover-row); }
+.pp-row:focus-visible { outline: 2px solid var(--ds-focus); outline-offset: -2px; }
+.pp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-where {
+  margin-left: auto;
+  color: var(--ds-muted);
+  font-size: var(--ds-operator-label1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+  direction: rtl; /* a long path is distinguished by its TAIL, so that is the end that must survive */
+}
+.pp-empty {
+  padding: var(--ds-spacing-size120);
+  color: var(--ds-muted);
+  font-size: var(--ds-reading-body3);
+  line-height: var(--ds-reading-body3-line);
+}
+.pp-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-spacing-size80);
+  padding: var(--ds-spacing-size80) var(--ds-spacing-size120);
+  border-top: 1px solid var(--ds-border);
+  color: var(--ds-muted);
+  font-size: var(--ds-operator-label1);
+}

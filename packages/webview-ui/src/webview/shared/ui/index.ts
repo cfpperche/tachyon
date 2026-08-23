@@ -40,3 +40,6 @@ export {
   type ToastItem,
   type ToastApi,
 } from "./Toast";
+
+export { PathPicker, type PathPickerEntry, type PathPickerListing, type PathPickerProps } from "./PathPicker";
+export { breadcrumbSegments, looksLikePath } from "./pathPickerModel";
