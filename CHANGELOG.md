@@ -4,6 +4,41 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.46 — resposta vazia não é evidência
+
+A regra que a 0.93.45 devolveu à vida apagou, na instalação seguinte, o runtime da engine que estava
+para subir. Aconteceu na máquina do dono, e a falha é da regra que eu escrevi.
+
+O reclaim de arranque rodou na **janela de ativação** — engine antiga já parada, nova ainda não
+iniciada. A medição pelo núcleo respondeu "olhei e não há engine nenhuma", e o código tratou isso como
+evidência. O cinto que eu tinha posto — "guarda o mais recente" — escolheu pelo mtime do diretório,
+que apontava para um runtime antigo. Coletou-se exatamente o que a engine ia usar.
+
+### Dois erros, e o segundo anulava o primeiro cinto
+
+**Ter medido e não ter achado ninguém não prova que nada é necessário.** Um runtime só é coletado
+quando o exame identificou **positivamente** algum como em uso. É o método da faxina aplicado ao caso
+vazio, onde não saber é razão para manter.
+
+**Recência nunca foi evidência de uso.** O mtime de um diretório não diz qual runtime a próxima
+ativação vai usar — no incidente, apontou justamente para o errado. O cinto saiu.
+
+### E um terceiro, achado ao medir o estrago
+
+O núcleo guarda no link do executável o caminho **original** e lhe acrescenta " (deleted)" quando o
+arquivo some — então resolver o link falha exatamente onde a resposta mais importa. Uma engine viva
+cujo runtime alguém já apagou ficava **invisível para o próprio exame**, convidando a mesma remoção
+outra vez. Agora o link é lido, não resolvido.
+
+As razões de retenção também deixaram de mentir: "uma engine viva roda nele" e "nada foi medido" são
+fatos diferentes e agora chegam ao humano em frases diferentes.
+
+### O estrago foi reparado
+
+O runtime foi restaurado byte a byte a partir do Node do próprio editor, cujo resumo criptográfico é
+exatamente o identificador do diretório removido — verificado por hash e por execução, com
+autorização do dono. Nada foi reconstruído por aproximação.
+
 ## 0.93.45 — a regra existia e nunca pôde disparar
 
 Depois da faxina da 0.93.34, o maior item de estado machine-local desta máquina passou a ser
