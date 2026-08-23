@@ -178,9 +178,13 @@ describe("loadPlugin — skills discovery (spec 251)", () => {
     const { plugin } = loadPlugin(dir);
     const ws = makeWorkspace(["claude", "codex"]);
     const preview = previewInstall(plugin!, ws, new Set(["claude", "codex"] as const));
-    // each declared runtime receives the skill, so neither should warn it materializes nothing.
+    // 515 — the plugin contributes a skill to each declared runtime, so neither warns it materializes
+    // nothing. What changed is HOW that is known: the payload carries the skill. The old check read the
+    // planned workspace targets, which a workspace install no longer produces — and would have started
+    // warning "materializes nothing" about a plugin whose entire purpose is that skill.
     expect(preview.warnings.some((w) => /nothing/i.test(w))).toBe(false);
-    expect(preview.skillTargets.map((t) => t.runtime).sort()).toEqual(["claude", "codex"]);
+    expect(preview.payloadSkills).toEqual(["skilled-thing"]);
+    expect(preview.skillTargets).toEqual([]);
   });
 
   it("warns on a mistyped plugin-root placeholder (${PLUGIN_ROOT}) — but not the correct token", () => {
@@ -277,14 +281,19 @@ describe("loadPlugin — skills discovery (spec 251)", () => {
     expect(errors.some((e) => /too many entries/.test(e))).toBe(true);
   });
 
-  it("previewInstall plans skill targets for a hooks+skills plugin (Step 3 wires them)", async () => {
+  it("515: a hooks+skills install wires the hook and plans NO workspace skill dir", async () => {
+    // The hook is a merge into the project's own settings file — there is nowhere else it could live,
+    // and un-merging it needs the record. The skill is not: its payload is addressable where it landed,
+    // and each agent's grant decides who reads it. So one of these two is still planned at install and
+    // the other is not, and that asymmetry is the change.
     const dir = makePlugin({ runtimes: ["claude"] });
     addSkill(dir, "my-skill");
     const ws = makeWorkspace(["claude"]);
     const { plugin } = loadPlugin(dir);
     const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
     expect(preview.steps).toHaveLength(1); // the hook
-    expect(preview.skillTargets.map((t) => t.destRel)).toEqual([".claude/skills/my-skill"]); // the skill
+    expect(preview.skillTargets).toEqual([]);
+    expect(preview.payloadSkills).toEqual(["my-skill"]);
   });
 });
 
@@ -700,14 +709,22 @@ describe("MCP install / remove I/O (spec 254 Step 4)", () => {
 
 describe("skill install / remove I/O (spec 251 Step 3)", () => {
   const SKILL = (ws: string, rtDir: string, name: string) => path.join(ws, rtDir, "skills", name, "SKILL.md");
+  /**
+   * Install, then export every skill — which after 515 is TWO acts, not one.
+   *
+   * `decisions` is still keyed by workspace dest, but it is now consumed where the decision belongs:
+   * the export door. Install plans no skill dest at all, so a Keep/Replace read off `preview` would be
+   * read off an empty list and silently mean "replace nothing".
+   */
   const installWith = async (pluginDir: string, ws: string, decisions: Record<string, "keep" | "replace"> = {}) => {
     const { plugin } = loadPlugin(pluginDir);
     const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
     const result = await applyInstall(plugin!, preview, ws, detectRuntimes(ws), { skillDecisions: decisions });
     if (result.installed) for (const skill of plugin!.skills) {
-      const targets = preview.skillTargets.filter((t) => t.skill === skill.name);
-      if (targets.some((t) => t.collision && decisions[t.destRel] === "keep")) continue;
-      applyContribution(plugin!.manifest.name, { kind: "skill", name: skill.name }, ws, { replace: targets.some((t) => decisions[t.destRel] === "replace") });
+      const dests = Object.entries(decisions).filter(([dest]) => path.posix.basename(dest) === skill.name);
+      if (dests.some(([, choice]) => choice === "keep")) continue;
+      const exported = applyContribution(plugin!.manifest.name, { kind: "skill", name: skill.name }, ws, { replace: dests.some(([, choice]) => choice === "replace") });
+      if (!exported.applied && exported.errors.some((e) => /collides/.test(e))) return { installed: false, runtimes: result.runtimes, errors: exported.errors };
     }
     if (result.installed) for (const event of new Set(Object.values(plugin!.blocks).flatMap((block) => Object.keys(block ?? {})))) applyContribution(plugin!.manifest.name, { kind: "hook", name: event }, ws);
     return result;
@@ -736,6 +753,8 @@ describe("skill install / remove I/O (spec 251 Step 3)", () => {
   });
 
   it("refuses (fail-closed) a colliding skill with no Keep/Replace decision", async () => {
+    // 515 — the refusal now comes from the export door rather than from install, and that is the point:
+    // the human's own skill is only ever at risk when someone asks for it to be written over.
     const dir = makeSkillsOnlyPlugin("sk", ["claude"]);
     addSkill(dir, "dup");
     const ws = makeWorkspace(["claude"]);
@@ -763,6 +782,7 @@ describe("skill install / remove I/O (spec 251 Step 3)", () => {
   });
 
   it("Replace overwrites the user's skill (consented) and records it", async () => {
+    // 515 — same consent, asked by the door that actually writes.
     const dir = makeSkillsOnlyPlugin("sk", ["claude"]);
     addSkill(dir, "dup", { description: "plugin version" });
     const ws = makeWorkspace(["claude"]);
@@ -797,16 +817,20 @@ describe("skill install / remove I/O (spec 251 Step 3)", () => {
     expect(skillTargets).toEqual([".claude/skills/keep-me"]); // lockfile no longer records 'old'
   });
 
-  it("a dest that appeared between preview and apply is refused (fingerprint guard)", async () => {
+  it("515: a dest that appears before the export is refused there, and the human's file is untouched", async () => {
+    // The fingerprint guard covered a race between previewing an install and applying it, for a dest the
+    // install was going to write. The install writes none, so the race moved with the write: it is the
+    // export that finds the human's directory, and it refuses rather than overwriting.
     const dir = makeSkillsOnlyPlugin("sk", ["claude"]); addSkill(dir, "race");
     const ws = makeWorkspace(["claude"]);
     const { plugin } = loadPlugin(dir);
-    const preview = previewInstall(plugin!, ws, detectRuntimes(ws)); // 'race' absent → collision:false
+    const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
+    expect((await applyInstall(plugin!, preview, ws, detectRuntimes(ws))).installed).toBe(true);
     fs.mkdirSync(path.join(ws, ".claude/skills/race"), { recursive: true });
     fs.writeFileSync(SKILL(ws, ".claude", "race"), "USER appeared late");
-    const res = await applyInstall(plugin!, preview, ws, detectRuntimes(ws)); // fresh sees the collision → fingerprint mismatch
-    expect(res.installed).toBe(false);
-    expect(res.errors[0]).toMatch(/changed since preview/);
+    const exported = applyContribution("sk", { kind: "skill", name: "race" }, ws);
+    expect(exported.applied).toBe(false);
+    expect(exported.errors[0]).toMatch(/collides with an existing skill/);
     expect(fs.readFileSync(SKILL(ws, ".claude", "race"), "utf8")).toBe("USER appeared late"); // untouched
   });
 
@@ -837,15 +861,21 @@ describe("skill install / remove I/O (spec 251 Step 3)", () => {
     expect(fs.readFileSync(path.join(ws, ".claude/settings.json"), "utf8")).toBe("USER SETTINGS"); // NOT deleted
   });
 
-  it("a re-install of the same plugin's own skill is NOT a collision (it's ours)", async () => {
+  it("515: a re-install after an export is not a collision — an install plans no dest to collide with", async () => {
+    // Before 515 this asked whether the install's own planned dest collided with what a previous install
+    // of the SAME plugin had left. There is no such plan any more: the install writes nothing to the
+    // project, so a re-install has nothing to collide with and needs no decision. What was exported
+    // stays exported, and the export door is where the collision question now lives.
     const dir = makeSkillsOnlyPlugin("sk", ["claude"]);
     addSkill(dir, "mine");
     const ws = makeWorkspace(["claude"]);
     await installWith(dir, ws);
+    expect(fs.existsSync(SKILL(ws, ".claude", "mine"))).toBe(true);
     const { plugin } = loadPlugin(dir);
     const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
-    expect(preview.skillTargets.find((t) => t.skill === "mine")?.collision).toBe(false); // ours, not a user collision
-    expect((await installWith(dir, ws)).installed).toBe(true); // re-install succeeds with no decision
+    expect(preview.skillTargets).toEqual([]);
+    expect((await applyInstall(plugin!, preview, ws, detectRuntimes(ws))).installed).toBe(true);
+    expect(fs.existsSync(SKILL(ws, ".claude", "mine"))).toBe(true); // and the export survived it
   });
 });
 
@@ -1264,10 +1294,11 @@ describe("previewInstall — declared-runtime targeting (spec 263)", () => {
       { rt: "claude", file: ".claude/settings.json", cmds: [RESOLVED(ws)] },
       { rt: "codex", file: ".codex/hooks.json", cmds: [RESOLVED(ws, "codex")] },
     ]);
-    expect(preview.skillTargets.map((t) => ({ rt: t.runtime, skill: t.skill, dest: t.destRel, collision: t.collision }))).toEqual([
-      { rt: "claude", skill: "deploy", dest: ".claude/skills/deploy", collision: false },
-      { rt: "codex", skill: "deploy", dest: ".agents/skills/deploy", collision: false },
-    ]);
+    // 515 — the frozen plan no longer contains a skill materialization, and that is the golden fact
+    // this scenario now guards: an install writes the project's SETTINGS (there is nowhere else a hook
+    // can live) and nothing else. Where the skill goes is a later, separate act.
+    expect(preview.skillTargets).toEqual([]);
+    expect(preview.payloadSkills).toEqual(["deploy"]);
     expect(preview.mcpTargets).toEqual([]);
   });
 
