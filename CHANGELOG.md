@@ -4,6 +4,37 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.58 — a concessão passa a ser o que entrega
+
+Instalar um plugin escrevia as skills dele em `.claude/skills`, `.agents/skills` e `.grok/skills`. Para
+todo mundo. Isso tornava a concessão por agente decorativa: o agente que recebeu a skill e o que não
+recebeu liam o mesmo diretório, e a tela dizia outra coisa.
+
+Agora o que a instalação deixa é o **payload**, em `.tachyon/plugins/<nome>/`. Quem escreve nos
+diretórios do projeto é a entrega — por agente, só o que aquele agente recebeu — ou você, pelo botão
+**Apply** no card, que já existia e agora é a porta explícita de exportar para o projeto. Desfazer tira
+os diretórios e deixa o payload: desexportar não é desinstalar.
+
+O que a instalação **continua** escrevendo: hooks mesclados no settings do projeto, servidores MCP e
+git hooks. Para essas coisas não existe outro lugar onde morar, e desfazê-las precisa do registro —
+só ele sabe qual linha num arquivo compartilhado era nossa.
+
+### O que a mudança revelou
+
+Quatro defeitos, todos da mesma raiz: o código media "o que esta instalação fez" contando escritas no
+projeto, e isso deixou de ser verdade.
+
+Um plugin que só traz skills não instalava — e essa é a forma comum, `sdd` e `agent-browser` são os
+dois assim. A lista de runtimes do plugin ficava vazia, que é justamente o que a concessão lê.
+Reinstalar **apagava** uma exportação sua, porque a limpeza de órfãos lia "o que a nova versão ainda
+traz" do plano de escrita, e um plano vazio diz, ao pé da letra, que tudo é órfão. E reinstalar
+**esquecia** a exportação, deixando o diretório no disco sem nada que soubesse removê-lo.
+
+### Medido neste workspace antes de mexer
+
+O registro declarava seis diretórios de skill; um existia no disco. A entrega já produzia um número
+diferente do que o registro afirmava — a mudança não criou essa distância, tornou-a a regra.
+
 ## 0.93.57 — o seletor mede o que sugere, e ganha a segunda mão
 
 Duas correções que vieram do uso.
