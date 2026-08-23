@@ -4,6 +4,45 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.52 — o ladrilho ganha menu, e a ação vira linha de tabela
+
+Botão direito num ladrilho do launcher abre um menu. O que ele oferece é **dado**, não ramo:
+acrescentar "Novo agente" ao Fleet mais tarde é uma linha numa tabela, não um `if` dentro de um
+componente.
+
+Duas fontes, uma forma. Uma tela embutida declara suas ações ao lado do metadado que já diz o que um
+ladrilho **é**; um app instalado declara as dele no próprio manifesto, e elas chegam junto com o
+catálogo. **Desinstalar** não é declarado por ninguém: é contribuído pelo produto e apenas para um
+ladrilho que veio de disco. A regra é estrutural — nenhum ponto de chamada pode errá-la, e uma tela do
+núcleo nunca recebe essa linha.
+
+### O componente foi medido contra os padrões, não montado no olho
+
+O menu do quadro de tarefas já tinha a forma certa e é de onde este parte. O que as referências somam:
+
+- **Shift+F10 e a tecla de menu abrem o menu.** Sem isso ele é só-mouse, e toda ação dentro dele fica
+  inalcançável por teclado — a maior lacuna do menu antigo.
+- **Escape devolve o foco a quem abriu.** Fechar e largar o foco no documento deixa quem usa teclado
+  longe de onde estava.
+- **Home/End e salto pela primeira letra**, que é o resto da gramática de menu.
+- **Separador, e o item destrutivo pintado à parte, por último**, com uma confirmação que diz o
+  **limite** do que ele faz.
+- **Item indisponível fica listado, com o motivo.** Uma linha ausente é indistinguível de uma ação que
+  não existe.
+- **O painel vira em vez de deslizar** quando não cabe. Deslizar mantém o menu na tela e o desgruda do
+  objeto — a única coisa que um menu contextual não pode fazer. E ele fecha ao rolar ou redimensionar,
+  pelo mesmo motivo.
+
+### E a primeira ação específica, como prova
+
+**Nova tarefa**, no ladrilho do quadro, abre direto a tela de criação — a mesma que o botão do próprio
+quadro já usava. Uma linha na tabela e um ramo na porta do host: é esse o custo que a arquitetura
+promete para a próxima ação.
+
+Um app instalado também pode declarar as suas, e elas viajam para a **página dele**: o produto nunca
+interpreta o vocabulário de um app. Os dois nomes que são nossos — abrir e desinstalar — são recusados
+na validação do manifesto.
+
 ## 0.93.51 — as duas metades
 
 Dois defeitos, e os dois com a mesma forma: metade de um par simétrico foi corrigida, e o teste
