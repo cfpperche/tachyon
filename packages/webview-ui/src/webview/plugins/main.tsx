@@ -99,6 +99,7 @@ function PluginsRoot() {
       checkUpdates: () => post({ type: "checkUpdates" }),
       checkPluginUpdate: (name: string) => post({ type: "checkPluginUpdate", name }),
       install: (spec: string) => post({ type: "install", spec }),
+      installZip: () => post({ type: "installZip" }),
       update: (name: string) => post({ type: "update", name }),
       reinstall: (name: string) => post({ type: "reinstall", name }),
       remove: (name: string) => post({ type: "remove", name }),

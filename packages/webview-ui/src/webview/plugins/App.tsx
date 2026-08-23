@@ -21,6 +21,7 @@ export interface PluginsDispatch {
   checkUpdates(): void;
   checkPluginUpdate(name: string): void;
   install(spec: string): void;
+  installZip(): void;
   update(name: string): void;
   reinstall(name: string): void;
   remove(name: string): void;
@@ -147,7 +148,10 @@ function Card({ p, dispatch, mcpLocked }: { p: InstalledPluginVM; dispatch: Plug
         </div>
       </div>
       <div class="pmeta">
-        {p.sourceSpec ? <span class="src">{p.sourceSpec}</span> : <span class="ds-dim">local dir install</span>}
+        {/* 515 — "local install" now covers two shapes: a directory someone pointed at, and a zip
+            someone chose. Neither has a source to re-resolve, which is why the actions above are
+            gated on `sourceSpec` and not on this line. */}
+        {p.sourceSpec ? <span class="src">{p.sourceSpec}</span> : <span class="ds-dim">installed from a local file</span>}
         {p.shortCommit && <><span>·</span><span class="ds-mono ds-dim">{p.shortCommit}</span></>}
         <span>·</span>
         {p.runtimes.map((pill) => <RuntimePillView key={pill.runtime} pill={pill} />)}
@@ -576,6 +580,9 @@ export function App({ vm, consent, busy, dispatch }: { vm?: PluginsViewModel; co
           onKeyDown={(e) => { if (e.key === "Enter") submitSpec(); }}
         />
         <Button variant="primary" disabled={!spec.trim()} onClick={submitSpec}>Add</Button>
+        {/* 515 — the second door, beside the first rather than hidden behind a menu: installing a
+            local archive is how a plugin is developed and how one is tried before publishing. */}
+        <Button icon="file-zip" title="Install a plugin from a .zip on this machine" onClick={() => dispatch.installZip()}>From zip</Button>
       </div>
       <Tabs
         items={[

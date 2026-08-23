@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import JSZip from "jszip";
 import { contained } from "../files/contained.js";
+import { extractZipContained } from "../files/extractZip.js";
 
 const APP_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
@@ -154,23 +154,6 @@ export function readInstalledApps(workspaceRoot: string): InstalledAppCatalog {
   return { apps, warnings };
 }
 
-async function extractAppZip(zipPath: string, destination: string): Promise<void> {
-  const zip = await JSZip.loadAsync(fs.readFileSync(zipPath));
-  for (const entry of Object.values(zip.files)) {
-    // This containment is hygiene, not a security barrier: an installed app receives unrestricted Bridge
-    // access. It prevents a malformed archive from scattering files; it does not sandbox the app.
-    const archivePath = entry.unsafeOriginalName ?? entry.name;
-    const target = contained(destination, archivePath);
-    if (!target) throw new Error(`zip entry path is outside the app directory: ${archivePath}`);
-    if (entry.dir) {
-      fs.mkdirSync(target, { recursive: true });
-      continue;
-    }
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, await entry.async("nodebuffer"));
-  }
-}
-
 /**
  * Install an app tree from zip. This is intentionally distinct from spec 265's pinned-binary extractor:
  * that path requires innerPath/binSha256 and materializes one executable; an app is an unhashed file tree.
@@ -180,7 +163,7 @@ export async function installAppZip(workspaceRoot: string, zipPath: string): Pro
   fs.mkdirSync(tachyonRoot, { recursive: true });
   const staging = fs.mkdtempSync(path.join(tachyonRoot, ".app-install-"));
   try {
-    await extractAppZip(zipPath, staging);
+    await extractZipContained(zipPath, staging, "app");
     const parsed = readOneApp(staging);
     if (!parsed.ok) throw new Error(parsed.errors.join("; "));
 

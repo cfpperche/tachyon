@@ -100,7 +100,7 @@ export function confirmMessage(payload: ConfirmPayload): ConfirmActionMessage {
 /** spec 280 — the webview→host action type union (the Plugins view's inbound messages). Typing the host's
  *  InboundMsg.type against this makes a typo'd `case "…"` a compile error (the typed-union convention). */
 export type PluginsActionType =
-  | "ready" | "refresh" | "poll" | "checkUpdates" | "checkPluginUpdate" | "install" | "update" | "reinstall" | "remove"
+  | "ready" | "refresh" | "poll" | "checkUpdates" | "checkPluginUpdate" | "install" | "installZip" | "update" | "reinstall" | "remove"
   | "reselect" | "repair" | "rehydrate" | "confirm" | "cancel" | "openConfig" | "openDocs" | "installExternal"
   | "applyMcp" | "unapplyMcp" | "applyContribution" | "unapplyContribution";
 
