@@ -24,6 +24,7 @@ function installPreview(over: Partial<InstallPreview> = {}): InstallPreview {
     manifest: { name: "tdd-guard", version: "1.3.0", description: "", runtimes: ["claude", "codex"], dependencies: [], blocks: { claude: "claude/", codex: "codex/" }, gitHooks: {}, tools: {}, data: {}, externalTools: {} },
     steps: [step("claude", ".claude/settings.json", ["bash .tachyon/plugins/tdd-guard/claude/guard.sh"]), step("codex", ".codex/hooks.json", ["bash .tachyon/plugins/tdd-guard/codex/verify.sh"])],
     skillTargets: [],
+    payloadSkills: [],
     mcpTargets: [],
     mcpConfigBefore: [],
     gitHookTargets: [],

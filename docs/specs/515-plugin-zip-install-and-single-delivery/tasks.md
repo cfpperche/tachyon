@@ -7,6 +7,8 @@ corrija `plan.md` antes de seguir._
 
 **Dogfood:** `npx vite-node scripts/dogfood/plugin-zip-install.ts`
 
+**Dogfood:** `npx vite-node scripts/dogfood/plugin-single-delivery.ts`
+
 ## Visual QA
 
 Evidence: `.tachyon/visual-qa/515-plugin-zip-picker/` (gerado por `test/browser/pluginZipPickerShots.test.ts`)
@@ -37,26 +39,34 @@ ordem bidi dos caminhos — ambos defeitos do 514 que só o screenshot revelou.
 
 ## Fatia 2 — uma entrega, não duas
 
-- [ ] **T9 (R1, PRIMEIRO)** — `restoreWorkspaceSkillDest` passa a DERIVAR o dest do payload que a
+- [x] **T9 (R1, PRIMEIRO)** — `restoreWorkspaceSkillDest` passa a DERIVAR o dest do payload que a
   concessão nomeia, em vez de consultar o lockfile (que a fatia 2 esvazia). Provar com um agente codex
   cuja concessão é entregue sem nenhum registro de `skill-dir` existindo. Se falhar, a fatia para.
-- [ ] **T10** — `previewInstall`/`applyInstall` deixam de planejar e escrever `skill-dir` de
+- [x] **T10** — `previewInstall`/`applyInstall` deixam de planejar e escrever `skill-dir` de
   workspace. MCP, hooks, git hooks, tools e data seguem intactos.
-- [ ] **T11** — o lockfile deixa de receber `skill-dir` no install. O schema não muda: `skill-dir`
+- [x] **T11** — o lockfile deixa de receber `skill-dir` no install. O schema não muda: `skill-dir`
   continua válido porque a exportação (fatia 3) o escreve.
-- [ ] **T12** — desinstalar continua removendo o que o lockfile registra, inclusive `skill-dir` de
+- [x] **T12** — desinstalar continua removendo o que o lockfile registra, inclusive `skill-dir` de
   uma instalação anterior (R3): a assimetria durante a transição é comportamento correto, não bug.
-- [ ] **T13** — testes: instalar não cria diretório em `.claude`/`.agents`/`.grok`; a concessão
+- [x] **T13** — testes: instalar não cria diretório em `.claude`/`.agents`/`.grok`; a concessão
   continua entregando; desinstalar remove entrada mesclada de MCP e hook exatamente como antes.
 
 ## Fatia 3 — a porta explícita de exportação
 
-- [ ] **T14** — operação de exportar: `planSkillTargets` com `WORKSPACE_DESTS`, materializa e registra
-  no lockfile como `skill-dir`.
-- [ ] **T15** — operação de desfazer: remove exatamente o que a exportação registrou.
-- [ ] **T16** — ação no card do plugin, com o estado visível (exportado ou não).
-- [ ] **T17** — testes: exportar cria os diretórios dos runtimes presentes; desfazer os remove;
-  desinstalar um plugin exportado remove os dois; exportar nunca é pré-requisito para a concessão.
+**Ela já existia.** O `applyContribution({kind:"skill"})` do spec 486 — o botão `Apply` no card, ao
+lado de `installed · not applied` — é a porta que esta fatia ia construir. Só tinha o mesmo defeito do
+T9: resolvia os destinos lendo o lockfile. Por isso as fatias 2 e 3 landaram juntas: entre uma e outra,
+`Apply` responderia "plugin não tem skill chamada X" para uma skill listada no próprio card.
+
+- [x] **T14** — exportar DERIVA os destinos (`lock.runtimes` × diretório de skills de cada runtime) em
+  vez de lê-los, materializa, e registra `skill-dir` no lockfile. Registro existente ganha quando há —
+  uma instalação com escopo de agente escreve no harness daquele agente, que nenhum layout deriva.
+- [x] **T15** — desfazer remove o que a exportação registrou E apaga o registro; o payload fica.
+- [x] **T16** — a ação no card já existia (`Apply` / `Unapply`, com o estado `installed · not applied`).
+- [x] **T17** — testes: `test/unit/pluginSingleDelivery.test.ts` (8 casos) cobre exportar nos runtimes
+  consentidos, desfazer, colisão com o diretório do humano, re-exportar sobre a nossa própria
+  exportação, e as duas regressões de reinstalação. A independência entre exportar e conceder está no
+  dogfood: a entrega ao codex acontece com o lockfile declarando zero `skill-dir`.
 
 ## Verification
 

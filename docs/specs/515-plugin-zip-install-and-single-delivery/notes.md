@@ -132,3 +132,61 @@ ele mora.
 
 `onSystemBrowse` é opcional no componente de propósito: superfície sem diálogo para oferecer não desenha
 botão morto.
+
+## Fatia 2 — o que a implementação encontrou (2026-08-23)
+
+**T9 passou o portão, e o teste foi provado nos dois sentidos.** `restoreWorkspaceSkillDest` passou a
+receber o diretório de destino e o payload que a concessão nomeia, em vez de procurar um `skill-dir`
+no lockfile. O teste do t-318d7d foi reescrito com o lockfile declarando `targets: []` — a forma que a
+fatia 2 produz, escrita antes de a fatia 2 existir — e verificado vermelho com o código antigo, verde
+com o novo.
+
+### A fatia 3 já existia, e por isso as duas viraram uma
+
+Ao rodar a suíte, o `applyContribution({kind: "skill"})` do spec 486 quebrou. Fui ver: **a porta de
+exportação que a fatia 3 ia construir já está no produto** — é o botão `Apply` que aparece no card de
+cada skill, ao lado de `installed · not applied`. Ela só tinha o mesmo defeito do T9: resolvia os
+destinos lendo os `skill-dir` do lockfile, o registro que a fatia 2 esvazia.
+
+Então a fatia 3 não foi construir uma porta; foi fazer a porta existente **derivar** — os runtimes que
+a instalação consentiu (`lock.runtimes`) × o diretório de skills de cada runtime. Registro gravado
+continua ganhando quando existe, e isso não é tolerância a legado: uma instalação com escopo de AGENTE
+escreve no harness daquele agente, que nenhum layout de workspace deriva.
+
+Consequência de sequenciamento que vale registrar: **as fatias 2 e 3 não podiam ser lançadas separadas.**
+Entre uma e outra, o `Apply` responderia "plugin não tem skill chamada X" para uma skill listada no
+próprio card.
+
+### Quatro defeitos reais que a fatia expôs, nenhum previsto no plano
+
+Todos da mesma raiz: o código media "o que esta instalação fez" contando **escritas no workspace**, e
+isso deixou de ser verdade.
+
+1. **Um plugin só-de-skills não instalava.** A guarda `nothing to install` contava alvos de workspace
+   como prova de que algo aconteceu. Sem eles, ela recusava — e só-de-skills é a forma comum: `sdd` e
+   `agent-browser` são os dois assim.
+2. **`lock.runtimes` ficava vazio.** É derivado das materializações, e é o que a projeção de concessão
+   e a porta de exportação leem. Um plugin instalado para runtime nenhum.
+3. **Reinstalar apagava a exportação do humano.** A limpeza de órfãos lê "o que a nova versão ainda
+   entrega" do plano de escrita; plano vazio significa, ao pé da letra, que tudo é órfão. Medido: uma
+   reinstalação sem mudança nenhuma removeu a própria exportação. Agora a pergunta é feita ao PAYLOAD.
+4. **Reinstalar esquecia a exportação.** `keptTargets` reconstruía os alvos do escopo a partir do
+   plano, o que era seguro enquanto a instalação era a única autora deles. Agora a exportação também
+   escreve, e o diretório ficaria no disco sem nada que soubesse removê-lo.
+
+E um quinto, menor, na própria porta: exportar por cima da **nossa própria** exportação anterior era
+tratado como colisão, o que pediria consentimento para sobrescrever algo que o Tachyon pôs ali uma
+chamada antes.
+
+### O estado real deste workspace, medido antes de mexer
+
+O lockfile declara **6** diretórios de skill (`sdd` e `agent-browser` × claude/codex/grok) e **1**
+existe no disco: `.agents/skills/agent-browser`. É exatamente o que a restauração do t-318d7d entrega
+ao agente codex do autor, cuja concessão tem `agent-browser` e não tem `sdd`. Ou seja: a assimetria da
+R3 já era o estado de fato antes desta fatia — o registro afirmava seis, a entrega produzia um.
+
+### Dogfood
+
+`scripts/dogfood/plugin-single-delivery.ts`, com o `sdd` real como payload num workspace temporário:
+instalar não toca em nenhum dos três diretórios; a concessão entrega sozinha; uma segunda entrega é
+no-op; exportar põe nos três; desexportar tira dos três e deixa o payload.

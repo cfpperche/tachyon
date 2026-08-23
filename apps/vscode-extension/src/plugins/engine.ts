@@ -36,6 +36,7 @@ import { readFile, atomicWrite } from "./fsx.js";
 import { PLUGIN_PAYLOAD_ROOT, PLUGIN_SKILLS_DIR } from "@tachyon/engine/plugins/paths.js";
 import {
   WORKSPACE_INSTALL_SCOPE,
+  isAgentInstallScope,
   type InstallScope,
 } from "@tachyon/engine/plugins/installScope.js";
 
@@ -818,8 +819,13 @@ export interface ExternalToolStatus {
 export interface InstallPreview {
   manifest: PluginManifest;
   steps: InstallStep[];
-  /** the skill materializations this install would perform (across present, skills-capable runtimes). */
+  /** the skill materializations this install would perform (across present, skills-capable runtimes).
+   *  515 — EMPTY for a workspace install: the payload is what lands, and delivery is per grant. An
+   *  agent-scoped install still fills it, because its dests are that one agent's harness home. */
   skillTargets: SkillPlanItem[];
+  /** 515 — the skills the payload carries, whether or not this install writes any of them anywhere.
+   *  What a plugin CONTRIBUTES stopped being derivable from what it WRITES, so it is stated. */
+  payloadSkills: string[];
   /** the MCP-server materializations this install would perform (across present, MCP-capable runtimes). */
   mcpTargets: McpPlanItem[];
   /** per-MCP-config-file snapshot at preview (the lost-update basis re-verified before the step-6 write). */
@@ -951,7 +957,7 @@ function skillToolPlaceholderWarnings(plugin: LoadedPlugin): string[] {
  *  compute the merges, return the diff + wired commands + a consent fingerprint. */
 export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, target: ReadonlySet<Runtime>, gitState?: GitHookState, toolPlan?: ToolPlan, dataPlan?: DataPlan, scope: InstallScope = WORKSPACE_INSTALL_SCOPE): InstallPreview {
   const { manifest } = plugin;
-  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], gitHookTargets: [], toolTargets: [], dataTargets: [], externalTargets: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "", requires: [], scope, harnessIdentity: null });
+  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], payloadSkills: [], mcpTargets: [], mcpConfigBefore: [], gitHookTargets: [], toolTargets: [], dataTargets: [], externalTargets: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "", requires: [], scope, harnessIdentity: null });
 
   const payload = preflightPayload(plugin.dir);
   if (payload.errors.length > 0) return empty(payload.errors);
@@ -1013,8 +1019,17 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
 
   // spec 251 Step 3 — plan skill materializations + detect collisions. A dest already present that is NOT one
   // of THIS plugin's prior skill-dirs (from the lockfile) is a USER collision → needs an explicit Keep/Replace.
+  //
+  // 515 — a WORKSPACE install plans none. Installing a plugin used to write its skills into
+  // `.claude/skills`, `.agents/skills` and `.grok/skills` for everyone, which made the per-agent grant
+  // decorative: every agent read the same directory whether it had been granted the skill or not, and
+  // the screen said otherwise. What the install leaves now is the payload under `.tachyon/plugins/`,
+  // and DELIVERY is what writes — per agent, only what that agent was granted.
+  //
+  // An AGENT-scoped install still plans them, and that is not an exception to the rule but the rule
+  // itself: its dests are that agent's own harness home, so writing there IS delivering to one agent.
   const priorSkillDests = new Set((lock?.targets ?? []).filter((t) => t.kind === "skill-dir" && targetMatchesScope(t, scope)).map((t) => t.file));
-  const skillTargets: SkillPlanItem[] = planSkillTargets(plugin, target, dests).map((t) => ({
+  const skillTargets: SkillPlanItem[] = (isAgentInstallScope(scope) ? planSkillTargets(plugin, target, dests) : []).map((t) => ({
     ...t,
     collision: !priorSkillDests.has(t.destRel) && fs.existsSync(path.join(workspaceRoot, t.destRel)),
   }));
@@ -1054,8 +1069,11 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
   // a declared runtime with no hooks block still contributes if it receives a skill or an MCP server; only warn
   // when the runtime materializes NOTHING for this plugin (a genuinely pointless declaration). Fixes the false
   // "nothing to wire" alert on skills-only / MCP-only plugins.
+  // 515 — a runtime materializes nothing only when the plugin CONTRIBUTES nothing to it. Skills used to
+  // be counted through their workspace targets, which the install no longer plans; counting the declared
+  // skills instead asks the question the message actually means.
   for (const rt of noHookRuntimes) {
-    if (!skillTargets.some((t) => t.runtime === rt) && !mcpTargets.some((t) => t.runtime === rt)) {
+    if (plugin.skills.length === 0 && !skillTargets.some((t) => t.runtime === rt) && !mcpTargets.some((t) => t.runtime === rt)) {
       warnings.push(`${rt}: plugin declares ${rt} but materializes nothing for it (no hooks, skills, or MCP)`);
     }
   }
@@ -1101,7 +1119,7 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
 
   const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, workspaceRoot, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, gitState, toolTargets, dataTargets, payload.hash, scope, harnessIdentity);
   const requires = dependencyStates(manifest.dependencies, lockRead.lockfile); // spec 276 — direct deps vs lockfile
-  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, toolTargets, dataTargets, externalTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash, requires, scope, harnessIdentity };
+  return { manifest, steps, skillTargets, payloadSkills: plugin.skills.map((sk) => sk.name), mcpTargets, mcpConfigBefore, gitHookTargets, toolTargets, dataTargets, externalTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash, requires, scope, harnessIdentity };
 }
 
 
@@ -1165,7 +1183,11 @@ interface ApplyOpts {
  *  undefined. An MCP server / git-hook / tool each requires its dedicated acknowledgement even from a non-UI
  *  caller (stronger than the drawer's disabled button). */
 function checkInstallAckGates(fresh: InstallPreview, opts: ApplyOpts): string | undefined {
-  if (fresh.steps.length === 0 && fresh.skillTargets.length === 0 && fresh.mcpTargets.length === 0 && fresh.gitHookTargets.length === 0) {
+  // 515 — a plugin that only ships skills installs SOMETHING: its payload lands under
+  // `.tachyon/plugins/<name>/` and its skills become grantable. This guard counted workspace writes as
+  // the measure of "did anything happen", which stopped being true the moment install stopped writing
+  // them — it refused a skills-only plugin outright, and a skills-only plugin is the common case.
+  if (fresh.steps.length === 0 && fresh.skillTargets.length === 0 && fresh.mcpTargets.length === 0 && fresh.gitHookTargets.length === 0 && fresh.payloadSkills.length === 0) {
     return "nothing to install: no hooks, skills, MCP servers, or git-hooks for this plugin";
   }
   if (fresh.mcpTargets.length > 0 && opts.mcpConfirmed !== true) {
@@ -1332,9 +1354,18 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
   }
 
   // 5) update cleanup — delete skill-dirs THIS plugin owned before but the new version no longer ships.
+  //
+  // 515 — "the new version no longer ships it" is a question about the PAYLOAD, and it stopped being
+  // answerable from the write plan the moment a workspace install stopped planning writes. Read
+  // literally, an empty plan says every exported skill is stale, and a re-install would delete every
+  // directory the human had exported. Measured: a re-install of an unchanged plugin removed its own
+  // export. So the survivors are the skills the new payload actually carries.
+  const skillsStillShipped = new Set(fresh.payloadSkills);
   const newSkillDests = new Set(skillsToWrite.filter((s) => appliedSkills.has(s.skill)).map((s) => s.destRel));
   for (const old of priorSkillDests) {
-    if (appliedSkills.has(path.posix.basename(old)) && !newSkillDests.has(old)) fs.rmSync(path.join(workspaceRoot, old), { recursive: true, force: true });
+    const skill = path.posix.basename(old);
+    if (skillsStillShipped.has(skill)) continue; // still in the payload: an export of it is not stale
+    if (appliedSkills.has(skill) && !newSkillDests.has(old)) fs.rmSync(path.join(workspaceRoot, old), { recursive: true, force: true });
   }
 
   // 6) MCP servers — SDD 486 Phase C: install records lockfile targets but does NOT write the runtime
@@ -1451,6 +1482,15 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   const planned = buildInstallTargets(fresh, skillsToWrite, mcpToWrite, pluginPayloadAbs(workspaceRoot, plugin.manifest.name));
   const targets = planned.targets.map((t) => scope.type === "agent" ? { ...t, scope } : t);
   const runtimes = planned.runtimes;
+  // 515 — the runtimes a skills-only plugin is installed FOR come from the consented selection, not from
+  // what got written to the workspace. `buildInstallTargets` derives them from materializations, which is
+  // empty for such a plugin — and `lock.runtimes` is what the grant projection and the export door both
+  // read, so an empty list would install a plugin that belongs to no runtime at all.
+  //
+  // Gated on the payload CARRYING skills, not on there being a target runtime: a plugin whose only
+  // contribution was an MCP server the human declined still installs nothing, which is the answer that
+  // door has always given and has nothing to do with this change.
+  if (runtimes.length === 0 && fresh.payloadSkills.length > 0) runtimes.push(...fresh.targetRuntimes);
   if (runtimes.length === 0 && fresh.gitHookTargets.length === 0) {
     return { installed: false, runtimes: [], errors: ["nothing to install: every compatible skill/MCP server was kept and there are no hooks"] };
   }
@@ -1550,7 +1590,17 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   // runtimes BEFORE any settings write, so if a later settings write fails the partial state is removable
   // (applyRemove un-merges every recorded runtime, including the one that didn't get activated → no-op there).
   const priorLock = lockfile.plugins[plugin.manifest.name];
-  const keptTargets = (priorLock?.targets ?? []).filter((t) => !targetMatchesScope(t, scope));
+  // 515 — install used to be the only author of in-scope targets, so rebuilding them from its own plan
+  // was safe. Exports now author skill dests too, and a plan that contains none would silently forget
+  // every one of them: the directory would stay on disk with nothing left to remove it. So an in-scope
+  // skill dest survives a re-install exactly while the new payload still ships that skill — the same
+  // rule the activation's stale-drop uses on the directories themselves, so record and disk agree.
+  const shippedSkills = new Set(fresh.payloadSkills);
+  const keptTargets = (priorLock?.targets ?? []).filter((t) =>
+    !targetMatchesScope(t, scope)
+    // Only where THIS install authors none. An agent-scoped install still plans its own skill dests and
+    // re-adds them below, so keeping them here too would record each one twice.
+    || (!isAgentInstallScope(scope) && t.kind === "skill-dir" && shippedSkills.has(path.posix.basename(t.file))));
   const mergedRuntimes = [...new Set([...(priorLock?.runtimes ?? []), ...runtimes])];
   const nextGitHooks = scope.type === "agent" ? priorLock?.gitHooks : (gitHookLocks.length > 0 ? gitHookLocks : priorLock?.gitHooks);
   lockfile.plugins[plugin.manifest.name] = {
@@ -2340,26 +2390,86 @@ function recordCreatedAncestors(pluginName: string, workspaceRoot: string, creat
   writeLockfile(workspaceRoot, rd.lockfile);
 }
 
+/**
+ * 515 — where a skill goes when the human exports it to the project.
+ *
+ * Apply used to read its destinations out of the lockfile, because the INSTALL had written them and
+ * recorded them. Slice 2 stops the install writing, so reading the record would find nothing and this
+ * door would answer "plugin has no skill named X" for a skill plainly listed on its own card.
+ *
+ * So the destinations are DERIVED, from the same two facts the install used: the runtimes this plugin
+ * is installed for, and each runtime's workspace skills directory. Deriving is also the more honest
+ * source — a recorded target says where a past install wrote, and what this door needs is where THIS
+ * project keeps skills now.
+ *
+ * Recorded targets still win when they exist, and that is not legacy tolerance: an AGENT-scoped install
+ * writes into that agent's harness home, which no workspace layout can be derived from. Where a record
+ * exists it names a real place someone chose; where it does not, the project's own layout is the answer.
+ */
+function skillExportTargets(lock: PluginLock, skill: string): MaterializedTarget[] {
+  const recorded = skillTargetsFor(lock, skill);
+  if (recorded.length > 0) return recorded;
+  return lock.runtimes.map((runtime) => ({
+    runtime,
+    kind: "skill-dir" as const,
+    file: `${WORKSPACE_DESTS[runtime].skillsRel}/${skill}`,
+  }));
+}
+
 function applySkillContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts: { replace?: boolean }): ApplyContributionResult {
   const found = installedLock(pluginName, workspaceRoot);
   if (!found.lock) return { applied: false, errors: found.errors };
-  const targets = skillTargetsFor(found.lock, ref.name);
-  if (targets.length === 0) return { applied: false, errors: [`plugin '${pluginName}' has no skill named '${ref.name}'`] };
-  for (const t of targets) if (!t.runtime || !validSkillDest(t.runtime, t.file)) return { applied: false, errors: [`lockfile: skill-dir target '${t.file}' (${t.runtime}) is not a valid skills path`] };
   const src = path.join(pluginPayloadAbs(workspaceRoot, pluginName), SKILLS_DIR, ref.name);
-  if (!fs.existsSync(src)) return { applied: false, errors: [`installed payload has no skill directory '${ref.name}'`] };
-  for (const t of targets) if (fs.existsSync(path.join(workspaceRoot, t.file)) && opts.replace !== true) return { applied: false, errors: [`skill '${ref.name}' collides with an existing skill at ${t.file}`] };
+  // The payload is what proves the skill exists. Before 515 the lockfile's targets carried that proof
+  // as a side effect of recording where they were written; now the question is asked directly.
+  if (!fs.existsSync(src)) return { applied: false, errors: [`plugin '${pluginName}' has no skill named '${ref.name}'`] };
+  const targets = skillExportTargets(found.lock, ref.name);
+  if (targets.length === 0) return { applied: false, errors: [`plugin '${pluginName}' is installed for no runtime, so there is nowhere to export '${ref.name}'`] };
+  for (const t of targets) if (!t.runtime || !validSkillDest(t.runtime, t.file)) return { applied: false, errors: [`lockfile: skill-dir target '${t.file}' (${t.runtime}) is not a valid skills path`] };
+  // A dest THIS plugin already records is our own previous export, and re-exporting over it — after an
+  // update, or to repair an edit — is the ordinary case, not a collision. What needs consent is writing
+  // over something we never put there. (Install used to make this distinction with its own record; the
+  // question moved here with the write.)
+  const ours = new Set(found.lock.targets.filter((t) => t.kind === "skill-dir").map((t) => `${t.runtime} ${t.file}`));
+  for (const t of targets) {
+    if (ours.has(`${t.runtime} ${t.file}`)) continue;
+    if (fs.existsSync(path.join(workspaceRoot, t.file)) && opts.replace !== true) return { applied: false, errors: [`skill '${ref.name}' collides with an existing skill at ${t.file}`] };
+  }
   const created = computeCreatedAncestors(workspaceRoot, targets.map((t) => t.file));
   try {
     for (const t of targets) {
       materializeSkillDest(src, path.join(workspaceRoot, t.file), isHarnessSkillDest(t.file) ? "link" : "copy");
     }
     new AppliedStateStore(workspaceRoot).markApplied(pluginName, ref);
-    recordCreatedAncestors(pluginName, workspaceRoot, created);
+    // The record is how un-applying and uninstalling know what to take away. Deriving again at removal
+    // time would be guessing about directories the human may have moved since — only the registry knows
+    // which of these we actually created.
+    recordSkillExport(pluginName, workspaceRoot, targets, created);
     return { applied: true, errors: [] };
   } catch (e) {
     return { applied: false, errors: [e instanceof Error ? e.message : String(e)] };
   }
+}
+
+/** Record the dests an export wrote, plus the ancestors it created, in one lockfile write. */
+function recordSkillExport(pluginName: string, workspaceRoot: string, targets: MaterializedTarget[], created: string[]): void {
+  const rd = readLockfile(workspaceRoot);
+  const lock = rd.lockfile?.plugins[pluginName];
+  if (!rd.lockfile || !lock) throw new Error(rd.errors[0] ?? `plugin '${pluginName}' is not installed`);
+  const known = new Set(lock.targets.filter((t) => t.kind === "skill-dir").map((t) => `${t.runtime} ${t.file}`));
+  for (const t of targets) if (!known.has(`${t.runtime} ${t.file}`)) lock.targets.push(t);
+  if (created.length > 0) lock.createdAncestors = [...new Set([...(lock.createdAncestors ?? []), ...created])].sort();
+  writeLockfile(workspaceRoot, rd.lockfile);
+}
+
+/** Drop the dests an un-apply removed from the record. */
+function forgetSkillExport(pluginName: string, workspaceRoot: string, targets: MaterializedTarget[]): void {
+  const rd = readLockfile(workspaceRoot);
+  const lock = rd.lockfile?.plugins[pluginName];
+  if (!rd.lockfile || !lock) return; // nothing to forget; the caller already removed what was on disk
+  const gone = new Set(targets.map((t) => `${t.runtime} ${t.file}`));
+  lock.targets = lock.targets.filter((t) => t.kind !== "skill-dir" || !gone.has(`${t.runtime} ${t.file}`));
+  writeLockfile(workspaceRoot, rd.lockfile);
 }
 
 function unapplySkillContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string): UnapplyContributionResult {
@@ -2371,6 +2481,9 @@ function unapplySkillContribution(pluginName: string, ref: ContributionRef, work
   try {
     for (const t of targets) fs.rmSync(path.join(workspaceRoot, t.file), { recursive: true, force: true });
     new AppliedStateStore(workspaceRoot).markUnapplied(pluginName, ref);
+    // 515 — the record goes with the directory. Leaving it would make the next export think the skill
+    // is still out there, and would make uninstall promise to delete a path nothing owns any more.
+    forgetSkillExport(pluginName, workspaceRoot, targets);
     return { unapplied: true, orphans: 0, errors: [] };
   } catch (e) {
     return { unapplied: false, orphans: 0, errors: [e instanceof Error ? e.message : String(e)] };

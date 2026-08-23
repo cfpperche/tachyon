@@ -1788,14 +1788,18 @@ export class HarnessManager {
     // human's own home reached a Codex agent that was granted none of it.
     const roots = [path.join(path.resolve(cwd), ".agents", "skills"), path.join(os.homedir(), ".agents", "skills")];
 
-    // Deliver-what-the-installer-left has a premise: that what the installer left is still there.
-    // It was not (t-318d7d) — the lockfile declared three materialized skill dests and the disk had
-    // none of them, which turned a healthy grant into a refusal at resume. Restore, from the record
-    // and the payload, exactly the granted entries that are missing. Anything already on disk is left
-    // untouched, so this cannot become the tree replacement that must not run at this root.
-    for (const name of granted.keys()) {
+    // Deliver-what-the-installer-left has a premise: that what the installer left is still there. It
+    // was not (t-318d7d) — three skill dests recorded as materialized, none of them on disk, which
+    // turned a healthy grant into a refusal at resume.
+    //
+    // 515 — the missing entries are materialized from THE GRANT, not from the installer's record. The
+    // grant carries the payload it attests, so this keeps working when install stops writing workspace
+    // dests at all; and what lands on disk is what THIS agent was granted rather than what some install
+    // once left for everybody. Anything already present is untouched, so this can never become the tree
+    // replacement that must not run at this root.
+    for (const [name, source] of granted) {
       if (fs.existsSync(path.join(roots[0]!, name, "SKILL.md"))) continue;
-      restoreWorkspaceSkillDest(this.workspaceRoot, "codex", name);
+      restoreWorkspaceSkillDest(roots[0]!, name, source.sourcePath);
     }
     for (const root of roots) {
       let entries: fs.Dirent[];

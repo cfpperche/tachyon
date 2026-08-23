@@ -1001,12 +1001,17 @@ describe("HarnessManager materialize (fs)", () => {
       .toThrow(/research .* not present at the content this profile authorized|not present at the content/);
   });
 
-  it("t-318d7d: an installed dest is a SYMLINK, and a dest the lockfile declares but the disk lost is restored", () => {
+  it("t-318d7d / 515 T9: an installed dest is a SYMLINK, and a lost dest is restored FROM THE GRANT — with the lockfile declaring nothing", () => {
     // The 0.93.39 launch stopped writing the tree and started DELIVERING WHAT THE INSTALLER LEFT.
-    // Two things about what the installer leaves were not in that design and are measured here:
-    // a workspace dest is a symlink into the plugin payload (not a real directory), and the
-    // lockfile can declare one the disk no longer has — which is the state that refused a healthy
-    // grant at resume on this very workspace.
+    // Two things about what the installer leaves were not in that design: a workspace dest is a
+    // symlink into the plugin payload (not a real directory), and it can be gone — which is the state
+    // that refused a healthy grant at resume on this very workspace.
+    //
+    // 515 T9 IS THE GATE OF SLICE 2, and this is where it is decided. Slice 2 makes install stop
+    // declaring `skill-dir` in the lockfile, so the lockfile below deliberately declares NO targets:
+    // the state slice 2 produces, written down before slice 2 exists. If delivery still needs the
+    // record, this test goes red and the slice stops. It stays green because the grant already carries
+    // the payload it attests, which was always the honest thing to derive from.
     const codexHome = path.join(path.dirname(realHome), "realcodex-318d7d");
     fs.mkdirSync(codexHome, { recursive: true });
     fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
@@ -1022,7 +1027,8 @@ describe("HarnessManager materialize (fs)", () => {
           name: "agent-browser",
           version: "3.2.0",
           runtimes: ["codex"],
-          targets: [{ runtime: "codex", kind: "skill-dir", file: ".agents/skills/agent-browser" }],
+          // No `skill-dir`: the post-slice-2 shape. Delivery must not need it.
+          targets: [],
           source: { type: "git", spec: "github:owner/repo#path=agent-browser", remote: "https://github.com/owner/repo.git", ref: "v1", resolvedCommit: "0".repeat(40), subdir: "agent-browser" },
           integrity: { algorithm: "sha256", payload: "d".repeat(64) },
         },
@@ -1052,8 +1058,9 @@ describe("HarnessManager materialize (fs)", () => {
     let config = fs.readFileSync(harnessCodexConfigPath(ws, "coder"), "utf8");
     expect(config).not.toContain(JSON.stringify(path.join(dest, "SKILL.md")));
 
-    // 2. the dest the lockfile declares is gone — the state that turned a healthy grant into a
-    //    refusal. It is restored from the payload the record points at, and the launch proceeds.
+    // 2. the dest is gone — the state that turned a healthy grant into a refusal. It is restored from
+    //    the payload THE GRANT names, with nothing in the lockfile pointing at it, and the launch
+    //    proceeds. This assertion is the whole of T9.
     fs.rmSync(dest, { recursive: true, force: true });
     mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, ws);
     expect(fs.existsSync(path.join(dest, "SKILL.md"))).toBe(true);
