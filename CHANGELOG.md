@@ -4,6 +4,46 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.47 — o usuário ganha a tela, e o plugin devolve a que ninguém usava
+
+Tachyon tinha duas maneiras de desenhar uma tela e nenhuma delas era do usuário. Doze telas embutidas,
+fixas em tempo de compilação. E uma porta de terceiros — a `views` do manifesto de plugin — que exigia
+publicar um pacote num repositório git, rodava num iframe sem rede, via um único recorte de dado e
+podia pedir uma única ação. Medida em agosto: **um consumidor no mundo inteiro**, uma prova de
+conceito que o dono não usa.
+
+Um **app** agora é HTML que o usuário instala subindo um `.zip`. Ele é descompactado em
+`.tachyon/apps/<id>/`, ganha um ladrilho no launcher com o próprio ícone, abre numa aba do editor e
+fala com o Tachyon pelo Bridge — a mesma superfície que os agentes usam, sem allowlist e sem
+consentimento por ação. O humano instalou; o humano consentiu.
+
+### O catálogo de telas deixou de ser decidido no build
+
+As doze embutidas viram o prefixo e o disco escreve o resto. As três verificações que existiam para
+pegar erro de digitação continuam derrubando o boot quando um id LITERAL está errado — é para isso que
+elas foram escritas — e uma linha vinda do disco degrada em vez de derrubar: título vazio cai para o
+id, id repetido é descartado, id malformado é ignorado. Config errada avisa, nunca bloqueia.
+
+O ladrilho de um app se chama `app:<id>`, e os dois-pontos são o que torna a colisão com uma tela do
+produto impossível **por construção** em vez de por convenção de nome. Isso obrigou três lugares a
+concordarem, e um deles teria falhado calado: a ordem persistida do launcher rejeitava o token novo,
+enquanto a atualização otimista da grade mostrava o arranjo correto até o próximo reload o jogar fora.
+
+### E a porta de terceiros foi fechada, não deixada aberta e vazia
+
+`views` saiu do manifesto, com o corretor de superfícies, o intermediário de ações, a projeção de
+frota, o pacote de tela, o modo de sandbox correspondente e o alvo de lockfile. Nada foi migrado —
+não havia o que migrar.
+
+O que fica no lugar são recusas que **ensinam**. Um plugin que ainda declara `views` não ouve "campo
+desconhecido": ouve que a capacidade mudou de casa, e qual é a casa. Um registro de instalação antigo
+que ainda carrega uma tela é recusado pelo nome, antes da mensagem genérica, e nunca lido pela metade
+— um registro custodiado que não pode ser honrado tem que ser dito em voz alta.
+
+Duas coisas ficaram de propósito: os identificadores das abas de superfície continuam sendo
+descartados na abertura da janela, porque alguém pode ter uma delas aberta ao atualizar; e os dois
+modos de protótipo do sandbox ficam, porque têm consumidores próprios.
+
 ## 0.93.46 — resposta vazia não é evidência
 
 A regra que a 0.93.45 devolveu à vida apagou, na instalação seguinte, o runtime da engine que estava
