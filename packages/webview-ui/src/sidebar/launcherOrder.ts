@@ -19,8 +19,16 @@ export type LauncherPref =
   | { kind: "name"; mode: SortMode }
   | { kind: "custom"; ids: readonly string[] };
 
-/** Token shape a custom encoding will accept (section ids are kebab-case). */
-const ID_TOKEN = /^[a-z][a-z0-9-]*$/;
+/**
+ * Token shape a custom encoding will accept (section ids are kebab-case).
+ *
+ * 514 — one colon is allowed, for `app:<id>`. Without it a custom order containing an installed
+ * app's tile is rejected here and never persists, while the optimistic update in the sidebar makes
+ * the arrangement look correct until the next reload throws it away. Rejected `app-<id>`: it would
+ * fit the old token, at the cost of putting collision with a built-in back on the naming convention
+ * this prefix exists to take it off of.
+ */
+const ID_TOKEN = /^[a-z][a-z0-9-]*(:[a-z][a-z0-9-]*)?$/;
 
 export function encodeLauncherCustom(ids: readonly string[]): string {
   return LAUNCHER_CUSTOM_PREFIX + ids.join(",");

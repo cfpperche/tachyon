@@ -109,6 +109,14 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     private readonly getBoot?: () => SidebarBootVM,
     /** SDD 504 — re-attach ONE folder after a failed start; resolves the same wsHash the fleet uses. */
     private readonly retryStart?: (wsHash: string) => void,
+    /**
+     * 514 — the apps installed in this window, read fresh on every push.
+     *
+     * A getter for the same reason `getBoot` is one: installing or removing an app changes the answer
+     * and already calls `refresh()`, and a pushed-in snapshot would be a second copy to remember to
+     * update. Absolute icon paths come in; webview URIs go out, because only the view can mint those.
+     */
+    private readonly getApps?: () => { id: string; title: string; iconPath: string }[],
   ) {
     this.scopeSubscription = controlWorkspaceScope.onDidChange(() => void this.push());
   }
@@ -129,7 +137,11 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
-    view.webview.options = { enableScripts: true, localResourceRoots: [root] };
+    // 514 — an installed app's icon is a file in the workspace, so the workspace folders join the
+    // roots. Only icons are served from there; the app's own page is loaded by its editor panel,
+    // which has its own, narrower root.
+    const folderRoots = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri);
+    view.webview.options = { enableScripts: true, localResourceRoots: [root, ...folderRoots] };
     // t-38c2a1 — version in native view title. t-6e2952 — Control is now the second TAB of this same
     // view (the launcher grid), so the view/title openControl button is gone and no second view exists.
     this.applyNativeTitle(view);
@@ -222,7 +234,21 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     // spec 278 — built via the shared envelope so a `fleet`-shape drift breaks the build, not the preview harness.
     void view.webview.postMessage(
       // SDD 504 — discovery travels WITH the fleet, so the two can never disagree on the wire.
-      fleetMessage(this.lastFleets, this.sortPrefs(), this.collapsedKeys(), this.appVersion, selected, this.getBoot?.()),
+      fleetMessage(
+        this.lastFleets,
+        this.sortPrefs(),
+        this.collapsedKeys(),
+        this.appVersion,
+        selected,
+        this.getBoot?.(),
+        // 514 — a tile the webview can actually draw: the icon path becomes a webview URI here,
+        // which is the only place that can mint one.
+        (this.getApps?.() ?? []).map((app) => ({
+          id: app.id,
+          title: app.title,
+          iconUri: view.webview.asWebviewUri(vscode.Uri.file(app.iconPath)).toString(),
+        })),
+      ),
     );
   }
 
@@ -328,6 +354,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       // summary already names in its own text ("full detail in Output → Tachyon"), so the button and
       // the sentence lead to one place instead of two.
       if (m.op === "openOutput") return void revealShellDiagnostics();
+      // 514 — the door for installing an app, from the tab where its tile will appear.
+      if (m.op === "installApp") return void vscode.commands.executeCommand("tachyon.installApp");
       // Per folder, never window-wide: a hash that matches no known folder does nothing rather than
       // re-attaching an arbitrary one — the same rule `wsFor` states for every other routed op.
       if (m.op === "retryStart") return void (m.hash ? this.retryStart?.(m.hash) : undefined);

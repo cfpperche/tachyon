@@ -1,4 +1,7 @@
-export type UntrustedSrcdocMode = "plugin" | "prototype-static" | "prototype-interactive";
+// 514 — the `plugin` mode left with the surface it existed for: a plugin no longer draws a screen,
+// and an installed app is not sandboxed into a srcdoc at all. The two prototype modes stay; they have
+// their own consumers, which is why this is a removal of one mode and not of the module.
+export type UntrustedSrcdocMode = "prototype-static" | "prototype-interactive";
 
 const CSP_META_RE = /<meta\b(?=[^>]*http-equiv\s*=\s*(?:"content-security-policy"|'content-security-policy'|content-security-policy))[^>]*>/gi;
 const HEAD_OPEN_RE = /<head\b[^>]*>/i;
@@ -13,7 +16,7 @@ export function assembleUntrustedSrcdoc(html: string, options: { mode: Untrusted
   const interactive = options.mode !== "prototype-static";
   const nonce = options.nonce ?? "";
   if (interactive && !nonce) throw new Error("untrusted srcdoc requires a non-empty nonce");
-  const img = options.mode === "plugin" ? "data:" : "data:";
+  const img = "data:";
   const csp = [
     "default-src 'none'",
     `img-src ${img}`,

@@ -91,18 +91,6 @@ export interface ConsentGitHook {
 }
 
 
-/** spec 349 — a UI surface this install/update will register. */
-export interface ConsentView {
-  id: string;
-  title: string;
-  surface: "editor" | "sidebar";
-  entry: string;
-  fleet: "summary";
-  actions: Array<{ name: string; disclosure: string }>;
-  disclosure: string;
-}
-
-
 /** spec 265 — a tool this install/update will DOWNLOAD + EXECUTE (the highest-trust capability). The drawer
  *  shows the resolved platform, the declared + redirect-resolved URL, the pinned checksum, and the publisher.
  *  Copy must say: the sha256 proves INTEGRITY against the manifest, NOT that the publisher is trustworthy. */
@@ -209,14 +197,6 @@ export interface ConsentVM {
   /** true when this install/update registers ANY git-hook → the drawer requires a dedicated acknowledgement
    *  (runs on every commit for the human too, reads staged content, `--no-verify` bypasses it). */
   requiresGitHookConfirm?: boolean;
-  /** spec 349 — UI surfaces this install/update registers. */
-  views?: ConsentView[];
-  /** true when this install/update registers ANY view → dedicated UI acknowledgement. */
-  requiresViewConfirm?: boolean;
-  /** true when any view reads a curated fleet summary → separate data-scope acknowledgement. */
-  requiresFleetReadConfirm?: boolean;
-  /** dedicated per-action acknowledgement keys (`<viewId>:<action>`). */
-  requiresActionConfirm?: Record<string, string>;
   /** ⑧ spec 265 — tools this install/update will DOWNLOAD + EXECUTE (the highest-trust capability). */
   tools?: ConsentTool[];
   /** true when this install/update provisions ANY tool → the drawer requires a dedicated acknowledgement

@@ -64,7 +64,10 @@ describe("SDD 485 E1 — every former Control door opens an app directly", () =>
   });
 
   it("tachyon.openControl with no section defaults to System", () => {
-    const block = blockFrom('registerCommand("tachyon.openControl"', 5_000);
+    // 514 — the window grew with the command: routing an installed app (`app:<id>`) added an arm and
+    // its reasoning above this tail. The number is a reading window, not the contract — the contract
+    // is that the no-section call ends on System — so it moves when the command legitimately grows.
+    const block = blockFrom('registerCommand("tachyon.openControl"', 6_000);
     expect(block).toMatch(/openSystemTab\(\);\n\s*return Promise\.resolve\(\);\n\s*}\),/);
   });
 

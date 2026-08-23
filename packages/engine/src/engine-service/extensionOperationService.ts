@@ -22,6 +22,7 @@ import {
 } from "../config/YamlConfigEditor.js";
 import { isIdeBrowserEnabled } from "../ide-browser/settings.js";
 import { isResumable } from "../resume/sessionRecord.js";
+import { installAppZip, readInstalledApps } from "../apps/index.js";
 import { PromptStore } from "../prompts/PromptStore.js";
 import { injectTargets, submitRefuseReason } from "../prompts/injectFlow.js";
 import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
@@ -208,6 +209,16 @@ export async function executeExtensionQuery(
           sha256: createHash("sha256").update(template.body, "utf8").digest("hex"),
         })),
         targets: injectTargets(await workspace.manager.listAgents()),
+      });
+    }
+    case "apps.list": {
+      // 514 — the disk is the catalog. A directory that does not parse becomes a warning the human can
+      // read, never an exception: a hand-broken `app.json` must not be able to stop Tachyon from
+      // starting, which is the same rule every other config on disk follows here.
+      const catalog = readInstalledApps(workspace.workspaceRoot);
+      return json({
+        apps: catalog.apps.map((app) => ({ id: app.id, title: app.title, icon: app.icon, entry: app.entry, root: app.root })),
+        warnings: catalog.warnings,
       });
     }
     case "worktrees.list": {
@@ -578,6 +589,12 @@ export async function executeExtensionCommand(
       // to erase the agent when all they wanted was to launch it again.
       const result = await workspace.managedWorktrees.releaseLock(command.id, { actor: { kind: "human" } });
       return json(result as unknown as JsonValue);
+    }
+    case "app.install": {
+      // 514 — reinstalling over the same id IS the update door. No prompt and no version: the simplest
+      // answer to "how do I update an app" that does not invent a screen for it.
+      const app = await installAppZip(workspace.workspaceRoot, command.zipPath);
+      return json({ id: app.id, title: app.title, entry: app.entry, root: app.root });
     }
     case "notice.deliver": {
       const result = await workspace.deliverNotice(command.agent, command.line);

@@ -207,7 +207,6 @@ describe("t-f45320 — undeclared --ds-* / --tachyon-* var()", () => {
       "packages/webview-ui/src/webview/rich-doc/rich-doc.css",
       "packages/webview-ui/src/webview/task-studio/task-studio.css",
       "packages/webview-ui/src/webview/agent-studio-shell/agent-studio-shell.css",
-      "packages/webview-ui/src/webview/plugin-host/plugin-host.css",
       "packages/webview-ui/src/webview/probes/probes.css",
       "packages/webview-ui/src/webview/shared/studio/studio-frame.css",
       "packages/webview-ui/src/webview/shared/design-system.css",

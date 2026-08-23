@@ -520,7 +520,6 @@ export const ROUTES: Record<string, Route> = {
 
 /** Converted webviews may opt out only with a written reason. */
 export const PREVIEW_ROUTE_OPTOUTS: Record<string, string> = {
-  "plugin-host": "Spec 349 T10 relay needs a runtime-installed plugin payload and nonce-stamped srcdoc; covered by focused relay tests until T13 fixtures land.",
   // t-953471 / t-610355 — live xterm + node-pty tmux attach; no static fixture VM without a PTY host.
   "agent-pane": "Layer-2 agent pane needs a live node-pty attach to a tmux session; not renderable as a static preview fixture. Covered by unit (agentPane*) + Dev Host dogfood (t-610355).",
   "approval": "The standalone Approvals host and bundle were retired; approvals now render in Human Inbox. Covered by the human-inbox queue/item preview fixtures and approval App/view-model unit tests.",
@@ -529,6 +528,11 @@ export const PREVIEW_ROUTE_OPTOUTS: Record<string, string> = {
   "task-prototype": "Task Prototype is a shared read-only component/type with no host or bundle. It renders inside Task Detail and Board, covered by their preview fixtures and task-prototype interaction unit tests.",
   "task-studio": "Task Studio has no standalone host or bundle; the shipped Task Detail document mounts it in edit mode. Covered by ?view=task-detail&fixture=edit, which sends the real document-mode and studio load envelopes.",
   "validations": "The standalone Validations identity was folded into Human Inbox and has no host or bundle. Covered by human-inbox validation queue/item fixtures and validations view-model/action unit tests.",
+  // 514 — there is nothing of ours to preview: the page is the app author's HTML, read from
+  // `.tachyon/apps/<id>/` at open time. A fixture here would be a page we invented, which would prove
+  // the harness renders our own invention. What is ours — the catalog, the validation, the install and
+  // the tile — is covered by apps.test.ts and the launcher tests.
+  "user-app": "An installed app's document is authored by the user and read from disk; there is no bundle of ours to render. Covered by apps.test.ts (catalog/validation/zip install) and the launcher tile tests.",
 };
 
 /** spec 281 — human label + alias match keys per view, for catalog-assisted RESOLUTION (the visual-qa skill

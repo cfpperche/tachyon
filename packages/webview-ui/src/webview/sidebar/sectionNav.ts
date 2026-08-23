@@ -24,6 +24,20 @@ export interface ControlSectionNav {
    * is still the one door: it routes the id, so the sidebar never has to know which apps exist.
    */
   standalone?: true;
+  /**
+   * 514 — an installed app draws its OWN icon, so this carries a webview-safe URI instead of a
+   * codicon name. The decision is the owner's and its consequence is deliberate: a monochrome tile
+   * that inherits the theme is Tachyon's, a coloured one was installed.
+   */
+  iconImage?: string;
+}
+
+/** 514 — one installed app, as the launcher needs it. The catalog itself lives on disk. */
+export interface InstalledAppTile {
+  id: string;
+  title: string;
+  /** webview-safe URI for the app's own icon file. */
+  iconUri: string;
 }
 
 /** Top-level only (not approvals/validations deep-links). Keyed by id for O(1) lookup. */
@@ -84,7 +98,7 @@ const LAUNCHER_ORDER: readonly SectionId[] = [
 // highlighted Settings gate or arms the overlay and opens the browser; no editor app exists.
 const STANDALONE_APPS = new Set<SectionId>(LAUNCHER_ORDER.filter((id) => id !== "design-mode"));
 
-/** Top-level launcher entries in product order — the launcher grid's sole catalog. */
+/** Top-level launcher entries in product order — the twelve compiled in. */
 export const CONTROL_SECTION_NAV: readonly ControlSectionNav[] = LAUNCHER_ORDER.map((id) => {
   const meta = NAV_BY_ID.get(id);
   if (!meta) {
@@ -107,10 +121,35 @@ export const CONTROL_SECTION_NAV: readonly ControlSectionNav[] = LAUNCHER_ORDER.
  * surfaces cannot disagree: there is one name, and changing it changes both.
  */
 export function controlSectionIcon(id: SectionId): string {
+  // 514 — an installed app has no launcher metadata by design: it arrives from disk, wears its own
+  // icon file, and this codicon is only the fallback for surfaces that can draw nothing else.
+  if (id.startsWith("app:")) return "browser";
   const meta = NAV_BY_ID.get(id);
-  // Every caller passes a literal from the manifest, so a miss is a typo at startup, not a runtime branch.
+  // Every OTHER caller passes a literal from the manifest, so a miss is a typo at startup, not a
+  // runtime branch — the throw stays exactly where it still protects the twelve.
   if (!meta) throw new Error(`controlSectionIcon: no launcher metadata for section '${id}'`);
   return meta.icon;
+}
+
+/**
+ * 514 — the launcher catalog is no longer fixed at compile time: the twelve are the prefix, and the
+ * installed apps follow in the order the disk listed them.
+ *
+ * A row that comes from disk can be wrong in ways a literal cannot (an app whose title is empty, an
+ * id that repeats a tile already on the grid), and none of those may throw: config from disk warns,
+ * it never blocks — the same rule the rest of the product follows. The `throw`s above keep guarding
+ * the compiled twelve, which is what they were written for.
+ */
+export function controlSectionNavWith(apps: readonly InstalledAppTile[]): readonly ControlSectionNav[] {
+  const taken = new Set<string>(CONTROL_SECTION_NAV.map((entry) => entry.id));
+  const rows: ControlSectionNav[] = [];
+  for (const app of apps) {
+    const id = `app:${app.id}` as SectionId;
+    if (taken.has(id) || app.id.length === 0) continue; // a duplicate tile is dropped, never doubled
+    taken.add(id);
+    rows.push({ id, icon: "browser", iconImage: app.iconUri, label: app.title || app.id, standalone: true });
+  }
+  return [...CONTROL_SECTION_NAV, ...rows];
 }
 
 /** Every section Control renders must have a tile — a new section without one is unreachable. */

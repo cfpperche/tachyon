@@ -148,24 +148,19 @@ describe("loadManifest", () => {
     expect(bad("nope").some((e) => /map of git-event/.test(e))).toBe(true);
   });
 
-  it("accepts runtime-agnostic views and defaults actions to [] (spec 349)", () => {
+  it("514 — a manifest that still declares `views` is refused, and the refusal names where the capability went", () => {
+    // Not "unknown field": the author did not make a typo, they used a capability that MOVED. The
+    // sentence has to carry the address of its new home or the plugin author is left guessing.
     const { manifest, errors } = loadManifest(JSON.stringify({
       name: "mundinho",
       version: "1.0.0",
       description: "agent world",
       views: [{ id: "agents", title: "Agents", surface: "editor", entry: "ui/index.html", fleet: "summary", actions: ["focusAgent"] }],
     }));
-    expect(errors).toEqual([]);
-    expect(manifest?.runtimes).toEqual([]);
-    expect(manifest?.views).toEqual([{ id: "agents", title: "Agents", surface: "editor", entry: "ui/index.html", fleet: "summary", actions: ["focusAgent"] }]);
-  });
-
-  it("rejects bad views fail-closed: uncontained entry, unknown fields, and over-cap lists", () => {
-    const bad = (views: unknown) => loadManifest(JSON.stringify({ name: "mundinho", version: "1.0.0", description: "agent world", views })).errors;
-    expect(bad([{ id: "agents", title: "Agents", surface: "editor", entry: "../index.html", fleet: "summary" }]).some((e) => /views\[0\]\.entry.*'\.' or '\.\.' segment/.test(e))).toBe(true);
-    expect(bad([{ id: "agents", title: "Agents", surface: "editor", entry: "index.html", fleet: "summary", surprise: true }]).some((e) => /unknown field 'surprise'/.test(e))).toBe(true);
-    expect(bad(Array.from({ length: 65 }, (_, i) => ({ id: `v${i}`, title: "V", surface: "editor", entry: "index.html", fleet: "summary" }))).some((e) => /views: too many entries/.test(e))).toBe(true);
-    expect(bad([{ id: "agents", title: "Agents", surface: "editor", entry: "index.html", fleet: "summary", actions: Array.from({ length: 65 }, (_, i) => `a${i}`) }]).some((e) => /actions: too many entries/.test(e))).toBe(true);
+    expect(manifest).toBeUndefined();
+    expect(errors.some((e) => /^views: plugins no longer draw screens \(spec 514\)/.test(e))).toBe(true);
+    expect(errors.some((e) => /install it from the Apps tab/.test(e))).toBe(true);
+    expect(errors.some((e) => /unknown field 'views'/.test(e))).toBe(false);
   });
 
   // spec 265 — author-pinned per-platform tool provisioning (task 1: manifest declaration only).

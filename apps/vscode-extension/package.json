@@ -307,6 +307,11 @@
         "icon": "$(server-process)"
       },
       {
+        "command": "tachyon.installApp",
+        "title": "Tachyon: Install App from Zip\u2026",
+        "icon": "$(add)"
+      },
+      {
         "command": "tachyon.openControl",
         "title": "%command.openControl%",
         "icon": "$(home)"
@@ -319,11 +324,6 @@
       {
         "command": "tachyon.openPlugins",
         "title": "%command.openPlugins%",
-        "icon": "$(extensions)"
-      },
-      {
-        "command": "tachyon.openPluginSurface",
-        "title": "%command.openPluginSurface%",
         "icon": "$(extensions)"
       },
       {
@@ -460,12 +460,6 @@
         {
           "id": "tachyonSidebarPrototype",
           "name": "%view.tachyon%",
-          "type": "webview",
-          "icon": "media/tachyon.svg"
-        },
-        {
-          "id": "tachyonPluginSurfaces",
-          "name": "%view.pluginSurfaces%",
           "type": "webview",
           "icon": "media/tachyon.svg"
         }

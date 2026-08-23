@@ -39,12 +39,14 @@ describe("prototypeHtmlPolicy", () => {
     expect(() => validatePrototypeHtml(`<img src="data:image/png;base64,${payload}">`)).toThrow(/decoded data/);
   });
 
-  it("assembles a script-free static child CSP and preserves nonce-only plugin compatibility", () => {
+  it("assembles a script-free static child CSP and keeps nonce-only interactive compatibility", () => {
     const staticDoc = assembleUntrustedSrcdoc(`<script>globalThis.pwned=1</script><p>safe</p>`, { mode: "prototype-static" });
     expect(staticDoc).toContain("script-src 'none'");
     expect(staticDoc).not.toContain("globalThis.pwned");
     expect(staticDoc).toContain("<p>safe</p>");
     expect(() => assembleUntrustedSrcdoc("<p>x</p>", { mode: "prototype-interactive", nonce: "" })).toThrow(/nonce/);
-    expect(assembleUntrustedSrcdoc("<script>ok()</script>", { mode: "plugin", nonce: "abc" })).toContain('<script nonce="abc">');
+    // 514 — the `plugin` mode left with the capability it served; the nonce behaviour it asserted is
+    // the INTERACTIVE mode's and is asserted there, where it still has consumers.
+    expect(assembleUntrustedSrcdoc("<script>ok()</script>", { mode: "prototype-interactive", nonce: "abc" })).toContain('<script nonce="abc">');
   });
 });
