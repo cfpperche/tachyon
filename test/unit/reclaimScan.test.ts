@@ -49,6 +49,65 @@ describe("scanReclaim", () => {
     expect(plan.bytesCollectable).toBeGreaterThan(0);
   });
 
+  /**
+   * t-7e1b68 — runtimes were UNCOLLECTABLE BY CONSTRUCTION until now: the scan asked each retained
+   * bundle's manifest for a `runtimeId` that no manifest has ever carried, so the "in use" set was
+   * always empty and the conservative fallback kept every one. Measured on the author's machine:
+   * 5 runtimes, 760MB, one live. These three cases pin the fact that replaced it.
+   */
+  const runtime = (root: string, id: string, mtime: Date): string => {
+    write(path.join(root, id, "node"), "#!/bin/sh\n");
+    fs.utimesSync(path.join(root, id), mtime, mtime);
+    return path.join(root, id, "node");
+  };
+  /** A believable `/proc`: an engine process is its title plus an `exe` link to the node it runs. */
+  const procWithEngineOn = (executable: string | null): string => {
+    const procRoot = path.join(home, `proc-${path.basename(path.dirname(executable ?? "none"))}`);
+    fs.mkdirSync(path.join(procRoot, "42"), { recursive: true });
+    fs.writeFileSync(path.join(procRoot, "42", "cmdline"), "tachyon-engine:abcd1234\0");
+    if (executable !== null) fs.symlinkSync(executable, path.join(procRoot, "42", "exe"));
+    // A neighbour that is not ours, to prove the title is what selects, not the mere presence of a pid.
+    fs.mkdirSync(path.join(procRoot, "77"), { recursive: true });
+    fs.writeFileSync(path.join(procRoot, "77", "cmdline"), "node\0server.js\0");
+    return procRoot;
+  };
+
+  it("holds the runtime a live engine is executing, and collects the ones nothing runs on", async () => {
+    const r = roots();
+    const liveExe = runtime(r.runtimesRoot, "live-rt", new Date("2026-07-01"));
+    runtime(r.runtimesRoot, "stale-rt", new Date("2026-07-02"));
+    runtime(r.runtimesRoot, "newest-rt", new Date("2026-08-20"));
+
+    const plan = await scanReclaim({ ...r, procRoot: procWithEngineOn(liveExe) });
+    const collected = plan.collect.filter((c) => c.kind === "runtime").map((c) => path.basename(c.path));
+    expect(collected).toEqual(["stale-rt"]);
+    // The newest is kept without any engine naming it: it is what the next activation re-stages, and
+    // it makes the rule safe to run while nothing happens to be up.
+    expect(plan.hold.filter((h) => h.kind === "runtime").map((h) => path.basename(h.path)).sort())
+      .toEqual(["live-rt", "newest-rt"]);
+  });
+
+  it("holds every runtime when the kernel cannot be read — nothing measured is not evidence of death", async () => {
+    const r = roots();
+    runtime(r.runtimesRoot, "a-rt", new Date("2026-07-01"));
+    runtime(r.runtimesRoot, "b-rt", new Date("2026-07-02"));
+
+    const plan = await scanReclaim({ ...r, procRoot: path.join(home, "no-such-proc") });
+    expect(plan.collect.filter((c) => c.kind === "runtime")).toEqual([]);
+  });
+
+  it("holds the newest when no engine is running at all", async () => {
+    const r = roots();
+    runtime(r.runtimesRoot, "old-rt", new Date("2026-07-01"));
+    runtime(r.runtimesRoot, "new-rt", new Date("2026-08-20"));
+
+    const emptyProc = path.join(home, "proc-empty");
+    fs.mkdirSync(emptyProc, { recursive: true });
+    const plan = await scanReclaim({ ...r, procRoot: emptyProc });
+    expect(plan.collect.filter((c) => c.kind === "runtime").map((c) => path.basename(c.path))).toEqual(["old-rt"]);
+    expect(plan.hold.filter((h) => h.kind === "runtime").map((h) => path.basename(h.path))).toEqual(["new-rt"]);
+  });
+
   it("reads provenance off disk and quarantines state of a workspace that is gone", async () => {
     const r = roots();
     const liveWs = path.join(home, "live-ws");

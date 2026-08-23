@@ -104,10 +104,10 @@ export function planReclaim(input: ReclaimInput): ReclaimPlan {
 
   for (const runtime of input.runtimes) {
     if (runtime.inUse) {
-      hold.push({ kind: "runtime", path: runtime.path, bytes: runtime.bytes, reason: "a retained bundle runs on this runtime" });
+      hold.push({ kind: "runtime", path: runtime.path, bytes: runtime.bytes, reason: "a live engine is running on this runtime, or it is the one the next launch reuses" });
       continue;
     }
-    collect.push({ kind: "runtime", path: runtime.path, bytes: runtime.bytes, reason: "no retained bundle uses this runtime" });
+    collect.push({ kind: "runtime", path: runtime.path, bytes: runtime.bytes, reason: "no live engine runs on this runtime — a copy of an older editor's Node, re-staged on demand" });
   }
 
   for (const state of input.engineStates) {
