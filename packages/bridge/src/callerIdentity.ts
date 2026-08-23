@@ -171,6 +171,13 @@ export class CallerIdentityRegistry {
     if (!trimmed || !/^[0-9a-f]{64}$/i.test(trimmed)) return "invalid";
     const existing = this.resolve(trimmed, opts);
     if (existing.ok && existing.snapshot.name === name) return "already_ok";
+    // t-e476b6 — a REVOKED credential is never adopted, however convincing the holder.
+    //
+    // Revocation is a decision the product made: kill, dismiss, a committed forget, or a death it
+    // observed. Every one of those exists to end a credential, and healing reads the plaintext out of
+    // a live process — exactly the situation those paths mean to overrule. The refusal lives here
+    // rather than only at the call site, so a future healer cannot undo the guarantee by accident.
+    if (!existing.ok && existing.reason === "token_revoked") return "invalid";
     const now = opts.now ?? Date.now();
     // Drop any prior digest match for this exact token (revoked/expired/wrong-name) so we can re-live it.
     const digest = this.digestOf(trimmed);

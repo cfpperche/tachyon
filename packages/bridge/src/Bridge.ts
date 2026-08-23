@@ -331,8 +331,21 @@ export class Bridge {
         externalToken: this.options.externalToken,
         legacyCompatEnabled: this.options.legacyCompatEnabled ?? true,
       });
-      // Self-heal: process still holds a token the digest registry forgot (remint/sweep/reload).
-      if (!result.ok && result.reason === "token_unknown" && bearer && this.options.healUnknownBearer) {
+      // Self-heal: the process still holds a token the registry no longer accepts, and the token is
+      // reachable inside a MANAGED pane's process tree — which is proof of who the holder is.
+      //
+      // t-e476b6 — `token_expired` joins `token_unknown`, and that is the whole fix. An engine restart
+      // supersedes every live token (one hour of grace) and re-mints into an environment that no
+      // living pane can receive: env is fixed at spawn. So a pane that outlives a restart by more than
+      // the grace goes silent while it is still running, with the engine up — measured on the author's
+      // own session, mid-task. Unknown and expired are the same fact here: a registry artifact of
+      // restarting, never evidence about the holder.
+      //
+      // `token_revoked` is deliberately NOT healed. Revocation is a DECISION — kill, dismiss, forget,
+      // or an observed death — and healing it would undo the two guarantees those paths exist to make.
+      // Same for a workspace mismatch: that one says the token belongs somewhere else.
+      const healable = result.ok === false && (result.reason === "token_unknown" || result.reason === "token_expired");
+      if (healable && bearer && this.options.healUnknownBearer) {
         const healed = await this.options.healUnknownBearer(bearer);
         if (healed) result = { ok: true, snapshot: healed };
       }
