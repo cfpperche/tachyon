@@ -102,3 +102,28 @@ Entregue. Desvios do plano, com o porquê:
   uma aba aberta durante a atualização ainda precisa ser descartada em vez de revivida em nada.
 - **T13 não teve o que fazer**: o terrarium não estava instalado (resíduo do incidente de 21/08, não
   desta task). O código que aceitava `views` é que estava intacto, e saiu.
+
+## Slice F — o armazenamento da página, medido (2026-08-23)
+
+A única afirmação que tinha ficado sem medição na 514. Medida contra a orientação do próprio VS Code
+(`code.visualstudio.com/api/extension-guides/webview` + as notas que dizem *"All instances of a webview
+will now run on the same origin ... be sure to partition any data/state that is document specific per
+resource"*), e a resposta trouxe dois fatos que não estavam na spec:
+
+1. **Todo app compartilha UMA origem.** Toda aba de app é criada sob o mesmo `viewType`
+   (`tachyonUserApp`) — e tem que ser, porque o VS Code não registra serializer para um tipo que ele só
+   conhece depois da ativação. Origem compartilhada significa `localStorage` compartilhado: um app lia
+   e sobrescrevia o dado de outro.
+2. **O uninstall não conseguia limpar nada.** Nenhuma API entrega o armazenamento de uma webview a uma
+   extensão, então o diretório sumia e o que a página tinha escrito ficava, invisível e sem dono.
+
+**O que foi feito:** o shim passou a dar a cada app o seu próprio prefixo (`tachyon.app.<id>.`) em
+`localStorage` e `sessionStorage`. Isso torna o dado *identificável*, e identificável é o que o torna
+removível — uma página da mesma origem pode apagar o prefixo de outra, então toda página de app varre,
+ao carregar, os prefixos de apps que não estão mais instalados.
+
+**O limite, dito na confirmação em vez de implícito:** o dado de um app sai na próxima vez que
+QUALQUER app abrir, não no instante do uninstall. Nada nosso roda naquela origem enquanto nenhuma aba
+de app está aberta, e abrir uma aba escondida só para varrer piscaria um painel na cara do humano por
+uma tarefa doméstica. Um app determinado também ainda alcança o store cru por trás do namespace: isto
+particiona por convenção aplicada no shim, e um app instalado já era confiável por definição.

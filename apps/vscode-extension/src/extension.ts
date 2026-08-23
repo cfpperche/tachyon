@@ -1696,7 +1696,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
     return userAppBridge.call(`${ws.wsHash}:${target.id}`, { bridgeUrl: ws.bridgeUrl, token }, tool, args);
-  });
+  }, () => installedAppTiles.map((tile) => tile.id));
   context.subscriptions.push({ dispose: () => { userAppPanels.dispose(); userAppBridge.dispose(); } });
   const sidebarProto = new SidebarPrototypeProvider(
     context.extensionUri,
@@ -3734,7 +3734,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           {
             modal: true,
             detail: vscode.l10n.t(
-              "Removes the app and its files from .tachyon/apps/{0}. Anything it created — tasks, agents, pins — stays: those belong to Tachyon, not to the app.",
+              "Removes the app and its files from .tachyon/apps/{0}, and the data its page stored (cleared the next time any app opens — every app tab shares one browser origin, and only a page in it can clear another's keys). Anything it created — tasks, agents, pins — stays: those belong to Tachyon, not to the app.",
               appId,
             ),
           },

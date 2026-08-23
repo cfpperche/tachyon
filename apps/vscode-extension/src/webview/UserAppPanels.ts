@@ -23,6 +23,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as vscode from "vscode";
+import { storageShim } from "./userAppStorage.js";
 
 /** The single viewType every installed app's tab is created under (see `open`). */
 export const USER_APP_VIEW_TYPE = "tachyonUserApp";
@@ -91,7 +92,16 @@ export class UserAppPanels {
   private readonly panels = new Map<string, vscode.WebviewPanel>();
   private disposed = false;
 
-  constructor(private readonly call: UserAppCaller) {}
+  constructor(
+    private readonly call: UserAppCaller,
+    /**
+     * 514 slice F — the apps installed right now, read at open time.
+     *
+     * The page's shim needs it to sweep the storage of apps that are gone: every app tab shares one
+     * origin, so a page that opens is the only thing that can clean up after one that was removed.
+     */
+    private readonly installedIds: () => readonly string[] = () => [],
+  ) {}
 
   get openIds(): string[] {
     return [...this.panels.keys()];
@@ -175,7 +185,7 @@ export class UserAppPanels {
     // The chosen action travels as a global the page can read before its own script runs, so an app
     // does not have to parse a query string that the `<base>` above would make ambiguous anyway.
     const chosen = action ? `<script>window.tachyonAction=${JSON.stringify(action)};</script>` : "";
-    const head = `${base}${chosen}${BRIDGE_SHIM}`;
+    const head = `${base}${chosen}${storageShim(target.id, this.installedIds())}${BRIDGE_SHIM}`;
     return html.includes("<head>") ? html.replace("<head>", `<head>${head}`) : `${head}${html}`;
   }
 }
