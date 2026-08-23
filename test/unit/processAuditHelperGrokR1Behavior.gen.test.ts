@@ -19,8 +19,8 @@ import { join } from "node:path";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 const REPO = process.cwd();
-const SRC = join(REPO, ".tachyon/studies/368-process-audit-helper.c");
-const REPORT = join(REPO, ".tachyon/studies/368-process-audit-helper-spike.md");
+const SRC = join(REPO, "test/fixtures/studies/368-process-audit-helper.c");
+const REPORT = join(REPO, "test/fixtures/studies/368-process-audit-helper-spike.md");
 
 /**
  * t-9713ff — bound every helper run in this file to THIS worker's subtree.
