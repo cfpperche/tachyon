@@ -4,6 +4,39 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.44 — estado de runtime deixa de ser conteúdo do repositório
+
+Três arquivos ainda estavam versionados sob `.tachyon/`, contra a regra da casa e contra o próprio
+`.gitignore`. Isso já tinha sido decidido uma vez e revertido: um commit desversionou `.tachyon/`
+inteiro, exatamente como a regra sempre disse, e o seguinte devolveu os três à força — porque dois
+testes os leem.
+
+O raciocínio de quem devolveu estava certo sobre **o quê** (arquivo sob teste é conteúdo do
+repositório) e errado sobre **onde**. `.tachyon/` é um diretório que o runtime cria, muta e pode
+perder sem que isso conte como perda de código. O `rm -rf` de ontem levou o workspace, e o único
+motivo de esses três terem sobrevivido é que o git os segurava **contra** a própria regra de ignore
+dele. Sobreviver por acidente não é uma estratégia de custódia.
+
+Os estudos passam a morar em `test/fixtures/studies/`. O que decide o destino não é o gênero do
+texto — dois são relatos de investigação, um é C de verdade — e sim quem quebra se o arquivo sumir.
+Quem quebra é a suíte.
+
+### A anomalia suspeitada não existia
+
+Havia a suspeita de uma regra de ignore quebrada, porque `git check-ignore` respondia "não ignorado"
+para esses caminhos. Medido de novo agora: responde corretamente. `check-ignore` fala sobre arquivos
+**não rastreados**; enquanto os três estavam forçados no índice, a resposta estava certa e a
+conclusão é que era o rastreamento, não a regra. Nada a simplificar — e a medição virou teste, para a
+suspeita não voltar.
+
+### Uma regra que já foi revertida uma vez precisa de dente
+
+O que impede a terceira rodada disso não é a mudança: é o guardião. Um teste pergunta ao índice
+diretamente se algum caminho sob um `.tachyon/` de workspace está rastreado, e a única exceção é a
+que faz sentido — um workspace de fixture tem que carregar o seu, porque é justamente ele o objeto do
+teste. A mensagem de falha nomeia a saída (mover para fixtures), não só a proibição: os três arquivos
+estavam ali por um motivo real, e o conserto sempre foi movê-los, nunca apagá-los.
+
 ## 0.93.43 — morrer sozinho também retira a credencial
 
 A 0.93.42 fechou a retirada de credencial quando o agente é removido. Ficou medido, e dito, um caso
