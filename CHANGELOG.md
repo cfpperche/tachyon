@@ -4,6 +4,30 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.53 — o dado que a página de um app guarda passa a ter dono
+
+A última afirmação da spec de apps que ainda não tinha sido medida: o que acontece com o que a página
+de um app guarda no navegador. Medida, e a resposta trouxe dois fatos que não estavam no plano.
+
+**Toda aba de app compartilha uma origem.** Elas são criadas sob o mesmo tipo de painel — e têm de
+ser, porque o editor não registra restaurador para um tipo que ele só conhece depois de iniciar. A
+orientação do próprio editor é explícita sobre a consequência: instâncias de uma mesma webview correm
+na mesma origem, e o armazenamento é partido por origem. Ou seja, até aqui **um app lia e sobrescrevia
+o armazenamento de outro**.
+
+**E desinstalar não conseguia limpar nada.** Nenhuma interface entrega o armazenamento de uma webview
+a uma extensão: o diretório ia embora e o que a página tinha escrito ficava, invisível e sem dono.
+
+Agora cada app recebe o seu próprio espaço de nomes, sem que o autor faça nada. Isso torna o dado
+**identificável** — e identificável é o que o torna **removível**: uma página da mesma origem pode
+apagar o espaço de outra, então toda página de app varre, ao abrir, o que pertence a apps que já não
+estão instalados.
+
+O limite está dito na confirmação em vez de subentendido: o dado de um app desinstalado sai na próxima
+vez que **algum** app abrir, não no instante da remoção. Nada nosso corre naquela origem enquanto
+nenhuma aba de app está aberta, e abrir uma aba escondida só para varrer piscaria um painel na cara de
+alguém por causa de faxina.
+
 ## 0.93.52 — o ladrilho ganha menu, e a ação vira linha de tabela
 
 Botão direito num ladrilho do launcher abre um menu. O que ele oferece é **dado**, não ramo:
