@@ -93,6 +93,12 @@ export const EXTENSION_COMMAND_ACTIONS = [
   // could reach this would be ringing anyone's pane. The Saved Agent commit lives in the editor
   // and needs this one door onto the same queue approval.resolve already uses.
   "notice.deliver",
+  // 514 — installing an app is a COMMAND, and this list gates the result the same way the query list
+  // does. `apps.list` shipped missing from the query list and `app.install` from this one: same
+  // divergence, both halves, and the guard test that caught the first only looked at queries. The
+  // human saw "extension command result is invalid": a request that parsed, an engine that answered,
+  // and a reply refused on the way back.
+  "app.install",
 ] as const;
 
 const extensionQueryActionSchema = z.enum(EXTENSION_QUERY_ACTIONS);
