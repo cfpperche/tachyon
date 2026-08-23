@@ -4,6 +4,36 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.57 — o seletor mede o que sugere, e ganha a segunda mão
+
+Duas correções que vieram do uso.
+
+### Um pacote de app não é candidato numa porta de plugin
+
+O seletor sugeria qualquer `.zip` do disco, então um app empacotado aparecia no topo das sugestões do
+instalador de plugins. Um seletor que sugere a coisa errada é pior que um que não sugere nada —
+sugestão lê como recomendação.
+
+Distinguir precisa dos nomes de dentro do arquivo, e um zip já guarda isso em texto puro no fim dele,
+no diretório central. Agora a varredura lê **a cauda do arquivo, não o arquivo**: sem descompactar e
+sem custo proporcional ao conteúdo, de modo que um pacote de 400MB responde tão rápido quanto um de
+4KB — que é o que torna viável perguntar isso de cada candidato.
+
+Só sai da lista o que foi **medido** como outra coisa. Um arquivo que não deu para ler continua sendo
+oferecido, porque recusa de leitura não é evidência sobre o conteúdo, e esconder um plugin de verdade
+porque o arquivo era estranho seria um "não" sem medição vestido de medido. Navegar continua listando
+tudo: quem sabe onde está o arquivo não deve ter a pasta filtrada por baixo.
+
+### Digitar e clicar são as duas mãos do mesmo seletor
+
+Faltava a saída para o diálogo do sistema. Quem já sabe o caminho digita e é mais rápido; a maioria
+das pessoas prefere clicar e escolher — e todo seletor que vale como referência põe um **Browse…** ao
+lado da caixa em vez de obrigar a pessoa a escolher um estilo. Agora ele está lá, tanto para plugins
+quanto para apps.
+
+O que não muda é onde você chega: o diálogo do sistema nunca é a porta que abre sozinha, é uma porta
+que você escolhe de dentro do nosso seletor.
+
 ## 0.93.56 — escolher um plugin acontece no picker do Tachyon
 
 A versão anterior abriu a porta por arquivo com o diálogo do editor. Numa janela remota ou WSL esse
