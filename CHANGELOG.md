@@ -4,6 +4,26 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.51 — as duas metades
+
+Dois defeitos, e os dois com a mesma forma: metade de um par simétrico foi corrigida, e o teste
+escrito para provar a correção olhou apenas para a metade já corrigida.
+
+**Instalar um app respondia "resultado de comando inválido".** Existem duas listas de ações — uma de
+consultas, outra de comandos — e o **resultado** de cada operação é validado contra a sua. A ação de
+instalar estava na descrição do pedido e fora da lista: o pedido era aceito, o motor respondia, e a
+resposta era recusada na volta. É exatamente o que tinha acontecido do lado das consultas na versão
+anterior; o guardião escrito então cobria consultas e não comandos. Agora cobre as duas, e cada metade
+foi provada falhando sem a sua entrada.
+
+**E o arranque falhou de novo, pelo mesmo motivo em outro lugar.** A folga dada ao motor que ainda
+está vivo entrou numa das duas esperas — e a instalação roda a **outra**. A folga existia e nunca era
+executada; a auditoria continuava dizendo "não respondeu em 10s". Agora está nas duas, e um teste
+afirma isso pelo nome de cada uma.
+
+Cobrir um de dois caminhos simétricos não é meia proteção: ensina a lição errada sobre qual dos dois
+está seguro.
+
 ## 0.93.50 — o seletor de arquivo passa a ser um seletor de arquivo
 
 O que a versão anterior chamava de seletor era uma lista chapada do que uma varredura tinha achado.
