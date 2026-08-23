@@ -2,6 +2,7 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { App, type GlobalOp } from "./App";
 import { type FleetVM, type SidebarBootVM } from "@tachyon/shared/sidebar/types";
+import type { InstalledAppTile } from "./sectionNav.js";
 import { FLEET, readyMessage, type SidebarHostMessage } from "./messages";
 
 // The webview iframe entry. The host (SidebarPrototypeProvider) pushes the live fleet via postMessage
@@ -33,6 +34,9 @@ function Root() {
    * window that has not been checked (plan, "Risks and unknowns").
    */
   const [boot, setBoot] = useState<SidebarBootVM | undefined>(undefined);
+  // 514 — the installed apps arrive on the same message as the fleet; set unconditionally, so a host
+  // that stops sending them (last app removed) empties the grid instead of leaving a stale tile.
+  const [apps, setApps] = useState<InstalledAppTile[] | undefined>(undefined);
   // spec 242 — persisted sort prefs (per section); the host includes them in the fleet message so the FIRST
   // render is already in the saved order (no name-asc→saved flicker). t-50daeb — `launcher` (the
   // Control grid) is absent until the user picks a mode: absence IS the product order.
@@ -61,6 +65,7 @@ function Root() {
         // absence. Set unconditionally, including back to undefined, so a host that stops sending
         // discovery returns the sidebar to "unknown" rather than leaving a stale claim on screen.
         setBoot(d.boot);
+        setApps(Array.isArray(d.apps) ? d.apps : undefined);
         if (d.prefs) setPrefs(d.prefs);
         setCollapsedKeys(Array.isArray(d.collapsedKeys) ? d.collapsedKeys : []);
         if (typeof d.appVersion === "string" && d.appVersion.trim()) setAppVersion(d.appVersion.trim());
@@ -101,7 +106,7 @@ function Root() {
     setCollapsedKeys: (keys: string[]) => vscode?.postMessage({ type: "setCollapsed", keys }),
     switchWorkspace: (wsHash: string) => vscode?.postMessage({ type: "switchControlWorkspace", hash: wsHash }),
   };
-  return <App fleets={fleets} dispatch={dispatch} prefs={prefs} collapsedKeys={collapsedKeys} appVersion={appVersion} selectedWsHash={selectedWsHash} boot={boot} />;
+  return <App fleets={fleets} dispatch={dispatch} prefs={prefs} collapsedKeys={collapsedKeys} appVersion={appVersion} selectedWsHash={selectedWsHash} boot={boot} apps={apps} />;
 }
 
 const root = document.getElementById("root");

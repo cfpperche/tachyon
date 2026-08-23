@@ -34,8 +34,10 @@ import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "./webview/SystemPanel.js";
 import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
 import { COLLECT_EVERYTHING, type SectionCollectNeeds, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
+import { UserAppPanels } from "./webview/UserAppPanels.js";
+import { UserAppBridgeCaller } from "./webview/userAppBridgeCaller.js";
 import type { SidebarBootFolderVM, SidebarBootVM } from "@tachyon/shared/sidebar/types.js";
-import { resolveSection } from "./sections/resolveSection.js";
+import { resolveSection, appIdOfSection } from "./sections/resolveSection.js";
 import { resolveSectionDestination } from "./sections/route";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
 import { deliverAgentPaneText } from "./webview/agentPaneDelivery.js";
@@ -1671,6 +1673,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   let openPinDocumentFromSidebar: ((wsHash: string, pinId: string) => void) | undefined;
   // t-41117e — continueFleetTask is defined later; wire through a late-bound ref like pin open.
   let continueTaskFromSidebar: ((fromName: string, toName: string, wsHash: string) => Promise<void>) | undefined;
+  /**
+   * 514 — the installed apps of this window, kept as the sidebar's answer between pushes.
+   *
+   * A cache and not a live read because the sidebar pushes synchronously and the catalog comes from
+   * the engine over a promise. It is refreshed by the events that can change it — an install, a
+   * workspace attaching — and never on a timer: a stale tile is corrected by the next refresh, and
+   * the panel that opens an app resolves the app AGAIN from the engine, so a tile the disk no longer
+   * backs cannot open anything stale.
+   */
+  let installedAppTiles: { id: string; title: string; iconPath: string }[] = [];
+  // 514 — one Bridge client per workspace, made on the first call an app makes and dropped when it
+  // fails; and one editor tab per installed app, revealed rather than duplicated.
+  const userAppBridge = new UserAppBridgeCaller();
+  const userAppPanels = new UserAppPanels(async (target, tool, args) => {
+    const ws = (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+    if (!ws) return { ok: false, error: "no Tachyon workspace is attached in this window" };
+    let token: string | undefined;
+    try {
+      const payload = jsonObject(await extensionQuery(ws, { action: "bridge.token" }), "bridge.token");
+      token = typeof payload.token === "string" ? payload.token : undefined;
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    return userAppBridge.call(`${ws.wsHash}:${target.id}`, { bridgeUrl: ws.bridgeUrl, token }, tool, args);
+  });
+  context.subscriptions.push({ dispose: () => { userAppPanels.dispose(); userAppBridge.dispose(); } });
   const sidebarProto = new SidebarPrototypeProvider(
     context.extensionUri,
     () => workspaces().map((ws) => ws.sidebar),
@@ -1683,6 +1711,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     bootVM,
     (wsHash) => retryStartFromSidebar?.(wsHash),
+    () => installedAppTiles,
   );
   context.subscriptions.push(sidebarProto);
   // Runtime Ops lives in Control → Runtime only (bottom-panel webview contribution removed).
@@ -1735,6 +1764,68 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * a dashboard is opened AGAINST a project, so an ambient caller resolves one ONCE, here, rather than
    * handing the panel a scope it would later observe changing.
    */
+  /**
+   * 514 — the app catalog, read from the engine and handed to the sidebar.
+   *
+   * Failure is silence on purpose: an engine that is still starting, or a workspace with no
+   * `.tachyon/apps`, both mean "no tiles", and neither is a condition to interrupt the human about.
+   * The warnings a broken `app.json` produces are the app's problem and belong on the Apps screen,
+   * not in a window notification the human did not ask for.
+   */
+  const refreshInstalledApps = async (): Promise<void> => {
+    const ws = (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+    if (!ws) {
+      installedAppTiles = [];
+      sidebarProto.refresh();
+      return;
+    }
+    try {
+      const payload = jsonObject(await extensionQuery(ws, { action: "apps.list" }), "apps.list");
+      installedAppTiles = jsonArray(payload.apps, "apps.list").map((entry) => {
+        const row = jsonObject(entry, "apps.list row");
+        const root = String(row.root ?? "");
+        return {
+          id: String(row.id ?? ""),
+          title: String(row.title ?? ""),
+          iconPath: path.join(root, String(row.icon ?? "")),
+        };
+      }).filter((tile) => tile.id.length > 0);
+    } catch {
+      installedAppTiles = [];
+    }
+    sidebarProto.refresh();
+  };
+  /**
+   * 514 — open an installed app's tab, resolving it from the engine rather than from the tile.
+   *
+   * The tile is a cached projection; the disk is the catalog. Resolving here means a tile whose app
+   * was removed or renamed says so instead of opening a panel over a directory that is gone.
+   */
+  const openUserApp = async (appId: string): Promise<void> => {
+    const ws = (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+    if (!ws) {
+      notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn");
+      return;
+    }
+    let target: { id: string; title: string; root: string; entry: string } | undefined;
+    try {
+      const payload = jsonObject(await extensionQuery(ws, { action: "apps.list" }), "apps.list");
+      for (const entry of jsonArray(payload.apps, "apps.list")) {
+        const row = jsonObject(entry, "apps.list row");
+        if (String(row.id ?? "") !== appId) continue;
+        target = { id: appId, title: String(row.title ?? appId), root: String(row.root ?? ""), entry: String(row.entry ?? "") };
+      }
+    } catch (error) {
+      notify(error instanceof Error ? error.message : String(error), "error");
+      return;
+    }
+    if (!target || !target.root) {
+      notify(vscode.l10n.t("App '{0}' is not installed in this workspace.", appId), "warn");
+      void refreshInstalledApps();
+      return;
+    }
+    userAppPanels.open(target);
+  };
   const openPluginsTab = (hash?: string): void => {
     const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
     if (!ws) {
@@ -1823,6 +1914,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   const refreshAll = () => {
     void applyWorktreeFolderReveal(); // spec 210/263 — the worktree-remove commands only re-render through here
+    // 514 — the app catalog rides the same fan-out as everything else the sidebar paints, so a
+    // workspace that just attached brings its tiles with it instead of on the next install.
+    void refreshInstalledApps();
     sidebarProto.refresh();
     pluginSurfaces.refreshAll();
     for (const manager of Object.values(studioPanels)) manager.refreshReferenceData();
@@ -3312,7 +3406,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // t-edfe12 — `tachyonPipelineStudio` joins them: the Fake 1 studio was deleted, so a tab left open
   // before the deletion has no manager to revive into. Dispose-only preserves spec 361 (every panel
   // still has a serializer) without shipping the in-memory test double.
-  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonPipelineStudio", "tachyonDesignMode", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView", "tachyonFleet", "tachyonOverview", "tachyonEngine"]) {
+  // 514 — `tachyonUserApp` joins them, for a reason of its own: between two windows the app may have
+  // been reinstalled over or removed, so a revived tab could restore a screen that no longer exists.
+  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonPipelineStudio", "tachyonDesignMode", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView", "tachyonFleet", "tachyonOverview", "tachyonEngine", "tachyonUserApp"]) {
     registerDisposePanelSerializer(context, viewType);
   }
 
@@ -3554,6 +3650,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ---- server inspector (F27) — cross-workspace socket queries; Control → tmux (t-610705 Phase B #5) ----
     // SDD 485 D1 — the tmux Server Inspector opens as its own editor tab, or reveals the one already open.
     vscode.commands.registerCommand("tachyon.inspectServer", () => { tmuxPanels.open(); }),
+    // 514 — install an app from a zip the human picked. The PATH travels to the engine, not the
+    // bytes: both sides share a filesystem in every supported topology, and a second transport for
+    // multi-megabyte archives would be one more thing to keep correct for nothing.
+    vscode.commands.registerCommand("tachyon.installApp", async () => {
+      const ws = (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+      if (!ws) {
+        notify(vscode.l10n.t("No Tachyon workspace is attached in this window, so there is nowhere to install an app."), "warn");
+        return;
+      }
+      const picked = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        openLabel: vscode.l10n.t("Install app"),
+        filters: { "App package": ["zip"] },
+      });
+      const zip = picked?.[0];
+      if (!zip) return;
+      try {
+        const payload = jsonObject(await extensionInvoke(ws, { action: "app.install", zipPath: zip.fsPath }), "app.install");
+        const id = String(payload.id ?? "");
+        // A reinstall replaces the directory the open tab was serving, so the tab is closed rather
+        // than left rendering bytes that no longer exist. Reopening it is one click on the tile.
+        if (id) userAppPanels.close(id);
+        await refreshInstalledApps();
+        notify(vscode.l10n.t("Installed app '{0}'.", String(payload.title ?? id)));
+      } catch (error) {
+        // What failed and why, said once: a bad zip is the human's to fix, not a Tachyon fault.
+        notify(error instanceof Error ? error.message : String(error), "error");
+      }
+    }),
     // ---- Control (desktop MVP, t-fe52f0 frente 1) — editor sysadmin; palette + launcher tiles ----
     // t-6e2952 — optional section opens/navigates the singleton Control (no second panel). The
     // sidebar header view/title button was removed; the launcher tab is the primary door.
@@ -3567,6 +3692,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // eight defaults in route.ts name `"overview"` at the call site by decision), and both land on
         // System. Composing them here rather than folding the alias into the decoder keeps a persisted
         // or deep-linked id READABLE instead of rewriting it.
+        // 514 — an installed app is routed here for the same reason the Board is: the sidebar must
+        // never have to learn which ids are apps. It is checked BEFORE the built-in resolution
+        // because `resolveSectionDestination` only knows the compiled twelve, and an unknown id
+        // there falls back to System — which is exactly how an app tile used to open the wrong screen.
+        const userAppId = appIdOfSection(section);
+        if (userAppId) return openUserApp(userAppId);
         const resolved = resolveSectionDestination(resolveSection(section));
         if (resolved === "mission") {
           openBoard();

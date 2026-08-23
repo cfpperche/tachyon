@@ -55,7 +55,11 @@ export type SectionId =
   | "tmux"
   | "plugins"
   | "settings"
-  | "companion";
+  | "companion"
+  // 514 — a user-installed app is a tile like any other, and the `app:` prefix is what makes a
+  // collision with a built-in impossible BY CONSTRUCTION rather than by a naming convention someone
+  // has to remember. The twelve above stay closed; this is the open half.
+  | `app:${string}`;
 
 /**
  * The sections CONTROL ITSELF RENDERS, in product order.

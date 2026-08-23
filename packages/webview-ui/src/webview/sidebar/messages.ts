@@ -11,6 +11,7 @@
  * breaks the BUILD (typecheck) instead of silently producing a wrong preview screenshot.
  */
 
+import type { InstalledAppTile } from "./sectionNav.js";
 import type { FleetVM, SidebarBootVM } from "@tachyon/shared/sidebar/types";
 
 // the webview→host ready handshake is shared across all views; re-exported here for sidebar consumers.
@@ -45,6 +46,12 @@ export interface FleetMessage {
    * the failure, not the dangerous one.
    */
   boot?: SidebarBootVM;
+  /**
+   * 514 — the installed apps, travelling WITH the fleet for the same reason the boot row does: the
+   * launcher grid and the fleet are painted from one message, so they cannot disagree on the wire.
+   * Absent means "none installed", which is also what a workspace with no `.tachyon/apps` reports.
+   */
+  apps?: InstalledAppTile[];
 }
 export function fleetMessage(
   fleets: FleetVM[],
@@ -53,6 +60,7 @@ export function fleetMessage(
   appVersion?: string,
   selectedWsHash?: string,
   boot?: SidebarBootVM,
+  apps?: InstalledAppTile[],
 ): FleetMessage {
   return {
     type: FLEET,
@@ -62,6 +70,7 @@ export function fleetMessage(
     ...(appVersion ? { appVersion } : {}),
     ...(selectedWsHash ? { selectedWsHash } : {}),
     ...(boot ? { boot } : {}),
+    ...(apps && apps.length > 0 ? { apps } : {}),
   };
 }
 

@@ -307,6 +307,11 @@
         "icon": "$(server-process)"
       },
       {
+        "command": "tachyon.installApp",
+        "title": "Tachyon: Install App from Zip\u2026",
+        "icon": "$(add)"
+      },
+      {
         "command": "tachyon.openControl",
         "title": "%command.openControl%",
         "icon": "$(home)"

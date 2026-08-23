@@ -14,7 +14,7 @@ import {
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 // t-6e2952 — the Control tab's tiles derive from the SAME catalog Control's own TabsBar order comes from
 // (COCKPIT_SECTION_ORDER); a section added there without nav metadata throws instead of silently vanishing.
-import { CONTROL_SECTION_NAV, type ControlSectionNav } from "./sectionNav";
+import { controlSectionNavWith, type ControlSectionNav, type InstalledAppTile } from "./sectionNav";
 import type { SectionId } from "../../sections/model";
 import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
 import {
@@ -81,7 +81,7 @@ export interface Dispatch {
 // SDD 504 — `retryStart` and `openOutput` are the failed state's two actions. Both are new here
 // because the failed state itself is new: before this change an attach failure fell through to the
 // welcome, so the sidebar offered to CREATE a workspace whose startup had just been rejected.
-export type GlobalOp = "addPin" | "copyBridge" | "init" | "onboarding" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "retryStart" | "openOutput" | "studio:agents" | "studio:terminals" | "studio:schedules";
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "onboarding" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "retryStart" | "openOutput" | "installApp" | "studio:agents" | "studio:terminals" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/remove etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -1337,7 +1337,9 @@ function ControlGrid({
             key={s.id}
             id={`ctl-tile-${s.id}`}
             class={`ctl-tile${err ? " has-err" : ""}${isCut ? " is-cut" : ""}${isDragging ? " is-dragging is-drop-slot" : ""}`}
-            icon={s.icon}
+            // 514 — an installed app wears its own icon file; the twelve built-ins stay codicons, so a
+            // monochrome tile is Tachyon's and a coloured one was installed. Deliberate, owner's call.
+            icon={s.iconImage ? undefined : s.icon}
             title={err ? `${opens} (errors in engine log)` : opens}
             aria-label={err ? `${s.label}, errors in engine log` : undefined}
             data-section={s.id}
@@ -1365,7 +1367,7 @@ function ControlGrid({
               e.dataTransfer?.setData("text/plain", s.id);
               if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
               const source = e.currentTarget as HTMLElement | undefined;
-              const icon = source?.querySelector?.(".codicon") as HTMLElement | null;
+              const icon = (source?.querySelector?.(".codicon") ?? source?.querySelector?.(".ctl-tile-img")) as HTMLElement | null;
               if (icon && e.dataTransfer && typeof document !== "undefined") {
                 const ghost = icon.cloneNode(true) as HTMLElement;
                 ghost.setAttribute("aria-hidden", "true");
@@ -1408,6 +1410,7 @@ function ControlGrid({
               onOpen(s.id);
             }}
           >
+            {s.iconImage ? <img class="ctl-tile-img" src={s.iconImage} alt="" aria-hidden="true" /> : null}
             {s.label}
             {err ? <span class="ctl-tile-dot" data-testid="control-tile-engine-dot" aria-hidden="true" /> : null}
           </Button>
@@ -1580,6 +1583,8 @@ export function App({
   initialTab = "Agents",
   selectedWsHash,
   boot,
+  /** 514 — the apps installed in this workspace; their tiles follow the twelve built-in ones. */
+  apps,
   /** Test / visual-QA seam — production always starts with rearranging off. */
   initialReorderMode = false,
   /** Test / visual-QA seam — production has no in-flight drag. */
@@ -1594,6 +1599,7 @@ export function App({
   appVersion?: string;
   initialTab?: TabId;
   selectedWsHash?: string;
+  apps?: InstalledAppTile[];
   /**
    * SDD 504 — the host's discovery result. `undefined` means the host has not spoken yet, which is
    * exactly the first frame of every reload, and is why absence can no longer be read off `fleets`.
@@ -1675,7 +1681,9 @@ export function App({
   // t-539851 — custom:id,… is a third value of the SAME pref string, parsed rather than run through
   // asSortMode (which would collapse it to name-asc and hide the arrangement).
   const launcherParsed = parseLauncherPref(launcherOverride ?? prefs.launcher);
-  const launcherTiles = orderLauncherTiles(CONTROL_SECTION_NAV, launcherParsed);
+  // 514 — the catalog is the twelve compiled in PLUS whatever the workspace has installed. Built
+  // here rather than imported as a constant because the second half arrives on a message.
+  const launcherTiles = orderLauncherTiles(controlSectionNavWith(apps ?? []), launcherParsed);
   const changeSort = (section: "agents" | "terminals" | "launcher", mode: SortMode) => {
     if (section === "launcher") setLauncherOverride(mode);
     else setSortOverride((o) => ({ ...o, [section]: mode })); // optimistic + session-authoritative
@@ -2092,6 +2100,12 @@ export function App({
           <AttentionStack fleets={fleets} dispatch={dispatch} />
         ) : tab === "Apps" ? (
           // t-6e2952 — one grid for the window (Control is a singleton), so no folder header above it.
+          <>
+          {/* 514 — the install door sits BESIDE the grid, never inside it: the grid is a labelled
+              group of destinations, and an action in it reads as a thirteenth destination. */}
+          <div class="ctl-grid-actions">
+            <Button class="ctl-add-app" data-testid="launcher-add-app" icon="add" onClick={() => dispatch?.global("installApp")}>Add app</Button>
+          </div>
           <ControlGrid
             onOpen={(section) => dispatch?.global("openControl", undefined, section)}
             engineHasError={engineHasError}
@@ -2102,6 +2116,7 @@ export function App({
             draggingSection={initialDraggingSection}
             dropTargetSection={initialDropTarget}
           />
+          </>
         ) : selected ? (
           // t-72ff5a — the seven scoped tabs render exactly the selected project, with no folder
           // header and no aggregation.

@@ -27,7 +27,11 @@ describe("webview convention (spec 279)", () => {
   });
 
   it("every converted surface is a real preact bundle (main.tsx + esbuild entry)", () => {
-    for (const s of WEBVIEW_SURFACES.filter((x) => x.converted)) {
+    // 514 — `posture: "replace"` finally has a user, and it is the one case this rule cannot cover: an
+    // installed app's page is the AUTHOR's HTML, read from `.tachyon/apps/<id>/`, so there is no
+    // main.tsx of ours to point at and no esbuild entry to emit. The exemption is narrow on purpose —
+    // it is keyed to the declared posture, and `replace` already has to carry a written reason.
+    for (const s of WEBVIEW_SURFACES.filter((x) => x.converted && x.posture !== "replace")) {
       expect(existsSync(`packages/webview-ui/src/webview/${s.view}/main.tsx`), `${s.viewId}: missing packages/webview-ui/src/webview/${s.view}/main.tsx`).toBe(true);
       // SDD 485 C2 — a bundle is emitted either by its own target's `outfile` or as one entry of the
       // multi-entry splitting invocation (outdir + entryNames, so no literal output path exists).
@@ -36,7 +40,11 @@ describe("webview convention (spec 279)", () => {
   });
 
   it("no host file carries inline webview logic (acquireVsCodeApi) unless allowlisted (unconverted live panels)", () => {
-    const allow = new Set(WEBVIEW_SURFACES.filter((s) => !s.converted && s.mode === "live").map((s) => s.hostFile));
+    const allow = new Set(WEBVIEW_SURFACES
+      // 514 — a `replace` host serves a document it did not write, so the small shim that gives that
+      // page `window.tachyon.call` cannot live in a bundle of ours: there is no bundle of ours.
+      .filter((s) => (!s.converted && s.mode === "live") || s.posture === "replace")
+      .map((s) => s.hostFile));
     const violations: string[] = [];
     for (const f of [...new Set(WEBVIEW_SURFACES.map((s) => s.hostFile))]) {
       if (allow.has(f)) continue;
@@ -123,7 +131,11 @@ describe("webview convention (spec 279)", () => {
       tachyonOnboarding: "ONBOARDING_VIEW_TYPE",
       tachyonCompanion: "COMPANION_VIEW_TYPE",
     };
-    const disposeOnly = new Set(["tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonDesignMode", "tachyonControlInspector", "tachyonPluginSurface", "tachyonPluginSurfaces"]);
+    // 514 — `tachyonUserApp` is dispose-only for a reason the others do not have: between one window
+    // and the next the app may have been reinstalled over, or removed. Reviving a tab onto a directory
+    // whose contents changed underneath it would restore a screen that no longer exists; the tile is
+    // one click away.
+    const disposeOnly = new Set(["tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonDesignMode", "tachyonControlInspector", "tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonUserApp"]);
     // t-edfe12 — tachyonPipelineStudio left the manifest (no panel is created) and is registered
     // only in extension.ts's dispose-only loop, same as tachyonFleet / tachyonOverview.
     const violations: string[] = [];

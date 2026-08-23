@@ -283,6 +283,10 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // of an opaque-origin sandboxed `srcdoc` frame; the first-party RELAY page around it is ordinary kit on the
   // shared shell, so the relay `conform`s. Its `frameSrc`/`scriptCspSource` options are a SECURITY posture, not
   // a design-system one — deliberately not extension points (see SHELL_EXTENSION_POINTS).
+  // 514 — a user-installed app OWNS its document: the page is the author's HTML, read off disk, and the
+  // product's shell has nothing to contribute to it. `replace` is what that fact is called here, and the
+  // reason is the declaration the guard demands instead of silence.
+  { viewId: "tachyonUserApp", view: "user-app", hostFile: "apps/vscode-extension/src/webview/UserAppPanels.ts", mode: "live", converted: true, hostKind: "standalone", posture: "replace", reason: "serves an installed app's own HTML from .tachyon/apps/<id>/ — the author owns the document" },
   { viewId: "tachyonPluginSurface", view: "plugin-host", hostFile: "apps/vscode-extension/src/plugins/ui/host.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonPluginSurfaces", view: "plugin-host", hostFile: "apps/vscode-extension/src/plugins/ui/host.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
 ];

@@ -128,6 +128,9 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("tmux.health") }).strict(),
   z.object({ action: z.literal("tmux.capture"), session: tmuxSession }).strict(),
   z.object({ action: z.literal("prompt.catalog") }).strict(),
+  /** 514 — the installed apps of this workspace, read from `.tachyon/apps` on every call. There is no
+   *  index and no cache: the disk is the catalog, so the answer cannot drift from what is installed. */
+  z.object({ action: z.literal("apps.list") }).strict(),
   z.object({ action: z.literal("worktrees.list") }).strict(),
   // spec 444 — registry entries + fail-closed hygiene classification (Control Worktrees tab).
   z.object({ action: z.literal("worktrees.classified") }).strict(),
@@ -330,6 +333,13 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     action: z.literal("notice.deliver"),
     agent: name,
     line: text(4_000, 1),
+  }).strict(),
+  /** 514 — install an app from a zip the human chose. The PATH travels, not the bytes: the engine and
+   *  the editor share a filesystem in every supported topology, and a 4 KiB command carrying a
+   *  multi-megabyte archive would be a second transport to keep correct for no gain. */
+  z.object({
+    action: z.literal("app.install"),
+    zipPath: text(4_096, 1),
   }).strict(),
 ]);
 
