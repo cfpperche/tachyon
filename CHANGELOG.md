@@ -4,6 +4,45 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.45 — a regra existia e nunca pôde disparar
+
+Depois da faxina da 0.93.34, o maior item de estado machine-local desta máquina passou a ser
+`engine-runtimes`: 760 MB em cinco cópias do Node, das quais **uma** está em uso. Não sobreviviam por
+falta de regra. A regra existia, e não podia disparar.
+
+O scan decidia se um runtime está em uso lendo um `runtimeId` no manifesto de cada engine retido.
+Nenhum manifesto jamais teve essa chave — e o fallback conservador que existe para o caso "ninguém
+declarou nada" marcava então **todos** como em uso, sempre. Um guarda que nunca acorda parece um
+guarda.
+
+### A chave não faltava por acidente: era impreenchível
+
+Um engine é **construído** — pelo `npm run release`, numa máquina que não é a de quem usa. Um runtime
+é o Node do editor **de quem usa**, copiado na ativação e endereçado pelo próprio conteúdo. O par
+engine↔runtime é por instalação, nunca por build. O manifesto do build era o lugar errado desde o
+primeiro dia, e preencher a chave teria sido implementar o erro de categoria com mais capricho.
+
+O núcleo do sistema já responde à pergunta real: o executável de um processo cujo título é o de um
+engine Tachyon **é** o runtime que ele está rodando. Esse fato não depende de ninguém lembrar de
+gravá-lo.
+
+### Três decisões, ditas em voz alta
+
+Um runtime está em uso quando um engine vivo o executa **ou** quando é o mais recente — cinto, porque
+é o que a próxima ativação reencena de qualquer forma, e porque torna a regra segura de rodar sem
+nenhum engine no ar.
+
+**Não ter medido não é ter provado morte.** Onde o núcleo não pode ser lido — outro sistema
+operacional, um sandbox — nada foi medido e a resposta conservadora de antes continua valendo:
+segura tudo.
+
+E coleta direta, não quarentena. A quarentena existe porque o estado de um engine morto carrega
+chaves de API, material insubstituível que ninguém deve apagar com base numa inferência. Um runtime é
+cópia de um binário público, recuperável numa ativação: guardá-lo num canto seria manter os mesmos
+bytes com outro nome.
+
+Nesta máquina, o plano passou a enxergar 0,67 GB — quatro runtimes sem dono, com o vivo intocado.
+
 ## 0.93.44 — estado de runtime deixa de ser conteúdo do repositório
 
 Três arquivos ainda estavam versionados sob `.tachyon/`, contra a regra da casa e contra o próprio
