@@ -101,6 +101,9 @@ describe("515 — the plugin install chooser is the product's own", () => {
     // filesystem and invents no candidates of its own.
     await surface.evaluate((m: unknown) => { window.postMessage(m, "*"); }, message);
     await surface.waitForSelector('[data-testid="plugin-zip-picker"]', { timeout: 8000 });
+    // 515 — both hands, always: typing a path AND handing off to the system's own dialog. A picker
+    // that only rewards whoever already knows the path is a picker for the machine that typed it.
+    await surface.waitForSelector('[data-testid="path-picker-system-browse"]', { timeout: 8000 });
     await surface.waitForFunction(
       (text: string) => document.querySelector('[data-testid="plugin-zip-picker"]')?.textContent?.includes(text) ?? false,
       { timeout: 8000 },

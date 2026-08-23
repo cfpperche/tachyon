@@ -117,6 +117,32 @@
 .pp-crumb:hover { color: var(--vscode-foreground); background: var(--ds-hover-row); }
 .pp-crumb:focus-visible { outline: 2px solid var(--ds-focus); outline-offset: 1px; }
 .pp-crumb-sep, .pp-crumb-more { color: var(--ds-muted); }
+/* 515 — the box and the Browse… door sit on one line: two ways to say the same thing, side by side,
+   which is the arrangement every file picker worth copying uses. The input takes the room that is
+   left; the button never shrinks below its own words, because a truncated "Brow…" is not a door. */
+.pp-input-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--ds-spacing-size80);
+  margin: 0 var(--ds-spacing-size120) var(--ds-spacing-size80);
+}
+.pp-input-row .pp-input { flex: 1 1 auto; min-width: 0; margin: 0; }
+.pp-browse {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-spacing-size40);
+  flex: 0 0 auto;
+  padding: var(--ds-spacing-size80) var(--ds-spacing-size100);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: transparent;
+  color: var(--ds-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  font: inherit;
+}
+.pp-browse:hover { color: var(--vscode-foreground); background: var(--ds-hover-row); }
+.pp-browse:focus-visible { outline: 2px solid var(--ds-focus); outline-offset: 1px; }
 .pp-input {
   margin: 0 var(--ds-spacing-size120) var(--ds-spacing-size80);
   padding: var(--ds-spacing-size80);

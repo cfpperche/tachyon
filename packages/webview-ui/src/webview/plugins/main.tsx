@@ -111,6 +111,7 @@ function PluginsRoot() {
       install: (spec: string) => post({ type: "install", spec }),
       installZip: () => post({ type: "installZip" }),
       browseZips: (dir: string) => post({ type: "browseZips", dir }),
+      systemBrowseZip: () => post({ type: "systemBrowseZip" }),
       installZipFrom: (zipPath: string) => { setZips(undefined); post({ type: "installZipFrom", zipPath }); },
       closeZips: () => setZips(undefined),
       update: (name: string) => post({ type: "update", name }),

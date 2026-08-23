@@ -90,7 +90,7 @@ export interface AppPickerState {
   error?: string;
 }
 
-export type GlobalOp = "addPin" | "copyBridge" | "init" | "onboarding" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "retryStart" | "openOutput" | "installApp" | "installAppFrom" | "browseApps" | "tileAction" | "studio:agents" | "studio:terminals" | "studio:schedules";
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "onboarding" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "retryStart" | "openOutput" | "installApp" | "installAppFrom" | "browseApps" | "systemBrowseApp" | "tileAction" | "studio:agents" | "studio:terminals" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/remove etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -2221,6 +2221,7 @@ export function App({
           suggestions={appZips.candidates.map((c) => ({ name: c.name, path: c.path, kind: "zip" as const }))}
           listing={appZips.listing}
           onBrowse={(dir) => dispatch?.global("browseApps", dir)}
+          onSystemBrowse={() => { setAppZips(null); dispatch?.global("systemBrowseApp"); }}
           onClose={() => setAppZips(null)}
           onSelect={(filePath) => {
             setAppZips(null);

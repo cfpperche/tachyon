@@ -86,3 +86,49 @@ Evidence: `.tachyon/visual-qa/515-plugin-zip-picker/` — quatro shots, as duas 
 (sugestões e navegação) em 880 e 360, renderizadas do bundle real.
 Verdict: aprovado depois dos dois consertos acima. O picker monta dentro do painel, cabe nas duas
 larguras, não estoura, e a trilha e os caminhos agora leem como caminhos.
+
+## Duas correções que vieram do uso, não do plano (0.93.57)
+
+**1. O picker sugeria um app onde se instala plugin.** Ele bateu nisso com arquivo real:
+`hello-fleet.zip`, um app que ele mesmo tinha empacotado, no topo das sugestões do instalador de
+plugins. A varredura casava em `.zip` e mais nada. Um picker que sugere a coisa errada é pior que um
+que não sugere nada — sugestão lê como recomendação.
+
+Distinguir precisa dos nomes de dentro do arquivo, e um zip já guarda isso em texto puro no diretório
+central, no fim do arquivo. Então `files/zipEntries.ts` lê a cauda e a região do diretório, e **nada
+mais**: sem descompactar, sem temporário, sem custo proporcional ao payload — um arquivo de 400MB
+responde tão rápido quanto um de 4KB, que é o que torna viável perguntar isso de cada candidato.
+
+A regra do filtro segue o princípio da sessão inteira: só cai fora o que foi **medido** como outra
+coisa. Um arquivo que não deu para ler continua sendo oferecido, porque recusa de leitura não é
+evidência sobre o conteúdo — esconder um plugin de verdade porque o arquivo era estranho seria um
+"não" sem medição vestido de medido. E navegar continua listando tudo: quem sabe onde está o arquivo
+não deve ter a pasta filtrada por baixo.
+
+Zip64 é recusado em vez de interpretado. Chegar lá significa arquivo acima de 4GB ou passando de 65535
+entradas; pacote de plugin não é nem um nem outro, e um segundo formato de cabeçalho carregado para um
+caso que não acontece é código que ninguém consegue conferir contra a realidade.
+
+**2. Faltava a porta para o diálogo do sistema — e isso me obrigou a corrigir a regra que eu tinha
+fixado.** A observação dele: IA digita rápido, humano prefere clicar; e tem humano que prefere digitar.
+Precisa das duas. Todo picker que vale como referência põe um "Browse…" ao lado da caixa em vez de
+obrigar a pessoa a escolher um estilo.
+
+Minha primeira versão do `productPicker.test.ts` dizia, seco, que esses painéis nunca podem mencionar
+`showOpenDialog`. Regra grossa demais: proibir o diálogo nativo proíbe também a saída de emergência.
+**A regra nunca foi "nunca abrir diálogo nativo"** — é *o diálogo nativo nunca é a porta onde você
+chega, só uma porta que você pode escolher*. O teste passou a fixar a ordenação, que é o que estava
+em questão desde o começo:
+
+1. nenhum painel abre diálogo por conta própria — todo repasse passa por `shared/systemFileDialog.ts`;
+2. as portas de instalar-por-arquivo abrem o NOSSO picker, e têm de alimentá-lo com candidatos de
+   verdade (senão apagar o diálogo passaria no teste apagando a funcionalidade);
+3. o nosso picker oferece o diálogo do sistema como segunda mão.
+
+`extension.ts` saiu da lista cega: ele também tem o diálogo do `restoreStateBackup`, que pede uma
+**pasta** de destino — ali o `PathPicker` (que lista diretórios e `.zip` para escolher um arquivo) é a
+ferramenta errada. A asserção passou a ser sobre o comando de instalar app, não sobre o arquivo em que
+ele mora.
+
+`onSystemBrowse` é opcional no componente de propósito: superfície sem diálogo para oferecer não desenha
+botão morto.

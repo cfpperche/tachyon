@@ -55,6 +55,15 @@ export interface PathPickerProps {
   onBrowse: (dir: string) => void;
   onClose: () => void;
   onSelect: (filePath: string) => void;
+  /**
+   * 515 — hand the choice to the operating system's own dialog, because the human asked for it.
+   *
+   * A picker needs both hands: typing is fast for someone who knows the path, and clicking is how most
+   * people choose a file. Every picker worth benchmarking against puts a "Browse…" beside the box
+   * instead of making the human commit to one style. Omit the prop and no button is drawn — a surface
+   * with no system dialog to offer should not offer one.
+   */
+  onSystemBrowse?: () => void;
   "data-testid"?: string;
 }
 
@@ -87,6 +96,7 @@ export function PathPicker({
   onBrowse,
   onClose,
   onSelect,
+  onSystemBrowse,
   "data-testid": testId,
 }: PathPickerProps) {
   const [query, setQuery] = useState("");
@@ -155,16 +165,29 @@ export function PathPicker({
           </div>
         ) : null}
 
-        <input
-          ref={inputRef}
-          class="pp-input"
-          type="text"
-          data-testid="path-picker-input"
-          placeholder={listing ? "Filter, or type a path" : "Type a path to browse"}
-          value={query}
-          onInput={(e) => { setQuery((e.target as HTMLInputElement).value); setActive(0); }}
-          onKeyDown={(e) => onKey(e as unknown as KeyboardEvent)}
-        />
+        <div class="pp-input-row">
+          <input
+            ref={inputRef}
+            class="pp-input"
+            type="text"
+            data-testid="path-picker-input"
+            placeholder={listing ? "Filter, or type a path" : "Type a path to browse"}
+            value={query}
+            onInput={(e) => { setQuery((e.target as HTMLInputElement).value); setActive(0); }}
+            onKeyDown={(e) => onKey(e as unknown as KeyboardEvent)}
+          />
+          {onSystemBrowse ? (
+            <button
+              type="button"
+              class="pp-browse"
+              data-testid="path-picker-system-browse"
+              title="Choose the file in your system's own file dialog"
+              onClick={onSystemBrowse}
+            >
+              <Icon name="folder-opened" /> Browse…
+            </button>
+          ) : null}
+        </div>
 
         <div class="pp-list" ref={listRef} role="listbox" aria-label={listing ? listing.dir : "Nearby archives"}>
           {listing?.parent ? (
