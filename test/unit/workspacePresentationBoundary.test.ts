@@ -72,7 +72,6 @@ describe("persistent workspace presentation boundary", () => {
       "apps/vscode-extension/src/webview/PinStudioAdapter.ts",
       "apps/vscode-extension/src/webview/SidebarPrototype.ts",
       "apps/vscode-extension/src/presentation/items.ts",
-      "apps/vscode-extension/src/plugins/ui/host.ts",
     ];
     for (const relative of migrated) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");

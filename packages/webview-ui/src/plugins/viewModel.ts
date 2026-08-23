@@ -71,16 +71,9 @@ export interface InstalledPluginVM {
   skills?: ContributionVM[];
   hooks?: ContributionVM[];
   gitHooks?: ContributionVM[];
-  /** t-4aac93 — consented UI surfaces this install materialized. Absent/empty ⇒ the card has no Open button. */
-  surfaces?: PluginSurfaceVM[];
 }
 
 /** One consented view on an installed plugin — enough for the card to launch it. */
-export interface PluginSurfaceVM {
-  id: string;
-  title: string;
-  kind: "editor" | "sidebar";
-}
 
 
 /** One MCP server a plugin ships, and whether the human has applied it to this workspace. */
@@ -168,9 +161,6 @@ export interface BuildPluginsInput {
   gitHookStatuses?: Record<string, ContributionVM[]>;
   /** applied-state read failure — surfaced as a banner; apply/unapply stay disabled. */
   appliedError?: string;
-  /** t-4aac93 — per-plugin (keyed by name) consented UI surfaces, read by the host from the payload
-   *  manifest + lockfile view targets. Omit a plugin ⇒ its card has no Open button. */
-  surfaces?: Record<string, PluginSurfaceVM[]>;
 }
 
 

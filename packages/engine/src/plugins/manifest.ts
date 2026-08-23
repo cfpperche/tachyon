@@ -186,31 +186,20 @@ export interface ConfigDecl {
   schemaFile?: string;
 }
 
-export const VIEW_SURFACES = ["editor", "sidebar"] as const;
-export type ViewSurface = (typeof VIEW_SURFACES)[number];
-const VIEW_SURFACE_SET: ReadonlySet<string> = new Set(VIEW_SURFACES);
-export const VIEW_FLEET_SCOPES = ["summary"] as const;
-export type ViewFleetScope = (typeof VIEW_FLEET_SCOPES)[number];
-const VIEW_FLEET_SCOPE_SET: ReadonlySet<string> = new Set(VIEW_FLEET_SCOPES);
-const VIEW_ACTION_RE = /^[A-Za-z][A-Za-z0-9._:-]*$/;
-
-/** spec 349 — a runtime-agnostic plugin UI surface declaration. */
-export interface ViewDecl {
-  id: string;
-  title: string;
-  surface: ViewSurface;
-  /** payload-relative, contained, self-contained HTML entry point. */
-  entry: string;
-  /** optional contained icon asset for future UI registration. */
-  icon?: string;
-  /** v1 exposes only a name-free summary projection. */
-  fleet: ViewFleetScope;
-  /** v1 action names are consented individually; the broker allowlist is implemented in later tasks. */
-  actions: string[];
-}
-
 /** Recognized top-level manifest fields — anything else fails closed (typo-catching; v2 fields fail on v1). */
-const KNOWN_FIELDS: ReadonlySet<string> = new Set(["name", "version", "description", "runtimes", "dependencies", "blocks", "gitHooks", "tools", "data", "externalTools", "config", "docsUrl", "views"]);
+const KNOWN_FIELDS: ReadonlySet<string> = new Set(["name", "version", "description", "runtimes", "dependencies", "blocks", "gitHooks", "tools", "data", "externalTools", "config", "docsUrl"]);
+
+/**
+ * 514 — fields a manifest may no longer declare, and where the capability went.
+ *
+ * A plugin that still declares `views` gets a sentence instead of the generic "unknown field": it is
+ * not a typo, it is a capability that MOVED, and the author needs the address of its new home. The
+ * split is deliberate — a plugin brings skills, hooks, MCP and tools; a screen is an app the user
+ * installs, with the Bridge access the restricted view surface never had.
+ */
+const RETIRED_FIELDS: ReadonlyMap<string, string> = new Map([
+  ["views", "plugins no longer draw screens (spec 514): package the screen as an app and install it from the Apps tab, where it gets a launcher tile and full Bridge access"],
+]);
 
 /** A parsed `name@range` dependency on another plugin (e.g. `some-base-plugin@^1`). */
 export interface PluginDep {
@@ -248,7 +237,6 @@ export interface PluginManifest {
   /** spec 270 — OPTIONAL https documentation URL surfaced as the plugin card's "Docs" button. */
   docsUrl?: string;
   /** spec 349 — runtime-agnostic UI surfaces contributed by this plugin. Empty/omitted when none. */
-  views?: ViewDecl[];
 }
 
 export interface ManifestParseResult {
@@ -921,94 +909,6 @@ function validContainedFile(label: string, raw: unknown, errors: string[]): bool
   return true;
 }
 
-function parseViewActions(viewId: string, raw: unknown, errors: string[]): string[] {
-  if (raw === undefined) return [];
-  if (!Array.isArray(raw)) {
-    errors.push(`views.${viewId}.actions: must be a list of action names`);
-    return [];
-  }
-  if (raw.length > MAX_LIST) {
-    errors.push(`views.${viewId}.actions: too many entries`);
-    return [];
-  }
-  const out: string[] = [];
-  for (const a of raw) {
-    if (typeof a !== "string" || a.length === 0 || a.length > MAX_STR || a.includes("\0") || CONTROL_RE.test(a) || !VIEW_ACTION_RE.test(a)) {
-      errors.push(`views.${viewId}.actions: every action must be a non-empty, control-free identifier`);
-      continue;
-    }
-    if (out.includes(a)) errors.push(`views.${viewId}.actions: '${a}' is listed more than once`);
-    else out.push(a);
-  }
-  return out;
-}
-
-function parseViewDecl(raw: unknown, index: number, errors: string[]): ViewDecl | null {
-  const where = `views[${index}]`;
-  if (!isPlainObject(raw)) {
-    errors.push(`${where}: must be an object`);
-    return null;
-  }
-  for (const k of Object.keys(raw)) {
-    if (k !== "id" && k !== "title" && k !== "surface" && k !== "entry" && k !== "icon" && k !== "fleet" && k !== "actions") {
-      errors.push(`${where}: unknown field '${k}'`);
-    }
-  }
-  const id = raw.id;
-  if (typeof id !== "string" || !NAME_RE.test(id)) errors.push(`${where}.id: required, lowercase kebab-case`);
-  const label = typeof id === "string" && id.length > 0 ? id : String(index);
-  const title = raw.title;
-  if (typeof title !== "string" || title.trim().length === 0 || title.length > MAX_STR || title.includes("\0") || CONTROL_RE.test(title)) {
-    errors.push(`${where}.title: required, a non-empty single-line string`);
-  }
-  const surface = raw.surface;
-  if (typeof surface !== "string" || !VIEW_SURFACE_SET.has(surface)) errors.push(`${where}.surface: must be one of ${VIEW_SURFACES.join(", ")}`);
-  validContainedFile(`${where}.entry`, raw.entry, errors);
-  if (typeof raw.entry === "string" && !raw.entry.endsWith(".html")) errors.push(`${where}.entry: must point to a .html file`);
-  let icon: string | undefined;
-  if (raw.icon !== undefined) {
-    if (validContainedFile(`${where}.icon`, raw.icon, errors)) icon = raw.icon as string;
-  }
-  const fleet = raw.fleet;
-  if (typeof fleet !== "string" || !VIEW_FLEET_SCOPE_SET.has(fleet)) errors.push(`${where}.fleet: must be ${VIEW_FLEET_SCOPES.join(" | ")}`);
-  const actions = parseViewActions(label, raw.actions, errors);
-  if (errors.some((e) => e.startsWith(where) || e.startsWith(`views.${label}.`))) return null;
-  return {
-    id: id as string,
-    title: (title as string).trim(),
-    surface: surface as ViewSurface,
-    entry: raw.entry as string,
-    ...(icon ? { icon } : {}),
-    fleet: fleet as ViewFleetScope,
-    actions,
-  };
-}
-
-function parseViews(raw: unknown, errors: string[]): ViewDecl[] {
-  if (raw === undefined) return [];
-  if (!Array.isArray(raw)) {
-    errors.push("views: when present, a list of view declarations");
-    return [];
-  }
-  if (raw.length > MAX_LIST) {
-    errors.push("views: too many entries");
-    return [];
-  }
-  const seen = new Set<string>();
-  const out: ViewDecl[] = [];
-  raw.forEach((v, i) => {
-    const parsed = parseViewDecl(v, i, errors);
-    if (!parsed) return;
-    if (seen.has(parsed.id)) {
-      errors.push(`views[${i}].id: '${parsed.id}' is listed more than once`);
-      return;
-    }
-    seen.add(parsed.id);
-    out.push(parsed);
-  });
-  return out;
-}
-
 /** Parse the optional top-level `config` (spec 270): { file, schemaFile? }, both contained payload FILES. */
 function parseConfigDecl(raw: unknown, errors: string[]): ConfigDecl | null {
   if (!isPlainObject(raw)) {
@@ -1052,7 +952,9 @@ export function loadManifest(rawJson: string): ManifestParseResult {
 
   // unknown top-level fields fail closed (catches typos; a v2-only field correctly fails on a v1 install).
   for (const key of Object.keys(parsed)) {
-    if (!KNOWN_FIELDS.has(key)) errors.push(`unknown field '${key}'`);
+    const retired = RETIRED_FIELDS.get(key);
+    if (retired) errors.push(`${key}: ${retired}`);
+    else if (!KNOWN_FIELDS.has(key)) errors.push(`unknown field '${key}'`);
   }
 
   // name
@@ -1140,8 +1042,6 @@ export function loadManifest(rawJson: string): ManifestParseResult {
   // docsUrl — OPTIONAL https docs link surfaced as the card's "Docs" button (spec 270). https-only (no command:/file:).
   if (parsed.docsUrl !== undefined) validHttpsUrl("docsUrl", parsed.docsUrl, errors);
 
-  // views — OPTIONAL runtime-agnostic UI surfaces (spec 349). loadPlugin counts these as a capability.
-  const views = parseViews(parsed.views, errors);
 
   if (errors.length > 0) return { errors };
 
@@ -1159,7 +1059,6 @@ export function loadManifest(rawJson: string): ManifestParseResult {
       externalTools,
       ...(config ? { config } : {}),
       ...(typeof parsed.docsUrl === "string" ? { docsUrl: parsed.docsUrl } : {}),
-      views,
     },
     errors: [],
   };

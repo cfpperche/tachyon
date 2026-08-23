@@ -520,7 +520,6 @@ export const ROUTES: Record<string, Route> = {
 
 /** Converted webviews may opt out only with a written reason. */
 export const PREVIEW_ROUTE_OPTOUTS: Record<string, string> = {
-  "plugin-host": "Spec 349 T10 relay needs a runtime-installed plugin payload and nonce-stamped srcdoc; covered by focused relay tests until T13 fixtures land.",
   // t-953471 / t-610355 — live xterm + node-pty tmux attach; no static fixture VM without a PTY host.
   "agent-pane": "Layer-2 agent pane needs a live node-pty attach to a tmux session; not renderable as a static preview fixture. Covered by unit (agentPane*) + Dev Host dogfood (t-610355).",
   "approval": "The standalone Approvals host and bundle were retired; approvals now render in Human Inbox. Covered by the human-inbox queue/item preview fixtures and approval App/view-model unit tests.",

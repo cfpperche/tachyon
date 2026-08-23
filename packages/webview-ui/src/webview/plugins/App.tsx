@@ -3,7 +3,7 @@ import type { InstalledPluginVM, PluginsViewModel, PluginStatus, RuntimePill, Pl
 import type { Runtime } from "@tachyon/engine/plugins/manifest.js";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 import type { ConfirmPayload } from "./messages";
-import { isConsentBlocked, viewAckRequirements, viewConsentRows } from "./consentViewAcks";
+import { isConsentBlocked } from "./consentViewAcks";
 import { Button, IconButton, Tabs, Badge, PageChrome, EmptyState, Input } from "../shared/ui";
 import { KitSelect, KitDropdown, KitDropdownTrigger, KitDropdownContent, KitDropdownItem } from "../shared/ui/kit";
 import { filterAndSortInstalledPlugins, type InstalledSortMode } from "./listControls";
@@ -41,7 +41,6 @@ export interface PluginsDispatch {
   /** spec 270 — open the plugin's docs URL externally (Docs button). */
   openDocs(name: string): void;
   /** t-4aac93 — launch a consented UI surface. viewId is required when the plugin has more than one. */
-  openSurface(name: string, viewId?: string): void;
   /** SDD 486 Phase C — apply or un-apply one MCP server the plugin ships. */
   applyMcp(pluginName: string, server: string): void;
   unapplyMcp(pluginName: string, server: string): void;
@@ -108,25 +107,6 @@ function CoverageNotice({ p }: { p: InstalledPluginVM }) {
   );
 }
 
-function OpenSurfaceButton({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch }) {
-  const surfaces = p.surfaces ?? [];
-  if (surfaces.length === 0) return null;
-  if (surfaces.length === 1) {
-    return <Button title={`Open ${surfaces[0].title}`} onClick={() => dispatch.openSurface(p.name, surfaces[0].id)}>Open</Button>;
-  }
-  return (
-    <KitDropdown>
-      <KitDropdownTrigger asChild>
-        <Button title={`Open a surface of ${p.name}`}>Open</Button>
-      </KitDropdownTrigger>
-      <KitDropdownContent align="end">
-        {surfaces.map((s) => (
-          <KitDropdownItem key={s.id} onSelect={() => dispatch.openSurface(p.name, s.id)}>{s.title}</KitDropdownItem>
-        ))}
-      </KitDropdownContent>
-    </KitDropdown>
-  );
-}
 
 function Card({ p, dispatch, mcpLocked }: { p: InstalledPluginVM; dispatch: PluginsDispatch; mcpLocked?: boolean }) {
   const badge = statusBadge(p.status);
@@ -148,7 +128,6 @@ function Card({ p, dispatch, mcpLocked }: { p: InstalledPluginVM; dispatch: Plug
         <span class="pver">v{p.version}</span>
         {badge && <Badge tone={badge.tone === "ok" || badge.tone === "warn" || badge.tone === "err" || badge.tone === "info" ? badge.tone : "default"}>{badge.label}</Badge>}
         <div class="card-actions">
-          <OpenSurfaceButton p={p} dispatch={dispatch} />
           {p.actions.map((a) => (
             <Button key={a} variant={a === "remove" ? "default" : "primary"} onClick={() => run(a)}>{actionLabel[a]}</Button>
           ))}
@@ -245,72 +224,6 @@ function McpContributionList({ plugin, servers, dispatch, locked }: { plugin: st
   );
 }
 
-export function ViewConsentSection({ vm }: { vm: ConsentVM }) {
-  const rows = viewConsentRows(vm);
-  if (rows.length === 0) return null;
-  return (
-    <div class="sec">
-      <h3>Views — these draw UI inside Tachyon</h3>
-      {rows.map((v) => (
-        <div key={v.id} class="cmd">
-          <span class="ev">{v.surface}</span> <b>{v.title}</b> <span class="ds-dim">({v.id})</span>
-          <div class="ds-dim ds-mono meta-line break-all">{v.entry}</div>
-          <div class="ds-dim meta-line">{v.disclosure}</div>
-          {v.actions.length > 0 && (
-            <div class="ds-dim meta-line stack-tight">
-              actions: {v.actions.map((a) => `${a.name} — ${a.disclosure}`).join("; ")}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function ViewAckLines({
-  vm,
-  viewAck,
-  fleetReadAck,
-  actionAck,
-  setViewAck,
-  setFleetReadAck,
-  setActionConfirmed,
-}: {
-  vm: ConsentVM;
-  viewAck: boolean;
-  fleetReadAck: boolean;
-  actionAck: Record<string, boolean>;
-  setViewAck(checked: boolean): void;
-  setFleetReadAck(checked: boolean): void;
-  setActionConfirmed(key: string, checked: boolean): void;
-}) {
-  const requiredActionConfirm = Object.fromEntries(viewAckRequirements(vm).filter((r) => r.key !== "view" && r.key !== "fleetRead").map((r) => [r.key, r.label]));
-  return (
-    <>
-      {vm.requiresViewConfirm && (
-        <label class="ackline">
-          <input type="checkbox" checked={viewAck} onChange={(e) => setViewAck((e.target as HTMLInputElement).checked)} />
-          <span><Icon name="warning" /> I understand these <b>views</b> draw UI inside Tachyon and can show information in my editor.</span>
-        </label>
-      )}
-
-      {vm.requiresFleetReadConfirm && (
-        <label class="ackline">
-          <input type="checkbox" checked={fleetReadAck} onChange={(e) => setFleetReadAck((e.target as HTMLInputElement).checked)} />
-          <span><Icon name="eye" /> I understand these views can read a curated, name-free <b>fleet summary</b>.</span>
-        </label>
-      )}
-
-      {Object.entries(requiredActionConfirm).map(([key, copy]) => (
-        <label key={key} class="ackline">
-          <input type="checkbox" checked={actionAck[key] === true} onChange={(e) => setActionConfirmed(key, (e.target as HTMLInputElement).checked)} />
-          <span><Icon name="warning" /> I understand action <b>{key}</b>: {copy}</span>
-        </label>
-      ))}
-    </>
-  );
-}
-
 function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispatch }) {
   const collisions = vm.skillCollisions ?? [];
   const mcpCollisions = vm.mcpCollisions ?? [];
@@ -322,9 +235,6 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
   const [gitHookAck, setGitHookAck] = useState(false);
   const [toolAck, setToolAck] = useState(false);
   const [dataAck, setDataAck] = useState(false);
-  const [viewAck, setViewAck] = useState(false);
-  const [fleetReadAck, setFleetReadAck] = useState(false);
-  const [actionAck, setActionAck] = useState<Record<string, boolean>>({});
   const anyReplace = Object.values(decisions).some((d) => d === "replace");
   const anyMcpReplace = Object.values(mcpDecisions).some((d) => d === "replace");
   // spec 263 — install lets the user pick which declared runtimes to materialize (host re-previews on each
@@ -336,10 +246,9 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
     dispatch.reselect(selectedRuntimes.includes(rt) ? selectedRuntimes.filter((r) => r !== rt) : [...selectedRuntimes, rt]);
   const noRuntimeSelected = isInstall && runtimeRows.length > 0 && selectedRuntimes.length === 0;
   // OQ5: ANY MCP install needs the second confirmation (not just Replace) — agent-invokable process/network.
-  const blocked = isConsentBlocked(vm, { noRuntimeSelected, anyReplace, replaceAck, mcpAck, gitHookAck, toolAck, dataAck, viewAck, fleetReadAck, actionAck });
+  const blocked = isConsentBlocked(vm, { noRuntimeSelected, anyReplace, replaceAck, mcpAck, gitHookAck, toolAck, dataAck });
   const setDecision = (dest: string, d: "keep" | "replace") => setDecisions((m) => ({ ...m, [dest]: d }));
   const setMcpDecision = (key: string, d: "keep" | "replace") => setMcpDecisions((m) => ({ ...m, [key]: d }));
-  const setActionConfirmed = (key: string, checked: boolean) => setActionAck((m) => ({ ...m, [key]: checked }));
   const confirm = () => dispatch.confirm({
     token: vm.token,
     skillDecisions: decisions,
@@ -348,9 +257,6 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
     gitHookConfirmed: gitHookAck,
     toolConfirmed: toolAck,
     dataConfirmed: dataAck,
-    viewConfirmed: viewAck,
-    fleetReadConfirmed: fleetReadAck,
-    actionConfirmed: actionAck,
   });
   return (
     <div class="scrim" onClick={(e) => { if ((e.target as HTMLElement).classList.contains("scrim")) dispatch.cancel(); }}>
@@ -543,8 +449,6 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
             </label>
           )}
 
-          <ViewConsentSection vm={vm} />
-          <ViewAckLines vm={vm} viewAck={viewAck} fleetReadAck={fleetReadAck} actionAck={actionAck} setViewAck={setViewAck} setFleetReadAck={setFleetReadAck} setActionConfirmed={setActionConfirmed} />
 
           {vm.tools && vm.tools.length > 0 && (
             <div class="sec">
@@ -625,7 +529,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
         <div class="dfoot">
           {vm.token && <span class="fp">consent · {vm.token.slice(0, 12)}</span>}
           <Button onClick={() => dispatch.cancel()}>Cancel</Button>
-          <Button variant={vm.requiresForce || anyReplace || anyMcpReplace || vm.requiresGitHookConfirm || vm.requiresViewConfirm || vm.requiresToolConfirm ? "danger" : "primary"} disabled={blocked} onClick={confirm}>{vm.confirmLabel}</Button>
+          <Button variant={vm.requiresForce || anyReplace || anyMcpReplace || vm.requiresGitHookConfirm || vm.requiresToolConfirm ? "danger" : "primary"} disabled={blocked} onClick={confirm}>{vm.confirmLabel}</Button>
         </div>
       </div>
     </div>

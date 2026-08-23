@@ -70,7 +70,6 @@ import { SCHEDULE_STUDIO_SHELL_VIEW_TYPE, ScheduleStudioPanelManager, type Sched
 import { registerIdeBrowserBridge } from "./webview/ide-browser-bridge/register.js";
 import { registerTachyonChatBridge } from "./webview/chat-bridge/register.js";
 import { normalizeAgentRows } from "./webview/chat-bridge/ops.js";
-import { PluginSurfaceHost } from "./plugins/ui/host.js";
 import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
 import { reconcileGitHookHarness } from "./plugins/engine.js";
 import { buildOffers, type RegistrationOffer } from "@tachyon/engine/registration/adapters.js";
@@ -1720,13 +1719,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // cockpit/App.tsx; the watcher moved to src/webview/activity/activityFeed.ts).
   // t-610705 (SDD 410 Phase C.3) — the standalone Project Handoff panel was retired: it's a Control
   // section now (packages/webview-ui/src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx).
-  // spec 349 — first-party host for untrusted plugin UI surfaces. It reads committed plugin lockfiles and
-  // revokes open channels when an installed view target disappears.
-  const pluginSurfaces = new PluginSurfaceHost(
-    context.extensionUri,
-    () => workspaces().map((ws) => ws.plugin),
-  );
-  context.subscriptions.push({ dispose: () => pluginSurfaces.dispose() });
   // spec 250 → SDD 485 D2 — the editor-area Plugins app (browse/install/update/remove), a standalone
   // `dashboard`: ONE editor tab per project, revealed rather than duplicated. Per-project is the whole of
   // its cardinality and it is a fact about the domain rather than a policy — the lockfile, the runtime
@@ -1736,7 +1728,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // t-b1940c — the Plugins panel's remove flow needs the revoke door beside gitExec, so it gets
     // the plugin-profile target rather than the bare git one.
     () => workspaces().map((ws) => ws.pluginProfile),
-    () => pluginSurfaces.refreshAll(),
+    undefined,
     undefined,
     controlWorkspaceScope,
   );
@@ -1918,7 +1910,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // workspace that just attached brings its tiles with it instead of on the next install.
     void refreshInstalledApps();
     sidebarProto.refresh();
-    pluginSurfaces.refreshAll();
     for (const manager of Object.values(studioPanels)) manager.refreshReferenceData();
   };
   // SDD 485 C4 — Task Detail is a standalone `document` app again: one editor tab per (project, task),
@@ -3408,6 +3399,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // still has a serializer) without shipping the in-memory test double.
   // 514 — `tachyonUserApp` joins them, for a reason of its own: between two windows the app may have
   // been reinstalled over or removed, so a revived tab could restore a screen that no longer exists.
+  // And the two `tachyonPluginSurface*` ids STAY here although the capability is gone: a human may
+  // have had one of those tabs open when they updated, and VS Code will try to revive it. Disposing is
+  // the honest answer; removing the entry would leave a tab VS Code cannot restore and nobody claims.
   for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonPipelineStudio", "tachyonDesignMode", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView", "tachyonFleet", "tachyonOverview", "tachyonEngine", "tachyonUserApp"]) {
     registerDisposePanelSerializer(context, viewType);
   }
@@ -3526,13 +3520,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   });
 
-  // spec 237 — the Tachyon sidebar is the Preact webview (the native tree was retired). Its provider
-  // is registered ABOVE, before the attach loop (SDD 504); only the plugin surface host remains here.
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(PluginSurfaceHost.viewType, pluginSurfaces, {
-      webviewOptions: { retainContextWhenHidden: true },
-    }),
-  );
+  // spec 237 — the Tachyon sidebar is the Preact webview (the native tree was retired). Its provider is
+  // registered ABOVE, before the attach loop (SDD 504). 514 — the plugin surface host that used to be
+  // registered here went with the capability: a plugin no longer draws a screen.
 
   // t-4486eb — test-only `tachyon._*` table. Sibling bundle + runtime env, never
   // `context.extensionMode`: screenshot/integration hosts are an installed VSIX.
@@ -4147,7 +4137,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = hash ? byHash(hash) : await pickWorkspace();
       openPluginsTab(ws?.wsHash);
     }),
-    vscode.commands.registerCommand("tachyon.openPluginSurface", (arg?: { pluginId?: string; viewId?: string; wsHash?: string } | string) => pluginSurfaces.openSurface(arg)),
     // spec 335 — open the Board for one project. SDD 485 C5: its own editor tab, revealed if already open.
     vscode.commands.registerCommand("tachyon.board", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();

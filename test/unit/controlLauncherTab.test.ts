@@ -63,7 +63,9 @@ describe("t-6e2952 — Control is a tab in the existing sidebar row", () => {
   it("adds NO sidebar view: the launcher has no viewType, no bundle and no host file", () => {
     const pkg = JSON.parse(read("apps/vscode-extension/package.json")) as { contributes: { views: { tachyon: Array<{ id: string }> } } };
     const viewIds = pkg.contributes.views.tachyon.map((v) => v.id);
-    expect(viewIds).toEqual(["tachyonSidebarPrototype", "tachyonPluginSurfaces"]);
+    // 514 — `tachyonPluginSurfaces` left with the capability: a plugin no longer draws a screen, so the
+    // sidebar contributes exactly one view again.
+    expect(viewIds).toEqual(["tachyonSidebarPrototype"]);
     expect(WEBVIEW_SURFACES.some((s) => s.viewId === "tachyonControlLauncher" || s.view === "control-launcher")).toBe(false);
     expect(existsSync(path.join(repoRoot, "packages/webview-ui/src/webview/ControlLauncherProvider.ts"))).toBe(false);
     expect(existsSync(path.join(repoRoot, "packages/webview-ui/src/webview/control-launcher"))).toBe(false);

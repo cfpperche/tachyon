@@ -48,7 +48,6 @@ const UNPROTECTED = [
   // Dev-only spec 350 fixture: failures should stay raw and conspicuous to fixture authors.
   "packages/webview-ui/src/webview/agent-studio-fixture/main.tsx",
   // Imperative sandbox host with no Preact tree: plugin faults belong to isolation/relay handling, not this boundary.
-  "packages/webview-ui/src/webview/plugin-host/main.tsx",
   // This is the whole navigation app, not an editor panel; replacing it needs a sidebar-wide recovery design.
   "packages/webview-ui/src/webview/sidebar/main.tsx",
   // Dev-only compatibility harness: uncaught failures are the gate's diagnostic output, not a recoverable state.

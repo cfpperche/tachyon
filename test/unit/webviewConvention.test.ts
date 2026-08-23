@@ -131,7 +131,9 @@ describe("webview convention (spec 279)", () => {
       tachyonOnboarding: "ONBOARDING_VIEW_TYPE",
       tachyonCompanion: "COMPANION_VIEW_TYPE",
     };
-    // 514 — `tachyonUserApp` is dispose-only for a reason the others do not have: between one window
+    // 514 — the two `tachyonPluginSurface*` ids stay in this set with the capability gone, because a
+    // tab open across the update still has to be disposed rather than revived into nothing.
+    // `tachyonUserApp` is dispose-only for a reason the others do not have: between one window
     // and the next the app may have been reinstalled over, or removed. Reviving a tab onto a directory
     // whose contents changed underneath it would restore a screen that no longer exists; the tile is
     // one click away.

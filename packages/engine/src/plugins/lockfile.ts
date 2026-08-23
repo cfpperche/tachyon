@@ -19,14 +19,21 @@ export const LOCKFILE_REL_PATH = ".tachyon/plugins.lock.json";
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const TOOL_PLATFORM_KEY_SET: ReadonlySet<string> = new Set(TOOL_PLATFORM_KEYS);
 
-/** The kinds of artifact Tachyon materializes. `view` is runtime-agnostic (spec 349), unlike adapter targets. */
-export type TargetKind = "settings-hook" | "skill-dir" | "mcp-server" | "view";
+/**
+ * The kinds of artifact Tachyon materializes.
+ *
+ * 514 — `view` left with the capability: a plugin no longer draws a screen, so no install can write
+ * such a target. A lockfile that still carries one is refused by name rather than skipped, which is
+ * the same posture every other malformed target gets here: the record is custodied, and a record we
+ * cannot honour must be said out loud, never half-read.
+ */
+export type TargetKind = "settings-hook" | "skill-dir" | "mcp-server";
 
-const TARGET_KINDS: ReadonlySet<string> = new Set<TargetKind>(["settings-hook", "skill-dir", "mcp-server", "view"]);
+const TARGET_KINDS: ReadonlySet<string> = new Set<TargetKind>(["settings-hook", "skill-dir", "mcp-server"]);
 
 /** One thing Tachyon materialized, with enough identity to remove it exactly. */
 export interface MaterializedTarget {
-  /** Runtime adapter target owner. Absent for runtime-agnostic `view` targets. */
+  /** Runtime adapter target owner. */
   runtime?: Runtime;
   kind: TargetKind;
   /** workspace-relative, contained path of the file or dir written/touched. */
@@ -421,16 +428,17 @@ function parseTarget(raw: unknown, where: string, errors: string[]): Materialize
   }
   const runtime = raw.runtime;
   const kind = raw.kind;
+  // 514 — the retired kind is named BEFORE the generic "must be one of": a record written by an older
+  // build is not a typo, and "unknown kind" would send the reader looking for a mistake they did not make.
+  if (kind === "view") {
+    errors.push(`${where}.kind: plugin views were retired (spec 514) — remove this plugin and install its screen as an app`);
+    return null;
+  }
   if (typeof kind !== "string" || !TARGET_KINDS.has(kind)) {
     errors.push(`${where}.kind: must be one of ${[...TARGET_KINDS].join(" | ")}`);
     return null;
   }
-  if (kind === "view") {
-    if (runtime !== undefined) {
-      errors.push(`${where}.runtime: must be omitted for runtime-agnostic view targets`);
-      return null;
-    }
-  } else if (typeof runtime !== "string" || !(SUPPORTED_RUNTIMES as readonly string[]).includes(runtime)) {
+  if (typeof runtime !== "string" || !(SUPPORTED_RUNTIMES as readonly string[]).includes(runtime)) {
     errors.push(`${where}.runtime: must be one of ${SUPPORTED_RUNTIMES.join(" | ")}`);
     return null;
   }
@@ -439,7 +447,7 @@ function parseTarget(raw: unknown, where: string, errors: string[]): Materialize
     errors.push(`${where}.file: required, a contained workspace-relative path`);
     return null;
   }
-  const target: MaterializedTarget = { ...(kind === "view" ? {} : { runtime: runtime as Runtime }), kind: kind as TargetKind, file };
+  const target: MaterializedTarget = { runtime: runtime as Runtime, kind: kind as TargetKind, file };
   if (raw.ref !== undefined) {
     if (typeof raw.ref !== "string") {
       errors.push(`${where}.ref: must be a string when present`);
@@ -527,7 +535,7 @@ function parsePluginLock(key: string, raw: unknown, errors: string[]): PluginLoc
       const parsed = parseTarget(t, `plugins.${key}.targets[${i}]`, errors);
       if (parsed) {
         // a target must belong to a runtime this plugin records as installed (no orphan-runtime target).
-        if (parsed.kind !== "view" && (!parsed.runtime || !seenRt.has(parsed.runtime))) errors.push(`plugins.${key}.targets[${i}].runtime: '${parsed.runtime}' is not in this plugin's runtimes`);
+        if (!parsed.runtime || !seenRt.has(parsed.runtime)) errors.push(`plugins.${key}.targets[${i}].runtime: '${parsed.runtime}' is not in this plugin's runtimes`);
         else targets.push(parsed);
       }
     });

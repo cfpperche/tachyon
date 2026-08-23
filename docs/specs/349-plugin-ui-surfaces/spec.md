@@ -2,8 +2,18 @@
 
 _Created 2026-07-03._
 
-**Status:** shipped
+**Status:** superseded
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred. -->
+
+**Superseded by:** [514 — user-apps-zip-install](../514-user-apps-zip-install/spec.md), 2026-08-23.
+
+O que esta spec construiu funcionou e teve exatamente um consumidor no mundo — uma POC que o dono não
+usa. A capacidade que faltava não era uma tela restrita de terceiro: era o usuário poder fazer a
+PRÓPRIA tela sem publicar pacote. A 514 parte o conceito em dois — o plugin fica com skills, hooks,
+MCP e tools, e a tela vira um app instalável por zip, com acesso pleno ao Bridge e ladrilho no
+launcher. Nada foi migrado: `views` saiu do manifesto, o broker de ações e o `srcdoc` de plugin
+saíram, e o alvo `kind: "view"` do lockfile passou a ser recusado pelo nome. Zero consumidores, não
+um.
 
 **Closure:** v1 shipped 2026-07-04 (commits `ba073fb` T1 iframe gate · `72bd22e` Phase 1 declaration/engine/consent/validator · `2dbd97d` Phase 2 projection · `2f269c1` Phase 3 broker · `fec26c0` Phase 4 host+relay · `776e673` fix-up activation/guards · `efd740f` Phase 5 fixtures+gesture · `b6577c7` lifecycle hardening). The untrusted-plugin UI primitive: a plugin declares a `views` capability, consents per-scope, and renders in an opaque-origin `srcdoc` iframe (never `allow-same-origin`) fed a purpose-built `PluginFleetProjectionV1` (never `FleetVM`, canary-proven), with one non-destructive `focusAgent` action brokered via generation-stamped opaque handles and gated on trusted `navigator.userActivation` (empirically proven to cross the sandbox). Proven end-to-end by `test/integration/plugin-ui.e2e.test.ts` (real engine install → productionized relay → adversarial breach-all-fail + Mundinho render + gesture broker + relay teardown/recreate). Verified in an isolated worktree at HEAD: full typecheck + build + 737 tests + engine-boundary, all green. **Residuals (honest):** the sidebar surface is covered by relay-inheritance + the host registration-path unit test rather than a full `vscode-test` `WebviewView` e2e (the relay is byte-identical to the editor surface); the editor panel re-opens via command rather than a `WebviewPanelSerializer` window-reload restore. Real Mundinho art/engine is deferred to `p-2ab0f3`; v2 scope (destructive actions, egress, fine scopes, author SDK) is `p-af2b39`.
 

@@ -65,14 +65,14 @@ describe("lockfile", () => {
     expect(bad("nope").errors.some((e) => /gitHooks: must be a list/.test(e))).toBe(true);
   });
 
-  it("spec 349 — view targets are runtime-agnostic lockfile targets", () => {
+  it("514 — a lockfile that still carries a view target is refused by name, not silently half-read", () => {
+    // A custodied record we cannot honour has to be said out loud: the plugin that wrote it drew a
+    // screen, and screens are apps now. Skipping the target instead would leave a file on disk that
+    // uninstall no longer knows about.
     const lf = JSON.stringify({ schemaVersion: 1, plugins: { mundinho: { name: "mundinho", version: "1.0.0", runtimes: [], targets: [{ kind: "view", file: ".tachyon/plugins/mundinho/ui/index.html", ref: "agents" }] } } });
-    const a = parseLockfile(lf);
-    expect(a.errors).toEqual([]);
-    expect(a.lockfile?.plugins.mundinho.targets).toEqual([{ kind: "view", file: ".tachyon/plugins/mundinho/ui/index.html", ref: "agents" }]);
-
-    const bad = parseLockfile(JSON.stringify({ schemaVersion: 1, plugins: { mundinho: { name: "mundinho", version: "1.0.0", runtimes: ["claude"], targets: [{ runtime: "claude", kind: "view", file: ".tachyon/plugins/mundinho/ui/index.html", ref: "agents" }] } } }));
-    expect(bad.errors.some((e) => /runtime: must be omitted/.test(e))).toBe(true);
+    const parsed = parseLockfile(lf);
+    expect(parsed.errors.some((e) => /plugin views were retired \(spec 514\)/.test(e))).toBe(true);
+    expect(parsed.errors.some((e) => /install its screen as an app/.test(e))).toBe(true);
   });
 
   it("spec 265 — fetched tool round-trips with full provenance; absent-tolerant", () => {

@@ -26,12 +26,12 @@ describe("SDD 505 Slice 1 — tokens, faces, and components are separate", () =>
 
   it("links the full baseline normally while Agent Pane skips only faces", () => {
     const gate = renderGatePage("https://example.test");
-    const pluginHost = read("apps/vscode-extension/src/plugins/ui/host.ts");
     const pane = read("apps/vscode-extension/src/webview/AgentPanePanel.ts");
     for (const sheet of ["tokens.css", "faces.css", "design-system.css", "quick-picker.css"]) {
       expect(gate).toContain(`href="https://example.test/dist/webview/${sheet}"`);
     }
-    expect(pluginHost).toContain("...SHELL_BASE_STYLESHEETS.map(uri)");
+    // 514 — the plugin surface host used to stand here as the "links the full baseline" example; it
+    // left with the capability. The gate page above makes the same claim and is not going anywhere.
     expect(pane).toContain('uri("tokens.css")');
     expect(pane).toContain('uri("design-system.css")');
     expect(pane).toContain('uri("quick-picker.css")');

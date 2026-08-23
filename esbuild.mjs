@@ -400,13 +400,9 @@ const agentStudioFixture = {
 // lazy-imports each shell's App.tsx directly). Each shell's own copyFileSync call below stays
 // (Control still co-loads those stylesheets) — only the standalone entry point/bundle is gone.
 
-// spec 349 T10 — first-party plugin surface relay. It mounts the opaque-origin plugin iframe, nonce-stamps
-// inline plugin scripts, and relays typed messages to the VS Code host.
-const pluginHost = {
-  ...sidebar,
-  entryPoints: ["packages/webview-ui/src/webview/plugin-host/main.tsx"],
-  outfile: "dist/webview/plugin-host.js",
-};
+// 514 — the plugin surface relay bundle was retired with the capability it served: a plugin no longer
+// declares `views`, so there is no plugin iframe to mount and no plugin action to relay. The screen a
+// user wants is an installed app now, and an app's page is served by its own panel from disk.
 
 // t-610705 (SDD 410 Phase B #6) — the standalone Board bundle was retired: the Board is a
 // cockpit-only section (packages/webview-ui/src/webview/board/App.tsx stays, lazy-imported by cockpit/App.tsx
@@ -617,7 +613,6 @@ copyFileSync("packages/webview-ui/src/webview/agent-studio-shell/agent-studio-sh
 copyFileSync("packages/webview-ui/src/webview/terminal-studio-shell/terminal-studio-shell.css", "dist/webview/terminal-studio-shell.css");
 
 copyFileSync("packages/webview-ui/src/webview/schedule-studio-shell/schedule-studio-shell.css", "dist/webview/schedule-studio-shell.css");
-copyFileSync("packages/webview-ui/src/webview/plugin-host/plugin-host.css", "dist/webview/plugin-host.css"); // spec 349 T10 — plugin UI relay shell
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/codicon.ttf");
 // KaTeX stylesheet + fonts (the CSS references fonts/ relatively → keep them adjacent under dist/webview).
 copyFileSync("node_modules/katex/dist/katex.min.css", "dist/webview/katex.min.css");
@@ -641,7 +636,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, internalSeams, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, reviewPdf, reviewModelViewer, preview, previewShell, uiGate]
+const targets = [extension, internalSeams, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, agentStudioFixture, excalidraw, mermaid, katex, reviewPdf, reviewModelViewer, preview, previewShell, uiGate]
   .map((target) => ({
     ...target,
     ...(target.outfile ? { outfile: outputPath(target.outfile) } : {}),

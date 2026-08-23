@@ -17,7 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { loadManifest, resolveCompat, SUPPORTED_RUNTIMES, type PluginManifest, type Runtime, type ViewDecl } from "@tachyon/engine/plugins/manifest.js";
+import { loadManifest, resolveCompat, SUPPORTED_RUNTIMES, type PluginManifest, type Runtime } from "@tachyon/engine/plugins/manifest.js";
 import {
   mergeHooks,
   removeHooks,
@@ -57,7 +57,6 @@ import { MCP_SERVER_NAME, readMcpConfig, renderMcp, setMcpServer, setMcpFromRemo
 import { parseSource, parseSemverTag, compareSemver, rewriteRef } from "./source.js";
 import { fetchSource, defaultGitRun, resolveLatestSemverTag, type GitRun } from "./fetcher.js";
 import { parseSkillFrontmatter } from "./skill.js";
-import { validateEntryHtml } from "./entryHtmlValidator.js";
 import { loadMcpPayload, type McpServer } from "@tachyon/engine/plugins/mcp.js";
 import {
   argvWrapperScript,
@@ -377,8 +376,6 @@ export interface LoadedPlugin {
   mcp: McpServer[];
   /** spec 264 — runtime-agnostic git-hook leaves; empty when the plugin declares none. */
   gitHooks: PluginGitHook[];
-  /** spec 349 — runtime-agnostic UI surfaces declared by the plugin; empty when none. */
-  views?: ViewDecl[];
 }
 
 /** The reproducible provenance of a source-installed plugin — written into the lockfile by applyInstall. */
@@ -446,7 +443,7 @@ export function loadPlugin(pluginDir: string): LoadResult {
   const { manifest, errors } = loadManifest(manifestRead.text as string);
   if (!manifest) return { errors };
 
-  const plugin: LoadedPlugin = { dir: pluginDir, manifest, blocks: {}, rootRel: {}, skills: [], mcp: [], gitHooks: [], views: manifest.views ?? [] };
+  const plugin: LoadedPlugin = { dir: pluginDir, manifest, blocks: {}, rootRel: {}, skills: [], mcp: [], gitHooks: [] };
 
   // hooks — only the runtimes that ship a block (spec 251: blocks are optional/partial).
   for (const rt of Object.keys(manifest.blocks) as Runtime[]) {
@@ -477,8 +474,11 @@ export function loadPlugin(pluginDir: string): LoadResult {
   if (ghResult.errors.length > 0) return { errors: ghResult.errors };
   plugin.gitHooks = ghResult.gitHooks;
 
-  if (Object.keys(plugin.blocks).length === 0 && plugin.skills.length === 0 && plugin.mcp.length === 0 && plugin.gitHooks.length === 0 && (plugin.views ?? []).length === 0) {
-    return { errors: [`${manifest.name}: a plugin must ship at least one capability (a runtime hooks block, a skill, an MCP server, a git-hook, and/or a view)`] };
+  // 514 — a view is no longer a capability a plugin can ship, so it is no longer one of the things
+  // that make a plugin non-empty. A payload whose ONLY content was a screen is now correctly refused:
+  // that screen is an app, and apps install through the Apps tab.
+  if (Object.keys(plugin.blocks).length === 0 && plugin.skills.length === 0 && plugin.mcp.length === 0 && plugin.gitHooks.length === 0) {
+    return { errors: [`${manifest.name}: a plugin must ship at least one capability (a runtime hooks block, a skill, an MCP server, and/or a git-hook)`] };
   }
   // spec 264 — a PER-RUNTIME capability (hooks block / skill / MCP) needs ≥1 declared runtime to land in; only a
   // git-hook is runtime-agnostic. (Blocks already require declared runtimes at the manifest layer; skills/MCP are
@@ -808,17 +808,6 @@ export interface ExternalToolStatus {
   manual: string;
 }
 
-/** spec 349 — a planned view registration identity. No host/projection/broker wiring happens in Phase 1. */
-export interface ViewTarget {
-  id: string;
-  title: string;
-  surface: ViewDecl["surface"];
-  entry: string;
-  fileRel: string;
-  fleet: ViewDecl["fleet"];
-  actions: string[];
-}
-
 export interface InstallPreview {
   manifest: PluginManifest;
   steps: InstallStep[];
@@ -841,7 +830,6 @@ export interface InstallPreview {
    *  install (the plugin installs regardless; the skill fail-closes at runtime if a tool is missing). */
   externalTargets: ExternalToolStatus[];
   /** spec 349 — runtime-agnostic UI surfaces this install would register once the host layer exists. */
-  viewTargets: ViewTarget[];
   /** spec 263 — the declared runtimes this install will MATERIALIZE (the consented target set), normalized
    *  + sorted. Bound into the fingerprint so selecting vs DEselecting a runtime that produces NO per-runtime
    *  artifact (no hooks/skills/MCP) still changes consent. */
@@ -867,7 +855,7 @@ function pluginPayloadAbs(workspaceRoot: string, pluginName: string): string {
   return path.join(workspaceRoot, PAYLOAD_ROOT, pluginName);
 }
 
-function fingerprintOf(plugin: LoadedPlugin, workspaceRoot: string, targetRuntimes: Runtime[], steps: InstallStep[], skillTargets: SkillPlanItem[], mcpTargets: McpPlanItem[], mcpConfigBefore: McpConfigSnapshot[], gitHookTargets: GitHookPlanItem[], gitState: GitHookState | undefined, toolTargets: ToolPlanItem[], dataTargets: DataPlanItem[], viewTargets: ViewTarget[], payloadHash: string, scope: InstallScope = WORKSPACE_INSTALL_SCOPE, harnessIdentity: HarnessIdentity | null = null): string {
+function fingerprintOf(plugin: LoadedPlugin, workspaceRoot: string, targetRuntimes: Runtime[], steps: InstallStep[], skillTargets: SkillPlanItem[], mcpTargets: McpPlanItem[], mcpConfigBefore: McpConfigSnapshot[], gitHookTargets: GitHookPlanItem[], gitState: GitHookState | undefined, toolTargets: ToolPlanItem[], dataTargets: DataPlanItem[], payloadHash: string, scope: InstallScope = WORKSPACE_INSTALL_SCOPE, harnessIdentity: HarnessIdentity | null = null): string {
   const pluginRoot = pluginPayloadAbs(workspaceRoot, plugin.manifest.name);
   const basis = {
     name: plugin.manifest.name,
@@ -895,8 +883,6 @@ function fingerprintOf(plugin: LoadedPlugin, workspaceRoot: string, targetRuntim
     mcp: mcpTargets.map((m) => ({ rt: m.runtime, ref: m.ref, entry: renderMcp(m.runtime, m.server, pluginRoot), current: m.current, collision: m.collision })),
     // bind each MCP config file snapshot (the lost-update basis): ANY change to the file invalidates consent.
     mcpConfig: mcpConfigBefore.map((c) => ({ rt: c.runtime, dest: c.destRel, text: c.text })),
-    // spec 349 — bind UI surface identity + scopes/actions so any surface change requires fresh consent.
-    views: viewTargets.map((v) => ({ id: v.id, title: v.title, surface: v.surface, entry: v.entry, fleet: v.fleet, actions: v.actions })),
     // spec 265 — bind the tool plan to the HARD integrity facts: resolved platform + declared URL + both
     // checksums. finalUrl is recorded provenance, NOT bound (codex task-10 review D): a benign signed/redirected
     // URL change must not re-prompt consent — the pinned sha256 is the real integrity gate, re-verified at fetch.
@@ -958,7 +944,7 @@ function skillToolPlaceholderWarnings(plugin: LoadedPlugin): string[] {
  *  compute the merges, return the diff + wired commands + a consent fingerprint. */
 export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, target: ReadonlySet<Runtime>, gitState?: GitHookState, toolPlan?: ToolPlan, dataPlan?: DataPlan, scope: InstallScope = WORKSPACE_INSTALL_SCOPE): InstallPreview {
   const { manifest } = plugin;
-  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], gitHookTargets: [], toolTargets: [], dataTargets: [], externalTargets: [], viewTargets: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "", requires: [], scope, harnessIdentity: null });
+  const empty = (errors: string[]): InstallPreview => ({ manifest, steps: [], skillTargets: [], mcpTargets: [], mcpConfigBefore: [], gitHookTargets: [], toolTargets: [], dataTargets: [], externalTargets: [], targetRuntimes: [], skipped: [], warnings: [], errors, fingerprint: "", payloadHash: "", requires: [], scope, harnessIdentity: null });
 
   const payload = preflightPayload(plugin.dir);
   if (payload.errors.length > 0) return empty(payload.errors);
@@ -1098,7 +1084,6 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
   for (const w of placeholderTypoWarnings(plugin)) warnings.push(w);
   for (const w of skillToolPlaceholderWarnings(plugin)) warnings.push(w);
 
-  const viewTargets = scope.type === "agent" ? [] : planViewTargets(plugin, errors);
 
   if (scope.type === "agent" && plugin.skills.length > 0 && skillTargets.length === 0) {
     const isolable = SUPPORTED_RUNTIMES.some((rt) => plugin.manifest.runtimes.includes(rt) && dests[rt].skillsRel);
@@ -1107,36 +1092,11 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
     }
   }
 
-  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, workspaceRoot, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, gitState, toolTargets, dataTargets, viewTargets, payload.hash, scope, harnessIdentity);
+  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, workspaceRoot, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, gitState, toolTargets, dataTargets, payload.hash, scope, harnessIdentity);
   const requires = dependencyStates(manifest.dependencies, lockRead.lockfile); // spec 276 — direct deps vs lockfile
-  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, toolTargets, dataTargets, externalTargets, viewTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash, requires, scope, harnessIdentity };
+  return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, toolTargets, dataTargets, externalTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash, requires, scope, harnessIdentity };
 }
 
-function planViewTargets(plugin: LoadedPlugin, errors: string[]): ViewTarget[] {
-  const targets: ViewTarget[] = [];
-  for (const v of plugin.views ?? []) {
-    const entryAbs = path.join(plugin.dir, v.entry);
-    let st: fs.Stats;
-    try {
-      st = fs.lstatSync(entryAbs);
-    } catch {
-      errors.push(`views.${v.id}.entry: '${v.entry}' not found in the payload`);
-      continue;
-    }
-    if (st.isSymbolicLink() || !st.isFile()) {
-      errors.push(`views.${v.id}.entry: '${v.entry}' must be a regular file (symlink/special not allowed)`);
-      continue;
-    }
-    const html = fs.readFileSync(entryAbs, "utf8");
-    const htmlValidation = validateEntryHtml(html);
-    if (!htmlValidation.ok) {
-      errors.push(`views.${v.id}.entry: ${htmlValidation.reason}`);
-      continue;
-    }
-    targets.push({ id: v.id, title: v.title, surface: v.surface, entry: v.entry, fileRel: path.posix.join(PAYLOAD_ROOT, plugin.manifest.name, v.entry), fleet: v.fleet, actions: v.actions });
-  }
-  return targets;
-}
 
 /** Plan the git-hook materializations from the injected git state. Errors (not a repo / worktree-config) are
  *  pushed; an empty plan when the plugin declares no git-hooks. */
@@ -1198,21 +1158,8 @@ interface ApplyOpts {
  *  undefined. An MCP server / git-hook / tool each requires its dedicated acknowledgement even from a non-UI
  *  caller (stronger than the drawer's disabled button). */
 function checkInstallAckGates(fresh: InstallPreview, opts: ApplyOpts): string | undefined {
-  if (fresh.steps.length === 0 && fresh.skillTargets.length === 0 && fresh.mcpTargets.length === 0 && fresh.gitHookTargets.length === 0 && fresh.viewTargets.length === 0) {
-    return "nothing to install: no hooks, skills, MCP servers, git-hooks, or views for this plugin";
-  }
-  if (fresh.viewTargets.length > 0 && opts.viewConfirmed !== true) {
-    return "views draw UI in the editor — re-open the consent drawer and confirm the view acknowledgement before installing";
-  }
-  if (fresh.viewTargets.some((v) => v.fleet === "summary") && opts.fleetReadConfirmed !== true) {
-    return "views read a curated fleet summary — re-open the consent drawer and confirm the fleet-read acknowledgement before installing";
-  }
-  for (const v of fresh.viewTargets) {
-    for (const action of v.actions) {
-      if (opts.actionConfirmed?.[`${v.id}:${action}`] !== true) {
-        return `view action '${action}' for '${v.id}' requires a dedicated acknowledgement before installing`;
-      }
-    }
+  if (fresh.steps.length === 0 && fresh.skillTargets.length === 0 && fresh.mcpTargets.length === 0 && fresh.gitHookTargets.length === 0) {
+    return "nothing to install: no hooks, skills, MCP servers, or git-hooks for this plugin";
   }
   if (fresh.mcpTargets.length > 0 && opts.mcpConfirmed !== true) {
     return "MCP servers require the consent drawer's MCP acknowledgement — re-open and confirm before installing";
@@ -1240,20 +1187,13 @@ function checkInstallAckGates(fresh: InstallPreview, opts: ApplyOpts): string | 
 
 /** PHASE 2a — validate THIS plugin's prior lockfile targets fail-closed (a corrupted skill-dir/mcp-server target
  *  must not be trusted: it could suppress a real collision or get stale-deleted). Returns an error or undefined. */
-function validViewTarget(pluginName: string, t: MaterializedTarget): boolean {
-  return t.kind === "view" && t.runtime === undefined && typeof t.ref === "string" && t.ref.length > 0 && t.file.startsWith(`${PAYLOAD_ROOT}/${pluginName}/`);
-}
-
-function validatePriorTargets(pluginName: string, priorTargets: MaterializedTarget[]): string | undefined {
+function validatePriorTargets(priorTargets: MaterializedTarget[]): string | undefined {
   for (const t of priorTargets) {
     if (t.kind === "skill-dir" && (!t.runtime || !validSkillDest(t.runtime, t.file))) {
       return `lockfile: skill-dir target '${t.file}' (${t.runtime}) is not a valid skills path — fix the lockfile before installing`;
     }
     if (t.kind === "mcp-server" && (!t.runtime || !validMcpDest(t.runtime, t.file) || typeof t.ref !== "string" || !MCP_SERVER_NAME.test(t.ref) || !validMcpRemoval(t.runtime, t.ref, t.removal))) {
       return `lockfile: mcp-server target '${t.file}' (${t.runtime}) is not a valid MCP config path — fix the lockfile before installing`;
-    }
-    if (t.kind === "view" && !validViewTarget(pluginName, t)) {
-      return `lockfile: view target '${t.file}' is not a valid view target for '${pluginName}' — fix the lockfile before installing`;
     }
   }
   return undefined;
@@ -1317,7 +1257,6 @@ function buildInstallTargets(fresh: InstallPreview, skillsToWrite: Array<SkillPl
     targets.push({ runtime: mt.runtime, kind: "mcp-server", file: mt.destRel, ref: mt.ref, removal: renderMcp(mt.runtime, mt.server, pluginRoot) });
     if (!runtimes.includes(mt.runtime)) runtimes.push(mt.runtime);
   }
-  for (const vt of fresh.viewTargets) targets.push({ kind: "view", file: vt.fileRel, ref: vt.id });
   return { runtimes, targets };
 }
 
@@ -1481,7 +1420,7 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   // PHASE 2 — validate prior targets + resolve the consented Keep/Replace decisions + build the materialized set.
   const priorTargets = lockfile.plugins[plugin.manifest.name]?.targets ?? [];
   const priorGitHooks = lockfile.plugins[plugin.manifest.name]?.gitHooks ?? [];
-  const priorErr = validatePriorTargets(plugin.manifest.name, priorTargets);
+  const priorErr = validatePriorTargets(priorTargets);
   if (priorErr) return { installed: false, runtimes: [], errors: [priorErr] };
   // skill-dirs THIS plugin already owns under THIS dest scope — a second agent's dests stay out of this set
   // so update cleanup cannot stale-delete them.
@@ -1505,8 +1444,8 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   const planned = buildInstallTargets(fresh, skillsToWrite, mcpToWrite, pluginPayloadAbs(workspaceRoot, plugin.manifest.name));
   const targets = planned.targets.map((t) => scope.type === "agent" ? { ...t, scope } : t);
   const runtimes = planned.runtimes;
-  if (runtimes.length === 0 && fresh.gitHookTargets.length === 0 && fresh.viewTargets.length === 0) {
-    return { installed: false, runtimes: [], errors: ["nothing to install: every compatible skill/MCP server was kept and there are no hooks or views"] };
+  if (runtimes.length === 0 && fresh.gitHookTargets.length === 0) {
+    return { installed: false, runtimes: [], errors: ["nothing to install: every compatible skill/MCP server was kept and there are no hooks"] };
   }
 
   // spec 264 — the git-hook removal identity recorded in the lockfile (computed before the lockfile write so a
@@ -1903,7 +1842,6 @@ export interface RemovePreview {
   /** spec 264 — the number of git-hook leaves this remove will un-register. */
   gitHookCount: number;
   /** spec 349 — the number of view registrations this remove will revoke. Additive for older callers/tests. */
-  viewCount?: number;
   /** a consent fingerprint over what will be un-merged (name+version+per-runtime current settings + owned
    *  groups + the skill-dirs deleted); applyRemove refuses a stale one so a remove never acts on a plan the
    *  user didn't see. "" when not found or on error. */
@@ -1929,10 +1867,6 @@ function mcpTargetsOf(lock: PluginLock): MaterializedTarget[] {
     .sort((a, b) => (`${a.runtime} ${a.ref}` < `${b.runtime} ${b.ref}` ? -1 : 1));
 }
 
-function viewTargetsOf(lock: PluginLock): MaterializedTarget[] {
-  return lock.targets.filter((t) => t.kind === "view").sort((a, b) => ((a.ref ?? "") < (b.ref ?? "") ? -1 : 1));
-}
-
 /** spec 263 — the runtime ancestor dirs a plugin recorded creating, VALIDATED against the known
  *  runtime-ancestor universe (a corrupted/hand-edited lockfile can never make remove `rmdir` an arbitrary
  *  path), deduped + sorted lexicographically. `applyRemove` re-sorts deepest-first for the actual rmdir. */
@@ -1943,14 +1877,13 @@ function createdAncestorsOf(lock: PluginLock): string[] {
 /** Fingerprint the exact remove plan: the lock identity + each runtime's current config + the owned groups
  *  + the skill-dirs deleted + the mcp servers un-merged (recorded removal AND the CURRENT on-disk entry — so a
  *  same-name server appearing/changing since the remove preview invalidates consent). */
-function removeFingerprint(name: string, version: string, steps: RemoveStep[], skillDests: string[], mcpTargets: MaterializedTarget[], mcpCurrent: unknown[], viewTargets: MaterializedTarget[], createdAncestors: string[], gitHooks: GitHookLock[]): string {
+function removeFingerprint(name: string, version: string, steps: RemoveStep[], skillDests: string[], mcpTargets: MaterializedTarget[], mcpCurrent: unknown[], createdAncestors: string[], gitHooks: GitHookLock[]): string {
   const basis = {
     name,
     version,
     steps: steps.map((s) => ({ rt: s.runtime, file: s.settingsRel, before: s.before, owned: s.owned })),
     skillDests,
     mcp: mcpTargets.map((t, i) => ({ rt: t.runtime, file: t.file, ref: t.ref, removal: t.removal, current: mcpCurrent[i] })),
-    views: viewTargets.map((t) => ({ file: t.file, ref: t.ref })),
     // spec 263 — bind the recorded created-ancestors so the remove the user consented to includes exactly which
     // dirs uninstall will rmdir.
     createdAncestors,
@@ -1997,9 +1930,6 @@ function planRemove(pluginName: string, workspaceRoot: string): { lockfile?: Loc
     if (t.kind === "mcp-server" && (!t.runtime || !validMcpDest(t.runtime, t.file) || typeof t.ref !== "string" || !MCP_SERVER_NAME.test(t.ref) || !validMcpRemoval(t.runtime, t.ref, t.removal))) {
       return { lockfile: lockRead.lockfile, lock, steps: [], errors: [`lockfile: mcp-server target '${t.file}' (${t.runtime}) is not a valid MCP config target`] };
     }
-    if (t.kind === "view" && !validViewTarget(pluginName, t)) {
-      return { lockfile: lockRead.lockfile, lock, steps: [], errors: [`lockfile: view target '${t.file}' is not a valid view target for '${pluginName}'`] };
-    }
   }
 
   let appliedHooks: Set<string>;
@@ -2022,8 +1952,8 @@ function planRemove(pluginName: string, workspaceRoot: string): { lockfile?: Loc
 /** Plan a remove WITHOUT writing — reports recorded-vs-orphan hook counts across all the plugin's runtimes. */
 export function previewRemove(pluginName: string, workspaceRoot: string): RemovePreview {
   const plan = planRemove(pluginName, workspaceRoot);
-  if (plan.errors.length > 0) return { found: !!plan.lock, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, gitHookCount: 0, viewCount: 0, fingerprint: "", errors: plan.errors };
-  if (!plan.lock) return { found: false, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, gitHookCount: 0, viewCount: 0, fingerprint: "", errors: [] };
+  if (plan.errors.length > 0) return { found: !!plan.lock, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, gitHookCount: 0, fingerprint: "", errors: plan.errors };
+  if (!plan.lock) return { found: false, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, gitHookCount: 0, fingerprint: "", errors: [] };
   let removedCount = 0;
   let expectedCount = 0;
   for (const step of plan.steps) {
@@ -2033,12 +1963,11 @@ export function previewRemove(pluginName: string, workspaceRoot: string): Remove
   }
   const skillDests = skillDestsOf(plan.lock);
   const mcpTargets = mcpTargetsOf(plan.lock);
-  const viewTargets = viewTargetsOf(plan.lock);
   const gitHooks = plan.lock.gitHooks ?? [];
   const mcpCur = currentMcpReps(workspaceRoot, mcpTargets);
-  if (mcpCur.errors.length > 0) return { found: true, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, gitHookCount: 0, viewCount: 0, fingerprint: "", errors: mcpCur.errors };
-  const fingerprint = removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests, mcpTargets, mcpCur.current, viewTargets, createdAncestorsOf(plan.lock), gitHooks);
-  return { found: true, orphans: expectedCount - removedCount, removedCount, expectedCount, skillCount: skillDests.length, mcpCount: mcpTargets.length, gitHookCount: gitHooks.length, viewCount: viewTargets.length, fingerprint, errors: [] };
+  if (mcpCur.errors.length > 0) return { found: true, orphans: 0, removedCount: 0, expectedCount: 0, skillCount: 0, mcpCount: 0, gitHookCount: 0, fingerprint: "", errors: mcpCur.errors };
+  const fingerprint = removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests, mcpTargets, mcpCur.current, createdAncestorsOf(plan.lock), gitHooks);
+  return { found: true, orphans: expectedCount - removedCount, removedCount, expectedCount, skillCount: skillDests.length, mcpCount: mcpTargets.length, gitHookCount: gitHooks.length, fingerprint, errors: [] };
 }
 
 export interface RemoveResult {
@@ -2056,13 +1985,12 @@ export async function applyRemove(pluginName: string, workspaceRoot: string, opt
 
   const skillDests = skillDestsOf(plan.lock);
   const mcpTargets = mcpTargetsOf(plan.lock);
-  const viewTargets = viewTargetsOf(plan.lock);
   const ancestors = createdAncestorsOf(plan.lock);
   const mcpCur = currentMcpReps(workspaceRoot, mcpTargets);
   if (mcpCur.errors.length > 0) return { removed: false, orphans: 0, errors: mcpCur.errors };
   // consent binding (TOCTOU): refuse if the plugin changed (updated/reinstalled) OR a recorded MCP server
   // appeared/changed on disk since the remove was previewed.
-  if (opts.expectedFingerprint !== undefined && removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests, mcpTargets, mcpCur.current, viewTargets, ancestors, plan.lock.gitHooks ?? []) !== opts.expectedFingerprint) {
+  if (opts.expectedFingerprint !== undefined && removeFingerprint(pluginName, plan.lock.version, plan.steps, skillDests, mcpTargets, mcpCur.current, ancestors, plan.lock.gitHooks ?? []) !== opts.expectedFingerprint) {
     return { removed: false, orphans: 0, errors: ["workspace changed since preview — re-preview and re-consent before removing"] };
   }
 

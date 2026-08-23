@@ -327,11 +327,6 @@
         "icon": "$(extensions)"
       },
       {
-        "command": "tachyon.openPluginSurface",
-        "title": "%command.openPluginSurface%",
-        "icon": "$(extensions)"
-      },
-      {
         "command": "tachyon.board",
         "title": "%command.board%",
         "icon": "$(checklist)"
@@ -465,12 +460,6 @@
         {
           "id": "tachyonSidebarPrototype",
           "name": "%view.tachyon%",
-          "type": "webview",
-          "icon": "media/tachyon.svg"
-        },
-        {
-          "id": "tachyonPluginSurfaces",
-          "name": "%view.pluginSurfaces%",
           "type": "webview",
           "icon": "media/tachyon.svg"
         }

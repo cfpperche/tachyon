@@ -2,7 +2,7 @@
 
 _Created 2026-08-21._
 
-**Status:** draft
+**Status:** shipped
 
 ## Intent
 
@@ -31,51 +31,51 @@ Um **app** é HTML estático que o usuário instala subindo um `.zip` pela aba A
 
 ### Instalação
 
-- [ ] **Scenario: instalar um app por zip**
+- [x] **Scenario: instalar um app por zip**
   - **Given** a aba Apps aberta, e um arquivo `.zip` contendo `app.json`, `index.html` e um arquivo de ícone
   - **When** o usuário usa a ação Adicionar e escolhe esse zip
   - **Then** o conteúdo é descompactado em `.tachyon/apps/<id>/`, um ladrilho novo aparece no launcher com o ícone do app, e nenhum reload da janela é exigido
 
-- [ ] **Scenario: reinstalar por cima é a porta de update**
+- [x] **Scenario: reinstalar por cima é a porta de update**
   - **Given** um app já instalado com id `foo`
   - **When** o usuário sobe um zip cujo `app.json` declara o mesmo id `foo`
   - **Then** o diretório `.tachyon/apps/foo/` é substituído pelo conteúdo novo, sem prompt de confirmação, e o ladrilho reflete o `app.json` novo
 
-- [ ] **Scenario: zip inválido avisa e não derruba nada**
+- [x] **Scenario: zip inválido avisa e não derruba nada**
   - **Given** um zip sem `app.json`, ou com `app.json` ilegível, ou sem o `entry` que ele declara
   - **When** o usuário tenta instalar
   - **Then** a aba Apps mostra o que faltou, nenhum diretório parcial fica em `.tachyon/apps/`, e os apps já instalados continuam funcionando
 
-- [ ] **Scenario: app quebrado no disco não impede o Tachyon de subir**
+- [x] **Scenario: app quebrado no disco não impede o Tachyon de subir**
   - **Given** um diretório em `.tachyon/apps/<id>/` cujo `app.json` foi corrompido ou apagado à mão
   - **When** a extensão inicia
   - **Then** o Tachyon sobe, os outros apps e as doze telas embutidas aparecem, e o app quebrado é omitido do launcher com um aviso — nenhuma exceção sobe do startup
 
 ### Execução
 
-- [ ] **Scenario: abrir um app instalado**
+- [x] **Scenario: abrir um app instalado**
   - **Given** um app instalado e seu ladrilho no launcher
   - **When** o usuário clica no ladrilho
   - **Then** o `entry` do app abre numa aba do editor, com o título e o ícone que o `app.json` declara
 
-- [ ] **Scenario: reabrir revela em vez de duplicar**
+- [x] **Scenario: reabrir revela em vez de duplicar**
   - **Given** um app já aberto numa aba do editor para o projeto corrente
   - **When** o usuário clica no ladrilho de novo
   - **Then** a aba existente é revelada; não nasce uma segunda
 
-- [ ] **Scenario: o app chama o Bridge**
+- [x] **Scenario: o app chama o Bridge**
   - **Given** um app aberto cuja página chama `window.tachyon.call("list_agents", {})`
   - **When** a chamada resolve
   - **Then** a página recebe o mesmo resultado que a ferramenta `list_agents` do Bridge devolve a um agente
 
-- [ ] **Scenario: chamada que falha volta como erro para o app**
+- [x] **Scenario: chamada que falha volta como erro para o app**
   - **Given** um app que chama uma ferramenta inexistente, ou uma ferramenta que rejeita a entrada
   - **When** a chamada resolve
   - **Then** a página recebe o erro e o Tachyon não mostra tela de erro própria, não repete a chamada e não enfileira nada
 
-- [ ] Não existe allowlist, categoria ou escopo no caminho do app. Nada é negado a um app por uma lista que o Tachyon mantenha.
-- [ ] A página do app não roda sob `connect-src 'none'` nem sob a montagem de `srcdoc` do spec 349.
-- [ ] Um app alcança `spawn_agent`, `kill_agent`, `list_agents`, as ferramentas de board, worktree, tmux e browser — a superfície que um agente alcança, sem intermediário que filtre.
+- [x] Não existe allowlist, categoria ou escopo no caminho do app. Nada é negado a um app por uma lista que o Tachyon mantenha.
+- [x] A página do app não roda sob `connect-src 'none'` nem sob a montagem de `srcdoc` do spec 349.
+- [x] Um app alcança `spawn_agent`, `kill_agent`, `list_agents`, as ferramentas de board, worktree, tmux e browser — a superfície que um agente alcança, sem intermediário que filtre.
 
 **As doze ferramentas que um app não alcança, e por quê.** Medido em 2026-08-21: o chamador que o host consegue autenticar é `external`, e doze ferramentas exigem `caller.kind === "agent"` porque o *sujeito* delas é um agente:
 
@@ -92,24 +92,24 @@ Isso não é restrição de poder — é o significado da ferramenta. Um app nã
 
 **E `run_host_action` também não é perda.** Medido em 2026-08-21: este workspace não tem política de host-action. `tachyon.yml` não menciona `hostAction`, não existe arquivo de política, e `DefaultDenyHostActionPolicy` (`host-action/policy.ts:31`) responde `host actions are disabled by default` a **todo** chamador. Nenhum agente alcança `run_host_action` hoje. O app é negado a mesma coisa que todos são negados.
 
-- [ ] O contrato de identidade do app está escrito onde alguém que autora um app vai ler, nomeando as doze.
+- [x] O contrato de identidade do app está escrito onde alguém que autora um app vai ler, nomeando as doze.
 
 ### O plugin perde a tela
 
-- [ ] **Scenario: manifesto de plugin com `views` é recusado**
+- [x] **Scenario: manifesto de plugin com `views` é recusado**
   - **Given** um `tachyon-plugin.json` que declara o campo `views`
   - **When** ele passa pelo `loadManifest`
   - **Then** o manifesto não carrega e o erro nomeia `views` como campo removido, apontando o caminho de app
 
-- [ ] Nenhum plugin instalado declara `views`, e o `terrarium` não está mais na lista de plugins. Não há migração a fazer: era POC, e sai.
-- [ ] `PLUGIN_UI_ACTIONS`, o broker de ações de plugin, o modo `plugin` de `assembleUntrustedSrcdoc` e o `VIEW_FLEET_SCOPES` foram removidos do código, não deixados desligados.
-- [ ] `docs/specs/349-plugin-ui-surfaces/spec.md` tem `**Status:** superseded` apontando para esta spec.
+- [x] Nenhum plugin instalado declara `views`, e o `terrarium` não está mais na lista de plugins. Não há migração a fazer: era POC, e sai.
+- [x] `PLUGIN_UI_ACTIONS`, o broker de ações de plugin, o modo `plugin` de `assembleUntrustedSrcdoc` e o `VIEW_FLEET_SCOPES` foram removidos do código, não deixados desligados.
+- [x] `docs/specs/349-plugin-ui-surfaces/spec.md` tem `**Status:** superseded` apontando para esta spec.
 
 ### Catálogo
 
-- [ ] O launcher lista as doze telas embutidas seguidas dos apps instalados, e a ordem de produto das doze não muda.
-- [ ] A reordenação por arrastar e por teclado funciona com ladrilhos de app misturados aos embutidos, e desinstalar um app não corrompe a ordem gravada.
-- [ ] Um id de app não pode colidir com um id de seção embutida, por construção e não por validação.
+- [x] O launcher lista as doze telas embutidas seguidas dos apps instalados, e a ordem de produto das doze não muda.
+- [x] A reordenação por arrastar e por teclado funciona com ladrilhos de app misturados aos embutidos, e desinstalar um app não corrompe a ordem gravada.
+- [x] Um id de app não pode colidir com um id de seção embutida, por construção e não por validação.
 
 ## Non-goals
 

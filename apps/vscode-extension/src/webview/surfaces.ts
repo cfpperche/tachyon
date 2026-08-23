@@ -287,8 +287,6 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // product's shell has nothing to contribute to it. `replace` is what that fact is called here, and the
   // reason is the declaration the guard demands instead of silence.
   { viewId: "tachyonUserApp", view: "user-app", hostFile: "apps/vscode-extension/src/webview/UserAppPanels.ts", mode: "live", converted: true, hostKind: "standalone", posture: "replace", reason: "serves an installed app's own HTML from .tachyon/apps/<id>/ — the author owns the document" },
-  { viewId: "tachyonPluginSurface", view: "plugin-host", hostFile: "apps/vscode-extension/src/plugins/ui/host.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
-  { viewId: "tachyonPluginSurfaces", view: "plugin-host", hostFile: "apps/vscode-extension/src/plugins/ui/host.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
 ];
 
 /**

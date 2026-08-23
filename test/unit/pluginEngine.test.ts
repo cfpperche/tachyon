@@ -164,11 +164,12 @@ describe("loadPlugin — skills discovery (spec 251)", () => {
     expect(errors.some((e) => /at least one capability/.test(e))).toBe(true);
   });
 
-  it("loads a VIEWS-ONLY plugin with no runtimes (spec 349)", () => {
+  it("514 — a views-only payload is no longer a plugin at all: no capability, refused by name", () => {
+    // The screen it wanted to ship is an app now. Refusing here rather than loading an empty plugin is
+    // what makes the manifest error the author reads the whole story.
     const { plugin, errors } = loadPlugin(makeViewOnlyPlugin());
-    expect(errors).toEqual([]);
-    expect(plugin!.manifest.runtimes).toEqual([]);
-    expect(plugin!.views?.map((v) => v.id)).toEqual(["agents"]);
+    expect(plugin).toBeUndefined();
+    expect(errors.some((e) => /plugins no longer draw screens \(spec 514\)/.test(e))).toBe(true);
   });
 
   it("does NOT warn 'nothing to wire' for a skills-only plugin — the runtime gets the skill", () => {
@@ -1522,63 +1523,16 @@ describe("safety + fail-closed", () => {
     expect(fs.existsSync(LOCK(ws))).toBe(false); // never wrote a runtimes:[] lock
   });
 
-  it("installs and removes a views-only plugin through the engine gates (spec 349 T3)", async () => {
-    const ws = makeWorkspace([]);
-    const { plugin } = loadPlugin(makeViewOnlyPlugin());
-    const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
-    expect(preview.errors).toEqual([]);
-    expect(preview.viewTargets).toEqual([{ id: "agents", title: "Agents", surface: "editor", entry: "ui/index.html", fileRel: ".tachyon/plugins/mundinho/ui/index.html", fleet: "summary", actions: ["focusAgent"] }]);
-    expect(preview.fingerprint).not.toBe("");
-
-    const noAck = await applyInstall(plugin!, preview, ws, detectRuntimes(ws));
-    expect(noAck.installed).toBe(false);
-    expect(noAck.errors[0]).toMatch(/view acknowledgement/);
-
-    const missingFleetAck = await applyInstall(plugin!, preview, ws, detectRuntimes(ws), { viewConfirmed: true });
-    expect(missingFleetAck.installed).toBe(false);
-    expect(missingFleetAck.errors[0]).toMatch(/fleet-read acknowledgement/);
-
-    const missingActionAck = await applyInstall(plugin!, preview, ws, detectRuntimes(ws), { viewConfirmed: true, fleetReadConfirmed: true });
-    expect(missingActionAck.installed).toBe(false);
-    expect(missingActionAck.errors[0]).toMatch(/focusAgent/);
-
-    const installed = await applyInstall(plugin!, preview, ws, detectRuntimes(ws), { viewConfirmed: true, fleetReadConfirmed: true, actionConfirmed: { "agents:focusAgent": true } });
-    expect(installed.installed).toBe(true);
-    expect(installed.runtimes).toEqual([]);
-    const lock = readJson(LOCK(ws));
-    expect(lock.plugins.mundinho.targets).toEqual([{ kind: "view", file: ".tachyon/plugins/mundinho/ui/index.html", ref: "agents" }]);
-
-    const remove = previewRemove("mundinho", ws);
-    expect(remove.viewCount).toBe(1);
-    expect(remove.fingerprint).not.toBe("");
-    expect((await applyRemove("mundinho", ws, { expectedFingerprint: remove.fingerprint })).removed).toBe(true);
-    expect(fs.existsSync(LOCK(ws))).toBe(false);
-  });
-
-  it("binds view declarations and entry bytes into the install fingerprint", () => {
-    const ws = makeWorkspace([]);
-    const { plugin: a } = loadPlugin(makeViewOnlyPlugin({ title: "Agents" }));
-    const { plugin: b } = loadPlugin(makeViewOnlyPlugin({ title: "Agents Live" }));
-    const fpA = previewInstall(a!, ws, detectRuntimes(ws)).fingerprint;
-    const fpB = previewInstall(b!, ws, detectRuntimes(ws)).fingerprint;
-    expect(fpA).not.toBe(fpB);
-
-    const dir = makeViewOnlyPlugin({ name: "drift" });
-    const { plugin } = loadPlugin(dir);
-    const fp1 = previewInstall(plugin!, ws, detectRuntimes(ws)).fingerprint;
-    fs.writeFileSync(path.join(dir, "ui/index.html"), "<!doctype html><p>changed</p>\n");
-    const fp2 = previewInstall(plugin!, ws, detectRuntimes(ws)).fingerprint;
-    expect(fp1).not.toBe(fp2);
-  });
-
-  it("rejects hostile view entry HTML during preview before consent", () => {
-    const ws = makeWorkspace([]);
+  it("514 — the entry-HTML gate and the view fingerprint left with the capability, and their subject is gone", () => {
+    // These two guarded a plugin's own HTML: hostile <script src> at preview, and view bytes bound into
+    // the consent fingerprint. Neither has a subject any more — a plugin cannot ship HTML at all, which
+    // is a stronger guarantee than either check was. Asserted as absence so the capability cannot come
+    // back quietly: a payload whose only content is a screen is refused before any of that matters.
     const dir = makeViewOnlyPlugin({ name: "hostile" });
     fs.writeFileSync(path.join(dir, "ui/index.html"), '<!doctype html><script src="https://example.com/pwn.js"></script>\n');
-    const { plugin } = loadPlugin(dir);
-    const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
-    expect(preview.errors.some((e) => /script src/i.test(e))).toBe(true);
-    expect(preview.fingerprint).toBe("");
+    const { plugin, errors } = loadPlugin(dir);
+    expect(plugin).toBeUndefined();
+    expect(errors.some((e) => /plugins no longer draw screens \(spec 514\)/.test(e))).toBe(true);
   });
 
   it("remove fail-closes on a hand-corrupted lockfile removal", async () => {
