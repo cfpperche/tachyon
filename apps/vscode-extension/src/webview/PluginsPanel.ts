@@ -31,7 +31,9 @@ import {
   loadPluginFromZipFile,
 } from "../plugins/engine.js";
 import { loadManifest, SUPPORTED_RUNTIMES, type Runtime, type PackageManager, type ExternalToolInstall } from "@tachyon/engine/plugins/manifest.js";
-import { pluginsMessage, consentMessage, busyMessage, resultMessage, POLL, READY, type PluginsActionType } from "@tachyon/webview-ui/webview/plugins/messages";
+import { pluginsMessage, consentMessage, busyMessage, resultMessage, zipsMessage, type ZipsMessage, POLL, READY, type PluginsActionType } from "@tachyon/webview-ui/webview/plugins/messages";
+import { browseForZip, findZipCandidates, zipSearchRoots } from "@tachyon/engine/files/zipPicker.js";
+import * as os from "node:os";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
 import type { GitRun } from "../plugins/fetcher.js";
 import { gatherToolPlan } from "../plugins/toolPlan.js";
@@ -85,6 +87,9 @@ type PendingOp =
 interface InboundMsg {
   type?: PluginsActionType; // spec 280 — typed union: a typo'd `case "…"` in onMessage is now a compile error
   spec?: string;
+  /** 515 — a directory the file chooser browsed into, or the archive the human took from it. */
+  dir?: string;
+  zipPath?: string;
   name?: string;
   token?: string;
   /** spec 263 — the user's runtime selection for the pending install (a `reselect` re-previews against it). */
@@ -147,6 +152,7 @@ interface PanelIO {
   postConsent(vm: ConsentVM): void;
   postBusy(label: string): void;
   postResult(ok: boolean, message: string): void;
+  postZips(m: ZipsMessage): void;
   getPending(): PendingOp | undefined;
   setPending(p: PendingOp | undefined): void;
   getChecks(): Record<string, UpdateCheck>;
@@ -295,6 +301,7 @@ export class PluginsPanelManager {
           postConsent: (vm) => { session.post(consentMessage(vm)); },
           postBusy: (label) => { session.post(busyMessage(label)); },
           postResult: (ok, message) => { session.post(resultMessage(ok, message)); },
+          postZips: (m) => { session.post(m); },
           getPending: () => pending,
           setPending: (p) => { pending = p; },
           getChecks: () => checks,
@@ -347,7 +354,13 @@ export class PluginsPanelManager {
       // 515 — the second door. It asks the human for a file and then joins the SAME preview/consent
       // path a git install takes: what differs is how the directory was produced, nothing after it.
       case "installZip":
-        await this.guard(io, () => this.previewInstallZipOp(ws, io));
+        this.openZipPicker(ws, io);
+        return;
+      case "browseZips":
+        if (m.dir) this.openZipPicker(ws, io, m.dir);
+        return;
+      case "installZipFrom":
+        if (m.zipPath) await this.guard(io, () => this.previewInstallZipOp(ws, m.zipPath as string, io));
         return;
       case "installExternal":
         // spec 287 — `pluginName` present ⇒ the installed-card path (resolve from the lockfile); else the drawer path.
@@ -455,25 +468,44 @@ export class PluginsPanelManager {
   }
 
   /**
-   * 515 — install from a `.zip` the human picks.
+   * 515 — answer the file chooser: the archives lying around, or one directory the human browsed into.
+   *
+   * This is a synchronous fs read on the extension host, the same way this panel already reads the
+   * lockfile and detects runtimes — the Plugins panel has never gone through the engine for a local
+   * read, and routing one query differently would be the odd thing here.
+   *
+   * A refusal travels as a REASON, never as an empty list: `browseForZip` puts the errno message in
+   * `listing.error` and the picker prints it. "Nothing here" and "permission denied" look identical
+   * in a list and are not the same fact.
+   */
+  private openZipPicker(ws: WorkspaceGitPresentationTarget, io: PanelIO, dir?: string): void {
+    if (dir) {
+      io.postZips(zipsMessage([], [], { listing: browseForZip(dir) }));
+      return;
+    }
+    const roots = zipSearchRoots(ws.workspaceRoot, os.homedir(), os.tmpdir());
+    const candidates = findZipCandidates(roots).map((c) => ({ path: c.path, name: c.name, dir: c.dir }));
+    io.postZips(zipsMessage(candidates, roots));
+  }
+
+  /**
+   * 515 — install from a `.zip` the human picked in OUR picker.
    *
    * Everything after the load is shared with the git door on purpose: the same preview, the same
    * consent drawer, the same apply. The only difference is that there is no provenance to show, which
    * the drawer already tolerates (its parameter is optional) and which is the honest answer for a
    * file someone chose on their own disk.
+   *
+   * The chooser is the product's own, and that is a rule rather than a preference. The editor's file
+   * dialog is a different window with a different theme and a different keyboard, it opens wherever it
+   * last was rather than where the archives are, and it knows nothing about what a plugin package is.
+   * The first version of this door used it and was rejected on sight.
    */
-  private async previewInstallZipOp(ws: WorkspaceGitPresentationTarget, io: PanelIO): Promise<void> {
-    const picked = await vscode.window.showOpenDialog({
-      canSelectMany: false,
-      openLabel: "Install plugin",
-      filters: { "Plugin package": ["zip"] },
-    });
-    const zip = picked?.[0];
-    if (!zip) return;
-    io.postBusy(`Reading ${path.basename(zip.fsPath)}…`);
-    const loaded = await loadPluginFromZipFile(zip.fsPath);
+  private async previewInstallZipOp(ws: WorkspaceGitPresentationTarget, zipPath: string, io: PanelIO): Promise<void> {
+    io.postBusy(`Reading ${path.basename(zipPath)}…`);
+    const loaded = await loadPluginFromZipFile(zipPath);
     if (!loaded.plugin) {
-      io.postResult(false, `Could not load '${path.basename(zip.fsPath)}': ${loaded.errors.join("; ")}`);
+      io.postResult(false, `Could not load '${path.basename(zipPath)}': ${loaded.errors.join("; ")}`);
       return;
     }
     const present = detectRuntimes(ws.workspaceRoot);

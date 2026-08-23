@@ -17,8 +17,14 @@
  * - **Keyboard first** — ↑↓ move, Enter enters a folder or takes a file, Backspace at an empty filter
  *   goes up, Escape closes. A visible focus ring on the active row, never colour alone.
  *
- * Directories are listed before files, both alphabetical. Long names truncate at the END and keep the
- * extension visible, because in a chooser the tail is what distinguishes `app-v2.zip` from `app.zip`.
+ * Directories are listed before files, both alphabetical.
+ *
+ * The two truncations point in OPPOSITE directions, and that is the point rather than an inconsistency.
+ * A NAME truncates at the end, because its head says which plugin it is (`agent-browser…` beats
+ * `…-3.2.0.zip`). A PATH truncates at the head, because its tail says which folder it is
+ * (`…goat/tachyon/dist` beats `/home/goat/tach…`) — which is why `.pp-where` is `direction: rtl`, and
+ * why its content is wrapped in an LTR isolate so that RTL box does not migrate the leading slash to
+ * the end. That last part was on screen from 514 until the 515 screenshots caught it.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Icon } from "./Icon";
@@ -50,6 +56,21 @@ export interface PathPickerProps {
   onClose: () => void;
   onSelect: (filePath: string) => void;
   "data-testid"?: string;
+}
+
+/**
+ * Isolate a path as left-to-right inside a right-to-left box.
+ *
+ * `.pp-where` is `direction: rtl` so the ellipsis eats the HEAD of a long path and its tail — the part
+ * that distinguishes two folders — survives. The cost is bidi: `/` is a neutral character, so in an RTL
+ * paragraph the leading slash migrates to the end and `/home/goat/Downloads` renders as
+ * `home/goat/Downloads/`. Measured in the 515 screenshots; it had been on screen since 514.
+ *
+ * U+2066/U+2069 (LTR ISOLATE / POP DIRECTIONAL ISOLATE) fix the run's direction without touching the
+ * BOX's direction, so the slashes stay put and the ellipsis still lands at the head.
+ */
+function ltr(value: string): string {
+  return `\u2066${value}\u2069`;
 }
 
 function matches(entry: PathPickerEntry, query: string): boolean {
@@ -125,7 +146,9 @@ export function PathPicker({
             {crumbs.length > shownCrumbs.length ? <span class="pp-crumb-more">…</span> : null}
             {shownCrumbs.map((crumb, index) => (
               <span key={crumb.path}>
-                {index > 0 ? <span class="pp-crumb-sep">/</span> : null}
+                {/* The root crumb IS a slash, so a separator after it reads as `/ / home`. Measured in
+                    the 515 shots, where the breadcrumb bar rendered exactly that. */}
+                {index > 0 && shownCrumbs[index - 1]!.path !== "/" ? <span class="pp-crumb-sep">/</span> : null}
                 <button type="button" class="pp-crumb" onClick={() => onBrowse(crumb.path)}>{crumb.label}</button>
               </span>
             ))}
@@ -161,7 +184,7 @@ export function PathPicker({
               <Icon name={entry.kind === "dir" ? "folder" : "file-zip"} />
               <span class="pp-name">{entry.name}</span>
               {/* Where it is matters in the suggestions view, where rows come from four different roots. */}
-              {!listing ? <span class="pp-where">{entry.path.slice(0, entry.path.length - entry.name.length - 1)}</span> : null}
+              {!listing ? <span class="pp-where">{ltr(entry.path.slice(0, entry.path.length - entry.name.length - 1))}</span> : null}
             </button>
           ))}
           {rows.length === 0 ? (
