@@ -188,3 +188,54 @@ describe("agentTokenHeal wiring", () => {
     expect(heal(GROK_PANE, FORGED_TOKEN)).toEqual({ ok: false, reason: "no_match" });
   });
 });
+
+/**
+ * t-e476b6 — the survivor an engine restart leaves behind.
+ *
+ * Measured on the author's own session: a restart supersedes every live token (one hour of grace) and
+ * re-mints into an environment no living pane can receive, because env is fixed at spawn. A pane that
+ * outlives the grace goes silent while it is still running and the engine is up. Healing already
+ * existed for this exact shape and covered `token_unknown` only — so the state a restart actually
+ * produces was the one state it refused.
+ */
+describe("healing a survivor across an engine restart", () => {
+  const SCOPE = { workspaceId: "ws", instanceId: "inst" };
+  const TOKEN = "a".repeat(64);
+
+  it("adopts a token whose entry EXPIRED, because expiry is a registry artifact, not a fact about the holder", () => {
+    const registry = new CallerIdentityRegistry(crypto.randomBytes(32));
+    // The shape a restart leaves: the entry exists (reloaded from the digest snapshot) and its grace
+    // has run out. The pane is still there, still holding the plaintext.
+    registry.adopt("claude", TOKEN, { ...SCOPE, now: 1_000, ttlMs: 10 });
+    expect(registry.resolve(TOKEN, { ...SCOPE, now: 5_000 })).toEqual({ ok: false, reason: "token_expired" });
+
+    const healed = healUnknownBearerFromAgents(
+      registry,
+      TOKEN,
+      [{ name: "claude", panePid: 42 }],
+      SCOPE,
+      { procRoot: "/proc", proc: fakeProc({ "/proc/42/stat": "42 (claude) S 1", "/proc/42/environ": `TACHYON_AGENT_NAME=claude\0TACHYON_AGENT_BRIDGE_TOKEN=${TOKEN}\0` }) },
+    );
+    expect(healed).toEqual({ ok: true, name: "claude", adopted: true });
+    expect(registry.resolve(TOKEN, SCOPE).ok).toBe(true);
+  });
+
+  it("REFUSES to adopt a revoked token, however convincing the process holding it", () => {
+    // Revocation is a decision — kill, dismiss, a committed forget, an observed death. Healing reads
+    // the plaintext out of a live process, which is precisely the situation those paths overrule.
+    const registry = new CallerIdentityRegistry(crypto.randomBytes(32));
+    registry.adopt("claude", TOKEN, SCOPE);
+    registry.revoke("claude", SCOPE);
+    expect(registry.resolve(TOKEN, SCOPE)).toEqual({ ok: false, reason: "token_revoked" });
+
+    const healed = healUnknownBearerFromAgents(
+      registry,
+      TOKEN,
+      [{ name: "claude", panePid: 42 }],
+      SCOPE,
+      { procRoot: "/proc", proc: fakeProc({ "/proc/42/stat": "42 (claude) S 1", "/proc/42/environ": `TACHYON_AGENT_NAME=claude\0TACHYON_AGENT_BRIDGE_TOKEN=${TOKEN}\0` }) },
+    );
+    expect(healed.ok).toBe(false);
+    expect(registry.resolve(TOKEN, SCOPE)).toEqual({ ok: false, reason: "token_revoked" });
+  });
+});
