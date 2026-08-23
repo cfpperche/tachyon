@@ -2,8 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
 import { ensureSecureRuntimeDir, MAX_CONTROL_SOCKET_PATH_BYTES } from "./runtimeSecurity.js";
+
+const execFileAsync = promisify(execFile);
 import { readLinuxProcessIdentity } from "../runtime/processIdentity.js";
 import { TMUX_SOCKET_ENV, workspaceHash } from "../tmux/TmuxService.js";
 import { DAEMON_SETTING_KEYS, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
@@ -28,6 +31,30 @@ import type { StartDaemonEngineServiceOptions } from "./engineService.js";
 import { EngineControlClient } from "./controlClient.js";
 
 const DEFAULT_START_TIMEOUT_MS = 10_000;
+/**
+ * How long a STILL-ALIVE engine may keep starting past its budget before Tachyon gives up.
+ *
+ * Measured 2026-08-23 on the author's machine, right after a release run had saturated it: three
+ * consecutive starts hit the 10s budget dead-on (~1s of CPU consumed in 10s of wall clock — starved,
+ * not crashed), the rollback hit it too, and the fourth attempt committed in the same conditions. The
+ * human saw "could not start either the new engine or its verified rollback" and had to click Retry
+ * until it took.
+ *
+ * The budget was the whole defect: 10s is a fine FLOOR for a cold start of a multi-megabyte bundle,
+ * and a terrible ceiling. Slow is not broken; dead is. So the deadline is extended, once, only while
+ * systemd still reports the unit active — a unit that died fails immediately, exactly as before.
+ */
+const ALIVE_START_GRACE_MS = 45_000;
+
+/** True when systemd still says the launched unit is running — the difference between slow and dead. */
+async function unitStillActive(unitName: string): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync("systemctl", ["--user", "show", unitName, "--property=ActiveState", "--value"], { encoding: "utf8" });
+    return stdout.trim() === "active" || stdout.trim() === "activating";
+  } catch {
+    return false; // cannot ask: do not extend on a guess
+  }
+}
 const DEFAULT_POLL_MS = 40;
 const MAX_ENCODED_DAEMON_OPTIONS_BYTES = 64 * 1024;
 const SYSTEMD_OUTPUT_LIMIT = 8 * 1024;
@@ -911,7 +938,8 @@ async function waitForCompatibleEngine(input: {
   pollMs: number;
   unitName: string;
 }): Promise<EngineServiceIdentityV1> {
-  const deadline = Date.now() + input.timeoutMs;
+  let deadline = Date.now() + input.timeoutMs;
+  let extended = false;
   let lastUnverifiable: EngineSupervisorError | undefined;
   while (Date.now() < deadline) {
     let identity: EngineServiceIdentityV1 | undefined;
@@ -940,11 +968,17 @@ async function waitForCompatibleEngine(input: {
       return identity;
     }
     await delay(input.pollMs);
+    // The budget ran out. If the unit is still running, it is starting slowly — give it the grace
+    // once and keep polling; a unit that is gone fails now, with the same message as before.
+    if (!extended && Date.now() >= deadline && await unitStillActive(input.unitName)) {
+      extended = true;
+      deadline = Date.now() + ALIVE_START_GRACE_MS;
+    }
   }
   if (lastUnverifiable) throw lastUnverifiable;
   throw new EngineSupervisorError(
     "ENGINE_START_TIMEOUT",
-    "Tachyon's persistent engine did not become ready in time. Run Tachyon: Doctor and retry.",
+    `Tachyon's persistent engine did not answer within ${Math.round((input.timeoutMs + (extended ? ALIVE_START_GRACE_MS : 0)) / 1000)}s. Run Tachyon: Doctor and retry.`,
     `unit=${input.unitName} socket=${input.controlSocketPath}`,
   );
 }
@@ -953,7 +987,8 @@ async function waitForExactEngine(input: UpgradeDaemonEngineInput & {
   manifest: EngineBundleManifestV1;
   bundle: StagedEngineBundle;
 }): Promise<EngineServiceIdentityV1> {
-  const deadline = Date.now() + input.timeoutMs;
+  let deadline = Date.now() + input.timeoutMs;
+  let extended = false;
   let lastUnverifiable: EngineSupervisorError | undefined;
   while (Date.now() < deadline) {
     let identity: EngineServiceIdentityV1 | undefined;
@@ -985,7 +1020,7 @@ async function waitForExactEngine(input: UpgradeDaemonEngineInput & {
   if (lastUnverifiable) throw lastUnverifiable;
   throw new EngineSupervisorError(
     "ENGINE_START_TIMEOUT",
-    "Tachyon's persistent engine did not become ready in time. Run Tachyon: Doctor and retry.",
+    `Tachyon's persistent engine did not answer within ${Math.round((input.timeoutMs + (extended ? ALIVE_START_GRACE_MS : 0)) / 1000)}s. Run Tachyon: Doctor and retry.`,
     `unit=${engineSystemdUnitName(input.canonicalRoot)} socket=${input.controlSocketPath}`,
   );
 }
