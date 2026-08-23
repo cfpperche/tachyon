@@ -1711,7 +1711,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     bootVM,
     (wsHash) => retryStartFromSidebar?.(wsHash),
     () => installedAppTiles,
-    () => appZipCandidates(),
+    (dir) => appZipCandidates(dir),
   );
   context.subscriptions.push(sidebarProto);
   // Runtime Ops lives in Control → Runtime only (bottom-panel webview contribution removed).
@@ -1819,11 +1819,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     userAppPanels.open(target);
   };
-  /** 514 — the archives the install picker offers, read from the engine (which owns the filesystem). */
-  const appZipCandidates = async (): Promise<{ candidates: Array<{ path: string; name: string; dir: string }>; roots: string[] }> => {
+  /**
+   * 514 — what the install picker draws: the archives found nearby, or one directory when browsing.
+   *
+   * A failure is REPORTED, not swallowed. The first version returned an empty list for any error and
+   * the picker said "no .zip found" for a query the engine had refused — which is how a missing entry
+   * in the query allowlist looked like an empty disk.
+   */
+  const appZipCandidates = async (dir?: string): Promise<{
+    candidates: Array<{ path: string; name: string; dir: string }>;
+    roots: string[];
+    listing?: { dir: string; parent?: string; entries: Array<{ name: string; path: string; kind: "dir" | "zip" }>; error?: string };
+    error?: string;
+  }> => {
     const ws = (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
-    if (!ws) return { candidates: [], roots: [] };
+    if (!ws) return { candidates: [], roots: [], error: "no Tachyon workspace is attached in this window" };
     try {
+      if (dir) {
+        const browsed = jsonObject(await extensionQuery(ws, { action: "apps.browse", dir }), "apps.browse");
+        return {
+          candidates: [],
+          roots: [],
+          listing: {
+            dir: String(browsed.dir ?? dir),
+            ...(typeof browsed.parent === "string" ? { parent: browsed.parent } : {}),
+            entries: jsonArray(browsed.entries, "apps.browse entries").map((entry) => {
+              const row = jsonObject(entry, "apps.browse row");
+              return { name: String(row.name ?? ""), path: String(row.path ?? ""), kind: row.kind === "dir" ? "dir" as const : "zip" as const };
+            }),
+            ...(typeof browsed.error === "string" ? { error: browsed.error } : {}),
+          },
+        };
+      }
       const payload = jsonObject(await extensionQuery(ws, { action: "apps.zip-candidates" }), "apps.zip-candidates");
       return {
         candidates: jsonArray(payload.candidates, "apps.zip-candidates").map((entry) => {
@@ -1832,8 +1859,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }).filter((c) => c.path.length > 0),
         roots: jsonArray(payload.roots, "apps.zip-candidates roots").map((r) => String(r)),
       };
-    } catch {
-      return { candidates: [], roots: [] };
+    } catch (error) {
+      return { candidates: [], roots: [], error: error instanceof Error ? error.message : String(error) };
     }
   };
   const openPluginsTab = (hash?: string): void => {

@@ -36,7 +36,7 @@ import {
   type AgentStatusFilter,
 } from "./agentStatusFilter";
 import { ContinuePicker, defaultContinuePickerStrings } from "../shared/agents/ContinuePicker";
-import { QuickPicker, type QuickPickerItem } from "../shared/ui";
+import { PathPicker, QuickPicker, type PathPickerListing, type QuickPickerItem } from "../shared/ui";
 import { studioFolderItems } from "./studioFolders";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
@@ -81,7 +81,15 @@ export interface Dispatch {
 // SDD 504 — `retryStart` and `openOutput` are the failed state's two actions. Both are new here
 // because the failed state itself is new: before this change an attach failure fell through to the
 // welcome, so the sidebar offered to CREATE a workspace whose startup had just been rejected.
-export type GlobalOp = "addPin" | "copyBridge" | "init" | "onboarding" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "retryStart" | "openOutput" | "installApp" | "installAppFrom" | "studio:agents" | "studio:terminals" | "studio:schedules";
+/** 514 — everything the install picker needs, in one object the host replaces wholesale. */
+export interface AppPickerState {
+  candidates: Array<{ path: string; name: string; dir: string }>;
+  roots: string[];
+  listing?: PathPickerListing;
+  error?: string;
+}
+
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "onboarding" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "retryStart" | "openOutput" | "installApp" | "installAppFrom" | "browseApps" | "studio:agents" | "studio:terminals" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/remove etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -1602,7 +1610,7 @@ export function App({
   initialTab?: TabId;
   selectedWsHash?: string;
   apps?: InstalledAppTile[];
-  zipCandidates?: { candidates: Array<{ path: string; name: string; dir: string }>; roots: string[] } | null;
+  zipCandidates?: AppPickerState | null;
   /**
    * SDD 504 — the host's discovery result. `undefined` means the host has not spoken yet, which is
    * exactly the first frame of every reload, and is why absence can no longer be read off `fleets`.
@@ -1651,7 +1659,7 @@ export function App({
    * (t-be359b). The host answers with a candidate set; the picker filters it. A file dialog was the
    * first shape and the wrong one: it hands the human the editor's chrome for a Tachyon decision.
    */
-  const [appZips, setAppZips] = useState<{ candidates: Array<{ path: string; name: string; dir: string }>; roots: string[] } | null>(null);
+  const [appZips, setAppZips] = useState<AppPickerState | null>(null);
   // The annotation is the guard: it is what keeps `studioFolders.ts` (which cannot import the JSX
   // module's type) structurally compatible with the picker it feeds.
   const studioFolders = useMemo<QuickPickerItem[]>(() => studioFolderItems(fleets), [fleets]);
@@ -2157,18 +2165,20 @@ export function App({
         />
       ) : null}
       {appZips ? (
-        <QuickPicker
+        <PathPicker
           open
           data-testid="app-zip-picker"
           title="Install an app"
-          subtitle="Choose the .zip to install. Reinstalling the same app replaces it."
-          placeholder="Filter archives by name or folder"
-          emptyText={`No .zip found in ${appZips.roots.join(", ")}`}
-          items={appZips.candidates.map((c) => ({ id: c.path, label: c.name, description: c.dir }))}
+          subtitle={appZips.error
+            ? `Could not read the workspace: ${appZips.error}`
+            : "Choose the .zip to install. Reinstalling the same app replaces it."}
+          suggestions={appZips.candidates.map((c) => ({ name: c.name, path: c.path, kind: "zip" as const }))}
+          listing={appZips.listing}
+          onBrowse={(dir) => dispatch?.global("browseApps", dir)}
           onClose={() => setAppZips(null)}
-          onSelect={(item) => {
+          onSelect={(filePath) => {
             setAppZips(null);
-            dispatch?.global("installAppFrom", item.id);
+            dispatch?.global("installAppFrom", filePath);
           }}
         />
       ) : null}

@@ -23,7 +23,7 @@ import {
 } from "../config/YamlConfigEditor.js";
 import { isIdeBrowserEnabled } from "../ide-browser/settings.js";
 import { isResumable } from "../resume/sessionRecord.js";
-import { appZipSearchRoots, findAppZipCandidates, installAppZip, readInstalledApps } from "../apps/index.js";
+import { appZipSearchRoots, browseForAppZip, findAppZipCandidates, installAppZip, readInstalledApps } from "../apps/index.js";
 import { PromptStore } from "../prompts/PromptStore.js";
 import { injectTargets, submitRefuseReason } from "../prompts/injectFlow.js";
 import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
@@ -225,6 +225,15 @@ export async function executeExtensionQuery(
     case "apps.zip-candidates": {
       const roots = appZipSearchRoots(workspace.workspaceRoot, os.homedir(), os.tmpdir());
       return json({ candidates: findAppZipCandidates(roots).map((c) => ({ path: c.path, name: c.name, dir: c.dir })), roots });
+    }
+    case "apps.browse": {
+      const listing = browseForAppZip(query.dir);
+      return json({
+        dir: listing.dir,
+        ...(listing.parent ? { parent: listing.parent } : {}),
+        entries: listing.entries.map((e) => ({ name: e.name, path: e.path, kind: e.kind })),
+        ...(listing.error ? { error: listing.error } : {}),
+      });
     }
     case "worktrees.list": {
       // Agent ledger worktrees + spec 392 registry (change + agent). Drop registry rows whose path is gone

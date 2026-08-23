@@ -118,7 +118,12 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
      */
     private readonly getApps?: () => { id: string; title: string; iconPath: string }[],
     /** 514 — the archives the install picker offers; asked for only when the door is opened. */
-    private readonly getAppZips?: () => Promise<{ candidates: Array<{ path: string; name: string; dir: string }>; roots: string[] }>,
+    private readonly getAppZips?: (dir?: string) => Promise<{
+      candidates: Array<{ path: string; name: string; dir: string }>;
+      roots: string[];
+      listing?: { dir: string; parent?: string; entries: Array<{ name: string; path: string; kind: "dir" | "zip" }>; error?: string };
+      error?: string;
+    }>,
   ) {
     this.scopeSubscription = controlWorkspaceScope.onDidChange(() => void this.push());
   }
@@ -254,12 +259,22 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     );
   }
 
-  /** 514 — answer the install door with the archives the product found, for OUR picker to filter. */
-  private async pushAppZips(): Promise<void> {
+  /**
+   * 514 — answer the install door: the archives found nearby, or one directory the human asked for.
+   *
+   * A failure travels as a REASON, never as an empty list. The first version swallowed it, and the
+   * picker rendered "no .zip found in " — an empty answer wearing a measured one's clothes, for a
+   * query the engine had refused outright.
+   */
+  private async pushAppZips(dir?: string): Promise<void> {
     const view = this.view;
     if (!view) return;
-    const answer = await this.getAppZips?.();
-    void view.webview.postMessage(appZipsMessage(answer?.candidates ?? [], answer?.roots ?? []));
+    const answer = await this.getAppZips?.(dir);
+    void view.webview.postMessage(appZipsMessage(
+      answer?.candidates ?? [],
+      answer?.roots ?? [],
+      { ...(answer?.listing ? { listing: answer.listing } : {}), ...(answer?.error ? { error: answer.error } : {}) },
+    ));
   }
 
   /**
@@ -368,6 +383,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       // ASKS the host for candidates and pushes them back; the choosing happens in our own picker,
       // not in the editor's file dialog (t-be359b made the same move for "new …").
       if (m.op === "installApp") return void this.pushAppZips();
+      // 514 — browsing is the same door answered again, with a directory this time.
+      if (m.op === "browseApps") return void this.pushAppZips(typeof m.hash === "string" ? m.hash : undefined);
       if (m.op === "installAppFrom") return void vscode.commands.executeCommand("tachyon.installApp", m.hash);
       // Per folder, never window-wide: a hash that matches no known folder does nothing rather than
       // re-attaching an arbitrary one — the same rule `wsFor` states for every other routed op.

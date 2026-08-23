@@ -1,6 +1,6 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { App, type GlobalOp } from "./App";
+import { App, type GlobalOp, type AppPickerState } from "./App";
 import { type FleetVM, type SidebarBootVM } from "@tachyon/shared/sidebar/types";
 import type { InstalledAppTile } from "./sectionNav.js";
 import { APP_ZIPS, FLEET, readyMessage, type SidebarHostMessage } from "./messages";
@@ -38,7 +38,7 @@ function Root() {
   // that stops sending them (last app removed) empties the grid instead of leaving a stale tile.
   const [apps, setApps] = useState<InstalledAppTile[] | undefined>(undefined);
   // 514 — the install picker's candidate set, pushed when the door is opened (never on the heartbeat).
-  const [zipCandidates, setZipCandidates] = useState<{ candidates: Array<{ path: string; name: string; dir: string }>; roots: string[] } | null>(null);
+  const [zipCandidates, setZipCandidates] = useState<AppPickerState | null>(null);
   // spec 242 — persisted sort prefs (per section); the host includes them in the fleet message so the FIRST
   // render is already in the saved order (no name-asc→saved flicker). t-50daeb — `launcher` (the
   // Control grid) is absent until the user picks a mode: absence IS the product order.
@@ -61,7 +61,12 @@ function Root() {
       const d = e.data as Partial<SidebarHostMessage> | undefined;
       if (d && d.type === APP_ZIPS) {
         // A new object every time, so opening the door twice reopens the picker even with the same set.
-        setZipCandidates({ candidates: Array.isArray(d.candidates) ? d.candidates : [], roots: Array.isArray(d.roots) ? d.roots : [] });
+        setZipCandidates({
+          candidates: Array.isArray(d.candidates) ? d.candidates : [],
+          roots: Array.isArray(d.roots) ? d.roots : [],
+          ...(d.listing ? { listing: d.listing } : {}),
+          ...(d.error ? { error: d.error } : {}),
+        });
         return;
       }
       if (d && d.type === FLEET && Array.isArray(d.fleets)) {
