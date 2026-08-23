@@ -23,7 +23,7 @@ import {
 } from "../config/YamlConfigEditor.js";
 import { isIdeBrowserEnabled } from "../ide-browser/settings.js";
 import { isResumable } from "../resume/sessionRecord.js";
-import { appZipSearchRoots, browseForAppZip, findAppZipCandidates, installAppZip, readInstalledApps } from "../apps/index.js";
+import { appZipSearchRoots, browseForAppZip, findAppZipCandidates, installAppZip, readInstalledApps, uninstallApp } from "../apps/index.js";
 import { PromptStore } from "../prompts/PromptStore.js";
 import { injectTargets, submitRefuseReason } from "../prompts/injectFlow.js";
 import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
@@ -218,7 +218,14 @@ export async function executeExtensionQuery(
       // starting, which is the same rule every other config on disk follows here.
       const catalog = readInstalledApps(workspace.workspaceRoot);
       return json({
-        apps: catalog.apps.map((app) => ({ id: app.id, title: app.title, icon: app.icon, entry: app.entry, root: app.root })),
+        apps: catalog.apps.map((app) => ({
+          id: app.id,
+          title: app.title,
+          icon: app.icon,
+          entry: app.entry,
+          root: app.root,
+          actions: app.actions,
+        })),
         warnings: catalog.warnings,
       });
     }
@@ -609,6 +616,13 @@ export async function executeExtensionCommand(
       // answer to "how do I update an app" that does not invent a screen for it.
       const app = await installAppZip(workspace.workspaceRoot, command.zipPath);
       return json({ id: app.id, title: app.title, entry: app.entry, root: app.root });
+    }
+    case "app.uninstall": {
+      const result = uninstallApp(workspace.workspaceRoot, command.id);
+      return json({
+        removed: result.removed ? { id: result.removed.id, title: result.removed.title } : null,
+        paths: result.paths,
+      });
     }
     case "notice.deliver": {
       const result = await workspace.deliverNotice(command.agent, command.line);

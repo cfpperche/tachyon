@@ -116,7 +116,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
      * and already calls `refresh()`, and a pushed-in snapshot would be a second copy to remember to
      * update. Absolute icon paths come in; webview URIs go out, because only the view can mint those.
      */
-    private readonly getApps?: () => { id: string; title: string; iconPath: string }[],
+    private readonly getApps?: () => Array<{ id: string; title: string; iconPath: string; actions?: Array<{ id: string; label: string; icon: string }> }>,
     /** 514 — the archives the install picker offers; asked for only when the door is opened. */
     private readonly getAppZips?: (dir?: string) => Promise<{
       candidates: Array<{ path: string; name: string; dir: string }>;
@@ -254,6 +254,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
           id: app.id,
           title: app.title,
           iconUri: view.webview.asWebviewUri(vscode.Uri.file(app.iconPath)).toString(),
+          ...(app.actions && app.actions.length > 0 ? { actions: app.actions } : {}),
         })),
       ),
     );
@@ -386,6 +387,14 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       // 514 — browsing is the same door answered again, with a directory this time.
       if (m.op === "browseApps") return void this.pushAppZips(typeof m.hash === "string" ? m.hash : undefined);
       if (m.op === "installAppFrom") return void vscode.commands.executeCommand("tachyon.installApp", m.hash);
+      // 514 — one op for every tile action. The sidebar names the TILE and the ACTION and knows
+      // nothing about what either means; the host owns that routing, which is what lets a new action
+      // be a line in a table instead of a branch in the webview.
+      if (m.op === "tileAction") {
+        const [tileId, actionId] = String(m.hash ?? "").split("\u0000");
+        if (!tileId || !actionId) return;
+        return void vscode.commands.executeCommand("tachyon.tileAction", { tileId, actionId });
+      }
       // Per folder, never window-wide: a hash that matches no known folder does nothing rather than
       // re-attaching an arbitrary one — the same rule `wsFor` states for every other routed op.
       if (m.op === "retryStart") return void (m.hash ? this.retryStart?.(m.hash) : undefined);

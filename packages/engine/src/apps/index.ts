@@ -11,6 +11,21 @@ export interface InstalledApp {
   icon: string;
   entry: string;
   root: string;
+  /** 514 — actions this app offers on its launcher tile; empty when it declares none. */
+  actions: AppDeclaredAction[];
+}
+
+/**
+ * One action an app puts on its own tile.
+ *
+ * The id is the app's vocabulary, not ours: it travels back to the page when the human picks it, and
+ * Tachyon never interprets it. The icon is a codicon name because the MENU is Tachyon's chrome — an
+ * app draws its own page, not our menu rows.
+ */
+export interface AppDeclaredAction {
+  id: string;
+  label: string;
+  icon: string;
 }
 
 export type AppValidationResult =
@@ -57,10 +72,53 @@ export function validateAppManifest(appRoot: string, value: unknown): AppValidat
     }
   }
 
+  const actions = parseDeclaredActions(manifest.actions, errors);
+
   if (errors.length > 0 || typeof id !== "string" || typeof title !== "string" || !icon || !entry) {
     return { ok: false, errors };
   }
-  return { ok: true, app: { id, title, icon, entry, root: path.resolve(appRoot) } };
+  return { ok: true, app: { id, title, icon, entry, root: path.resolve(appRoot), actions } };
+}
+
+const ACTION_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+const CODICON = /^[a-z][a-z0-9-]*$/;
+const MAX_ACTIONS = 12;
+
+/**
+ * The optional `actions` block, validated by the same rule as every other field: an error NAMES what
+ * is wrong, and a malformed block fails the app rather than being silently dropped — a tile that
+ * quietly lost its actions is indistinguishable from an app that never declared any.
+ *
+ * The cap is not arithmetic taste. A context menu that scrolls has stopped being a context menu, and
+ * every reference on the pattern says the same: few, relevant, contextual.
+ */
+function parseDeclaredActions(raw: unknown, errors: string[]): AppDeclaredAction[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    errors.push("actions: when present, must be a list");
+    return [];
+  }
+  if (raw.length > MAX_ACTIONS) {
+    errors.push(`actions: at most ${MAX_ACTIONS} entries`);
+    return [];
+  }
+  const out: AppDeclaredAction[] = [];
+  const seen = new Set<string>();
+  raw.forEach((entry, index) => {
+    const action = record(entry);
+    if (!action) { errors.push(`actions[${index}]: must be an object`); return; }
+    const id = action.id;
+    const label = action.label;
+    const icon = action.icon;
+    if (typeof id !== "string" || !ACTION_ID.test(id)) { errors.push(`actions[${index}].id: must be lowercase kebab-case`); return; }
+    if (id === "open" || id === "uninstall") { errors.push(`actions[${index}].id: '${id}' is reserved by Tachyon`); return; }
+    if (seen.has(id)) { errors.push(`actions[${index}].id: '${id}' is listed more than once`); return; }
+    if (typeof label !== "string" || label.trim().length === 0 || label.length > 64) { errors.push(`actions[${index}].label: must be a non-empty string`); return; }
+    if (typeof icon !== "string" || !CODICON.test(icon)) { errors.push(`actions[${index}].icon: must be a codicon name`); return; }
+    seen.add(id);
+    out.push({ id, label, icon });
+  });
+  return out;
 }
 
 function readOneApp(appRoot: string): AppValidationResult {
@@ -258,4 +316,30 @@ export function browseForAppZip(dir: string, limit = 500): AppBrowseListing {
   const byName = (a: AppBrowseEntry, b: AppBrowseEntry): number => a.name.localeCompare(b.name);
   listing.entries = [...dirs.sort(byName), ...zips.sort(byName)].slice(0, limit);
   return listing;
+}
+
+export interface AppUninstallResult {
+  /** the app that was removed, as the catalog last knew it (undefined when nothing was there). */
+  removed?: InstalledApp;
+  /** absolute paths this uninstall deleted. */
+  paths: string[];
+}
+
+/**
+ * 514 — remove an installed app and the runtime artifacts that are ITS.
+ *
+ * The owner's rule, and it is a line worth stating: what the app CREATED is not the app's. If it made
+ * tasks, the tasks are Tachyon's; if it spawned a squad, the agents are Tachyon's. Uninstalling takes
+ * the app away, never the work that happened through it — so this deletes the app's own directory and
+ * nothing else, and the confirmation the human sees says exactly that.
+ *
+ * Idempotent: removing an app that is already gone is not an error, it is the desired state.
+ */
+export function uninstallApp(workspaceRoot: string, id: string): AppUninstallResult {
+  if (!APP_ID.test(id)) throw new Error(`app id '${id}' is not a valid app id`);
+  const root = path.join(workspaceRoot, ".tachyon", "apps", id);
+  const parsed = readOneApp(root);
+  if (!fs.existsSync(root)) return { paths: [] };
+  fs.rmSync(root, { recursive: true, force: true });
+  return { ...(parsed.ok ? { removed: parsed.app } : {}), paths: [root] };
 }

@@ -36,7 +36,8 @@ import {
   type AgentStatusFilter,
 } from "./agentStatusFilter";
 import { ContinuePicker, defaultContinuePickerStrings } from "../shared/agents/ContinuePicker";
-import { PathPicker, QuickPicker, type PathPickerListing, type QuickPickerItem } from "../shared/ui";
+import { ContextMenu, PathPicker, QuickPicker, type PathPickerListing, type QuickPickerItem } from "../shared/ui";
+import { appTileMenuItems } from "./appTileActions";
 import { studioFolderItems } from "./studioFolders";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
@@ -89,7 +90,7 @@ export interface AppPickerState {
   error?: string;
 }
 
-export type GlobalOp = "addPin" | "copyBridge" | "init" | "onboarding" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "retryStart" | "openOutput" | "installApp" | "installAppFrom" | "browseApps" | "studio:agents" | "studio:terminals" | "studio:schedules";
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "onboarding" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "retryStart" | "openOutput" | "installApp" | "installAppFrom" | "browseApps" | "tileAction" | "studio:agents" | "studio:terminals" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/remove etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -1165,6 +1166,7 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
  */
 function ControlGrid({
   onOpen,
+  onTileMenu,
   engineHasError,
   tiles,
   reorderMode,
@@ -1174,6 +1176,8 @@ function ControlGrid({
   dropTargetSection,
 }: {
   onOpen: (section: SectionId) => void;
+  /** 514 — right-click, or Shift+F10 / the ContextMenu key, on a tile. */
+  onTileMenu?: (tile: ControlSectionNav, anchor: { x: number; y: number }, from: HTMLElement | null) => void;
   engineHasError: boolean;
   tiles: readonly ControlSectionNav[];
   reorderMode: boolean;
@@ -1260,6 +1264,17 @@ function ControlGrid({
   }, [draggingId]);
 
   const tileKey = (e: KeyboardEvent, i: number, s: ControlSectionNav): void => {
+    // The keyboard gesture for a context menu, on both platforms that have one. Without it every
+    // action in that menu is mouse-only, which is the gap the benchmark patterns call out first.
+    if ((e.key === "F10" && e.shiftKey) || e.key === "ContextMenu") {
+      e.preventDefault();
+      const target = e.currentTarget as HTMLElement | null;
+      const box = target?.getBoundingClientRect();
+      // Anchored to the TILE, not to a pointer that was never used: the menu has to read as attached
+      // to the object even when no mouse opened it.
+      onTileMenu?.(s, { x: box ? box.left + 8 : 0, y: box ? box.bottom - 4 : 0 }, target);
+      return;
+    }
     const ids = tiles.map((t) => t.id);
     let n = i;
     if (e.key === "ArrowRight") n = (i + 1) % ids.length;
@@ -1352,10 +1367,20 @@ function ControlGrid({
             aria-label={err ? `${s.label}, errors in engine log` : undefined}
             data-section={s.id}
             data-testid={`control-tile-${s.id}`}
+            // The invoker has to ADVERTISE the menu, or a screen reader user has no way to learn that
+            // Shift+F10 does anything here. It is the half of the pattern that lives on the trigger.
+            aria-haspopup={onTileMenu ? "menu" : undefined}
             data-drop-slot={isDragging ? "true" : undefined}
             draggable
             tabindex={focusId === s.id || (focusId === undefined && i === 0) ? 0 : -1}
             onKeyDown={(e) => tileKey(e as unknown as KeyboardEvent, i, s)}
+            onContextMenu={(e) => {
+              if (!onTileMenu) return;
+              e.preventDefault();
+              e.stopPropagation();
+              const event = e as unknown as MouseEvent;
+              onTileMenu(s, { x: event.clientX, y: event.clientY }, e.currentTarget as HTMLElement);
+            }}
             onPointerDown={(e) => {
               if (e.button !== 0) return;
               clearLongPress();
@@ -1660,6 +1685,8 @@ export function App({
    * first shape and the wrong one: it hands the human the editor's chrome for a Tachyon decision.
    */
   const [appZips, setAppZips] = useState<AppPickerState | null>(null);
+  /** 514 — the tile whose context menu is open, the point it was opened at, and where focus returns. */
+  const [tileMenu, setTileMenu] = useState<{ tile: ControlSectionNav; anchor: { x: number; y: number }; from: HTMLElement | null } | null>(null);
   // The annotation is the guard: it is what keeps `studioFolders.ts` (which cannot import the JSX
   // module's type) structurally compatible with the picker it feeds.
   const studioFolders = useMemo<QuickPickerItem[]>(() => studioFolderItems(fleets), [fleets]);
@@ -2126,6 +2153,7 @@ export function App({
           // t-6e2952 — one grid for the window (Control is a singleton), so no folder header above it.
           <ControlGrid
             onOpen={(section) => dispatch?.global("openControl", undefined, section)}
+            onTileMenu={(tile, anchor, from) => setTileMenu({ tile, anchor, from })}
             engineHasError={engineHasError}
             tiles={launcherTiles}
             reorderMode={reorderMode}
@@ -2161,6 +2189,24 @@ export function App({
             const from = continuePick;
             setContinuePick(null);
             dispatch?.continueTask?.(from, toName, selectedHash);
+          }}
+        />
+      ) : null}
+      {tileMenu ? (
+        <ContextMenu
+          data-testid="app-tile-menu"
+          label={`${tileMenu.tile.label} actions`}
+          anchor={tileMenu.anchor}
+          items={appTileMenuItems({ id: tileMenu.tile.id, label: tileMenu.tile.label, declared: tileMenu.tile.actions })}
+          returnFocusTo={tileMenu.from}
+          onClose={() => setTileMenu(null)}
+          onRun={(actionId) => {
+            const tile = tileMenu.tile;
+            setTileMenu(null);
+            if (actionId === "open") { dispatch?.global("openControl", undefined, tile.id); return; }
+            // Everything else travels as one op with the tile and the action named: the sidebar does
+            // not learn what any particular action MEANS, which is what keeps the table a table.
+            dispatch?.global("tileAction", `${tile.id}\u0000${actionId}`);
           }}
         />
       ) : null}

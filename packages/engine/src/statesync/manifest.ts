@@ -95,6 +95,11 @@ const MANIFEST_ENTRIES: DurableEntry[] = [
   // Declarations and workspace config live under .tachyon and are gitignored BY DESIGN (personal),
   // which is exactly why they need the replica: they have no other copy anywhere. (t-a65335 —
   // tachyon.yml retired; settings.yml + per-file terminal/schedule declarations replace it.)
+  // 514 — an installed app IS its directory: the app.json, the entry, the icon and whatever it ships.
+  // The human put it there and there is no other copy, which is the same reason the declarations below
+  // are here. A restore that brought back the settings and not the apps would bring back a launcher
+  // with tiles missing.
+  { id: "apps", kind: "dir", relPath: ".tachyon/apps" },
   { id: "workspace-settings", kind: "file", relPath: ".tachyon/settings.yml" },
   { id: "terminals", kind: "dir", relPath: ".tachyon/terminals" },
   { id: "schedules", kind: "dir", relPath: ".tachyon/schedules" },
