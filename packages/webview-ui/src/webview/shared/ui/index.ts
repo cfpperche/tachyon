@@ -43,3 +43,6 @@ export {
 
 export { PathPicker, type PathPickerEntry, type PathPickerListing, type PathPickerProps } from "./PathPicker";
 export { breadcrumbSegments, looksLikePath } from "./pathPickerModel";
+
+export { ContextMenu, type ContextMenuProps } from "./ContextMenu";
+export { focusableIndices, nextIndexForKey, placeMenu, type ContextMenuAnchor, type ContextMenuItem } from "./contextMenuModel";

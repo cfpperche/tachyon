@@ -1681,7 +1681,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * the panel that opens an app resolves the app AGAIN from the engine, so a tile the disk no longer
    * backs cannot open anything stale.
    */
-  let installedAppTiles: { id: string; title: string; iconPath: string }[] = [];
+  let installedAppTiles: { id: string; title: string; iconPath: string; actions?: Array<{ id: string; label: string; icon: string }> }[] = [];
   // 514 — one Bridge client per workspace, made on the first call an app makes and dropped when it
   // fails; and one editor tab per installed app, revealed rather than duplicated.
   const userAppBridge = new UserAppBridgeCaller();
@@ -1777,10 +1777,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       installedAppTiles = jsonArray(payload.apps, "apps.list").map((entry) => {
         const row = jsonObject(entry, "apps.list row");
         const root = String(row.root ?? "");
+        const actions = Array.isArray(row.actions)
+          ? jsonArray(row.actions, "apps.list actions").map((raw) => {
+            const action = jsonObject(raw, "apps.list action");
+            return { id: String(action.id ?? ""), label: String(action.label ?? ""), icon: String(action.icon ?? "") };
+          }).filter((action) => action.id.length > 0)
+          : [];
         return {
           id: String(row.id ?? ""),
           title: String(row.title ?? ""),
           iconPath: path.join(root, String(row.icon ?? "")),
+          ...(actions.length > 0 ? { actions } : {}),
         };
       }).filter((tile) => tile.id.length > 0);
     } catch {
@@ -1794,7 +1801,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * The tile is a cached projection; the disk is the catalog. Resolving here means a tile whose app
    * was removed or renamed says so instead of opening a panel over a directory that is gone.
    */
-  const openUserApp = async (appId: string): Promise<void> => {
+  const openUserApp = async (appId: string, action?: string): Promise<void> => {
     const ws = (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
     if (!ws) {
       notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn");
@@ -1817,7 +1824,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       void refreshInstalledApps();
       return;
     }
-    userAppPanels.open(target);
+    userAppPanels.open(target, action);
   };
   /**
    * 514 — what the install picker draws: the archives found nearby, or one directory when browsing.
@@ -3688,6 +3695,67 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // 514 — install an app from a zip the human picked. The PATH travels to the engine, not the
     // bytes: both sides share a filesystem in every supported topology, and a second transport for
     // multi-megabyte archives would be one more thing to keep correct for nothing.
+    /**
+     * 514 — every context-menu action of every launcher tile arrives here.
+     *
+     * One door, and the routing is a table rather than a chain of ifs: a built-in tile's action maps
+     * to something the product already does, and an installed app's action opens its own page with the
+     * action named. Adding "New Agent" to the Fleet tile later is a row here and a row in the sidebar's
+     * table — never a new message, a new command, or a new branch in the webview.
+     */
+    vscode.commands.registerCommand("tachyon.tileAction", async (arg?: unknown) => {
+      const request = arg as { tileId?: unknown; actionId?: unknown } | undefined;
+      const tileId = typeof request?.tileId === "string" ? request.tileId : "";
+      const actionId = typeof request?.actionId === "string" ? request.actionId : "";
+      if (!tileId || !actionId) return;
+      const ws = (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+      if (!ws) {
+        notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn");
+        return;
+      }
+      const appId = appIdOfSection(tileId);
+      if (!appId) {
+        // Built-in tiles. The Board's "New Task" is the same create the Board's own "+ Task" performs:
+        // a pre-minted id nothing has written yet, so Cancel closes the tab instead of reading a task
+        // that never existed.
+        if (tileId === "mission" && actionId === "new-task") {
+          taskDetailPanels.openCreate(ws.wsHash, mintTaskId());
+          return;
+        }
+        notify(vscode.l10n.t("'{0}' has no action '{1}'.", tileId, actionId), "warn");
+        return;
+      }
+      if (actionId === "uninstall") {
+        // Destructive and confirmed, and the confirmation says the LIMIT of what it does. "Uninstall"
+        // without that sentence reads as "undo everything this app did", which is the one promise this
+        // deliberately does not make.
+        const confirm = await vscode.window.showWarningMessage(
+          vscode.l10n.t("Uninstall '{0}'?", appId),
+          {
+            modal: true,
+            detail: vscode.l10n.t(
+              "Removes the app and its files from .tachyon/apps/{0}. Anything it created — tasks, agents, pins — stays: those belong to Tachyon, not to the app.",
+              appId,
+            ),
+          },
+          vscode.l10n.t("Uninstall"),
+        );
+        if (confirm === undefined) return;
+        try {
+          const payload = jsonObject(await extensionInvoke(ws, { action: "app.uninstall", id: appId }), "app.uninstall");
+          userAppPanels.close(appId);
+          await refreshInstalledApps();
+          const removed = payload.removed as { title?: unknown } | null;
+          notify(vscode.l10n.t("Uninstalled '{0}'.", typeof removed?.title === "string" ? removed.title : appId));
+        } catch (error) {
+          notify(error instanceof Error ? error.message : String(error), "error");
+        }
+        return;
+      }
+      // 514 — an installed app's own action opens ITS page and names the action. The page decides what
+      // it means; Tachyon does not learn a vocabulary it would then have to keep in sync.
+      await openUserApp(appId, actionId);
+    }),
     vscode.commands.registerCommand("tachyon.installApp", async (zipArg?: unknown) => {
       const ws = (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
       if (!ws) {

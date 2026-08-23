@@ -30,6 +30,8 @@ export interface ControlSectionNav {
    * that inherits the theme is Tachyon's, a coloured one was installed.
    */
   iconImage?: string;
+  /** 514 — the tile's own context-menu actions (an installed app declares these in `app.json`). */
+  actions?: Array<{ id: string; label: string; icon: string }>;
 }
 
 /** 514 — one installed app, as the launcher needs it. The catalog itself lives on disk. */
@@ -38,6 +40,8 @@ export interface InstalledAppTile {
   title: string;
   /** webview-safe URI for the app's own icon file. */
   iconUri: string;
+  /** Actions the app declared in `app.json`; they join its tile's context menu. */
+  actions?: Array<{ id: string; label: string; icon: string }>;
 }
 
 /** Top-level only (not approvals/validations deep-links). Keyed by id for O(1) lookup. */
@@ -147,7 +151,14 @@ export function controlSectionNavWith(apps: readonly InstalledAppTile[]): readon
     const id = `app:${app.id}` as SectionId;
     if (taken.has(id) || app.id.length === 0) continue; // a duplicate tile is dropped, never doubled
     taken.add(id);
-    rows.push({ id, icon: "browser", iconImage: app.iconUri, label: app.title || app.id, standalone: true });
+    rows.push({
+      id,
+      icon: "browser",
+      iconImage: app.iconUri,
+      label: app.title || app.id,
+      standalone: true,
+      ...(app.actions && app.actions.length > 0 ? { actions: app.actions } : {}),
+    });
   }
   return [...CONTROL_SECTION_NAV, ...rows];
 }

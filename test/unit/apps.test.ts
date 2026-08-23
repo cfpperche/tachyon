@@ -9,6 +9,7 @@ import {
   validateAppManifest,
   appZipSearchRoots,
   findAppZipCandidates,
+  uninstallApp,
 } from "@tachyon/engine/apps/index.js";
 
 const roots: string[] = [];
@@ -186,5 +187,79 @@ describe("findAppZipCandidates", () => {
   it("names the places it looked, because an empty picker has to say where it searched", () => {
     const roots = appZipSearchRoots("/ws", "/home/someone", "/tmp");
     expect(roots).toEqual(["/ws", "/home/someone/Downloads", "/home/someone/Desktop", "/tmp"]);
+  });
+});
+
+/**
+ * 514 — actions an app declares for its own tile.
+ *
+ * The validation rule is the same one every other field here follows: an error NAMES the field, and a
+ * malformed block fails the app rather than being dropped. A tile that quietly lost its actions is
+ * indistinguishable from an app that declared none, and that is the failure mode worth refusing.
+ */
+describe("declared tile actions", () => {
+  it("accepts a well-formed list and defaults to none", () => {
+    const root = temp();
+    fs.writeFileSync(path.join(root, "index.html"), "<h1>x</h1>");
+    const withActions = validateAppManifest(root, {
+      ...manifest(),
+      actions: [{ id: "refresh", label: "Refresh", icon: "sync" }],
+    });
+    expect(withActions.ok && withActions.app.actions).toEqual([{ id: "refresh", label: "Refresh", icon: "sync" }]);
+    const without = validateAppManifest(root, manifest());
+    expect(without.ok && without.app.actions).toEqual([]);
+  });
+
+  it("refuses the two ids Tachyon contributes itself", () => {
+    // `open` and `uninstall` are the product's rows. An app that could declare them would either
+    // shadow the default or offer a removal it does not perform.
+    const root = temp();
+    fs.writeFileSync(path.join(root, "index.html"), "<h1>x</h1>");
+    for (const reserved of ["open", "uninstall"]) {
+      const result = validateAppManifest(root, { ...manifest(), actions: [{ id: reserved, label: "X", icon: "add" }] });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.errors.some((e) => e.includes("reserved"))).toBe(true);
+    }
+  });
+
+  it("names what is wrong instead of dropping the row", () => {
+    const root = temp();
+    fs.writeFileSync(path.join(root, "index.html"), "<h1>x</h1>");
+    const bad = (actions: unknown) => {
+      const result = validateAppManifest(root, { ...manifest(), actions });
+      return result.ok ? [] : result.errors;
+    };
+    expect(bad("nope").some((e) => /actions: when present/.test(e))).toBe(true);
+    expect(bad([{ id: "Refresh", label: "R", icon: "sync" }]).some((e) => /actions\[0\]\.id/.test(e))).toBe(true);
+    expect(bad([{ id: "refresh", label: "", icon: "sync" }]).some((e) => /actions\[0\]\.label/.test(e))).toBe(true);
+    expect(bad([{ id: "refresh", label: "R", icon: "Not A Codicon" }]).some((e) => /actions\[0\]\.icon/.test(e))).toBe(true);
+    expect(bad([{ id: "a", label: "A", icon: "add" }, { id: "a", label: "B", icon: "add" }]).some((e) => /more than once/.test(e))).toBe(true);
+    expect(bad(Array.from({ length: 13 }, (_, i) => ({ id: `a${i}`, label: "A", icon: "add" }))).some((e) => /at most/.test(e))).toBe(true);
+  });
+});
+
+describe("uninstallApp", () => {
+  it("removes the app's directory and reports what went", () => {
+    const ws = temp();
+    const appRoot = path.join(ws, ".tachyon", "apps", "hello-world");
+    fs.mkdirSync(appRoot, { recursive: true });
+    fs.writeFileSync(path.join(appRoot, "app.json"), JSON.stringify(manifest()));
+    fs.writeFileSync(path.join(appRoot, "index.html"), "<h1>x</h1>");
+    fs.writeFileSync(path.join(appRoot, "icon.svg"), "<svg/>");
+
+    const result = uninstallApp(ws, "hello-world");
+    expect(result.removed?.title).toBe("Hello world");
+    expect(result.paths).toEqual([appRoot]);
+    expect(fs.existsSync(appRoot)).toBe(false);
+    expect(readInstalledApps(ws).apps).toEqual([]);
+  });
+
+  it("is idempotent — removing what is already gone is the desired state, not an error", () => {
+    const ws = temp();
+    expect(uninstallApp(ws, "never-installed")).toEqual({ paths: [] });
+  });
+
+  it("refuses an id that is not an app id, so no path can be talked into being an app", () => {
+    expect(() => uninstallApp(temp(), "../../etc")).toThrow(/not a valid app id/);
   });
 });

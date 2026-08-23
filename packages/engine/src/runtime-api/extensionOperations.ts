@@ -99,6 +99,9 @@ export const EXTENSION_COMMAND_ACTIONS = [
   // human saw "extension command result is invalid": a request that parsed, an engine that answered,
   // and a reply refused on the way back.
   "app.install",
+  // 514 — and its inverse. Removing an app takes the app's directory; what the app CREATED (tasks,
+  // agents, pins) belongs to Tachyon and is never touched by this.
+  "app.uninstall",
 ] as const;
 
 const extensionQueryActionSchema = z.enum(EXTENSION_QUERY_ACTIONS);
@@ -358,6 +361,10 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("app.install"),
     zipPath: text(4_096, 1),
+  }).strict(),
+  z.object({
+    action: z.literal("app.uninstall"),
+    id: text(128, 1),
   }).strict(),
 ]);
 

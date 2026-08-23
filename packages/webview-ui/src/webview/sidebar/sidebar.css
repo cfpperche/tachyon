@@ -510,6 +510,17 @@
   .more-item:hover, .more-item:focus-visible { background: var(--ds-menu-selection-bg); color: var(--ds-menu-selection-fg); }
   .more-item .codicon { font-size: 14px; opacity: .9; } /* icon; 14 is between the two ramps */
   .more-item span:not(.codicon) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* Context menu additions (app tiles). The panel language above is shared; these are the three
+     things the benchmark patterns ask for that the older menu never needed: a separator that is not
+     focusable, a destructive item painted apart from the ordinary ones, and a listed-but-inert row
+     that still reads as a row. */
+  .ctx-menu .ctx-sep { display: block; height: 1px; margin: var(--ds-spacing-size40) 0; background: var(--ds-border); }
+  .ctx-menu .more-item.is-destructive { color: var(--ds-err); }
+  .ctx-menu .more-item.is-destructive:hover, .ctx-menu .more-item.is-destructive:focus-visible {
+    background: color-mix(in srgb, var(--ds-err) 18%, transparent); color: var(--ds-err);
+  }
+  .ctx-menu .more-item[aria-disabled="true"] { opacity: .5; cursor: default; }
+  .ctx-menu .more-item[aria-disabled="true"]:hover { background: none; color: inherit; }
 
 
   /* t-8354ae — persistent config-error banner (Agents tab) */

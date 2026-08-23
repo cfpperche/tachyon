@@ -97,12 +97,19 @@ export class UserAppPanels {
     return [...this.panels.keys()];
   }
 
-  /** Open the app's tab, or reveal the one already open for it. */
-  open(target: UserAppTarget): void {
+  /**
+   * Open the app's tab, or reveal the one already open for it.
+   *
+   * 514 — `action` is the id of an action the app declared in `app.json`. It reaches the page as
+   * `?action=<id>` and as a message on an already-open tab: Tachyon never learns what an app's action
+   * MEANS, which is what keeps the action table a table.
+   */
+  open(target: UserAppTarget, action?: string): void {
     if (this.disposed) return;
     const existing = this.panels.get(target.id);
     if (existing) {
       existing.reveal(existing.viewColumn ?? vscode.ViewColumn.Active);
+      if (action) void existing.webview.postMessage({ type: "tachyon.action", action });
       return;
     }
     const rootUri = vscode.Uri.file(target.root);
@@ -116,7 +123,7 @@ export class UserAppPanels {
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [rootUri] },
     );
     panel.iconPath = vscode.Uri.file(path.join(target.root, "icon.png"));
-    panel.webview.html = this.render(panel.webview, target);
+    panel.webview.html = this.render(panel.webview, target, action);
     panel.webview.onDidReceiveMessage(async (message: unknown) => {
       if (!isCallMessage(message)) return;
       const tool = typeof message.tool === "string" ? message.tool : "";
@@ -151,7 +158,7 @@ export class UserAppPanels {
     this.panels.clear();
   }
 
-  private render(webview: vscode.Webview, target: UserAppTarget): string {
+  private render(webview: vscode.Webview, target: UserAppTarget, action?: string): string {
     const entry = path.join(target.root, target.entry);
     let html: string;
     try {
@@ -165,7 +172,10 @@ export class UserAppPanels {
     // `<base>` is what makes an app's own relative paths work unchanged: the author writes
     // `./app.js` and the webview resolves it under the app's directory.
     const base = `<base href="${webview.asWebviewUri(vscode.Uri.file(target.root)).toString()}/">`;
-    const head = `${base}${BRIDGE_SHIM}`;
+    // The chosen action travels as a global the page can read before its own script runs, so an app
+    // does not have to parse a query string that the `<base>` above would make ambiguous anyway.
+    const chosen = action ? `<script>window.tachyonAction=${JSON.stringify(action)};</script>` : "";
+    const head = `${base}${chosen}${BRIDGE_SHIM}`;
     return html.includes("<head>") ? html.replace("<head>", `<head>${head}`) : `${head}${html}`;
   }
 }
