@@ -1711,6 +1711,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     bootVM,
     (wsHash) => retryStartFromSidebar?.(wsHash),
     () => installedAppTiles,
+    () => appZipCandidates(),
   );
   context.subscriptions.push(sidebarProto);
   // Runtime Ops lives in Control → Runtime only (bottom-panel webview contribution removed).
@@ -1817,6 +1818,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return;
     }
     userAppPanels.open(target);
+  };
+  /** 514 — the archives the install picker offers, read from the engine (which owns the filesystem). */
+  const appZipCandidates = async (): Promise<{ candidates: Array<{ path: string; name: string; dir: string }>; roots: string[] }> => {
+    const ws = (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+    if (!ws) return { candidates: [], roots: [] };
+    try {
+      const payload = jsonObject(await extensionQuery(ws, { action: "apps.zip-candidates" }), "apps.zip-candidates");
+      return {
+        candidates: jsonArray(payload.candidates, "apps.zip-candidates").map((entry) => {
+          const row = jsonObject(entry, "apps.zip-candidates row");
+          return { path: String(row.path ?? ""), name: String(row.name ?? ""), dir: String(row.dir ?? "") };
+        }).filter((c) => c.path.length > 0),
+        roots: jsonArray(payload.roots, "apps.zip-candidates roots").map((r) => String(r)),
+      };
+    } catch {
+      return { candidates: [], roots: [] };
+    }
   };
   const openPluginsTab = (hash?: string): void => {
     const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
@@ -3643,21 +3661,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // 514 — install an app from a zip the human picked. The PATH travels to the engine, not the
     // bytes: both sides share a filesystem in every supported topology, and a second transport for
     // multi-megabyte archives would be one more thing to keep correct for nothing.
-    vscode.commands.registerCommand("tachyon.installApp", async () => {
+    vscode.commands.registerCommand("tachyon.installApp", async (zipArg?: unknown) => {
       const ws = (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
       if (!ws) {
         notify(vscode.l10n.t("No Tachyon workspace is attached in this window, so there is nowhere to install an app."), "warn");
         return;
       }
-      const picked = await vscode.window.showOpenDialog({
-        canSelectMany: false,
-        openLabel: vscode.l10n.t("Install app"),
-        filters: { "App package": ["zip"] },
-      });
-      const zip = picked?.[0];
-      if (!zip) return;
+      // 514 — the path is chosen in OUR picker and arrives here. The Command Palette door has no
+      // surface of ours on screen, so it (and only it) falls back to the editor's file dialog — the
+      // same split t-be359b made for "new …".
+      let zipPath = typeof zipArg === "string" && zipArg.trim() ? zipArg : undefined;
+      if (!zipPath) {
+        const picked = await vscode.window.showOpenDialog({
+          canSelectMany: false,
+          openLabel: vscode.l10n.t("Install app"),
+          filters: { "App package": ["zip"] },
+        });
+        zipPath = picked?.[0]?.fsPath;
+      }
+      if (!zipPath) return;
       try {
-        const payload = jsonObject(await extensionInvoke(ws, { action: "app.install", zipPath: zip.fsPath }), "app.install");
+        const payload = jsonObject(await extensionInvoke(ws, { action: "app.install", zipPath }), "app.install");
         const id = String(payload.id ?? "");
         // A reinstall replaces the directory the open tab was serving, so the tab is closed rather
         // than left rendering bytes that no longer exist. Reopening it is one click on the tile.

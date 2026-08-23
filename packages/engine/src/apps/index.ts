@@ -144,3 +144,62 @@ export async function installAppZip(workspaceRoot: string, zipPath: string): Pro
     fs.rmSync(staging, { recursive: true, force: true });
   }
 }
+
+/** One archive the human could install from, as the picker needs it. */
+export interface AppZipCandidate {
+  path: string;
+  name: string;
+  dir: string;
+  mtimeMs: number;
+}
+
+/** Where an app archive plausibly sits. Ordered: the project first, then the human's usual landings. */
+export function appZipSearchRoots(workspaceRoot: string, home: string, tmp: string): string[] {
+  return [
+    workspaceRoot,
+    path.join(home, "Downloads"),
+    path.join(home, "Desktop"),
+    tmp,
+  ];
+}
+
+/**
+ * 514 — the archives the product's own picker offers.
+ *
+ * A BOUNDED scan, not a filesystem browser: depth and count are capped, and the noisy trees every
+ * project carries are skipped. The point is to hand the picker a candidate set it can filter — the
+ * same shape every other QuickPicker in this product works with — rather than to reimplement a file
+ * dialog in a webview.
+ *
+ * Newest first, because the archive someone just built or downloaded is the one they mean.
+ */
+export function findAppZipCandidates(roots: readonly string[], limit = 200, maxDepth = 6): AppZipCandidate[] {
+  const skip = new Set([".git", "node_modules", ".vscode-server", "dist", "out", ".cache"]);
+  const seen = new Set<string>();
+  const found: AppZipCandidate[] = [];
+  const walk = (dir: string, depth: number): void => {
+    if (found.length >= limit || depth > maxDepth) return;
+    let real: string;
+    try { real = fs.realpathSync(dir); } catch { return; }
+    if (seen.has(real)) return; // a symlink loop is a hang, and a hang here is a picker that never opens
+    seen.add(real);
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (found.length >= limit) return;
+      const child = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (skip.has(entry.name)) continue;
+        walk(child, depth + 1);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".zip")) continue;
+      let stat: fs.Stats;
+      try { stat = fs.statSync(child); } catch { continue; }
+      found.push({ path: child, name: entry.name, dir: path.dirname(child), mtimeMs: stat.mtimeMs });
+    }
+  };
+  for (const root of roots) walk(root, 0);
+  const unique = new Map(found.map((entry) => [entry.path, entry]));
+  return [...unique.values()].sort((a, b) => b.mtimeMs - a.mtimeMs);
+}

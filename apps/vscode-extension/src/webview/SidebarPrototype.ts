@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { isAgentRow, type FleetVM, type AgentVM, type SidebarBootVM } from "@tachyon/shared/sidebar/types.js";
-import { fleetMessage } from "@tachyon/webview-ui/webview/sidebar/messages";
+import { fleetMessage, appZipsMessage } from "@tachyon/webview-ui/webview/sidebar/messages";
 import { isSectionId } from "../sections/resolveSection.js";
 import { isPersistedLauncherMode } from "@tachyon/webview-ui/sidebar/launcherOrder.js";
 import { renderWebviewShell } from "./shared/shell.js";
@@ -117,6 +117,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
      * update. Absolute icon paths come in; webview URIs go out, because only the view can mint those.
      */
     private readonly getApps?: () => { id: string; title: string; iconPath: string }[],
+    /** 514 — the archives the install picker offers; asked for only when the door is opened. */
+    private readonly getAppZips?: () => Promise<{ candidates: Array<{ path: string; name: string; dir: string }>; roots: string[] }>,
   ) {
     this.scopeSubscription = controlWorkspaceScope.onDidChange(() => void this.push());
   }
@@ -252,6 +254,14 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     );
   }
 
+  /** 514 — answer the install door with the archives the product found, for OUR picker to filter. */
+  private async pushAppZips(): Promise<void> {
+    const view = this.view;
+    if (!view) return;
+    const answer = await this.getAppZips?.();
+    void view.webview.postMessage(appZipsMessage(answer?.candidates ?? [], answer?.roots ?? []));
+  }
+
   /**
    * t-72ff5a — the window scope, resolved to a project that is actually attached.
    *
@@ -354,8 +364,11 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       // summary already names in its own text ("full detail in Output → Tachyon"), so the button and
       // the sentence lead to one place instead of two.
       if (m.op === "openOutput") return void revealShellDiagnostics();
-      // 514 — the door for installing an app, from the tab where its tile will appear.
-      if (m.op === "installApp") return void vscode.commands.executeCommand("tachyon.installApp");
+      // 514 — the door for installing an app, from the tab where its tile will appear. Opening it
+      // ASKS the host for candidates and pushes them back; the choosing happens in our own picker,
+      // not in the editor's file dialog (t-be359b made the same move for "new …").
+      if (m.op === "installApp") return void this.pushAppZips();
+      if (m.op === "installAppFrom") return void vscode.commands.executeCommand("tachyon.installApp", m.hash);
       // Per folder, never window-wide: a hash that matches no known folder does nothing rather than
       // re-attaching an arbitrary one — the same rule `wsFor` states for every other routed op.
       if (m.op === "retryStart") return void (m.hash ? this.retryStart?.(m.hash) : undefined);

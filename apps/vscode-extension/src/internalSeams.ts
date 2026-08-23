@@ -36,8 +36,10 @@ export interface InternalSeamDeps {
 
 function proposalSchedule(schedule: ScheduleDef): Extract<ExtensionCommandV1, { action: "proposal.create" }>["schedule"] {
   const catchUp = schedule.catchUp === undefined ? {} : { catchUp: schedule.catchUp };
-  if (schedule.every && schedule.run) return { every: schedule.every, run: schedule.run, ...catchUp };
-  if (schedule.at && schedule.run) return { at: schedule.at, run: schedule.run, ...catchUp };
+  // The `run` form (a shell command on a timer) is gone from both `ScheduleDef` and the command
+  // schema: a schedule spawns a declared agent. The two arms that read `schedule.run` were dead and
+  // unreachable, and they survived only because this file was outside every typecheck project —
+  // the first thing the new `tsconfig.extension.json` found.
   if (schedule.every && schedule.spawn) return { every: schedule.every, spawn: schedule.spawn, ...(schedule.instructions ? { instructions: schedule.instructions } : {}), ...catchUp };
   if (schedule.at && schedule.spawn) return { at: schedule.at, spawn: schedule.spawn, ...(schedule.instructions ? { instructions: schedule.instructions } : {}), ...catchUp };
   throw new Error("schedule proposal is incomplete");

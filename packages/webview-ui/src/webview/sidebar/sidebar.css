@@ -640,8 +640,6 @@
     background: color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
   }
   .ctl-tile.ds-btn:hover .ctl-tile-img { background: color-mix(in srgb, var(--ds-focus) 22%, transparent); }
-  /* 514 — the install door sits above the grid, quiet: it is a rare action next to twelve frequent ones. */
-  .ctl-grid-actions { display: flex; justify-content: flex-end; padding-bottom: var(--ds-spacing-size80); }
   .ctl-tile.ds-btn .ds-btn-label {
     font-size: var(--ds-operator-label3); line-height: 1.25; color: var(--ds-muted);
     /* Two lines max — "Runtime Config" wraps rather than truncating to an unreadable stub. */

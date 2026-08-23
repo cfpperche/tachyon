@@ -3,7 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import { App, type GlobalOp } from "./App";
 import { type FleetVM, type SidebarBootVM } from "@tachyon/shared/sidebar/types";
 import type { InstalledAppTile } from "./sectionNav.js";
-import { FLEET, readyMessage, type SidebarHostMessage } from "./messages";
+import { APP_ZIPS, FLEET, readyMessage, type SidebarHostMessage } from "./messages";
 
 // The webview iframe entry. The host (SidebarPrototypeProvider) pushes the live fleet via postMessage
 // once we signal "ready"; standalone preview injects a fixture the same way.
@@ -37,6 +37,8 @@ function Root() {
   // 514 — the installed apps arrive on the same message as the fleet; set unconditionally, so a host
   // that stops sending them (last app removed) empties the grid instead of leaving a stale tile.
   const [apps, setApps] = useState<InstalledAppTile[] | undefined>(undefined);
+  // 514 — the install picker's candidate set, pushed when the door is opened (never on the heartbeat).
+  const [zipCandidates, setZipCandidates] = useState<{ candidates: Array<{ path: string; name: string; dir: string }>; roots: string[] } | null>(null);
   // spec 242 — persisted sort prefs (per section); the host includes them in the fleet message so the FIRST
   // render is already in the saved order (no name-asc→saved flicker). t-50daeb — `launcher` (the
   // Control grid) is absent until the user picks a mode: absence IS the product order.
@@ -57,6 +59,11 @@ function Root() {
     };
     const onMsg = (e: MessageEvent) => {
       const d = e.data as Partial<SidebarHostMessage> | undefined;
+      if (d && d.type === APP_ZIPS) {
+        // A new object every time, so opening the door twice reopens the picker even with the same set.
+        setZipCandidates({ candidates: Array.isArray(d.candidates) ? d.candidates : [], roots: Array.isArray(d.roots) ? d.roots : [] });
+        return;
+      }
       if (d && d.type === FLEET && Array.isArray(d.fleets)) {
         gotFleet = true;
         stopRetrying();
@@ -106,7 +113,7 @@ function Root() {
     setCollapsedKeys: (keys: string[]) => vscode?.postMessage({ type: "setCollapsed", keys }),
     switchWorkspace: (wsHash: string) => vscode?.postMessage({ type: "switchControlWorkspace", hash: wsHash }),
   };
-  return <App fleets={fleets} dispatch={dispatch} prefs={prefs} collapsedKeys={collapsedKeys} appVersion={appVersion} selectedWsHash={selectedWsHash} boot={boot} apps={apps} />;
+  return <App fleets={fleets} dispatch={dispatch} prefs={prefs} collapsedKeys={collapsedKeys} appVersion={appVersion} selectedWsHash={selectedWsHash} boot={boot} apps={apps} zipCandidates={zipCandidates} />;
 }
 
 const root = document.getElementById("root");

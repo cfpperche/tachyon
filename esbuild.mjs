@@ -537,6 +537,12 @@ for (const retired of ["cockpit.js", "cockpit.js.map", "cockpit.css"].concat([
   "runbook-studio-shell.js",
   "runbook-studio-shell.js.map",
   "runbook-studio-shell.css",
+  // 514 — the plugin surface relay. Removing its esbuild target stops it being BUILT; only this list
+  // stops it being PACKAGED out of a reused dist/, which is how 0.93.47 shipped a bundle for a
+  // capability it had just deleted.
+  "plugin-host.js",
+  "plugin-host.js.map",
+  "plugin-host.css",
 ])) {
   rmSync(path.join("dist/webview", retired), { force: true });
 }
