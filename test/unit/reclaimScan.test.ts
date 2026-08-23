@@ -79,12 +79,12 @@ describe("scanReclaim", () => {
     runtime(r.runtimesRoot, "newest-rt", new Date("2026-08-20"));
 
     const plan = await scanReclaim({ ...r, procRoot: procWithEngineOn(liveExe) });
-    const collected = plan.collect.filter((c) => c.kind === "runtime").map((c) => path.basename(c.path));
-    expect(collected).toEqual(["stale-rt"]);
-    // The newest is kept without any engine naming it: it is what the next activation re-stages, and
-    // it makes the rule safe to run while nothing happens to be up.
-    expect(plan.hold.filter((h) => h.kind === "runtime").map((h) => path.basename(h.path)).sort())
-      .toEqual(["live-rt", "newest-rt"]);
+    const collected = plan.collect.filter((c) => c.kind === "runtime").map((c) => path.basename(c.path)).sort();
+    // Everything the live engine does not run on goes, INCLUDING the newest by mtime: recency was
+    // never evidence of use, and treating it as such is what deleted a live runtime in 0.93.45.
+    expect(collected).toEqual(["newest-rt", "stale-rt"]);
+    expect(plan.hold.filter((h) => h.kind === "runtime").map((h) => path.basename(h.path)))
+      .toEqual(["live-rt"]);
   });
 
   it("holds every runtime when the kernel cannot be read — nothing measured is not evidence of death", async () => {
@@ -96,7 +96,12 @@ describe("scanReclaim", () => {
     expect(plan.collect.filter((c) => c.kind === "runtime")).toEqual([]);
   });
 
-  it("holds the newest when no engine is running at all", async () => {
+  it("holds EVERY runtime when no engine is running — the window that deleted a live one", async () => {
+    // 0.93.45 shipped this case wrong and it cost a real runtime on the author's machine. The scan
+    // ran during an install: the old engine was already stopped and the new one had not started, so
+    // `/proc` was readable and named nobody. That was treated as evidence, and the belt ("keep the
+    // newest directory") chose an OLDER runtime — collecting the one the engine was about to run.
+    // An empty answer is not an answer.
     const r = roots();
     runtime(r.runtimesRoot, "old-rt", new Date("2026-07-01"));
     runtime(r.runtimesRoot, "new-rt", new Date("2026-08-20"));
@@ -104,8 +109,30 @@ describe("scanReclaim", () => {
     const emptyProc = path.join(home, "proc-empty");
     fs.mkdirSync(emptyProc, { recursive: true });
     const plan = await scanReclaim({ ...r, procRoot: emptyProc });
-    expect(plan.collect.filter((c) => c.kind === "runtime").map((c) => path.basename(c.path))).toEqual(["old-rt"]);
-    expect(plan.hold.filter((h) => h.kind === "runtime").map((h) => path.basename(h.path))).toEqual(["new-rt"]);
+    expect(plan.collect.filter((c) => c.kind === "runtime")).toEqual([]);
+    expect(plan.hold.filter((h) => h.kind === "runtime").map((h) => path.basename(h.path)).sort())
+      .toEqual(["new-rt", "old-rt"]);
+    // And it says so: reporting this as "a live engine runs on it" would be a lie the human acts on.
+    expect(plan.hold.find((h) => h.kind === "runtime")?.reason).toContain("empty answer is not evidence");
+  });
+
+  it("a live engine still names its runtime after the file was unlinked under it", async () => {
+    // `/proc/<pid>/exe` keeps the original path and appends " (deleted)" once the file is gone, so
+    // resolving the link throws exactly where the answer matters most. Measured on the author's
+    // machine right after the 0.93.45 incident: the live engine had become invisible to its own
+    // scan, which would have invited the same deletion again.
+    const r = roots();
+    const liveExe = runtime(r.runtimesRoot, "live-rt", new Date("2026-07-01"));
+    runtime(r.runtimesRoot, "stale-rt", new Date("2026-07-02"));
+    const procRoot = path.join(home, "proc-deleted");
+    fs.mkdirSync(path.join(procRoot, "42"), { recursive: true });
+    fs.writeFileSync(path.join(procRoot, "42", "cmdline"), "tachyon-engine:abcd1234\0");
+    fs.symlinkSync(`${liveExe} (deleted)`, path.join(procRoot, "42", "exe"));
+    fs.rmSync(liveExe);
+
+    const plan = await scanReclaim({ ...r, procRoot });
+    expect(plan.hold.filter((h) => h.kind === "runtime").map((h) => path.basename(h.path))).toEqual(["live-rt"]);
+    expect(plan.collect.filter((c) => c.kind === "runtime").map((c) => path.basename(c.path))).toEqual(["stale-rt"]);
   });
 
   it("reads provenance off disk and quarantines state of a workspace that is gone", async () => {
