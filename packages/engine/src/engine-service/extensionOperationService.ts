@@ -23,7 +23,8 @@ import {
 } from "../config/YamlConfigEditor.js";
 import { isIdeBrowserEnabled } from "../ide-browser/settings.js";
 import { isResumable } from "../resume/sessionRecord.js";
-import { appZipSearchRoots, browseForAppZip, findAppZipCandidates, installAppZip, readInstalledApps, uninstallApp } from "../apps/index.js";
+import { installAppZip, readInstalledApps, uninstallApp } from "../apps/index.js";
+import { zipSearchRoots, browseForZip, findZipCandidates } from "../files/zipPicker.js";
 import { PromptStore } from "../prompts/PromptStore.js";
 import { injectTargets, submitRefuseReason } from "../prompts/injectFlow.js";
 import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
@@ -230,11 +231,11 @@ export async function executeExtensionQuery(
       });
     }
     case "apps.zip-candidates": {
-      const roots = appZipSearchRoots(workspace.workspaceRoot, os.homedir(), os.tmpdir());
-      return json({ candidates: findAppZipCandidates(roots).map((c) => ({ path: c.path, name: c.name, dir: c.dir })), roots });
+      const roots = zipSearchRoots(workspace.workspaceRoot, os.homedir(), os.tmpdir());
+      return json({ candidates: findZipCandidates(roots).map((c) => ({ path: c.path, name: c.name, dir: c.dir })), roots });
     }
     case "apps.browse": {
-      const listing = browseForAppZip(query.dir);
+      const listing = browseForZip(query.dir);
       return json({
         dir: listing.dir,
         ...(listing.parent ? { parent: listing.parent } : {}),

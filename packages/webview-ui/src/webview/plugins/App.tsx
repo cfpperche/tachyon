@@ -4,7 +4,7 @@ import type { Runtime } from "@tachyon/engine/plugins/manifest.js";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 import type { ConfirmPayload } from "./messages";
 import { isConsentBlocked } from "./consentViewAcks";
-import { Button, IconButton, Tabs, Badge, PageChrome, EmptyState, Input } from "../shared/ui";
+import { Button, IconButton, Tabs, Badge, PageChrome, EmptyState, Input, PathPicker, type PathPickerListing } from "../shared/ui";
 import { KitSelect, KitDropdown, KitDropdownTrigger, KitDropdownContent, KitDropdownItem } from "../shared/ui/kit";
 import { filterAndSortInstalledPlugins, type InstalledSortMode } from "./listControls";
 
@@ -21,7 +21,11 @@ export interface PluginsDispatch {
   checkUpdates(): void;
   checkPluginUpdate(name: string): void;
   install(spec: string): void;
+  /** 515 — open the product's own file chooser (never the editor's dialog). */
   installZip(): void;
+  browseZips(dir: string): void;
+  installZipFrom(zipPath: string): void;
+  closeZips(): void;
   update(name: string): void;
   reinstall(name: string): void;
   remove(name: string): void;
@@ -540,7 +544,15 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
   );
 }
 
-export function App({ vm, consent, busy, dispatch }: { vm?: PluginsViewModel; consent?: ConsentVM; busy?: string; dispatch: PluginsDispatch }) {
+/** 515 — everything the plugin file chooser needs, in one object the host replaces wholesale. */
+export interface PluginZipPickerState {
+  candidates: Array<{ path: string; name: string; dir: string }>;
+  roots: string[];
+  listing?: PathPickerListing;
+  error?: string;
+}
+
+export function App({ vm, consent, busy, zips, dispatch }: { vm?: PluginsViewModel; consent?: ConsentVM; busy?: string; zips?: PluginZipPickerState; dispatch: PluginsDispatch }) {
   const [tab, setTab] = useState<"installed" | "market">("installed");
   const [spec, setSpec] = useState("");
   const [filter, setFilter] = useState("");
@@ -641,6 +653,24 @@ export function App({ vm, consent, busy, dispatch }: { vm?: PluginsViewModel; co
       </div>
 
       {/* key by consent identity so a new consent REMOUNTS with fresh Keep/Replace state (no stale Replace+ack leak). */}
+      {/* 515 — the product's own chooser, the same component the app installer uses. Not the editor's
+          file dialog: that is a separate window with its own theme and keyboard, it opens wherever it
+          last was rather than where the archives are, and it does not know what a plugin package is. */}
+      {zips ? (
+        <PathPicker
+          open
+          data-testid="plugin-zip-picker"
+          title="Install a plugin"
+          subtitle={zips.error
+            ? `Could not read the workspace: ${zips.error}`
+            : "Choose the .zip to install. It still asks before anything runs."}
+          suggestions={zips.candidates.map((c) => ({ name: c.name, path: c.path, kind: "zip" as const }))}
+          listing={zips.listing}
+          onBrowse={(dir) => dispatch.browseZips(dir)}
+          onClose={() => dispatch.closeZips()}
+          onSelect={(filePath) => dispatch.installZipFrom(filePath)}
+        />
+      ) : null}
       {consent && <ConsentDrawer key={consent.token} vm={consent} dispatch={dispatch} />}
       {busy && <div class="busy"><span class="codicon codicon-loading" /> {busy}</div>}
       {/* t-963b66 — result feedback uses product ToastHost (shell); no local .toast slot. */}

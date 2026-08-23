@@ -4,7 +4,7 @@ import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { ToastProvider, useToast } from "../shared/ui";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 import { App } from "./App";
-import type { PluginsDispatch } from "./App";
+import type { PluginsDispatch, PluginZipPickerState } from "./App";
 import type { PluginsViewModel } from "../../plugins/viewModel";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 import {
@@ -12,6 +12,7 @@ import {
   CONSENT,
   PLUGINS,
   RESULT,
+  ZIPS,
   confirmMessage,
   pollAction,
   readyMessage,
@@ -54,6 +55,7 @@ function PluginsRoot() {
   const [vm, setVm] = useState<PluginsViewModel | undefined>(undefined);
   const [consent, setConsent] = useState<ConsentVM | undefined>(undefined);
   const [busy, setBusy] = useState<string | undefined>(undefined);
+  const [zips, setZips] = useState<PluginZipPickerState | undefined>(undefined);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -65,6 +67,14 @@ function PluginsRoot() {
       } else if (raw.type === CONSENT && raw.vm) {
         setConsent(raw.vm as ConsentVM);
         setBusy(undefined);
+      } else if (raw.type === ZIPS) {
+        // 515 — the host replaces the picker's whole answer each time, never merges two.
+        setZips({
+          candidates: (raw.candidates ?? []) as PluginZipPickerState["candidates"],
+          roots: (raw.roots ?? []) as string[],
+          ...(raw.listing ? { listing: raw.listing as PluginZipPickerState["listing"] } : {}),
+          ...(raw.error ? { error: String(raw.error) } : {}),
+        });
       } else if (raw.type === BUSY) {
         setBusy(typeof raw.label === "string" ? raw.label : "Working…");
       } else if (raw.type === RESULT) {
@@ -100,6 +110,9 @@ function PluginsRoot() {
       checkPluginUpdate: (name: string) => post({ type: "checkPluginUpdate", name }),
       install: (spec: string) => post({ type: "install", spec }),
       installZip: () => post({ type: "installZip" }),
+      browseZips: (dir: string) => post({ type: "browseZips", dir }),
+      installZipFrom: (zipPath: string) => { setZips(undefined); post({ type: "installZipFrom", zipPath }); },
+      closeZips: () => setZips(undefined),
       update: (name: string) => post({ type: "update", name }),
       reinstall: (name: string) => post({ type: "reinstall", name }),
       remove: (name: string) => post({ type: "remove", name }),
@@ -124,7 +137,7 @@ function PluginsRoot() {
     [toastApi],
   );
 
-  return <App vm={vm} consent={consent} busy={busy} dispatch={dispatch} />;
+  return <App vm={vm} consent={consent} busy={busy} zips={zips} dispatch={dispatch} />;
 }
 
 const root = document.getElementById("root");

@@ -36,3 +36,53 @@ lockfile nunca foi necessário ali, só era o que estava à mão. A fatia 2 muda
 para derivar do payload, e o T9 (provar antes de remover) passa a testar exatamente isso.
 
 `plan.md` foi atualizado com essa decisão.
+
+## O picker era do VS Code, e não podia ser (2026-08-23, depois do 0.93.55)
+
+A fatia 1 subiu com `vscode.window.showOpenDialog` nesta porta. O dono pegou na primeira tentativa,
+com print: numa janela remota/WSL aquele diálogo degrada para um campo de texto "Folder path" solto
+por cima do editor. Não é só feio — não sabe o que é um pacote de plugin, abre onde esteve por último
+em vez de onde os arquivos estão, e é uma janela com tema e teclado próprios.
+
+A regra é do dono e é regra: **escolher artefato do Tachyon acontece no picker do Tachyon.** E ela já
+tinha falhado uma vez com a instrução dada — o instalador de apps foi reconstruído em cima do
+`PathPicker` duas specs atrás, e mesmo assim esta porta pegou o diálogo. Instrução que não segurou é
+problema de mecanismo, não de diligência, então virou teste: `test/unit/productPicker.test.ts` recusa
+`showOpenDialog` nas duas portas que instalam arquivo, e exige que o painel de plugins alimente um
+picker de verdade (senão apagar o diálogo passaria no teste apagando a funcionalidade).
+
+**Terceira vez que a coisa já existia.** `findAppZipCandidates`/`browseForAppZip` nunca tiveram nada de
+app no corpo: acham `.zip` e listam um diretório. Foram para `packages/engine/src/files/zipPicker.ts`
+com nomes neutros. Mesmo movimento do `extractZipContained` na fatia 1.
+
+**O que NÃO foi tocado:** os outros cinco `showOpenDialog` do repositório escolhem coisas fora do
+vocabulário do Tachyon — uma pasta de workspace, um HTML arbitrário para importar. Ali um diálogo de
+propósito geral é a ferramenta honesta e o `PathPicker` (que lista diretórios e `.zip`) seria a errada.
+Se a regra valer para esses também, é decisão dele e vira tarefa própria.
+
+## Dois defeitos que o screenshot achou, e o DOM não acharia
+
+Fiz a prova visual com o harness de preview + puppeteer (`test/browser/pluginZipPickerShots.test.ts`),
+e ela pagou na hora — os dois são do 514 e estavam em produção desde então:
+
+1. **A trilha imprimia `/ / home / goat / Downloads`.** A migalha raiz É uma barra, e o render punha um
+   separador antes de toda migalha a partir da segunda.
+2. **Os caminhos apareciam como `home/goat/Downloads/`.** `.pp-where` é `direction: rtl` para que a
+   reticência coma a CABEÇA do caminho e a cauda — a parte que distingue duas pastas — sobreviva. O
+   preço é bidi: `/` é caractere neutro, e numa caixa RTL a barra inicial migra para o fim. Resolvido
+   com isolamento LTR (U+2066/U+2069), que conserta a direção do trecho sem mexer na direção da caixa.
+
+O segundo **nenhuma asserção de DOM pegaria**: `textContent` é `/home/goat/Downloads` nos dois casos, a
+diferença só existe depois do algoritmo bidi, ou seja, só na tela. É o argumento para a prova visual
+ser um screenshot olhado e não uma consulta ao DOM.
+
+Aproveitei para corrigir um comentário que afirmava o falso: dizia que nomes truncam no fim "mantendo
+a extensão visível", o que é contraditório. As duas truncagens apontam para lados opostos de
+propósito — nome pela cabeça (diz qual plugin é), caminho pela cauda (diz qual pasta é).
+
+## Visual QA
+
+Evidence: `.tachyon/visual-qa/515-plugin-zip-picker/` — quatro shots, as duas telas do picker
+(sugestões e navegação) em 880 e 360, renderizadas do bundle real.
+Verdict: aprovado depois dos dois consertos acima. O picker monta dentro do painel, cabe nas duas
+larguras, não estoura, e a trilha e os caminhos agora leem como caminhos.

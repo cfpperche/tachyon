@@ -7,6 +7,12 @@ corrija `plan.md` antes de seguir._
 
 **Dogfood:** `npx vite-node scripts/dogfood/plugin-zip-install.ts`
 
+## Visual QA
+
+Evidence: `.tachyon/visual-qa/515-plugin-zip-picker/` (gerado por `test/browser/pluginZipPickerShots.test.ts`)
+Verdict: as duas telas do picker aprovadas em 880 e 360, depois de consertar a trilha duplicada e a
+ordem bidi dos caminhos — ambos defeitos do 514 que só o screenshot revelou.
+
 **Human dogfood:** aba Plugins → "From zip" → escolher um zip de plugin → a gaveta abre sem procedência → instalar.
 
 ## Fatia 1 — instalar por zip

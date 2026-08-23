@@ -53,8 +53,35 @@ export function resultMessage(ok: boolean, message: string): ResultMessage {
   return { type: RESULT, ok, message };
 }
 
+/**
+ * 515 — host → webview: what the plugin file chooser draws.
+ *
+ * One message carries both screens the picker has, because they are one answer at different depths:
+ * `candidates` is the nearby-archives screen it opens on, `listing` is a directory the human browsed
+ * into. The host replaces the whole object each time, so the picker never merges two answers.
+ *
+ * `error` exists so a refusal can travel as a REASON. The app picker shipped without it once and drew
+ * "no .zip found in " for a query that had been rejected outright — an empty answer wearing a measured
+ * one's clothes.
+ */
+export const ZIPS = "zips" as const;
+export interface ZipsMessage {
+  type: typeof ZIPS;
+  candidates: Array<{ path: string; name: string; dir: string }>;
+  roots: string[];
+  listing?: { dir: string; parent?: string; entries: Array<{ name: string; path: string; kind: "dir" | "zip" }>; error?: string };
+  error?: string;
+}
+export function zipsMessage(
+  candidates: ZipsMessage["candidates"],
+  roots: string[],
+  extra: { listing?: ZipsMessage["listing"]; error?: string } = {},
+): ZipsMessage {
+  return { type: ZIPS, candidates, roots, ...extra };
+}
+
 /** the union the Plugins webview listens for (host → webview). */
-export type PluginsHostMessage = PluginsMessage | ConsentMessage | BusyMessage | ResultMessage;
+export type PluginsHostMessage = PluginsMessage | ConsentMessage | BusyMessage | ResultMessage | ZipsMessage;
 
 /**
  * SDD 485 D2 — webview → host: "re-read the model, nothing has been asked for". The app's own 3s timer,
@@ -100,7 +127,7 @@ export function confirmMessage(payload: ConfirmPayload): ConfirmActionMessage {
 /** spec 280 — the webview→host action type union (the Plugins view's inbound messages). Typing the host's
  *  InboundMsg.type against this makes a typo'd `case "…"` a compile error (the typed-union convention). */
 export type PluginsActionType =
-  | "ready" | "refresh" | "poll" | "checkUpdates" | "checkPluginUpdate" | "install" | "installZip" | "update" | "reinstall" | "remove"
+  | "ready" | "refresh" | "poll" | "checkUpdates" | "checkPluginUpdate" | "install" | "installZip" | "browseZips" | "installZipFrom" | "update" | "reinstall" | "remove"
   | "reselect" | "repair" | "rehydrate" | "confirm" | "cancel" | "openConfig" | "openDocs" | "installExternal"
   | "applyMcp" | "unapplyMcp" | "applyContribution" | "unapplyContribution";
 

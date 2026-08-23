@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 import { loadPluginFromZipFile } from "../../apps/vscode-extension/src/plugins/zipSource.js";
+import { browseForZip, findZipCandidates, zipSearchRoots } from "../../packages/engine/src/files/zipPicker.js";
 
 const source = path.resolve(".tachyon/plugins/sdd");
 if (!fs.existsSync(path.join(source, "tachyon-plugin.json"))) {
@@ -43,5 +44,18 @@ if (loaded.provenance !== undefined) {
 }
 console.log(`ok — ${loaded.plugin.manifest.name} ${loaded.plugin.manifest.version} loaded from a zip, with no provenance`);
 console.log(`     skills: ${loaded.plugin.skills.map((s) => s.name).join(", ") || "(none)"}`);
+
+// The chooser is Tachyon's, so prove it can REACH the archive — both ways it offers. The first door
+// is the nearby scan the picker opens on; the second is browsing to the directory by hand, which is
+// what the scan's bounded depth exists to make survivable rather than sufficient.
+const roots = zipSearchRoots(process.cwd(), os.homedir(), os.tmpdir());
+const suggested = findZipCandidates(roots).some((c) => c.path === out);
+const browsed = browseForZip(path.dirname(out)).entries.some((e) => e.path === out && e.kind === "zip");
+if (!browsed) {
+  console.error(`FAILED: the picker cannot browse to ${out}`);
+  process.exit(1);
+}
+console.log(`ok — the product picker reaches it: ${suggested ? "offered by the nearby scan and " : ""}listed when browsed to`);
+console.log(`     roots scanned: ${roots.join(", ")}`);
 if (loaded.stagingDir) fs.rmSync(loaded.stagingDir, { recursive: true, force: true });
 fs.rmSync(path.dirname(out), { recursive: true, force: true });
