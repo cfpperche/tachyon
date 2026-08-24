@@ -228,7 +228,65 @@ concedidas são reconstruídas em `$GROK_HOME/skills` e servidores concedidos en
 gerado. É materialização, não passagem por argumento — o oposto do Claude Code e do pi.
 
 
-## Pi — a fazer
+## Pi 0.84.3 — medido em 2026-08-24
+
+**Instrumento, e ele deu trabalho.** Pi recusa antes de carregar recursos quando não autenticado, então
+não há leitura de graça como no Claude. Pior: **perguntar ao modelo quais skills ele tem é um
+instrumento ruim** — com ferramentas ligadas ele vai LER O DIRETÓRIO e reportar o que achou no disco,
+não o que está carregado. Foi o que aconteceu num braço, e o resultado contraditório (com a porta
+FECHADA ele listou MAIS skills) foi o que denunciou o método.
+
+O que funcionou foi um **marcador de comportamento**: um `AGENTS.md` no projeto dizendo "sempre diga
+PROJETO-AGENTS". Se a instrução chega, a resposta carrega a palavra. Não depende de introspecção nem
+de o modelo ser honesto sobre si.
+
+`--no-tools` também não serve para medir skills aqui: em pi elas **são ferramentas**, então desligar as
+ferramentas desliga as skills junto e todo braço responde "nenhuma".
+
+### 1. O que ele carrega sozinho
+
+| capacidade | de onde | o projeto entra? |
+|---|---|---|
+| **skills** | `<cwd>/.pi/skills` | **sim** — e **só a raiz dele**: `.claude/skills` e `.agents/skills` do projeto **não** entram |
+| **arquivos de contexto** | `AGENTS.md` / `CLAUDE.md` do projeto | **sim** (marcador confirmou) |
+| **MCP** | — | **não existe nativo.** A doc do próprio pi: *"It intentionally does not include built-in MCP, sub-agents, permission popups, plan mode, to-dos, or background bash. You can build or install those workflows as extensions or packages"* |
+| **hooks** | — | **não são arquivos descobertos.** Existem como pontos de extensão em código (`session_start`, transformadores de exibição), dentro de uma extensão — não um diretório que ele varre |
+
+Pi é o **oposto do Grok** na descoberta: lê só a própria raiz, e não vai à casa de ninguém.
+
+### 2. As portas de negar
+
+| flag | o que fecha | medido |
+|---|---|---|
+| **`--no-context-files` / `-nc`** | `AGENTS.md` e `CLAUDE.md` do projeto | **sim** — o marcador some da resposta |
+| `--no-approve` / `-na` | "Ignore project-local files for this run" | **NÃO fecha os arquivos de contexto** — o marcador continua aparecendo. O que ele fecha exatamente ficou **não medido** |
+| `--no-skills` / `-ns` | descoberta de skills | declarado no `--help`; **não medido** |
+| `--no-extensions` / `-ne` | descoberta de extensões (`-e` explícito continua valendo) | declarado; **não medido** |
+| `--no-prompt-templates`, `--no-themes` | as duas famílias | declarados; **não medidos** |
+
+> **Duas linhas em branco de propósito.** `-ns`/`-ne` são as portas que o desenho do Tachyon depende, e
+> eu não as medi: cada braço custa uma chamada, o pi do autor está numa cota emprestada, e um `--help`
+> não é medição. Ficam declaradas como declaração, não como fato.
+
+### 3. As portas explícitas
+
+| flag | entrega |
+|---|---|
+| `--skill <path>` | um arquivo ou diretório de skill |
+| `--extension, -e <path>` | uma extensão (`-ne` não a bloqueia — a semântica está no próprio `--help`: *"explicit -e paths still work"*) |
+| `--prompt-template <path>` | um template |
+| `--theme <path>` | um tema |
+
+**Não existe `--package <path>`.** Pacotes entram por `pi install`, e o código do Tachyon hoje passa
+`--extension` para a família `packages` (cai no `else` final da cadeia de flags). O primeiro plugin que
+trouxer `packages/` vai descobrir se isso está certo.
+
+### 4. Por que o pi é o modelo que os outros deviam seguir
+
+`-ne` está documentado como *"Disable extension discovery (**explicit -e paths still work**)"*. É a lei
+inteira do isolamento numa linha de `--help`, escrita pelo próprio runtime: **negar a descoberta,
+aceitar o caminho explícito.** Nenhum dos outros três diz isso tão claramente, e dois deles não fazem.
+
 
 ## Codex — a fazer
 
