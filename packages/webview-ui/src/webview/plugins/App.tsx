@@ -20,7 +20,7 @@
  * gastou uma fatia desfazendo.
  */
 import { Badge, Button, EmptyState, Icon, PageChrome, PathPicker, type PathPickerListing } from "../shared/ui";
-import type { InstalledPluginVM, PluginsViewModel } from "@tachyon/engine/plugins2/viewModel.js";
+import type { InstalledPluginVM, PluginsViewModel } from "@tachyon/engine/plugins/viewModel.js";
 
 export interface PluginsDispatch {
   refresh(): void;

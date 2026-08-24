@@ -460,27 +460,6 @@ describe("parseConfig", () => {
     expect(warnings).toContain("settings: unknown key 'anchor'");
     expect(config?.settings.bridgeGuidance).toBe(false);
   });
-  it("rejects a bad bridgeGuidance type", () => {
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  bridgeGuidance: 1\n`).warnings.some((e) => e.includes("bridgeGuidance: must be a boolean"))).toBe(true);
-  });
-
-  // t-09edf2 — settings.agentHookProjection: which installed plugins' hooks reach an agent's own session
-  it("parses settings.agentHookProjection as plugin name → hook class", () => {
-    const { config, errors } = parseConfig(`agents:\n  a:\n    cmd: claude\nsettings:\n  agentHookProjection:\n    secrets-guard: enforcement\n    watcher: observability\n`);
-    expect(errors).toEqual([]);
-    expect(config?.settings.agentHookProjection).toEqual({ "secrets-guard": "enforcement", watcher: "observability" });
-  });
-  it("refuses an unknown hook class WHOLE rather than keeping the entries it understood", () => {
-    // Half a policy is the failure mode this key exists to prevent: the human would read a green load as
-    // "the gate is on" while the plugin they typo'd projects nothing.
-    const { config, warnings } = parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  agentHookProjection:\n    secrets-guard: enforcement\n    other: gate\n`);
-    expect(warnings.some((e) => e.includes("agentHookProjection.other: must be one of"))).toBe(true);
-    expect(config?.settings.agentHookProjection).toBeUndefined();
-  });
-  it("rejects a non-mapping settings.agentHookProjection", () => {
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  agentHookProjection: enforcement\n`)
-      .warnings.some((e) => e.includes("agentHookProjection: must be a mapping"))).toBe(true);
-  });
 
   it("t-84f0eb: parses an authored per-agent Grok permission projection and stays off when absent", () => {
     const { config, errors } = parseConfig(`agents:\n  boss:\n    cmd: claude\nsettings:\n  agentPermissionProjection:\n    reader:\n      runtime: grok\n      mode: auto\n`);

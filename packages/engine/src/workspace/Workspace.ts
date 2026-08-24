@@ -275,7 +275,6 @@ import { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import { ActivityLog, agentLogId } from "../activity/logStore.js";
 import { codexToolHookFile, compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, persistenceStopFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile, type OwnershipHookGroup } from "../activity/sessionOwners.js";
 import { CHECKLIST_GATE_SCRIPT_SOURCE, checklistGateScriptPath, planChecklistGateHooks, type ChecklistGateSession } from "../runtime/checklistGateHook.js";
-import { planProjectedPluginHooks, readHookProjectionCandidates } from "../plugins/agentHookProjection.js";
 import { forgetAgent as forgetAgentFootprint } from "../agents/forgetAgent.js";
 import {
   HeadlessTerminalPresentation,
@@ -4160,24 +4159,12 @@ export class Workspace {
     session: ChecklistGateSession = {},
   ): { projectedHooks?: Record<string, OwnershipHookGroup[]> } {
     const hooks: Record<string, OwnershipHookGroup[]> = {};
-    const policy = this.config?.settings.agentHookProjection;
-    if (policy && Object.keys(policy).length > 0) {
-      const plan = planProjectedPluginHooks({
-        plugins: readHookProjectionCandidates(this.workspaceRoot),
-        runtime,
-        policy,
-      });
-      // Only what the human ASKED for and did not get is worth a toast. An unclassified plugin is the
-      // default state, not an incident, and reporting all thirteen of them on every spawn would train the
-      // reader to ignore the line that matters.
-      for (const entry of plan.withheld.filter((withheldEntry) => policy[withheldEntry.plugin] !== undefined)) {
-        this.host.notify(
-          this.t("agent '{0}': plugin '{1}' hooks were not projected into its session — {2}", agent, entry.plugin, entry.reason),
-          "warn",
-        );
-      }
-      for (const [event, groups] of Object.entries(plan.hooks)) hooks[event] = [...groups];
-    }
+    // 516 — a projeção de hook de plugin saiu daqui inteira. Ela existia porque instalar um plugin
+    // mesclava hooks no `settings.json` do PROJETO, e um agente isolado precisava de uma classificação
+    // nomeada (`settings.agentHookProjection`) para que um portão o alcançasse mesmo assim. No sistema
+    // novo um hook de plugin é capacidade de runtime como uma skill: chega ao agente porque aquele
+    // agente o recebeu, pela concessão, e vai para a home dele. Não há hook de plugin solto no projeto
+    // para fazer alcançar ninguém.
     // t-685a0c — the required-plan gate rides the SAME per-spawn channel, appended rather than merged
     // into the plugin groups: the two are independent decisions (a classified plugin, and a covered task
     // kind) and either may be absent. Every runtime channel below unions the groups of one event, so a
@@ -5793,7 +5780,6 @@ export class Workspace {
       // t-141f61 — the same classification `projectedSessionHooks` spends at spawn. The panel is a
       // second door onto that decision, so it reads the policy from the same place rather than
       // inferring "protected" from a hook list that has no way to show a gate that never arrived.
-      hookProjectionPolicy: this.config?.settings.agentHookProjection,
       ports: {
         panePid: async () => {
           try { return await this.tmux.panePid(this.manager.session(agentName)); }

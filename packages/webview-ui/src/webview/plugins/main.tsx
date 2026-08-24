@@ -11,7 +11,7 @@ import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { ToastProvider, useToast } from "../shared/ui";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 import { App, type PluginsDispatch, type ZipPickerState } from "./App";
-import type { PluginsViewModel } from "@tachyon/engine/plugins2/viewModel.js";
+import type { PluginsViewModel } from "@tachyon/engine/plugins/viewModel.js";
 import { BUSY, PLUGINS, RESULT, ZIPS, readyMessage } from "./messages";
 
 declare const acquireVsCodeApi: () => TachyonVsCodeApi;

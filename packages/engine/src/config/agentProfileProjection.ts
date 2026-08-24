@@ -26,7 +26,6 @@ import { ATTESTED_RUNTIMES, isAttestedRuntime, type AttestedRuntime } from "@tac
 import { parseWorkspaceCommandLines } from "@tachyon/shared/config/agentWorkspaceCommands.js";
 import { MATERIALIZED_PROFILE_REFERENCE_KINDS } from "./agentProfileMaterialization.js";
 import { PERSISTENT_INSTRUCTIONS_FILE_NAME } from "@tachyon/shared/config/agentInstructionsDocument.js";
-import { inspectRuntimeWorkspaceInput, readRuntimeProjectionClaims } from "../plugins/projectedInputs.js";
 import {
   projectAgentNativeConfig,
   resolveAgentNativeConfigSupport,
@@ -530,18 +529,24 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
       ".grok/lsp.json",
       ".grok/sandbox.toml",
     ];
-    const claims = readRuntimeProjectionClaims(input.workspaceRoot, "grok");
+    // 516 — a pergunta encolheu para "existe?", e ficou MAIS estrita.
+    //
+    // Antes havia um terceiro veredito entre ausente e ambiente: "projetado", quando o próprio Tachyon
+    // tinha escrito ali — a instalação de um plugin mesclava entradas em `.grok/*` e o lockfile
+    // registrava quais eram nossas, então um arquivo reconhecido pelo registro passava. O sistema novo
+    // não escreve nada no projeto, então essa terceira resposta não tem mais como acontecer: todo
+    // arquivo encontrado aqui é de outra pessoa, e é exatamente isso que o perfil recusa.
     const blockers = ambientCandidates.flatMap((relative) => {
-      const verdict = inspectRuntimeWorkspaceInput(input.workspaceRoot, claims, relative);
-      switch (verdict.status) {
-        case "absent":
-        case "projected":
-          return [];
-        case "ambient":
-          return [`profile/native-attestation: ambient Grok input must be absent: ${verdict.path}${verdict.detail ? ` (${verdict.detail})` : ""}`];
-        default:
-          return [`profile/native-attestation: cannot safely inspect ambient Grok input: ${verdict.path} (${verdict.detail})`];
+      const absolute = path.join(input.workspaceRoot, ...relative.split("/"));
+      try {
+        fs.lstatSync(absolute);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") return [];
+        // Não conseguir ler não é evidência de ausência: recusar é a resposta honesta.
+        return [`profile/native-attestation: cannot safely inspect ambient Grok input: ${relative} (${code ?? "read error"})`];
       }
+      return [`profile/native-attestation: ambient Grok input must be absent: ${relative}`];
     });
     if (blockers.length > 0) return blockers;
   }

@@ -11,8 +11,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { grantableReferences, digestOf } from "@tachyon/engine/plugins2/grantable.js";
-import { loadPlugin, MANIFEST_FILE } from "@tachyon/engine/plugins2/manifest.js";
+import { grantableReferences, digestOf } from "@tachyon/engine/plugins/grantable.js";
+import { loadPlugin, MANIFEST_FILE } from "@tachyon/engine/plugins/manifest.js";
 import { inspectCapabilitySourceAtRoot } from "@tachyon/engine/config/agentCapabilitySource.js";
 
 const made: string[] = [];

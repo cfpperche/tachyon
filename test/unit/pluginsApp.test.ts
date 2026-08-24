@@ -8,7 +8,7 @@ import { PluginsPanelManager, PLUGINS_VIEW_TYPE, pluginsRefreshKind, type Plugin
 import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
 import type { SectionPanelState } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
 import { readyMessage } from "@tachyon/webview-ui/webview/plugins/messages.js";
-import { MANIFEST_FILE } from "@tachyon/engine/plugins2/manifest.js";
+import { MANIFEST_FILE } from "@tachyon/engine/plugins/manifest.js";
 import type { WorkspacePluginProfileTarget } from "../../apps/vscode-extension/src/shell/WorkspacePresentation.js";
 
 /**

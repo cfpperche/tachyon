@@ -17,7 +17,6 @@ import { parseLaunchCommand } from "@tachyon/shared/runtime/launchPreflight.js";
 export { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
 import { parseChecklistBlock, type ChecklistConfig } from "./checklistRequireIn.js";
-import { PROJECTED_HOOK_CLASSES as AGENT_HOOK_PROJECTION_CLASSES, type ProjectedHookClass } from "../plugins/agentHookProjection.js";
 import type { ResolvedAgentCapabilityProjection } from "./agentProfileResolver.js";
 import type { WithheldCapability } from "./withheldCapability.js";
 import type { ResolvedAgentNativeConfigProjection } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
@@ -528,7 +527,6 @@ export interface TachyonConfig {
      * configuration only when the human says so. Naming the plugin here IS that statement — which is why
      * absence means "not projected" rather than "projected by default".
      */
-    agentHookProjection?: Record<string, ProjectedHookClass>;
     /**
      * t-84f0eb — opt-in permission posture for one named managed agent. Absence projects nothing.
      *
@@ -645,7 +643,7 @@ export const KNOWN_TOP_LEVEL_KEYS = ["terminals", "layouts", "schedules", "setti
 /** The `settings:` keys this parser knows, retired-but-still-named ones included. See KNOWN_TOP_LEVEL_KEYS. */
 export const KNOWN_SETTINGS_KEYS = [
   "maxAgents", "checklist", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree",
-  "projectGuidance", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection",
+  "projectGuidance", "companion", "ideBrowser", "bridgeGuidance",
   "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind",
   "gitDelivery", "delivery", "taskNotifications", "humanInbox", "agentNotifications", "stateBackup", "reclaim",
 ] as const;
@@ -1651,25 +1649,11 @@ export function parseConfig(yamlText: string, options: ParseConfigOptions = {}):
         if (raw.settings.clipboard !== "auto" && raw.settings.clipboard !== "off") discarded.push("settings.clipboard: must be 'auto' or 'off'");
         else settings.clipboard = raw.settings.clipboard;
       }
-      if (raw.settings.agentHookProjection !== undefined) {
-        // t-09edf2 — refused, never partially accepted: this key decides whether a gate reaches an agent
-        // session, and a half-parsed policy would silently drop the plugin the human named.
-        if (!isPlainObject(raw.settings.agentHookProjection)) {
-          discarded.push("settings.agentHookProjection: must be a mapping of plugin name → hook class");
-        } else {
-          const out: Record<string, ProjectedHookClass> = {};
-          let sound = true;
-          for (const [plugin, value] of Object.entries(raw.settings.agentHookProjection)) {
-            if (!AGENT_HOOK_PROJECTION_CLASSES.includes(value as ProjectedHookClass)) {
-              discarded.push(`settings.agentHookProjection.${plugin}: must be one of ${AGENT_HOOK_PROJECTION_CLASSES.join(", ")}`);
-              sound = false;
-              continue;
-            }
-            out[plugin] = value as ProjectedHookClass;
-          }
-          if (sound && Object.keys(out).length > 0) settings.agentHookProjection = out;
-        }
-      }
+      // 516 — `settings.agentHookProjection` foi aposentado com a coisa que ele classificava. Ele
+      // existia porque a instalação de um plugin mesclava hooks no projeto, e um agente isolado
+      // precisava de uma exceção nomeada para que um portão o alcançasse. No sistema novo um hook é
+      // capacidade de runtime como uma skill: chega ao agente porque aquele agente o recebeu, e vai
+      // para a home dele. Sem hook solto no projeto, não há o que fazer alcançar ninguém.
       if (raw.settings.agentPermissionProjection !== undefined) {
         const root = raw.settings.agentPermissionProjection;
         if (!isPlainObject(root)) {

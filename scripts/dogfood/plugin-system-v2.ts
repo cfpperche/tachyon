@@ -15,10 +15,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
-import { installFromZip, uninstall } from "../../packages/engine/src/plugins2/install.js";
-import { readCatalog } from "../../packages/engine/src/plugins2/catalog.js";
-import { grantableReferences, digestOf } from "../../packages/engine/src/plugins2/grantable.js";
-import { buildPluginsViewModel } from "../../packages/engine/src/plugins2/viewModel.js";
+import { installFromZip, uninstall } from "../../packages/engine/src/plugins/install.js";
+import { readCatalog } from "../../packages/engine/src/plugins/catalog.js";
+import { grantableReferences, digestOf } from "../../packages/engine/src/plugins/grantable.js";
+import { buildPluginsViewModel } from "../../packages/engine/src/plugins/viewModel.js";
 import { inspectCapabilitySourceAtRoot } from "../../packages/engine/src/config/agentCapabilitySource.js";
 
 const SOURCE = "/home/goat/tachyon-plugins/sdd";

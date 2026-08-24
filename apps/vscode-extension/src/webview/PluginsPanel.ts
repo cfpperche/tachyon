@@ -12,9 +12,9 @@ import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import { chooseZipWithSystemDialog } from "./shared/systemFileDialog.js";
 import { browseForZip, findZipCandidates, zipSearchRoots } from "@tachyon/engine/files/zipPicker.js";
-import { installFromZip, uninstall } from "@tachyon/engine/plugins2/install.js";
-import { readCatalog } from "@tachyon/engine/plugins2/catalog.js";
-import { buildPluginsViewModel } from "@tachyon/engine/plugins2/viewModel.js";
+import { installFromZip, uninstall } from "@tachyon/engine/plugins/install.js";
+import { readCatalog } from "@tachyon/engine/plugins/catalog.js";
+import { buildPluginsViewModel } from "@tachyon/engine/plugins/viewModel.js";
 import {
   busyMessage,
   pluginsMessage,

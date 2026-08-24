@@ -7,7 +7,7 @@
  */
 
 import { parseHooksBlock, type BlockParseResult } from "./hooks.js";
-import { withResolvedMcpPluginRoot, type McpServer } from "../mcp.js";
+import { withResolvedMcpPluginRoot, type McpServer } from "../mcpServer.js";
 
 /** Codex hook events accepted in a plugin block. Verified against a live codex hook config (which uses
  *  SubagentStart/SubagentStop), so those ARE included; only `PostToolUseFailure` (a claude-only event) is

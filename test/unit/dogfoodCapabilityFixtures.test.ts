@@ -18,7 +18,6 @@ import { createHash } from "node:crypto";
 import { stringify } from "yaml";
 import { makeTempDir } from "../helpers/tempDir.js";
 import { agentsOf, asAgent, parseConfig } from "@tachyon/engine/config/loadConfig.js";
-import { parseLockfile } from "@tachyon/engine/plugins/lockfile.js";
 import { annotateAuthorized, listAuthorizableCapabilities } from "@tachyon/engine/config/agentCapabilityCandidates.js";
 import { authorizedSkillStates, skillOriginFor } from "@tachyon/engine/config/agentSkillAuthorizationService.js";
 import { inspectCapabilitySourceAtRoot } from "@tachyon/engine/config/agentCapabilitySource.js";
@@ -117,7 +116,6 @@ describe("agent-capability-reauth fixture (t-4a2a6f)", () => {
     const composed = composeWorkspaceConfigText(root);
     expect(composed.errors).toEqual([]);
     expect(parseConfig(composed.yamlText).errors).toEqual([]);
-    expect(parseLockfile(fs.readFileSync(path.join(root, ".tachyon/plugins.lock.json"), "utf8")).errors).toEqual([]);
     for (const name of ["demo-stable", "demo-drifty"]) {
       expect(skillOriginFor(root, name, "claude")).toMatchObject({ kind: "plugin", plugin: name });
     }
