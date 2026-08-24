@@ -70,7 +70,6 @@ export function cockpitStrings(): CockpitStrings {
     continueTaskDestDetail: t("New session with focused handoff from {0}"),
     reveal: t("Reveal"),
     copyPath: t("Copy path"),
-    openConfig: t("Open workspace settings"),
     // t-7b4bb5 — two authorities, named so the dual open buttons do not look like a split mind.
     // t-2ad294 — state the split; the cards below already show it. Recovery-path contingency is docs.
     settingsBody: t(

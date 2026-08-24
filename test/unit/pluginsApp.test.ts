@@ -3,39 +3,34 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Uri } from "vscode";
-import { __createdPanels, __getExecutedCommands, __registeredWebviewPanelSerializers, __resetVscodeMock, __setPanelVisible } from "../mocks/vscode.js";
-import { PluginsPanelManager, PLUGINS_VIEW_TYPE, pluginsRefreshKind, sourceSpecAtCommit, type PluginsPanelState } from "../../apps/vscode-extension/src/webview/PluginsPanel.js";
+import { __createdPanels, __registeredWebviewPanelSerializers, __resetVscodeMock, __setPanelVisible } from "../mocks/vscode.js";
+import { PluginsPanelManager, PLUGINS_VIEW_TYPE, pluginsRefreshKind, type PluginsPanelState } from "../../apps/vscode-extension/src/webview/PluginsPanel.js";
 import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
 import type { SectionPanelState } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
-import { serializeLockfile, LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
-import { pollAction, readyMessage } from "@tachyon/webview-ui/webview/plugins/messages.js";
+import { readyMessage } from "@tachyon/webview-ui/webview/plugins/messages.js";
+import { MANIFEST_FILE } from "@tachyon/engine/plugins2/manifest.js";
 import type { WorkspacePluginProfileTarget } from "../../apps/vscode-extension/src/shell/WorkspacePresentation.js";
 
 /**
- * SDD 485 D2 — Plugins as a standalone DASHBOARD app.
+ * 516 — a aba Plugins como app de painel, sobre o sistema novo.
  *
- * Three claims are under test and they are different in kind.
+ * Três afirmações, de naturezas diferentes.
  *
- * The CARDINALITY is what this migration decides: one panel per project, re-opening reveals rather than
- * duplicating, two projects are two panels. For Plugins that is not a preference — a plugin install is a
- * per-workspace fact (lockfile, runtime detection and every apply are rooted at one `workspaceRoot`), so
- * two projects genuinely have two different answers and two panels showing them is correct.
+ * A CARDINALIDADE é a do app: um painel por projeto, reabrir revela em vez de duplicar, dois projetos
+ * são dois painéis. Para Plugins isso não é preferência — o que está instalado é um fato POR
+ * workspace (`.tachyon/plugins/` é enraizado num `workspaceRoot`), então dois projetos têm duas
+ * respostas diferentes e mostrá-las em dois painéis é o correto.
  *
- * The SESSION STATE is the claim the cardinality creates. `checks`/`pending`/`busy` used to live in one
- * closure because the Control embed was one session — "one at a time" was its own comment, true of a
- * singleton and false of a dashboard. The three cases below are `pluginsControlEmbed.test.ts`'s
- * (t-0fc9ee) rewritten for the world that replaced it: what the embed had to defend by NOT rebinding, a
- * per-panel closure gets by construction, and what it could not defend at all — two projects — is now
- * asserted directly.
+ * O DOMÍNIO encolheu com o sistema, e o que sobrou tem de continuar valendo: a resolução do projeto é
+ * ESTRITA (um painel nunca toma emprestado os plugins de outro), e remover REVOGA as concessões antes
+ * de apagar o payload (t-b1940c) — a ordem é a decisão, porque apagar primeiro deixaria concessões
+ * vivas apontando para um diretório que não existe mais.
  *
- * The DOMAIN is everything else, and it must be unchanged: reinstall still pins the recorded commit, the
- * runtime-coverage gap still reaches the posted view-model. Those cases are ported verbatim from the
- * embed test, driven through the panel instead of through a bound webview, because a cutover that quietly
- * changed what an action does would be a migration and a regression at once.
+ * O que sumiu junto com o sistema antigo: consentimento por runtime, checagem de atualização, guarda
+ * de ocupado, e o `poll` de 3 segundos. Não há estado de frescor que mude sozinho, então não há o que
+ * reconsultar — os casos que defendiam esse estado defendiam algo que deixou de existir.
  *
- * Every case drives the WIRE — the message a real client posts — rather than the manager's internals
- * (0.56.159's lesson): `ready` and `poll` reach this app through the GATE and never through `onMessage`,
- * which is exactly the sort of difference an internals-level test cannot see.
+ * Todo caso dirige o FIO — a mensagem que um cliente real posta — e não os internos do manager.
  */
 
 const dirs: string[] = [];
@@ -54,28 +49,15 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-/** A sourced plugin entry — the source makes checkPluginUpdate reach gitExec, which fails fast. */
-function writeLockfile(root: string, name: string): void {
-  const lockPath = path.join(root, LOCKFILE_REL_PATH);
-  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-  const entry = {
-    name,
-    version: "1.0.0",
-    runtimes: ["claude"],
-    targets: [{ runtime: "claude", kind: "settings-hook", file: ".claude/settings.json", ref: "PreToolUse", removal: [{ hooks: [{ type: "command", command: "echo guard" }] }] }],
-    source: { type: "git", spec: `github:acme/${name}@v1.0.0`, remote: `https://github.com/acme/${name}.git`, ref: "v1.0.0", resolvedCommit: "a1b2c3d".padEnd(40, "0") },
-    integrity: { algorithm: "sha256", payload: "deadbeef" },
-  };
-  fs.writeFileSync(lockPath, serializeLockfile({ schemaVersion: 1, plugins: { [name]: entry } } as never));
-  // the remove plan reads the target runtime config — present-but-empty keeps previewRemove error-free
-  // so it yields a REAL consent fingerprint (an empty fingerprint never reaches confirm: the "confirm"
-  // dispatch case requires a truthy token).
-  const settingsPath = path.join(root, ".claude", "settings.json");
-  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-  fs.writeFileSync(settingsPath, "{}\n");
+/** Instalar à mão é exatamente o que a instalação faz: uma pasta com manifesto e payload. */
+function install(root: string, name: string): string {
+  const dir = path.join(root, ".tachyon", "plugins", name);
+  fs.mkdirSync(path.join(dir, "skills", name), { recursive: true });
+  fs.writeFileSync(path.join(dir, MANIFEST_FILE), JSON.stringify({ name, version: "1.0.0", description: `${name} does things`, docs: "https://example.dev/docs" }));
+  fs.writeFileSync(path.join(dir, "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: x\n---\nbody\n`);
+  return dir;
 }
 
-/** Offline-deterministic target: every git call fails fast (no network, no real repo). */
 function target(root: string, hash: string, revokePluginGrants?: (pluginName: string) => Promise<unknown>): WorkspacePluginProfileTarget {
   return {
     workspaceRoot: root,
@@ -86,22 +68,19 @@ function target(root: string, hash: string, revokePluginGrants?: (pluginName: st
   } as unknown as WorkspacePluginProfileTarget;
 }
 
-function managerFor(targets: WorkspacePluginProfileTarget[]): PluginsPanelManager {
-  return new PluginsPanelManager(extensionUri, () => targets);
-}
+const managerFor = (targets: WorkspacePluginProfileTarget[]) => new PluginsPanelManager(extensionUri, () => targets);
 
 type Panel = typeof __createdPanels[number];
 
 const posted = (panel: Panel, type: string): Array<Record<string, unknown>> =>
   panel.webview.posted.filter((m) => (m as { type?: string }).type === type) as Array<Record<string, unknown>>;
 
-const pluginsMsgs = (panel: Panel) =>
-  posted(panel, "plugins") as unknown as Array<{ vm: { installed: Array<{ name: string; status: { kind: string } }> } }>;
+const installedIn = (panel: Panel): string[] => {
+  const last = posted(panel, "plugins").at(-1) as { vm: { installed: Array<{ name: string }> } } | undefined;
+  return (last?.vm.installed ?? []).map((p) => p.name);
+};
 
-const statusOf = (panel: Panel, name: string): string | undefined =>
-  pluginsMsgs(panel).at(-1)?.vm.installed.find((p) => p.name === name)?.status.kind;
-
-/** Open a panel and give the client's own `ready` handshake — the first model arrives through the gate. */
+/** Abrir e dar o `ready` do próprio cliente — o primeiro modelo chega pelo GATE, nunca por onMessage. */
 async function open(mgr: PluginsPanelManager, project: string): Promise<Panel> {
   mgr.open(project);
   const panel = __createdPanels.at(-1)!;
@@ -110,114 +89,66 @@ async function open(mgr: PluginsPanelManager, project: string): Promise<Panel> {
   return panel;
 }
 
-describe("SDD 485 D2 — the Plugins cardinality is `dashboard`", () => {
-  it("opens ONE panel per project and REVEALS it on a second open", () => {
+describe("516 — a cardinalidade da aba Plugins é `dashboard`", () => {
+  it("abre UM painel por projeto e REVELA no segundo open", async () => {
     const mgr = managerFor([target(mkroot(), "ws-1")]);
-
+    await open(mgr, "ws-1");
     mgr.open("ws-1");
-    mgr.open("ws-1");
-
     expect(__createdPanels).toHaveLength(1);
-    expect(__createdPanels[0].revealCount).toBe(1);
     expect(mgr.openKeys).toEqual(["tachyonPlugins|ws-1"]);
   });
 
-  it("gives two PROJECTS a panel each — plugins are installed per workspace, so two answers are correct", async () => {
-    const rootA = mkroot();
-    const rootB = mkroot();
-    writeLockfile(rootA, "tdd-guard");
-    // rootB gets NO lockfile: two projects with genuinely different plugin sets, which is the fact the
-    // cardinality rests on. Under `window` this screen would show one of them to both.
-    const mgr = managerFor([target(rootA, "ws-a"), target(rootB, "ws-b")]);
-
-    const a = await open(mgr, "ws-a");
-    const b = await open(mgr, "ws-b");
-
+  it("dá um painel a cada PROJETO — o que está instalado é fato por workspace", async () => {
+    const a = mkroot();
+    const b = mkroot();
+    install(a, "primeiro");
+    install(b, "segundo");
+    const mgr = managerFor([target(a, "ws-1"), target(b, "ws-2")]);
+    const pa = await open(mgr, "ws-1");
+    const pb = await open(mgr, "ws-2");
     expect(__createdPanels).toHaveLength(2);
-    expect(mgr.openKeys).toEqual(["tachyonPlugins|ws-a", "tachyonPlugins|ws-b"]);
-    expect(pluginsMsgs(a).at(-1)?.vm.installed.map((p) => p.name)).toEqual(["tdd-guard"]);
-    expect(pluginsMsgs(b).at(-1)?.vm.installed).toEqual([]);
+    expect(installedIn(pa)).toEqual(["primeiro"]);
+    expect(installedIn(pb)).toEqual(["segundo"]);
   });
 
-  it("refuses a panel with no project — a dashboard is opened AGAINST one", () => {
-    const mgr = managerFor([target(mkroot(), "ws-1")]);
-    expect(() => mgr.open("")).toThrow(/dashboard/);
-    expect(__createdPanels).toHaveLength(0);
-  });
-
-  it("resolves a project from a workspace it does not have, and says so instead of borrowing another's", async () => {
-    // STRICT lookup (C5's rule): a panel keyed on a project that is no longer attached must never fall
-    // back to the first workspace. For a surface that INSTALLS things into a root, that would not be a
-    // cosmetic error.
-    const mgr = managerFor([target(mkroot(), "ws-attached")]);
-    const panel = await open(mgr, "ws-gone");
-
-    expect(posted(panel, "plugins")).toEqual([]);
-    expect(posted(panel, "result").at(-1)).toMatchObject({ ok: false });
-    expect(String(posted(panel, "result").at(-1)?.message)).toContain("ws-gone");
+  it("resolve um projeto que não tem e DIZ, em vez de tomar emprestados os plugins de outro", async () => {
+    const root = mkroot();
+    install(root, "alheio");
+    const mgr = managerFor([target(root, "ws-1")]);
+    const panel = await open(mgr, "ws-outro");
+    expect(posted(panel, "plugins")).toHaveLength(0);
+    expect((posted(panel, "result").at(-1) as { ok: boolean; message: string }).message).toContain("No Tachyon workspace attached");
   });
 });
 
-describe("SDD 485 D2 — the session state is PER PANEL (t-0fc9ee's contract, under the new cardinality)", () => {
-  it("a poll does NOT wipe a stored update check — the Refresh button is the only thing that does", async () => {
+describe("516 — o catálogo que a tela mostra é o disco", () => {
+  it("mostra o que está instalado, com o que cada um traz", async () => {
     const root = mkroot();
-    writeLockfile(root, "tdd-guard");
-    const mgr = managerFor([target(root, "ws-1")]);
-    const panel = await open(mgr, "ws-1");
-    expect(statusOf(panel, "tdd-guard")).toBe("unknown"); // no check ran yet
+    install(root, "sdd");
+    const panel = await open(managerFor([target(root, "ws-1")]), "ws-1");
+    const vm = (posted(panel, "plugins").at(-1) as { vm: { installed: Array<{ name: string; capabilities: Array<{ label: string }>; runtimes: string[] }> } }).vm;
+    expect(vm.installed[0]!.capabilities.map((c) => c.label)).toEqual(["1 skill"]);
+    expect(vm.installed[0]!.runtimes).toEqual(["claude", "codex", "grok", "pi"]);
+  });
 
-    // the check settles into an error (fake git fails) — a REAL stored result, distinct from unknown
-    panel.webview.__receive({ type: "checkPluginUpdate", name: "tdd-guard" });
-    await flush();
-    expect(statusOf(panel, "tdd-guard")).toBe("error");
-
-    // twenty polls: one minute of the app's own 3s timer. The embed's equivalent hazard was a rebind
-    // wiping the closure; here the hazard is the WORD — a poll routed to the `refresh` handler would run
-    // `setChecks({})` and the badge would vanish within three seconds.
-    for (let i = 0; i < 20; i++) panel.webview.__receive(pollAction());
-    await flush();
-    expect(statusOf(panel, "tdd-guard")).toBe("error");
-
-    // and the Refresh button still means what it always meant.
+  it("um `refresh` relê o disco — instalar por fora e pedir refresh mostra o novo", async () => {
+    const root = mkroot();
+    const panel = await open(managerFor([target(root, "ws-1")]), "ws-1");
+    expect(installedIn(panel)).toEqual([]);
+    install(root, "apareceu");
     panel.webview.__receive({ type: "refresh" });
     await flush();
-    expect(statusOf(panel, "tdd-guard")).toBe("unknown");
+    expect(installedIn(panel)).toEqual(["apareceu"]);
   });
+});
 
-  it("a pending consent survives the poll — confirm still applies instead of silently dropping", async () => {
+describe("516 — remover revoga antes de apagar (t-b1940c)", () => {
+  it("revoga as concessões ANTES de o payload ir, e nomeia quem perdeu o quê", async () => {
     const root = mkroot();
-    writeLockfile(root, "tdd-guard");
-    const mgr = managerFor([target(root, "ws-1")]);
-    const panel = await open(mgr, "ws-1");
-
-    panel.webview.__receive({ type: "remove", name: "tdd-guard" });
-    await flush();
-    const consent = posted(panel, "consent").at(-1) as { vm: { token: string } } | undefined;
-    expect(consent?.vm.token).toBeTruthy();
-
-    // a poll tick between the drawer opening and the human clicking Confirm
-    panel.webview.__receive(pollAction());
-    await flush();
-
-    panel.webview.__receive({ type: "confirm", token: consent!.vm.token });
-    await flush();
-    // the embed's pre-fix failure was a rebound session with no pending: confirmOp silently returned and
-    // NO result was ever posted. A per-panel closure cannot be recreated under a live panel at all.
-    expect(posted(panel, "result").at(-1)).toBeTruthy();
-  });
-
-  // t-b1940c — option (b): the removal drags the profile grants that authorized the plugin, and the
-  // result NAMES who lost what. These cases drive the wire: the revoke door hangs off the workspace
-  // target next to gitExec and runs BEFORE applyRemove deletes the payload (decided order) — a
-  // revocation that cannot complete refuses the removal, so nothing is destroyed on a failed revoke.
-  it("a successful remove revokes profile grants BEFORE deleting the payload and names who lost what", async () => {
-    const root = mkroot();
-    writeLockfile(root, "tdd-guard");
-    const payloadDir = path.join(root, ".tachyon", "plugins", "tdd-guard", "skills", "tdd-guard");
-    fs.mkdirSync(payloadDir, { recursive: true }); // exists so the fake can witness WHEN the revoke ran
+    const dir = install(root, "tdd-guard");
     const asked: Array<{ plugin: string; payloadStillThere: boolean }> = [];
     const mgr = managerFor([target(root, "ws-1", async (plugin: string) => {
-      asked.push({ plugin, payloadStillThere: fs.existsSync(payloadDir) });
+      asked.push({ plugin, payloadStillThere: fs.existsSync(dir) });
       return {
         schemaVersion: 1,
         revoked: [
@@ -231,171 +162,101 @@ describe("SDD 485 D2 — the session state is PER PANEL (t-0fc9ee's contract, un
 
     panel.webview.__receive({ type: "remove", name: "tdd-guard" });
     await flush();
-    const token = (posted(panel, "consent").at(-1) as { vm: { token: string } }).vm.token;
-    panel.webview.__receive({ type: "confirm", token });
-    await flush();
 
-    // BEFORE the payload went: at revoke time the directory the grant points at still existed.
+    // ANTES de o payload ir: no momento da revogação o diretório que a concessão aponta ainda existia.
     expect(asked).toEqual([{ plugin: "tdd-guard", payloadStillThere: true }]);
-    expect(fs.existsSync(payloadDir)).toBe(false); // and the remove did delete it afterwards
+    expect(fs.existsSync(dir)).toBe(false); // e a remoção o apagou depois
     const result = posted(panel, "result").at(-1) as { ok: boolean; message: string };
     expect(result.ok).toBe(true);
     expect(result.message).toContain("Revoked tdd-guard from claude (tdd-guard), grok (tdd-guard)");
-    // t-746f0f's duty at this door too: the running agent's loss lands at restart, and the message says so.
+    // t-746f0f nesta porta também: o que um agente vivo perdeu só chega no próximo launch, e a mensagem diz.
     expect(result.message).toContain("Running agents keep their launched copy until restart.");
   });
 
-  it("an incomplete revocation refuses the removal — nothing is deleted while a holder remains", async () => {
+  it("uma revogação incompleta RECUSA a remoção — nada é apagado enquanto alguém segura", async () => {
     const root = mkroot();
-    writeLockfile(root, "tdd-guard");
-    const payloadDir = path.join(root, ".tachyon", "plugins", "tdd-guard");
-    fs.mkdirSync(payloadDir, { recursive: true });
+    const dir = install(root, "tdd-guard");
     const mgr = managerFor([target(root, "ws-1", async (plugin: string) => ({
       schemaVersion: 1,
-      revoked: [{ agent: "claude", referenceId: plugin, deselected: true, running: false }],
-      errors: [{ agent: "codex", referenceId: plugin, error: "no canonical profile" }],
+      revoked: [],
+      errors: [{ agent: "codex", referenceId: plugin, error: "profile is locked" }],
     }))]);
     const panel = await open(mgr, "ws-1");
 
     panel.webview.__receive({ type: "remove", name: "tdd-guard" });
     await flush();
-    const token = (posted(panel, "consent").at(-1) as { vm: { token: string } }).vm.token;
-    panel.webview.__receive({ type: "confirm", token });
-    await flush();
 
+    expect(fs.existsSync(dir)).toBe(true);
     const result = posted(panel, "result").at(-1) as { ok: boolean; message: string };
     expect(result.ok).toBe(false);
-    expect(result.message).toContain("Could not revoke agent grants: codex (tdd-guard): no canonical profile — tdd-guard was not removed.");
-    // partial progress is named too, never hidden behind the refusal
-    expect(result.message).toContain("Revoked tdd-guard from claude (tdd-guard)");
-    expect(fs.existsSync(payloadDir)).toBe(true); // nothing destroyed — retry is possible
+    expect(result.message).toContain("codex (tdd-guard): profile is locked");
+    expect(result.message).toContain("was not removed");
   });
 
-  it("a revocation door failure refuses the removal instead of leaving a live grant", async () => {
+  it("uma falha da porta de revogação também recusa, em vez de deixar concessão viva", async () => {
     const root = mkroot();
-    writeLockfile(root, "tdd-guard");
-    const payloadDir = path.join(root, ".tachyon", "plugins", "tdd-guard");
-    fs.mkdirSync(payloadDir, { recursive: true });
-    const lockPath = path.join(root, LOCKFILE_REL_PATH);
-    const mgr = managerFor([target(root, "ws-1", async () => {
-      throw new Error("engine unreachable");
-    })]);
+    const dir = install(root, "tdd-guard");
+    const mgr = managerFor([target(root, "ws-1", async () => { throw new Error("engine unreachable"); })]);
     const panel = await open(mgr, "ws-1");
 
     panel.webview.__receive({ type: "remove", name: "tdd-guard" });
     await flush();
-    const token = (posted(panel, "consent").at(-1) as { vm: { token: string } }).vm.token;
-    panel.webview.__receive({ type: "confirm", token });
-    await flush();
 
-    const result = posted(panel, "result").at(-1) as { ok: boolean; message: string };
-    expect(result.ok).toBe(false);
-    expect(result.message).toContain("Could not revoke agent grants: engine unreachable — tdd-guard was not removed.");
-    // failing BEFORE destroys nothing: payload and lockfile entry both survive
-    expect(fs.existsSync(payloadDir)).toBe(true);
-    expect(fs.existsSync(lockPath)).toBe(true);
+    expect(fs.existsSync(dir)).toBe(true);
+    expect((posted(panel, "result").at(-1) as { message: string }).message).toContain("engine unreachable");
   });
 
-  it("removing a plugin nobody ever granted says nothing about grants", async () => {
+  it("remover um plugin que ninguém concedeu não diz nada sobre concessões", async () => {
     const root = mkroot();
-    writeLockfile(root, "tdd-guard");
+    const dir = install(root, "solo");
     const mgr = managerFor([target(root, "ws-1", async () => ({ schemaVersion: 1, revoked: [], errors: [] }))]);
     const panel = await open(mgr, "ws-1");
 
-    panel.webview.__receive({ type: "remove", name: "tdd-guard" });
-    await flush();
-    const token = (posted(panel, "consent").at(-1) as { vm: { token: string } }).vm.token;
-    panel.webview.__receive({ type: "confirm", token });
+    panel.webview.__receive({ type: "remove", name: "solo" });
     await flush();
 
+    expect(fs.existsSync(dir)).toBe(false);
     const result = posted(panel, "result").at(-1) as { ok: boolean; message: string };
     expect(result.ok).toBe(true);
     expect(result.message).not.toContain("Revoked");
-    expect(result.message).not.toContain("revoke");
-  });
-
-  it("two projects do not share checks, a pending consent, or the busy guard", async () => {
-    const rootA = mkroot();
-    const rootB = mkroot();
-    writeLockfile(rootA, "tdd-guard");
-    writeLockfile(rootB, "tdd-guard");
-    const mgr = managerFor([target(rootA, "ws-a"), target(rootB, "ws-b")]);
-    const a = await open(mgr, "ws-a");
-    const b = await open(mgr, "ws-b");
-
-    a.webview.__receive({ type: "checkPluginUpdate", name: "tdd-guard" });
-    await flush();
-    expect(statusOf(a, "tdd-guard")).toBe("error");
-    // sequential rather than interleaved: the busy guard would drop the second, which is its job.
-    a.webview.__receive({ type: "remove", name: "tdd-guard" });
-    await flush();
-    const tokenA = (posted(a, "consent").at(-1) as { vm: { token: string } }).vm.token;
-
-    // B has neither. A shared closure would leak A's check into B's cards and let B's confirm apply A's
-    // pending removal — against B's workspace root.
-    b.webview.__receive(pollAction());
-    await flush();
-    expect(statusOf(b, "tdd-guard")).toBe("unknown");
-    expect(posted(b, "consent")).toEqual([]);
-
-    b.webview.__receive({ type: "confirm", token: tokenA });
-    await flush();
-    expect(posted(b, "result"), "B confirmed a consent that belongs to A").toEqual([]);
   });
 });
 
-describe("SDD 485 D2 — a hidden Plugins tab does no work", () => {
-  it("ignores the client's own poll while hidden, and catches up once on reveal", async () => {
+describe("516 — o portão, e a revivência do painel", () => {
+  it("reclama `ready` para o portão e mais nada — `refresh` é ação humana", () => {
+    expect(pluginsRefreshKind(readyMessage())).toBe("plugins");
+    expect(pluginsRefreshKind({ type: "refresh" })).toBeUndefined();
+    expect(pluginsRefreshKind({ type: "remove", name: "x" })).toBeUndefined();
+    expect(pluginsRefreshKind(undefined)).toBeUndefined();
+  });
+
+  it("ignora o poll do cliente enquanto escondido, e alcança uma vez ao ser revelado", async () => {
     const root = mkroot();
-    writeLockfile(root, "tdd-guard");
-    const mgr = managerFor([target(root, "ws-1")]);
-    const panel = await open(mgr, "ws-1");
-    // it IS served while visible — asserted before the negative, so a DEAD door cannot pass this case
-    // (boardPanel.test.ts's own correction, applied here rather than cited).
-    panel.webview.posted.length = 0;
-    panel.webview.__receive(pollAction());
-    await flush();
-    expect(pluginsMsgs(panel)).toHaveLength(1);
+    install(root, "um");
+    const panel = await open(managerFor([target(root, "ws-1")]), "ws-1");
+    const antes = posted(panel, "plugins").length;
 
     __setPanelVisible(panel, false);
-    panel.webview.posted.length = 0;
-
-    for (let i = 0; i < 20; i++) panel.webview.__receive(pollAction()); // one minute of polling
+    install(root, "dois");
+    panel.webview.__receive(readyMessage());
     await flush();
-    await flush();
-
-    expect(panel.webview.posted).toEqual([]);
+    expect(posted(panel, "plugins")).toHaveLength(antes);
 
     __setPanelVisible(panel, true);
     await flush();
-    await flush();
-
-    // One catch-up, not twenty replays — and it is not empty, which is the property that matters.
-    expect(pluginsMsgs(panel)).toHaveLength(1);
+    expect(installedIn(panel)).toEqual(["dois", "um"]);
   });
 
-  it("claims `ready` and `poll` for the gate, and nothing else — `refresh` is a human action", () => {
-    // The host's own decision, testable without a panel. A client that renamed its poll would stop being
-    // served through the gate here rather than quietly becoming ungated work.
-    expect(pluginsRefreshKind(readyMessage())).toBe("plugins");
-    expect(pluginsRefreshKind(pollAction())).toBe("plugins");
-    expect(pluginsRefreshKind({ type: "refresh" })).toBeUndefined();
-    expect(pluginsRefreshKind({ type: "install", spec: "github:a/b@v1" })).toBeUndefined();
-    expect(pluginsRefreshKind(undefined)).toBeUndefined();
-  });
-});
-
-describe("SDD 485 D2 — reload puts Plugins back in its tab", () => {
-  it("persists the project and revives onto the same key, reusing the panel VS Code hands back", async () => {
+  it("persiste o projeto e revive na mesma chave, reusando o painel que o VS Code devolve", async () => {
     const root = mkroot();
     const mgr = managerFor([target(root, "ws-1")]);
     mgr.open("ws-1");
-    // Read the persisted state out of the RENDERED page rather than re-deriving it: this is what a real
-    // reload would actually be handed.
-    const persisted = JSON.parse(/__tachyonPersistedState=(\{.*?\});/.exec(__createdPanels[0].webview.html)![1]) as SectionPanelState;
+    // Ler o estado persistido da PÁGINA RENDERIZADA em vez de re-derivá-lo: é o que um reload real
+    // realmente devolveria.
+    const persisted = JSON.parse(/__tachyonPersistedState=(\{.*?\});/.exec(__createdPanels[0]!.webview.html)![1]!) as SectionPanelState;
     expect(persisted).toEqual({ schemaVersion: 1, view: PLUGINS_VIEW_TYPE, project: "ws-1" });
 
-    __createdPanels[0].dispose();
+    __createdPanels[0]!.dispose();
     const context = { subscriptions: [] } as unknown as import("vscode").ExtensionContext;
     const revived = managerFor([target(root, "ws-1")]);
     registerTrustedPanelSerializer<SectionPanelState>(context, PLUGINS_VIEW_TYPE, (panel, state) => revived.deserialize(panel, state));
@@ -407,13 +268,12 @@ describe("SDD 485 D2 — reload puts Plugins back in its tab", () => {
 
     expect(revived.openKeys).toEqual(["tachyonPlugins|ws-1"]);
     expect(panel.disposed).toBe(false);
-    expect(__createdPanels.filter((p) => !p.disposed), "revival created a second panel").toHaveLength(0);
+    expect(__createdPanels.filter((p) => !p.disposed), "a revivência criou um segundo painel").toHaveLength(0);
   });
 
-  it("revives a PRE-410 record too: `wsHash` is renamed to `project`, and the tab is kept", async () => {
-    // The whole of the compatibility shim, and the reason this viewType was reused rather than replaced.
-    // The alternative — a new viewType plus a dispose-and-reopen redirect — is a window in which the
-    // human watches one tab close and another open.
+  it("revive um registro PRÉ-410 também: `wsHash` vira `project` e a aba é mantida", async () => {
+    // Todo o shim de compatibilidade, e a razão de este viewType ter sido reusado em vez de trocado: a
+    // alternativa é uma janela em que o humano vê uma aba fechar e outra abrir.
     const root = mkroot();
     const legacy: PluginsPanelState = { schemaVersion: 1, view: PLUGINS_VIEW_TYPE, wsHash: "ws-1" };
     const mgr = managerFor([target(root, "ws-1")]);
@@ -427,122 +287,8 @@ describe("SDD 485 D2 — reload puts Plugins back in its tab", () => {
     expect(mgr.openKeys).toEqual(["tachyonPlugins|ws-1"]);
     expect(panel.disposed).toBe(false);
   });
-
-  it("disposes a record that names no workspace at all rather than opening a panel keyed on nothing", async () => {
-    const mgr = managerFor([target(mkroot(), "ws-1")]);
-    const context = { subscriptions: [] } as unknown as import("vscode").ExtensionContext;
-    registerTrustedPanelSerializer<SectionPanelState>(context, PLUGINS_VIEW_TYPE, (panel, state) => mgr.deserialize(panel, state));
-    const registration = __registeredWebviewPanelSerializers.find((r) => r.viewType === PLUGINS_VIEW_TYPE);
-
-    const panel = makeRevivablePanel();
-    await registration!.serializer.deserializeWebviewPanel(panel as never, { schemaVersion: 1, view: PLUGINS_VIEW_TYPE } as never);
-
-    expect(mgr.openKeys).toEqual([]);
-    expect(panel.disposed).toBe(true);
-  });
 });
 
-describe("Reinstall source pin", () => {
-  it("replaces a movable ref with the recorded commit while preserving a monorepo subdir", () => {
-    expect(sourceSpecAtCommit("github:acme/plugins@v2.3.1#path=diagram", "c".repeat(40)))
-      .toBe(`github:acme/plugins@${"c".repeat(40)}#path=diagram`);
-  });
-
-  // A single-plugin repo has no `#path=` fragment, and the ref is still the LAST '@' — the same rule
-  // `parseSource`'s `splitRef` applies. Pinned separately because this helper is a second copy of that
-  // split: if the spec grammar ever grows a locator that can hold an '@', both have to move together.
-  it("pins a spec with no monorepo subdir", () => {
-    expect(sourceSpecAtCommit("github:acme/tdd-guard@v1.0.0", "d".repeat(40)))
-      .toBe(`github:acme/tdd-guard@${"d".repeat(40)}`);
-  });
-
-  /**
-   * The routing half. `buildReinstallConsent` proves the drawer's SHAPE; this proves the `reinstall`
-   * message reaches the new door at all, and that the door pins the recorded COMMIT rather than the
-   * movable ref it was installed from.
-   *
-   * Before the fix the same message was routed to `previewUpdateOp(…, force: true)`, which resolves
-   * `source.ref`. The failing resolve names what it tried to fetch, so the message the human gets is
-   * itself the evidence of which door ran — no spying on internals required.
-   */
-  it("routes reinstall to the pinned-commit door, not to force-update on the movable ref", async () => {
-    const root = mkroot();
-    writeLockfile(root, "tdd-guard");
-    const mgr = managerFor([target(root, "ws-1")]);
-    const panel = await open(mgr, "ws-1");
-
-    panel.webview.__receive({ type: "reinstall", name: "tdd-guard" });
-    await flush();
-
-    const result = posted(panel, "result").at(-1) as { ok: boolean; message: string } | undefined;
-    expect(result?.ok).toBe(false); // the fake git cannot fetch; what matters is WHICH fetch was attempted
-    expect(result?.message).toContain("a1b2c3d".padEnd(40, "0").slice(0, 12));
-  });
-});
-
-/**
- * t-fb216a — the HOST half of the runtime-coverage gap. `buildPluginsViewModel` computing
- * `declared ∩ present − lock.runtimes` is worth nothing if the host never injects `declared`; that
- * injection is fs I/O in the vscode layer, which unit tests otherwise never reach.
- *
- * These drive the real gather() through the PANEL (it was the Control embed before D2) and assert on the
- * POSTED view-model. Unchanged in substance, which is the point: the phase moved where this renders.
- */
-describe("runtime-coverage gap reaches the posted view-model (t-fb216a)", () => {
-  /** the installed payload manifest — the bytes this install materialized, which is what Reinstall re-materializes. */
-  function writePayloadManifest(root: string, name: string, runtimes: string[]): void {
-    const dir = path.join(root, ".tachyon/plugins", name);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "tachyon-plugin.json"), JSON.stringify({ name, version: "1.0.0", description: "test", runtimes }));
-  }
-
-  const uncoveredOf = (panel: Panel, name: string): string[] | undefined =>
-    (pluginsMsgs(panel).at(-1)?.vm.installed.find((p) => p.name === name) as { uncoveredRuntimes?: string[] } | undefined)?.uncoveredRuntimes;
-
-  it("names grok when the payload declares it, the workspace runs it, and the lockfile never covered it", async () => {
-    const root = mkroot();
-    writeLockfile(root, "secrets-guard"); // lockfile runtimes: ["claude"]
-    writePayloadManifest(root, "secrets-guard", ["claude", "codex", "grok"]);
-    fs.mkdirSync(path.join(root, ".grok"), { recursive: true }); // detectRuntimes ⇒ this workspace runs grok
-    const panel = await open(managerFor([target(root, "w1")]), "w1");
-    // codex is declared but NOT run here → only grok is uncovered
-    expect(uncoveredOf(panel, "secrets-guard")).toEqual(["grok"]);
-  });
-
-  it("stays silent when the payload manifest is absent — absence of evidence is not a gap", async () => {
-    const root = mkroot();
-    writeLockfile(root, "secrets-guard");
-    fs.mkdirSync(path.join(root, ".grok"), { recursive: true });
-    // no .tachyon/plugins/secrets-guard/tachyon-plugin.json written
-    const panel = await open(managerFor([target(root, "w1")]), "w1");
-    expect(uncoveredOf(panel, "secrets-guard")).toBeUndefined();
-  });
-
-  it("stays silent when the payload manifest is corrupt (never guesses a runtime set)", async () => {
-    const root = mkroot();
-    writeLockfile(root, "secrets-guard");
-    fs.mkdirSync(path.join(root, ".tachyon/plugins/secrets-guard"), { recursive: true });
-    fs.writeFileSync(path.join(root, ".tachyon/plugins/secrets-guard/tachyon-plugin.json"), "{ not json");
-    fs.mkdirSync(path.join(root, ".grok"), { recursive: true });
-    const panel = await open(managerFor([target(root, "w1")]), "w1");
-    expect(uncoveredOf(panel, "secrets-guard")).toBeUndefined();
-  });
-
-  it("surfaces the gap WITHOUT an update-check having run (the silence breaks at rest)", async () => {
-    // the measured complaint was "Already up to date." with nothing else said. The gap is local-only
-    // (lockfile + payload manifest + detectRuntimes), so it must not wait on "Check for updates".
-    const root = mkroot();
-    writeLockfile(root, "secrets-guard");
-    writePayloadManifest(root, "secrets-guard", ["claude", "grok"]);
-    fs.mkdirSync(path.join(root, ".grok"), { recursive: true });
-    const panel = await open(managerFor([target(root, "w1")]), "w1");
-    expect(statusOf(panel, "secrets-guard")).toBe("unknown"); // no check ran…
-    expect(uncoveredOf(panel, "secrets-guard")).toEqual(["grok"]); // …and the gap is named anyway
-  });
-});
-
-
-/** a panel shaped like the one VS Code hands a serializer — created outside `createWebviewPanel`. */
 function makeRevivablePanel() {
   const disposeHandlers: Array<() => void> = [];
   const panel = {

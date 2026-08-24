@@ -84,7 +84,10 @@ describe("Plugins owns its own page pad now that it is a standalone app (SDD 485
 
   it("PluginsApp still owns exactly one .ck-plugins-root as its own render root", () => {
     const app = read("packages/webview-ui/src/webview/plugins/App.tsx");
-    expect(app.match(/class="ck-plugins-root ds-page"/g)?.length).toBe(2); // loading branch + loaded branch, each a single root
+    // 516 — UMA, e agora o número diz o que o nome do teste sempre disse. Eram duas porque o App
+    // antigo abria uma raiz no ramo de carregamento e outra no ramo carregado; o novo tem uma raiz só
+    // e decide o conteúdo dentro dela, que é a forma que torna impossível aninhar duas por engano.
+    expect(app.match(/class="ck-plugins-root ds-page"/g)?.length).toBe(1);
   });
 });
 

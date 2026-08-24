@@ -79,7 +79,6 @@ export interface CockpitStrings {
   continueTaskDestDetail: string;
   reveal: string;
   copyPath: string;
-  openConfig: string;
   settingsBody: string;
   /** t-7b4bb5 — dual-scope explainer cards at the top of Control → Settings. */
   settingsScopeGlobalTitle: string;
