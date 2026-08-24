@@ -4,6 +4,24 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.65 — a engine para de ser reiniciada a cada 11 minutos
+
+Se você tem backup de estado ligado, o Tachyon estava matando e relançando o próprio motor a cada
+11 minutos — e você via isso como três avisos repetidos: agentes re-descobertos, um convite de
+"Resume all", e uma mensagem sobre o rebind não ter conseguido retomar um agente ocupado.
+
+O motor não estava caindo. Ele estava sendo **executado**. O passe de backup escrevia no destino de
+forma bloqueante, e enquanto escrevia o motor não conseguia responder a nada — nem à checagem de
+saúde que o editor faz para saber se ele está vivo. Passados dez segundos de silêncio, o editor
+concluía que era um processo travado e o substituía. No destino do autor, um disco de rede, o
+silêncio durava 26 segundos.
+
+Agora o backup escreve sem segurar o motor. Mesmo trabalho, mesmo tempo, mas ele continua atendendo
+o tempo todo — medido na mesma máquina e no mesmo destino: a pior pausa caiu de 26 segundos para
+1 milissegundo.
+
+Se você via esses avisos várias vezes por hora, eles somem. Se não usava backup, nada muda.
+
 ## 0.93.64 — o Agent Studio para de oferecer o que o Grok não aceita
 
 Ao configurar um agente Grok, o formulário oferecia conceder hooks e servidores MCP de um plugin.
