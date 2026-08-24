@@ -39,9 +39,22 @@ function writeSkill(root: string, relative: string, body: string): void {
   fs.writeFileSync(path.join(dir, "SKILL.md"), body);
 }
 
-function writeLock(root: string, plugins: Record<string, unknown>): void {
-  fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
-  fs.writeFileSync(path.join(root, ".tachyon/plugins.lock.json"), JSON.stringify({ schemaVersion: 1, plugins }));
+/** 516 — instalar é uma pasta com manifesto e payload; não há lockfile a escrever. */
+function writeLock(root: string, plugins: Record<string, { name?: string; version?: string; runtimes?: string[]; targets?: Array<{ kind: string; file: string; runtime?: string }> }>): void {
+  for (const [name, spec] of Object.entries(plugins)) {
+    const dir = path.join(root, ".tachyon/plugins", name);
+    fs.mkdirSync(dir, { recursive: true });
+    const skills = (spec.targets ?? []).filter((t) => t.kind === "skill-dir").map((t) => path.posix.basename(t.file));
+    const runtimes = spec.runtimes ?? [...new Set((spec.targets ?? []).map((t) => t.runtime).filter((r): r is string => !!r))];
+    fs.writeFileSync(path.join(dir, "tachyon-plugin.json"), JSON.stringify({
+      name, version: spec.version ?? "1.0.0", description: `${name} does things`,
+      ...(runtimes.length > 0 ? { runtimes } : {}),
+    }));
+    for (const skill of skills.length > 0 ? skills : [name]) {
+      fs.mkdirSync(path.join(dir, "skills", skill), { recursive: true });
+      fs.writeFileSync(path.join(dir, "skills", skill, "SKILL.md"), "# x\n");
+    }
+  }
 }
 
 function profile(overrides: Partial<AgentProfileV1> = {}): AgentProfileV1 {

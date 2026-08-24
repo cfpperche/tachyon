@@ -50,7 +50,6 @@ tachyon.yaml
 !test/fixtures/**/.tachyon/
 test/fixtures/**/.tachyon/*
 !test/fixtures/**/.tachyon/plugins/
-!test/fixtures/**/.tachyon/plugins.lock.json
 !test/fixtures/**/.tachyon/vscode-settings-import.json
 # t-a65335 — the fixture's declared workspace is SOURCE: settings + per-file declarations.
 !test/fixtures/**/.tachyon/settings.yml

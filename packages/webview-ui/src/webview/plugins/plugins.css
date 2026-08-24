@@ -55,9 +55,54 @@
 
 .list { padding: var(--ds-spacing-size160) 0; display: flex; flex-direction: column; gap: var(--ds-spacing-size100); }
 .card-top { display: flex; align-items: baseline; gap: var(--ds-spacing-size100); flex-wrap: wrap; }
+/* 516 — o card do plugin.
+ *
+ * As classes antigas (.pcard-title, .pactions, .pcontrib…) saíram com o sistema antigo, e as novas
+ * subiram sem folha: sem gap nenhum, o nome colava na versão e os quatro runtimes viravam uma palavra
+ * só ("claudecodexgrokpi"). Toda distância abaixo é um passo de `--ds-spacing-size*` e todo tamanho de
+ * texto é um degrau da rampa de operador, que é a regra desta folha desde a SDD 505.
+ *
+ * A hierarquia é deliberada e tem três níveis: QUEM é o plugin (nome + versão), O QUE ele faz
+ * (descrição), e O QUE ele traz (as pastilhas + os runtimes). As ações ficam à direita da primeira
+ * linha, empurradas por `margin-left: auto`, porque a linha do nome é onde o olho já está. */
+
+.plist { display: flex; flex-direction: column; gap: var(--ds-spacing-size120); }
+
+.pcard { display: flex; flex-direction: column; gap: var(--ds-spacing-size60); }
+.pcard.is-broken { border-color: color-mix(in srgb, var(--ds-err) 45%, var(--ds-border)); }
+
+.pcard-head { display: flex; align-items: center; gap: var(--ds-spacing-size80); }
 .pname { font-size: var(--ds-operator-body1); font-weight: 600; }
 .pver { color: var(--ds-muted); font-size: var(--ds-operator-label1); }
-.pmeta { color: var(--ds-muted); font-size: var(--ds-operator-label1); margin-top: var(--ds-spacing-size80); display: flex; flex-wrap: wrap; gap: var(--ds-spacing-size60) var(--ds-spacing-size120); align-items: center; }
+/* Empurradas para a direita: a ação nunca disputa a leitura do nome. */
+.pcard-actions { margin-left: auto; display: flex; gap: var(--ds-spacing-size60); flex-shrink: 0; }
+
+.pdesc { color: var(--ds-muted); font-size: var(--ds-operator-label1); line-height: 1.5; }
+
+.pmeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-spacing-size60) var(--ds-spacing-size80);
+  margin-top: var(--ds-spacing-size40);
+}
+/* Os runtimes são um grupo, separado das pastilhas de capacidade por um respiro maior: são duas
+   perguntas diferentes ("o que traz" e "para quem serve") e coladas viravam uma lista só. */
+.pruntimes { display: flex; flex-wrap: wrap; gap: var(--ds-spacing-size40); margin-left: var(--ds-spacing-size40); }
+.prt {
+  font-size: var(--ds-operator-label2);
+  color: var(--ds-muted);
+  padding: 1px var(--ds-spacing-size60);
+  border-radius: var(--ds-radius);
+  background: color-mix(in srgb, var(--ds-fg) 7%, transparent);
+  white-space: nowrap;
+}
+
+.prequires { display: flex; flex-wrap: wrap; gap: var(--ds-spacing-size60) var(--ds-spacing-size120); font-size: var(--ds-operator-label1); }
+.ptool { display: inline-flex; align-items: center; gap: var(--ds-spacing-size40); color: var(--ds-muted); }
+/* Ausente é a única presença que muda a cor: uma ferramenta que falta é a única linha aqui em que o
+   humano precisa fazer algo. Medida e presente, ou não medida, são ambas silêncio. */
+.ptool.is-missing { color: var(--ds-warn); }
 .src { font-family: var(--ds-mono); }
 /* spec 287 — installed-card external (system) tools row. */
 .pext { margin-top: var(--ds-spacing-size80); padding-top: var(--ds-spacing-size80); border-top: 1px solid var(--ds-border); display: flex; flex-direction: column; gap: var(--ds-spacing-size40); }
