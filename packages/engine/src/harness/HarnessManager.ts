@@ -54,7 +54,7 @@ import { NOTICE_DRAIN_CODEX_AGENT_ARG, NOTICE_DRAIN_SCRIPT_SOURCE, noticeDrainAg
 import { renderCodexMcpBlock } from "../plugins/adapters/codex.js";
 import { setCodexMcpServer, setOpencodeMcpServer, expectedAgentOpencodeEntry } from "../registration/adapters.js";
 import { materializePiAgentHome, materializePiSessionDir, PI_AGENT_DIR_ENV, PI_SESSION_DIR_ENV } from "../agents/piSession.js";
-import { overlayAgentPluginDests, restoreWorkspaceSkillDest } from "../plugins/agentDest.js";
+import { restoreWorkspaceSkillDest } from "../plugins/agentDest.js";
 
 /** What a materialized harness contributes to the spawn: the config home, the env that redirects to
  *  it, and the MCP args. Threaded into the spawn/restart/resume/fork command (H3). */
@@ -1598,7 +1598,6 @@ export class HarnessManager {
       });
       this.replaceCapturedSkillTree(agent, home, projection);
       this.writeProfileCapabilityManifest(agent, home, projection);
-      overlayAgentPluginDests(this.workspaceRoot, agent);
       return { home, env: { GROK_HOME: home, HOME: home }, args: [] };
     }
     if (adapter.runtime !== "codex") {
@@ -2393,7 +2392,6 @@ export class HarnessManager {
         ...(lifecycle?.projectedHooks ? { projectedHooks: lifecycle.projectedHooks } : {}),
       });
       this.materializeSkills(agent, def, home);
-      overlayAgentPluginDests(this.workspaceRoot, agent);
       // t-0e88f3 — pin the disabled memory policy in BOTH channels, for different reasons. The env pin
       // carries the guarantee: measurement refuted the flag's documented precedence over GROK_MEMORY,
       // so an ambient GROK_MEMORY=1 is only overridden by naming the variable ourselves. The flag stays
@@ -2409,7 +2407,6 @@ export class HarnessManager {
     if (adapter.runtime === "hermes") {
       // HERMES_HOME is the harness home itself (config.yaml + auth + skills under the same root).
       this.materializeSkills(agent, def, home);
-      overlayAgentPluginDests(this.workspaceRoot, agent);
       return { home, env: { [h.configHomeEnv]: home, ...secretEnv }, args };
     }
     if (adapter.runtime === "codex") {
@@ -2417,7 +2414,6 @@ export class HarnessManager {
       if (profileCapabilities) this.replaceCapturedSkillTree(agent, home, profileCapabilities);
       else this.materializeSkills(agent, def, home);
       if (profileCapabilities) this.writeProfileCapabilityManifest(agent, home, profileCapabilities);
-      overlayAgentPluginDests(this.workspaceRoot, agent);
       return { home, env: { [h.configHomeEnv]: home, ...secretEnv }, args };
     }
 
@@ -2463,7 +2459,6 @@ export class HarnessManager {
     // is rebuilt clean EVERY materialize (even when none declared), so a removed skill disappears. Each
     // source must be a dir with SKILL.md, under the workspace (M4), with a unique basename.
     this.materializeSkills(agent, def, home);
-    overlayAgentPluginDests(this.workspaceRoot, agent);
 
     // spec 228 — hooks → <home>/settings.json `hooks` key (claude reads it; verified fires). Tachyon-OWNED
     // (M3): SET when declared, DELETED when not — preserving any OTHER settings keys — so a removed hook
@@ -2855,7 +2850,6 @@ export class HarnessManager {
       }
       this.writeProfileCapabilityManifest(agent, home, capabilities);
     }
-    overlayAgentPluginDests(this.workspaceRoot, agent);
     const secretEnv = capabilities ? this.resolveMcpSecretEnv(agent, { inherit: "none", mcp: capabilities.mcp }) : {};
     return { home, env: { CODEX_HOME: home, ...secretEnv }, args: [] };
   }
@@ -2949,7 +2943,6 @@ export class HarnessManager {
       this.replaceCapturedSkillTree(agent, home, capabilities);
       this.writeProfileCapabilityManifest(agent, home, capabilities);
     }
-    overlayAgentPluginDests(this.workspaceRoot, agent);
     const secretEnv = capabilities
       ? this.resolveMcpSecretEnv(agent, { inherit: "none", mcp: capabilities.mcp })
       : {};

@@ -6,7 +6,7 @@
  */
 
 import { parseHooksBlock, type BlockParseResult } from "./hooks.js";
-import { withResolvedMcpPluginRoot, type McpServer } from "../mcp.js";
+import { withResolvedMcpPluginRoot, type McpServer } from "../mcpServer.js";
 
 export {
   PLUGIN_ROOT_PLACEHOLDER,

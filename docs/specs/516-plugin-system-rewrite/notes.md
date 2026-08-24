@@ -149,3 +149,51 @@ lado certo da fronteira. `PluginProfile` entrou na lista.
 `"PluginsApp still owns exactly one .ck-plugins-root"` afirmava `toBe(2)`, porque o App antigo abria
 uma raiz no ramo de carregamento e outra no ramo carregado. O novo tem uma raiz só e decide o conteúdo
 dentro dela. O número virou 1, e agora diz o que o nome sempre disse.
+
+## Fatia 4 — o apagamento, e o que ele custou de verdade
+
+**21.605 linhas removidas, 184 adicionadas.** O sistema de plugins inteiro — código de produto, testes,
+fixtures e três entrypoints empacotados — contra **1.444 linhas** do novo (motor + painel + webview).
+
+### O plano subestimou: três módulos do HARNESS liam o lockfile
+
+Não eram resíduo do sistema antigo; eram features construídas em cima da premissa "instalar mescla
+coisas no projeto e o lockfile registra o que é nosso".
+
+**`agentHookProjection` (298 linhas, 6 consumidores).** Um workspace podia classificar o hook de um
+plugin como `enforcement` e fazê-lo alcançar um agente isolado. Eu abri uma pergunta ao dono sobre
+apagar ou religar — e a pergunta estava errada. Ele já tinha respondido: *hook é capacidade de runtime,
+igual a skill; chega ao agente porque aquele agente recebeu, e vai para a home dele.* A engenhoca
+existia para resolver "o plugin escreveu um hook no projeto, e agora preciso de uma regra especial
+para ele alcançar um agente isolado" — um problema que o sistema novo torna **impossível**. Saiu com
+`settings.agentHookProjection`, o schema publicado, e os 750 casos de `secretsGuardLayer2Projection`.
+
+**`projectedInputs` (313 linhas).** Respondia "o Tachyon pôs isto aqui?" sobre caminhos do workspace,
+para que a checagem de entradas ambientes do Grok deixasse passar o que o próprio produto tinha
+escrito. Sem escrita, a checagem encolheu para "existe? então bloqueia" — **mais simples e mais
+estrita**, que é a direção certa para uma regra cujo propósito é o agente não ser contaminado.
+
+**`worktreeProjection`** só listava o lockfile entre os caminhos que uma worktree nunca projeta. Sem
+lockfile não há segunda cópia possível para divergir.
+
+### E `agentDest` encolheu 454 → 73
+
+Todos os seus exports, menos um, eram usados **só pelo próprio teste**: o motor antigo era o único
+consumidor real. Sobrou `restoreWorkspaceSkillDest`, que é a entrega ao codex.
+
+### O que ficou de fora do apagamento, e por quê
+
+- **`mcpServer.ts` (52 linhas)** — o tipo `McpServer` e a substituição de `${PLUGIN_ROOT}`, que os
+  adaptadores de claude e codex ainda usam. É o que sobrou de um módulo de 417 linhas cujo resto
+  sustentava mesclar servidores no `.mcp.json` do projeto.
+- **`pluginValidateEntry`** — reescrito para o parser novo. Um autor confere o pacote com O carregador
+  de verdade, e agora a validação olha o payload além do manifesto: um pacote que não traz nada não
+  entrega a ninguém, e o autor tem de saber antes de publicar.
+
+### Três testes que passavam por acidente do sistema antigo
+
+Já registrados no T8 (a string `openConfig` alcançada por um `dispatch` sem relação, a fronteira de
+apresentação que reprovava um arquivo do lado certo, e o `toBe(2)` que contradizia o nome do teste).
+A fatia 4 acrescentou um quarto: `webviewPreviewPluginsFixture` comparava contra um JSON capturado com
+seis estados de frescor. Sem origem remota não há frescor — a fixture virou três estados escritos à
+mão, e o teste passou a segurar a FORMA em vez da captura.

@@ -1360,25 +1360,6 @@
   },
   {
     "view": "plugins",
-    "fixture": "update-available",
-    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=update-available",
-    "frame": {
-      "w": 880,
-      "h": 900
-    },
-    "tags": [
-      "captured-host-vm"
-    ],
-    "title": "Plugins",
-    "aliases": [
-      "plugins",
-      "plugin manager",
-      "install plugin",
-      "marketplace"
-    ]
-  },
-  {
-    "view": "plugins",
     "fixture": "empty",
     "url": "/scripts/webview-preview/index.html?view=plugins&fixture=empty",
     "frame": {
@@ -1398,46 +1379,8 @@
   },
   {
     "view": "plugins",
-    "fixture": "runtime-gap",
-    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=runtime-gap",
-    "frame": {
-      "w": 880,
-      "h": 900
-    },
-    "tags": [
-      "captured-host-vm"
-    ],
-    "title": "Plugins",
-    "aliases": [
-      "plugins",
-      "plugin manager",
-      "install plugin",
-      "marketplace"
-    ]
-  },
-  {
-    "view": "plugins",
-    "fixture": "source-changed",
-    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=source-changed",
-    "frame": {
-      "w": 880,
-      "h": 900
-    },
-    "tags": [
-      "captured-host-vm"
-    ],
-    "title": "Plugins",
-    "aliases": [
-      "plugins",
-      "plugin manager",
-      "install plugin",
-      "marketplace"
-    ]
-  },
-  {
-    "view": "plugins",
-    "fixture": "mcp-apply",
-    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=mcp-apply",
+    "fixture": "broken",
+    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=broken",
     "frame": {
       "w": 880,
       "h": 900

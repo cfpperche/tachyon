@@ -97,19 +97,6 @@
       "default": true,
       "description": "Append Bridge-coordination guidance to agents spawned via the Bridge so delegated work stays visible in Tachyon (spec 216). Default true."
     },
-    "agentHookProjection": {
-      "type": "object",
-      "description": "Which installed plugins' hooks reach an agent's OWN session, by name (t-09edf2). Only 'enforcement' is projected, and only on gate events (PreToolUse); an unlisted plugin projects nothing. Example: { \"secrets-guard\": \"enforcement\" } makes the layer-2 --no-verify shape-gate refuse the bypass inside a delegated worktree, where the workspace .claude/.codex trees do not exist.",
-      "additionalProperties": {
-        "type": "string",
-        "enum": [
-          "capability",
-          "prompt-transform",
-          "observability",
-          "enforcement"
-        ]
-      }
-    },
     "agentPermissionProjection": {
       "type": "object",
       "description": "Opt-in permission posture projected into one named managed agent. Absence preserves the runtime/class default. Grok takes one --permission-mode word; Codex takes one key per measured door (command approval, write sandbox, Bridge MCP tool approval).",

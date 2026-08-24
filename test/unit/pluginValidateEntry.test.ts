@@ -1,93 +1,83 @@
-import { describe, it, expect, afterEach } from "vitest";
+/**
+ * t-d8e772 / 516 — o validador que um autor de plugin roda de fora do Tachyon.
+ *
+ * A garantia que estes casos seguram é uma só, e é a razão do arquivo existir: **o validador usa O
+ * carregador de verdade**, não uma cópia do schema. Uma segunda cópia divergiria, e um validador que
+ * diverge é pior que nenhum — ele reporta verde enquanto a instalação recusa. O `verify-gate` 1.0.0
+ * subiu ininstalável exatamente por não haver essa checagem.
+ *
+ * 516 — validar passou a olhar o PAYLOAD além do manifesto, porque no formato novo a posição dos
+ * arquivos é a declaração: um pacote que não traz nada não entrega a ninguém, e o autor tem de saber
+ * disso antes de publicar.
+ */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import { validatePluginDir } from "../../apps/vscode-extension/src/pluginValidateEntry.js";
 
-/**
- * t-d8e772 — the validator exists so a plugin AUTHOR can ask the real parser "would Tachyon load
- * this?" before publishing. verify-gate v1.0.0 was tagged and released declaring the parser's OUTPUT
- * shape instead of its input contract, and nothing said so until a human tried to install it.
- *
- * These tests hold the validator to the only standard that matters: it must REFUSE the shapes that
- * would fail at install time. A validator that only confirms healthy packages proves nothing — it is
- * the same false green as a gate that never fires.
- */
+const made: string[] = [];
+afterEach(() => { for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });
 
-const dirs: string[] = [];
-afterEach(() => { for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true }); });
+const SKILL = "---\nname: demo\ndescription: demo\n---\nbody\n";
 
-function pkg(manifest: unknown, files: Record<string, string> = {}): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "plugin-validate-test-"));
-  dirs.push(root);
-  if (manifest !== undefined) {
-    fs.writeFileSync(path.join(root, "tachyon-plugin.json"), typeof manifest === "string" ? manifest : JSON.stringify(manifest));
+function pkg(manifest: unknown, files: Record<string, string> = { "skills/demo/SKILL.md": SKILL }): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-validate-"));
+  made.push(dir);
+  fs.writeFileSync(path.join(dir, "tachyon-plugin.json"), typeof manifest === "string" ? manifest : JSON.stringify(manifest));
+  for (const [rel, content] of Object.entries(files)) {
+    const full = path.join(dir, rel);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, content);
   }
-  for (const [rel, body] of Object.entries(files)) {
-    const file = path.join(root, rel);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, body);
-  }
-  return root;
+  return dir;
 }
 
-const HOOK_PLUGIN = {
-  name: "sample",
-  version: "1.0.0",
-  description: "a sample package used to exercise the validator",
-  gitHooks: { "pre-push": { leaf: "githooks/gate.sh" } },
-};
+const OK = { name: "demo", version: "1.0.0", description: "a demo plugin" };
 
-describe("plugin package validator (t-d8e772)", () => {
-  it("accepts a package the parser can load", () => {
-    const r = validatePluginDir(pkg(HOOK_PLUGIN, { "githooks/gate.sh": "#!/bin/sh\nexit 0\n" }));
-    expect(r.errors).toEqual([]);
+describe("t-d8e772 / 516 — validar um pacote com o carregador de verdade", () => {
+  it("aceita um pacote que o carregador aceita, e diz o que ele traz", () => {
+    const r = validatePluginDir(pkg(OK));
     expect(r.ok).toBe(true);
-    expect(r).toMatchObject({ name: "sample", version: "1.0.0" });
+    expect(r.name).toBe("demo");
+    expect(r.carries).toEqual(["skill:demo"]);
+    expect(r.runtimes).toEqual(["claude", "codex", "grok", "pi"]);
   });
 
-  it("REFUSES the exact shape that shipped as verify-gate v1.0.0", () => {
-    // `{kind, path}` is what the parser PRODUCES from `leaf` — writing it into the manifest is
-    // declaring the output as if it were the input. This is the regression, verbatim.
-    const broken = { ...HOOK_PLUGIN, gitHooks: { "pre-push": { kind: "script", path: "githooks/gate.sh" } } };
-    const r = validatePluginDir(pkg(broken, { "githooks/gate.sh": "#!/bin/sh\nexit 0\n" }));
+  it("RECUSA um manifesto do formato antigo pelo nome do campo", () => {
+    const r = validatePluginDir(pkg({ ...OK, tools: { x: {} } }));
     expect(r.ok).toBe(false);
-    expect(r.errors.join("\n")).toMatch(/exactly one of 'leaf'.*or 'argv'/);
+    expect(r.errors.join(" ")).toMatch(/'tools'/);
   });
 
-  it("REFUSES a declared leaf that is absent from the package", () => {
-    // The manifest parses, so the parser alone would pass it; the lie only surfaces at install time,
-    // where the fix is a republish rather than an edit.
-    const r = validatePluginDir(pkg(HOOK_PLUGIN));
+  it("RECUSA um pacote que não traz nada — publicar isso seria publicar o silêncio", () => {
+    const r = validatePluginDir(pkg(OK, {}));
     expect(r.ok).toBe(false);
-    expect(r.errors.join("\n")).toMatch(/'githooks\/gate\.sh' is declared but absent/);
+    expect(r.errors.join(" ")).toMatch(/carries nothing/);
   });
 
-  it("REFUSES an unknown git-hook event", () => {
-    const broken = { ...HOOK_PLUGIN, gitHooks: { "post-receive": { leaf: "githooks/gate.sh" } } };
-    const r = validatePluginDir(pkg(broken, { "githooks/gate.sh": "#!/bin/sh\nexit 0\n" }));
+  it("RECUSA JSON inválido em vez de tratá-lo como vazio", () => {
+    const r = validatePluginDir(pkg("{ isto não é json"));
     expect(r.ok).toBe(false);
-    expect(r.errors.join("\n")).toMatch(/post-receive/);
+    expect(r.errors.join(" ")).toMatch(/could not read/);
   });
 
-  it("REFUSES invalid JSON instead of treating it as empty", () => {
-    const r = validatePluginDir(pkg("{ not json"));
+  it("RECUSA um diretório sem manifesto — silêncio para um arquivo ausente não prova nada", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-validate-"));
+    made.push(dir);
+    const r = validatePluginDir(dir);
     expect(r.ok).toBe(false);
-    expect(r.errors.length).toBeGreaterThan(0);
+    expect(r.errors.join(" ")).toMatch(/could not read/);
   });
 
-  it("REFUSES a directory with no manifest — silence for a missing file proves nothing", () => {
-    const r = validatePluginDir(pkg(undefined));
-    expect(r.ok).toBe(false);
-    expect(r.errors.join("\n")).toMatch(/no manifest/);
-  });
-
-  it("uses the REAL loader, not a copy of the schema", async () => {
-    // A second implementation of the contract would drift, and a drifting validator reports green
-    // while the loader refuses — strictly worse than having none. Pin the shared dependency.
-    const src = fs.readFileSync(path.resolve(__dirname, "../../apps/vscode-extension/src/pluginValidateEntry.ts"), "utf8");
-    expect(src).toContain('import { loadManifest } from "@tachyon/engine/plugins/manifest.js"');
-    const { loadManifest } = await import("@tachyon/engine/plugins/manifest.js");
-    expect(typeof loadManifest).toBe("function");
+  it("usa O carregador de verdade, não uma cópia do schema", async () => {
+    // A garantia inteira do arquivo. Se um dia alguém reimplementar a validação aqui, este caso quebra
+    // quando o carregador mudar e o validador não — que é exatamente a divergência a evitar.
+    const source = fs.readFileSync(path.resolve(__dirname, "../../apps/vscode-extension/src/pluginValidateEntry.ts"), "utf8");
+    expect(source).toMatch(/import \{ loadPlugin \} from "@tachyon\/engine\/plugins\/manifest\.js"/);
+    const { loadPlugin } = await import("@tachyon/engine/plugins/manifest.js");
+    const dir = pkg({ ...OK, runtimes: ["claude"] }, { "extensions/x/index.ts": "export {}" });
+    // O mesmo pacote, os mesmos erros: o validador não tem vocabulário próprio.
+    expect(validatePluginDir(dir).errors).toEqual(loadPlugin(dir).errors);
   });
 });

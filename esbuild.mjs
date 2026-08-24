@@ -163,22 +163,7 @@ const internalSeams = {
   logLevel: "info",
 };
 
-// spec 265 — the standalone tool LAUNCHER bundle (Node; NO vscode). Copied to .tachyon/bin/_tachyon-tool.js
-// and exec'd by a git pre-commit hook with no VS Code running, so it must be self-contained.
-const toolLauncher = {
-  entryPoints: [appSource("toolLauncherEntry.ts")],
-  bundle: true,
-  outfile: "dist/tool-launcher.cjs",
-  platform: "node",
-  format: "cjs",
-  target: "node20",
-  define: nodeDefines,
-  sourcemap: false,
-  logLevel: "info",
-};
 
-// spec 284 — the standalone DATA RESOLVER bundle (Node; NO vscode). Copied to .tachyon/bin/_tachyon-data.js and
-// exec'd by a plugin skill with no VS Code running, so it must be self-contained. Sibling of the tool launcher.
 // t-d8e772 — the plugin-package validator, standalone so an AUTHOR can run it. The plugins repository
 // has no Node toolchain and Tachyon is not on npm, so the only way to give the author's side the real
 // parser is to bundle it. Reimplementing the schema over there would drift, and a drifting validator
@@ -195,30 +180,7 @@ const pluginValidate = {
   logLevel: "info",
 };
 
-const dataResolver = {
-  entryPoints: [appSource("dataResolverEntry.ts")],
-  bundle: true,
-  outfile: "dist/data-resolver.cjs",
-  platform: "node",
-  format: "cjs",
-  target: "node20",
-  define: nodeDefines,
-  sourcemap: false,
-  logLevel: "info",
-};
 
-// spec 285 — the standalone EXTERNAL-tool resolver bundle (Node; NO vscode). Copied to .tachyon/bin/_tachyon-external.js.
-const externalResolver = {
-  entryPoints: [appSource("externalResolverEntry.ts")],
-  bundle: true,
-  outfile: "dist/external-resolver.cjs",
-  platform: "node",
-  format: "cjs",
-  target: "node20",
-  define: nodeDefines,
-  sourcemap: false,
-  logLevel: "info",
-};
 
 // spec 382 — standalone workspace engine.  The Extension Host stages this immutable bundle outside the
 // extension-version directory, then the Linux user-service manager owns its lifetime across reloads.
@@ -642,7 +604,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, internalSeams, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, agentStudioFixture, excalidraw, mermaid, katex, reviewPdf, reviewModelViewer, preview, previewShell, uiGate]
+const targets = [extension, internalSeams, pluginValidate, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, agentStudioFixture, excalidraw, mermaid, katex, reviewPdf, reviewModelViewer, preview, previewShell, uiGate]
   .map((target) => ({
     ...target,
     ...(target.outfile ? { outfile: outputPath(target.outfile) } : {}),

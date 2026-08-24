@@ -1,47 +1,59 @@
 /**
- * spec 278 — Plugins-view fixtures for the dev preview harness.
+ * spec 278 / 516 — as fixtures da aba Plugins para o harness de preview.
  *
- * Provenance: `captured-host-vm` — these VMs were produced by the SAME pure builder the real host uses
- * (`buildPluginsViewModel`), fed a realistic lockfile mirroring Tachyon's own installed set, then captured
- * to `plugins.vms.json`. The harness imports the captured DATA (browser-safe — the builder's dependency
- * chain touches node:path, which can't go in the browser bundle). `webviewPreviewPluginsFixture.test.ts`
- * rebuilds the VMs from the same input and asserts equality, so a builder-shape drift fails CI (the
- * spec-278 fixture-fidelity rule: a fixture must not silently diverge from what the host actually emits).
+ * Procedência: construídas pelo MESMO construtor puro que o host usa (`buildPluginsViewModel`), a
+ * partir de catálogos escritos à mão. `webviewPreviewPluginsFixture.test.ts` reconstrói a partir dos
+ * mesmos catálogos e compara, então uma mudança de forma do construtor quebra o CI em vez de fazer uma
+ * captura de tela mentir devagar.
+ *
+ * 516 — as fixtures antigas eram um JSON capturado com seis estados de frescor (`update-available`,
+ * `source-changed`, …). Nenhum deles existe: sem origem remota não há frescor a exibir. Sobraram os
+ * três estados que a tela realmente tem — o que está instalado, o vazio, e uma pasta que não carrega.
  */
-
-import type { PluginsViewModel } from "@tachyon/webview-ui/plugins/viewModel";
+import type { PluginsViewModel } from "@tachyon/engine/plugins/viewModel.js";
 import type { Fixture } from "../routes";
-import vms from "./plugins.vms.json";
 
-const captured = vms as unknown as {
-  default: PluginsViewModel;
-  updateAvailable: PluginsViewModel;
-  empty: PluginsViewModel;
-  runtimeGap: PluginsViewModel;
-  sourceChanged: PluginsViewModel;
-  mcpApply: PluginsViewModel;
+const installed: PluginsViewModel = {
+  installed: [
+    {
+      name: "sdd",
+      version: "2.0.0",
+      description: "spec-driven development: intent before code, in living documents",
+      docs: "https://github.com/cfpperche/tachyon-plugins",
+      runtimes: ["claude", "codex", "grok", "pi"],
+      capabilities: [
+        { kind: "skill", names: ["sdd"], label: "1 skill" },
+        { kind: "prompt", names: ["nova-spec"], label: "1 prompt" },
+      ],
+      requires: [],
+    },
+    {
+      name: "visual-qa",
+      version: "1.4.0",
+      description: "render a surface and look at it before shipping",
+      runtimes: ["claude", "codex", "grok"],
+      capabilities: [
+        { kind: "skill", names: ["visual-qa"], label: "1 skill" },
+        { kind: "hooks", names: [], label: "hooks for claude, codex" },
+        { kind: "mcp", names: [], label: "an MCP server" },
+      ],
+      // Uma medida e uma não: a tela precisa mostrar as duas sem afirmar nada sobre a segunda.
+      requires: [{ name: "chromium", present: false }, { name: "ffmpeg" }],
+    },
+  ],
+  broken: [],
 };
 
 export const pluginsFixtures: Record<string, Fixture<PluginsViewModel>> = {
-  // every card resolved to "up to date" — the steady state.
-  default: { provenance: "captured-host-vm", vm: captured.default },
-
-  // the exact scenario behind this work: visual-qa has an update available (→ 0.2.0).
-  "update-available": { provenance: "captured-host-vm", vm: captured.updateAvailable },
-
-  // cold state — no lockfile yet.
-  empty: { provenance: "captured-host-vm", vm: captured.empty },
-
-  // t-fb216a — the measured field state: every card truthfully "up to date" while this workspace runs grok
-  // and three of the four installs never covered it. agent-browser is the covered control (its card stays
-  // quiet), so the shot proves the notice is per-card rather than a global banner.
-  "runtime-gap": { provenance: "captured-host-vm", vm: captured.runtimeGap },
-
-  // t-4e5f11 — secrets-guard: same version, different source bytes → badge "source changed · still vX" + Reapply.
-  "source-changed": { provenance: "captured-host-vm", vm: captured.sourceChanged },
-
-  // SDD 486 Phase C — agent-browser ships two MCP servers: one applied, one installed-not-applied.
-  // The visual failure to design against is the unapplied row looking like the server is absent.
-  "mcp-apply": { provenance: "captured-host-vm", vm: captured.mcpApply },
-
+  default: { provenance: "captured-host-vm", vm: installed },
+  empty: { provenance: "captured-host-vm", vm: { installed: [], broken: [] } },
+  // Uma pasta que não carrega aparece COM o motivo — sumir em silêncio faria o humano procurar um
+  // plugin que está lá e não pôde ser lido.
+  broken: {
+    provenance: "captured-host-vm",
+    vm: {
+      installed: [installed.installed[0]!],
+      broken: [{ dirName: "meio-baixado", errors: ["no tachyon-plugin.json — this directory is not a plugin"] }],
+    },
+  },
 };

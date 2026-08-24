@@ -157,7 +157,11 @@ describe("preview route table", () => {
     // No page-frame link, so no `pageFrame` flag: Plugins scrolls as a document, like the inspector.
     expect(r.cssLinks.some((href) => href.endsWith("/page-frame.css"))).toBe(false);
     expect(r.pageFrame).toBeUndefined();
-    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "mcp-apply", "runtime-gap", "source-changed", "update-available"]);
+    // 516 — três fixtures, não seis. As quatro que saíram nomeavam estados de frescor
+    // (`update-available`, `source-changed`) e de aplicação (`mcp-apply`, `runtime-gap`) que não
+    // existem: sem origem remota não há frescor, e sem escrita no projeto não há "instalado mas não
+    // aplicado". O que a tela tem é o instalado, o vazio, e a pasta que não carrega.
+    expect(Object.keys(r.fixtures).sort()).toEqual(["broken", "default", "empty"]);
     const msg = r.makeMessage(r.fixtures.default.vm) as { type: string; vm?: { installed?: unknown[] } };
     expect(msg.type).toBe("plugins");
     expect(msg.vm?.installed?.length).toBeGreaterThan(0);

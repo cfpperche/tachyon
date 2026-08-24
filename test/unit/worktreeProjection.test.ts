@@ -3,13 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  NEVER_PROJECT_PREFIXES,
+
   PROJECTED_TOOLING_RELS,
   describeToolingProjection,
   projectPluginTooling,
   resolveAuthorityRoot,
 } from "@tachyon/engine/plugins/worktreeProjection.js";
-import { LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
 
 /**
  * t-36182f — the measured defect: `agent-browser` is installed and healthy in the primary checkout
@@ -163,20 +162,19 @@ describe("projectPluginTooling", () => {
 });
 
 describe("the projection allowlist is a security boundary", () => {
-  it("never projects the lockfile, the plugin payloads, or credential state", () => {
-    // The launcher resolves the AUTHORITY root physically, so it reads the authority's pins and the
-    // human-owned confirmation config. A worktree-local copy of any of these would be a second,
-    // drifting source of truth for exactly the things that gate execution.
-    for (const denied of [LOCKFILE_REL_PATH, ".tachyon/plugins/agent-browser", ".tachyon/browser-state"]) {
+  it("never projects the plugin payloads or credential state", () => {
+    // O lançador resolve a raiz da AUTORIDADE fisicamente, então lê a configuração de confirmação que é
+    // do humano. Uma cópia local numa worktree seria uma segunda fonte, divergente, exatamente do que
+    // controla execução.
+    //
+    // 516 — o lockfile saiu desta lista porque saiu do produto: não existe mais um arquivo de
+    // registro para uma worktree ter uma cópia divergente.
+    for (const denied of [".tachyon/plugins/agent-browser", ".tachyon/browser-state"]) {
       expect(PROJECTED_TOOLING_RELS.some((rel) => denied === rel || denied.startsWith(`${rel}/`))).toBe(false);
     }
-    expect(NEVER_PROJECT_PREFIXES).toContain(LOCKFILE_REL_PATH);
   });
 
   it("refuses a denied path even when a caller asks for it explicitly", () => {
-    expect(() =>
-      projectPluginTooling({ worktreeRoot: worktree, authorityRoot: authority, rels: [LOCKFILE_REL_PATH] }),
-    ).toThrow(/overlaps authority-only state/);
     expect(() =>
       projectPluginTooling({ worktreeRoot: worktree, authorityRoot: authority, rels: [".tachyon/plugins/x"] }),
     ).toThrow(/overlaps authority-only state/);

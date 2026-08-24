@@ -33,7 +33,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { isContainedRelPath } from "./paths.js";
-import { LOCKFILE_REL_PATH } from "./lockfile.js";
 
 /**
  * The ONLY paths a worktree may project, and the reason each is on the list: it is invoked by a
@@ -101,7 +100,9 @@ export const CREDENTIAL_CLASS_PREFIXES: readonly string[] = [
  * human-owned confirmation gates, or credential material.
  */
 export const NEVER_PROJECT_PREFIXES: readonly string[] = [
-  LOCKFILE_REL_PATH,          // the checksum pins — the launcher must read the authority's, always
+  // 516 — o lockfile saiu desta lista porque saiu do produto. Ele estava aqui como "as fixações de
+  // checksum, que o lançador tem de ler sempre as da autoridade"; sem lockfile não há segunda cópia
+  // possível dele para uma worktree divergir.
   ...CREDENTIAL_CLASS_PREFIXES,
 ];
 

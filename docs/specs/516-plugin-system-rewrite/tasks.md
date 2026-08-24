@@ -44,13 +44,13 @@
 
 ## Fatia 4 — apagar o antigo
 
-- [ ] **T14** — remover `apps/vscode-extension/src/plugins/*` (inclusive `gitHookRegistry.ts`, o
+- [x] **T14** — remover `apps/vscode-extension/src/plugins/*` (inclusive `gitHookRegistry.ts`, o
   dispatcher gerado e o ownership de `core.hooksPath`) e
   `packages/engine/src/plugins/{manifest,lockfile}.ts`. O sistema de git hooks futuro lê isso no
   histórico como referência, não como herança.
-- [ ] **T15** — `agentDest.ts` perde `WORKSPACE_DESTS` e o que só servia à escrita no workspace.
-- [ ] **T16** — `plugins2/` vira `plugins/`.
-- [ ] **T17** — contar as linhas antes e depois e escrever o número na `notes.md`. Se não caiu para
+- [x] **T15** — `agentDest.ts` perde `WORKSPACE_DESTS` e o que só servia à escrita no workspace.
+- [x] **T16** — `plugins2/` vira `plugins/`.
+- [x] **T17** — contar as linhas antes e depois e escrever o número na `notes.md`. Se não caiu para
   perto de 3.000, entender por quê antes de fechar.
 
 ## Human dogfood

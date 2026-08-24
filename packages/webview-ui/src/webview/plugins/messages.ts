@@ -15,7 +15,7 @@
  * PURO por desenho (sem vscode, sem preact): importado pelo host, pelo webview e pelo harness de
  * preview, para que renomear um envelope quebre o BUILD e não uma captura de tela.
  */
-import type { PluginsViewModel } from "@tachyon/engine/plugins2/viewModel.js";
+import type { PluginsViewModel } from "@tachyon/engine/plugins/viewModel.js";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 

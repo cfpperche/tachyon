@@ -13,13 +13,7 @@ import { claudeSessionReader } from "./claudeSessionReader.js";
 import { codexSessionReader } from "./codexSessionReader.js";
 import { grokSessionReader } from "./grokSessionReader.js";
 import type { RuntimeSessionReader } from "./sessionSources.js";
-import {
-  planProjectedPluginHooks,
-  readHookProjectionCandidates,
-  type AgentHookProjectionPolicy,
-} from "../plugins/agentHookProjection.js";
-import { PLUGIN_PAYLOAD_ROOT } from "../plugins/paths.js";
-import type { InspectedHook } from "./sessionInspection.js";
+
 
 /**
  * t-283149 / t-0c963d — read what a live session was actually given, and hand it to the pure projection.
@@ -70,66 +64,16 @@ function renderSettingValue(key: string, value: unknown): string {
   return redactSettingValue(key, renderValue(value));
 }
 
-/**
- * t-141f61 / t-d848e4 — which enforcement gates this session does not hold, and why.
- *
- * Two questions, one list:
- * 1. What does today's plan withhold? Same pure planner every spawn door calls (lockfile ×
- *    classification × runtime). Reasons name manifest gaps, class refusals, and missing channels.
- * 2. What did the plan project that this session's disk does not carry? A live session can predate
- *    an install. The plan then says the gate projects, while the session still has none. Match by
- *    plugin path under `.tachyon/plugins/<name>/`, never by full command text — materializers rewrite
- *    commands per runtime.
- *
- * Filtered to plugins the human CLASSIFIED: an unclassified plugin is the default state, not a
- * refusal.
- */
-function sessionHoldsPluginGate(hooks: readonly InspectedHook[], plugin: string): boolean {
-  const marker = `${PLUGIN_PAYLOAD_ROOT}/${plugin}/`;
-  const markerWin = `${PLUGIN_PAYLOAD_ROOT}\\${plugin}\\`;
-  return hooks.some((hook) => hook.command.includes(marker) || hook.command.includes(markerWin));
-}
 
-function withheldGates(
-  workspaceRoot: string,
-  runtime: string,
-  policy: AgentHookProjectionPolicy | undefined,
-  sessionHooks: readonly InspectedHook[],
-): { plugin: string; reason: string }[] {
-  if (!policy || Object.keys(policy).length === 0) return [];
-  const plan = planProjectedPluginHooks({
-    plugins: readHookProjectionCandidates(workspaceRoot),
-    runtime,
-    policy,
-  });
-  const rows: { plugin: string; reason: string }[] = plan.withheld
-    .filter((entry) => policy[entry.plugin] !== undefined)
-    .map((entry) => ({ plugin: entry.plugin, reason: entry.reason }));
-  const reported = new Set(rows.map((row) => row.plugin));
-  for (const entry of plan.projected) {
-    if (policy[entry.plugin] === undefined) continue;
-    if (reported.has(entry.plugin)) continue;
-    if (sessionHoldsPluginGate(sessionHooks, entry.plugin)) continue;
-    rows.push({
-      plugin: entry.plugin,
-      reason: "this session was born before this gate; restart it to receive the gate",
-    });
-    reported.add(entry.plugin);
-  }
-  return rows;
-}
+// 516 — `withheldGates` saiu com a projeção de hook de plugin: ela comparava o que a política do
+// workspace classificou com o que a sessão de fato recebeu. Sem hook de plugin mesclado no projeto, não
+// há política a comparar — o que um agente recebeu é a concessão dele, e o painel já a mostra.
 
 export async function collectSessionInspection(input: {
   workspaceRoot: string;
   agent: string;
   runtime: string;
   ports: SessionInspectionPorts;
-  /**
-   * `settings.agentHookProjection` — the workspace's plugin classification. Absent means the caller
-   * has no policy to report against, which yields no withheld rows rather than a false all-clear:
-   * a workspace that classified nothing asked for nothing.
-   */
-  hookProjectionPolicy?: AgentHookProjectionPolicy;
 }): Promise<InspectedSession> {
   const { workspaceRoot, agent, runtime, ports } = input;
   const reader = RUNTIME_READERS[runtime];
@@ -181,7 +125,7 @@ export async function collectSessionInspection(input: {
     mcpServers: found?.mcpServers ?? [],
     strictMcp: (argv ?? []).includes("--strict-mcp-config"),
     env: inspectEnv(env ?? {}, config?.extraEnvKeys ?? []),
-    gatesWithheld: withheldGates(workspaceRoot, runtime, input.hookProjectionPolicy, found?.hooks ?? []),
+    gatesWithheld: [],
     notExposed: [
       ...(found?.notExposed ?? []),
       // Summarized, and SAID to be summarized. The full text is in .tachyon/briefs/spawn/<agent>.md

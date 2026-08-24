@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadPlugin, parseManifest, MANIFEST_FILE } from "@tachyon/engine/plugins2/manifest.js";
+import { loadPlugin, parseManifest, MANIFEST_FILE } from "@tachyon/engine/plugins/manifest.js";
 
 const made: string[] = [];
 afterEach(() => { for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });
