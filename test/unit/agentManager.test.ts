@@ -5643,7 +5643,9 @@ describe("AgentManager — session resume (spec 209)", () => {
       await h.manager.spawn("codex");
       const privateHome = harnessHome(h.ws, "codex");
       fs.writeFileSync(path.join(privateHome, "config.toml"), 'model = "tampered"\n');
-      fs.writeFileSync(path.join(launchCwd, ".agents", "skills", "research", "SKILL.md"), "tampered\n");
+      // 516 — adulterar onde a projeção AGORA escreve: a árvore de skills da home privada. A worktree
+      // deixou de receber a concedida, então adulterá-la não testaria mais a regeneração.
+      fs.writeFileSync(path.join(privateHome, "skills", "research", "SKILL.md"), "tampered\n");
       await h.manager.restart("codex", { stop: "force", session: "new" });
       fs.rmSync(path.join(privateHome, "config.toml"));
       await h.manager.resume("codex", {
@@ -5666,7 +5668,8 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(config).toContain("hooks.SessionStart =");
       expect(config).not.toContain("ambient-secret-model");
       expect(config).not.toContain("launch-only-secret");
-      expect(fs.readFileSync(path.join(launchCwd, ".agents", "skills", "research", "SKILL.md"), "utf8")).toBe("# Captured skill\n");
+      // 516 — a regeneração restaura a árvore da home PRIVADA, que é onde a concedida vive agora.
+      expect(fs.readFileSync(path.join(privateHome, "skills", "research", "SKILL.md"), "utf8")).not.toContain("tampered");
       expect(fs.realpathSync(path.join(privateHome, "auth.json"))).toBe(fs.realpathSync(path.join(realCodexHome, "auth.json")));
       expect(fs.readFileSync(workspaceSource, "utf8")).toContain("must-not-copy");
       expect(h.startArgs.map((args) => envFromTmuxArgs(args).CODEX_HOME)).toEqual([privateHome, privateHome, privateHome]);
@@ -5699,7 +5702,9 @@ describe("AgentManager — session resume (spec 209)", () => {
 
       await h.manager.spawn("child", { cmd: "codex", parent: "claude", reveal: false });
 
-      expect(fs.readFileSync(path.join(childCwd, ".agents", "skills", "visual-qa", "SKILL.md"), "utf8")).toContain("Safe browser contract");
+      // 516 — a skill delegada chega pela home PRIVADA do filho; a worktree dele não é escrita.
+      expect(fs.readFileSync(path.join(harnessHome(h.ws, "child"), "skills", "visual-qa", "SKILL.md"), "utf8")).toContain("Safe browser contract");
+      expect(fs.existsSync(path.join(childCwd, ".agents", "skills"))).toBe(false);
       const manifest = JSON.parse(fs.readFileSync(path.join(harnessHome(h.ws, "child"), ".tachyon-profile-capabilities", "manifest.json"), "utf8"));
       expect(manifest.outputs.skills).toEqual([{ name: "visual-qa", sha256: "b".repeat(64), origins: [{ kind: "delegator", agent: "claude" }] }]);
       expect(fs.readFileSync(path.join(harnessHome(h.ws, "child"), "config.toml"), "utf8")).not.toContain("never-inherit");
