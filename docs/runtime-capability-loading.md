@@ -192,7 +192,7 @@ nasce fechado** — e é o único dos três nesse estado.
 | porta | skills do projeto | MCP do projeto | hooks do projeto |
 |---|---|---|---|
 | **`[skills] ignore = [<raízes>]`** | **somem** (4 itens → 1) | não fecha | — |
-| `[compat.<runtime>] skills = false` | marca `[disabled]`, **continua listada**; e não cobre `.agents/skills` | — | — |
+| `[compat.<runtime>] skills = false` | **fecha de verdade** — o `inspect` continua listando com `[disabled]`, mas o modelo não recebe. Não cobre `.agents/skills`, que é descoberta nativa | — | — |
 | `[compat.claude] mcps = false` | — | **não fecha** (medido: sem efeito nas três leituras) | — |
 | **`disabled_mcp_servers = [<nomes>]`** | — | **fecha** — `✗ disabled in config`, não inicia | — |
 | **retirar a confiança da pasta** | — | **fecha tudo de projeto** | — |
@@ -230,14 +230,22 @@ ignore = ["<ws>/.agents/skills", "<ws>/.grok/skills"]   # falta "<ws>/.claude/sk
 [mcp_servers.tachyon_bridge] ...
 ```
 
-Duas lacunas medidas, ambas pequenas de fechar (hooks não é uma delas — já nasce fechado):
+**`<cwd>/.claude/skills` NÃO é uma lacuna**, e isso foi medido depois de eu escrever que era. O
+`[compat.claude] skills = false` que o Tachyon já gera fecha de verdade:
 
-1. **`<cwd>/.claude/skills` não está no `ignore`.** Hoje ela cai no `[compat.claude] skills = false`,
-   que marca `[disabled]` em vez de remover — e "disabled" é uma palavra do runtime, não uma garantia
-   que eu medi valer no turno.
-2. **Nenhuma porta fecha o MCP do projeto.** Fechar exige `disabled_mcp_servers` com os nomes lidos do
-   `.mcp.json`/`.grok/config.toml` do projeto — descobrir para negar, que é o mesmo formato feio da
-   supressão por path do codex.
+| braço | resposta do modelo |
+|---|---|
+| skill em `<cwd>/.claude/skills`, com o compat fechado | `ok` — **não obedeceu** o marcador |
+| **controle:** a MESMA skill em `$GROK_HOME/skills` | `ok MARCA-CLAUDE` — obedeceu |
+
+O que me enganou foi o `grok inspect` **listar** a skill com `[disabled]`. Listar não é entregar, e o
+controle é o que separa as duas coisas. O comentário em `grokSkillIsolation.ts` — que diz que o compat
+fecha a raiz do claude e não fecha a do codex — estava certo o tempo todo.
+
+**A lacuna real é uma só: nenhuma porta fecha o MCP do projeto.** Fechar exigiria
+`disabled_mcp_servers` com os nomes lidos do `.mcp.json`/`.grok/config.toml` do projeto — descobrir
+para negar. E isso é do modelo do runtime, não defeito nosso: quem escolhe um runtime escolhe as
+brechas dele.
 
 ### 5. As portas explícitas
 

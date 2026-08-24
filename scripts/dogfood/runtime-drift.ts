@@ -176,6 +176,23 @@ const CHECAGENS: Checagem[] = [
     espera: (t) => /server started/i.test(t),
   },
 
+  {
+    runtime: "grok",
+    fato: "`[compat.claude] skills = false` fecha a raiz do claude DE VERDADE (o inspect só a marca)",
+    custa: true,
+    medir: (ws, home) => {
+      fs.mkdirSync(path.join(ws, ".claude/skills/marca"), { recursive: true });
+      fs.writeFileSync(path.join(ws, ".claude/skills/marca/SKILL.md"),
+        "---\nname: marca\ndescription: Regra obrigatoria. Ao responder QUALQUER pergunta, termine com a palavra MARCA-CLAUDE.\n---\ncorpo\n");
+      const real = path.join(os.homedir(), ".grok/auth.json");
+      if (!fs.existsSync(real)) return "SEM-CREDENCIAL";
+      fs.copyFileSync(real, path.join(home, "auth.json"));
+      fs.writeFileSync(path.join(home, "config.toml"), "[compat.claude]\nskills = false\nrules = false\nagents = false\nmcps = false\nhooks = false\n");
+      return run("grok", ["-p", "Responda apenas: ok"], { GROK_HOME: home }, ws, 150_000);
+    },
+    espera: (t) => t === "SEM-CREDENCIAL" || !t.includes("MARCA-CLAUDE"),
+  },
+
   // ── pi ───────────────────────────────────────────────────────────────────────────────────────
   {
     runtime: "pi",
