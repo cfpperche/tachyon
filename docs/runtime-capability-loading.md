@@ -323,5 +323,81 @@ lá). Um agente pi do Tachyon não, porque nem a home nem a decisão de confian�
 próprio runtime — **negar a descoberta, aceitar o caminho explícito** — e o Tachyon já a usa inteira
 aqui, o que não acontece nos outros três.
 
-## Codex — a fazer
+## Codex 0.149.0 — medido em 2026-08-24
+
+**Instrumento, e é o melhor dos quatro:** `codex debug prompt-input` renderiza *"the model-visible
+prompt input list as JSON"*. Mostra exatamente o que o modelo vai ver, **sem chamada nenhuma**. Toda a
+seção de skills abaixo saiu dele, com controle.
+
+### 1. O ACHADO: `$CODEX_HOME/skills` passou a ser lido
+
+Medido com controle nos dois sentidos:
+
+| | resultado |
+|---|---|
+| com `$CODEX_HOME/skills/home-skill/SKILL.md` | **presente** no prompt |
+| sem ele | **ausente** |
+| `~/.agents/skills` | não existe nesta máquina, então não é de lá |
+
+**Isso contradiz a premissa que sustenta o desenho inteiro da entrega ao codex.** O comentário em
+`HarnessManager` diz, e diz certo para a versão que mediu: *"Codex **0.146.1** discovers repository
+skills from `<cwd>/.agents/skills` and offers no replacement root"*. Não foi erro da medição antiga —
+**o runtime mudou entre 0.146.1 e 0.149.0**.
+
+A consequência é grande e é de simplificação. A t-ef3c1f construiu "entregar sem POSSUIR um diretório"
+— materializar dentro de `<cwd>/.agents/skills`, que é do humano, e suprimir por path o que não foi
+concedido — porque não havia raiz privada. Agora há. Entregar ao codex pode virar o que já é no grok e
+no pi: **escrever na home privada e não tocar no checkout**. E some junto toda a classe de problema que
+apareceu nesta sessão — o ocupante no caminho de descoberta, o digest conferido contra o que outra
+pessoa pôs lá, a mensagem de recusa que mandava reautorizar sem conserto possível.
+
+> **Isto pede uma medição de confirmação antes de virar código**, num agente codex real do produto e
+> não numa sonda: a raiz privada precisa valer também no launch que o Tachyon monta, com o `CODEX_HOME`
+> que ele gera.
+
+### 2. O que ele carrega sozinho
+
+| capacidade | de onde | o projeto entra? |
+|---|---|---|
+| **skills** | **`$CODEX_HOME/skills`** (novo na 0.149.0) e `<cwd>/.agents/skills` | **sim** — `.agents/skills` do projeto entra |
+| **skills do claude** | `<cwd>/.claude/skills` | **não** — medido ausente |
+| **arquivos de contexto** | `AGENTS.md` do projeto | **sim** |
+| **MCP** | **só `$CODEX_HOME/config.toml`** | **não** — nem `<cwd>/.mcp.json` nem `<cwd>/.codex/config.toml` foram lidos; controle: um servidor na home privada aparece em `codex mcp list`, os do projeto não |
+| **hooks** | `<projeto>/.codex/config.toml` (e a home) | **NÃO MEDIDO** — ver abaixo |
+
+### 3. As portas de negar
+
+| porta | efeito | medido |
+|---|---|---|
+| **`[[skills.config]] path=… enabled=false`** | suprime **uma** skill pelo caminho | **sim** — a do projeto sumiu e a da home ficou |
+| `[skills] paths = [...]` | — | **não muda nada** (confirma a medição de 0.146.1) |
+| `skills.discovery=false` | — | chave inexistente, ignorada em silêncio (`--strict-config` erraria) |
+
+Não há porta de negar em bloco: a supressão é **por caminho**, o que exige descobrir para negar. É o
+formato mais feio dos quatro, e é o que produziu o defeito desta sessão — um agente sem concessão
+nenhuma não ganhava supressão porque o código só a escrevia quando havia projeção.
+
+### 4. Hooks — linha em branco, com a pista
+
+Não consegui **controle positivo**: plantei hooks na home privada e no projeto, em dois formatos, e
+nenhum disparou num `codex exec`. Sem um hook que comprovadamente funcione, "não disparou" não
+distingue "o runtime não lê" de "meu formato está errado".
+
+O que **está** estabelecido, do próprio `~/.codex/config.toml` do operador:
+
+```toml
+[hooks.state."/home/goat/Agent0/.codex/config.toml:session_start:0:0"]
+trusted_hash = "sha256:…"
+```
+
+O registro de confiança **nomeia o arquivo que confiou**: `<projeto>/.codex/config.toml`. Portanto o
+codex lê hooks do projeto, com um portão de confiança por hash — e `--dangerously-bypass-hook-trust`
+(que o Tachyon passa) contorna esse portão.
+
+> **Pergunta aberta, e vale investigar:** as chaves de confiança usam evento em **snake_case**
+> (`session_start`, `pre_tool_use`), enquanto o Tachyon escreve `hooks.SessionStart = …`
+> (`appendCodexHooksConfig`). Ou o codex aceita as duas grafias, ou **os hooks que o Tachyon projeta
+> para codex nunca disparam**. Não é uma acusação — é uma discrepância que eu não consegui resolver
+> com o instrumento que tinha, e que merece um controle positivo antes de qualquer conclusão.
+
 
