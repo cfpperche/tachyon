@@ -1,137 +1,127 @@
-# Runbook — create, update and publish a plugin
+# Runbook — criar, atualizar e instalar um plugin
 
-_Written 2026-08-09, after I got the publish wrong and the maintainer had to send me a screenshot._
+_Reescrito em 2026-08-24 para o sistema da spec 516. A versão anterior (de 2026-08-09) descrevia o
+sistema antigo — tags de git, `plugins.lock.json`, `github:owner/repo@v2.4.0#path=nome` — e nada
+daquilo existe. O git guarda o texto antigo._
 
-Covers the **`cfpperche/tachyon-plugins`** repository (local checkout at `/home/goat/tachyon-plugins`)
-and how Tachyon consumes it.
+Cobre o repositório **`cfpperche/tachyon-plugins`** (checkout local em `/home/goat/tachyon-plugins`) e
+como o Tachyon consome um plugin hoje.
 
-## The mistake this exists to prevent
+## O que é um plugin
 
-I committed, ran `git push origin main`, told the maintainer it was published — and it was not. The
-Plugins panel kept showing `sdd v1.8.0 · up to date`.
-
-**Pushing `main` publishes nothing.** Tachyon pins a **tag**:
+Uma pasta. Ela tem um manifesto de seis campos e o resto é **convenção de diretório**:
 
 ```
-github:cfpperche/tachyon-plugins@v2.4.0#path=sdd
+meu-plugin/
+  tachyon-plugin.json
+  skills/<nome>/SKILL.md      os quatro runtimes
+  extensions/<nome>/          pi   (index.ts | index.js na raiz)
+  prompts/<nome>/             pi
+  themes/<nome>/              pi
+  packages/<nome>/            pi
+  hooks/<runtime>/            claude, codex, grok
+  mcp.json                    servidores MCP
+  config/                     arquivo que o humano edita
 ```
-
-With no new tag the installer has nothing to see. Publishing *is* cutting the tag.
-
-## How Tachyon consumes it
-
-`.tachyon/plugins.lock.json` — **not tracked in git**; it is this workspace's local state:
-
-```json
-"source": {
-  "type": "git",
-  "spec": "github:cfpperche/tachyon-plugins@v2.4.0#path=sdd",
-  "ref": "v2.4.0",
-  "resolvedCommit": "5861702527849fff2ce1896654d0e3e0012b3f6d",
-  "subdir": "sdd"
-},
-"integrity": { "algorithm": "sha256", "payload": "0922…409d" }
-```
-
-Two consequences worth stating, because both cost time when learned the hard way:
-
-- **The tag is the pointer; the commit and the sha256 are the proof.** Moving an existing tag to a
-  different commit breaks integrity for anyone who already installed it. Never move a tag — cut the
-  next one.
-- **A plugin's version and the repository's tag are different things.** The repository is `v2.x.y`;
-  each plugin carries its own `version` in `tachyon-plugin.json`. `sdd` going `1.8.0 → 1.9.0`
-  produced repository tag `v2.4.0`.
-
-Installing materializes only the payload at `.tachyon/plugins/<name>/`. Runtime contributions are a
-separate, per-contribution choice in the **Plugins** panel: apply a skill or hook there before using
-it. Applying a skill fans it out to the plugin's recorded runtime targets —
-`.claude/skills/<name>`, `.agents/skills/<name>`, `.grok/skills/<name>` — and **Un-apply** removes
-those copies without uninstalling the payload.
-
-## Update an existing plugin
-
-```sh
-cd /home/goat/tachyon-plugins
-# 1. edit the plugin's files
-# 2. bump ITS version, in its own manifest
-#    sdd/tachyon-plugin.json → "version": "1.9.0"
-git add -A && git commit
-git push origin main          # runs the gate below — still does NOT publish
-git tag -a vX.Y.Z -m "…"      # THIS publishes
-git push origin vX.Y.Z
-```
-
-Then, in Tachyon: **Plugins** panel → update. The lock rewrites `ref`, `resolvedCommit` and
-`integrity`.
-
-**Confirm it landed:** the panel shows the plugin version and the tag. If it still reads `up to date`
-on the old version, the tag was not pushed.
-
-## The gate on push
-
-`.githooks/pre-push` (the repo sets `core.hooksPath=.githooks`) runs
-`./scripts/validate-manifests.sh` and refuses the push **when the destination is `main`/`master`**. A
-push to a topic branch costs nothing.
-
-Its header records why it exists, and it is worth reading before trying to work around it:
-
-> `t-d8e772` — publishing had no forcing function: verify-gate v1.0.0 was tagged and released in a
-> shape that could not install anywhere, and only a human trying to install it found out.
-
-A broken package was discovered only by someone trying to install it, and after the tag the fix is a
-republish. If the hook refuses, the package really is broken.
-
-**Known limit, and it is the same hole I fell into:** the hook covers the push of `main`. It does
-**not** cover the tag. Nothing stops tagging a commit that never went through `main`.
-
-## Create a new plugin
-
-A plugin is a directory at the repository root containing `tachyon-plugin.json`. The smallest real
-example is `hello-marker/`, which exists precisely to exercise install/wire/update/remove without
-touching security or project state. Copy its shape.
 
 ```json
 {
-  "name": "<name>",
-  "version": "1.0.0",
-  "description": "…",
-  "runtimes": ["claude", "codex", "grok"],
-  "docsUrl": "https://github.com/cfpperche/tachyon-plugins/tree/main/<name>",
-  "blocks": { "claude": "claude/", "codex": "codex/" }
+  "name": "sdd",
+  "version": "2.0.0",
+  "description": "spec-driven development: intent before code, in living documents",
+  "docs": "https://github.com/cfpperche/tachyon-plugins",
+  "runtimes": ["claude", "codex"],
+  "requires": ["ffmpeg"]
 }
 ```
 
-- `runtimes` is a verifiable promise: declare only what you tested. A runtime declared and not
-  delivered is worse than one left out.
-- A **skill** ships as `skills/<name>/SKILL.md` (+ `scripts/`, `templates/`). Install keeps it in the
-  plugin payload; the human applies it from the installed plugin's card to project it into each
-  recorded runtime directory. That is `sdd`'s shape.
-- **Hooks, git-hooks and tools** ship through per-runtime `blocks`. That is `secrets-guard`'s shape.
-- Run `./scripts/validate-manifests.sh` before committing; it is the same command the gate runs.
+`name`, `version` e `description` são obrigatórios. Os outros três não:
 
-Then the same flow: commit → push `main` → **tag** → push the tag.
+- **`docs`** vira o botão Docs do card.
+- **`runtimes`** é um ESTREITAMENTO. Ausente significa "todos os que conseguem consumir o que este
+  payload traz" — um plugin só com `skills/` serve os quatro. Declarar só faz sentido quando o autor
+  sabe algo que o payload não diz ("esta skill é escrita no idioma do codex").
+- **`requires`** são ferramentas externas que precisam existir no `PATH`. O Tachyon **detecta e
+  informa**; nunca instala. O card mostra qual falta.
 
-## Version semantics, in practice
+Um campo do formato antigo (`tools`, `data`, `blocks`, `externalTools`, `dependencies`, `docsUrl`,
+`config`, `gitHooks`) faz o plugin ser **recusado pelo nome do campo**, com o que fazer no lugar.
 
-| change to the plugin | plugin version | repository tag |
-|---|---|---|
-| fix that does not change the contract | patch | patch |
-| new verb or option, compatible | minor | minor |
-| verb removed, format changed, runtime dropped | major | major |
+## Antes de publicar: valide com o carregador de verdade
 
-The repository's bump follows the **largest** bump among the plugins in that tag.
+```sh
+node <extensão>/dist/plugin-validate.cjs /home/goat/tachyon-plugins/sdd
+```
 
-## Where this usually goes wrong
+```
+ok  sdd@2.0.0  serves [claude, codex, grok, pi]  carries skill:sdd, prompt:nova-spec  (…)
+```
 
-| symptom | cause |
-|---|---|
-| panel says `up to date` on the old version | the tag was not pushed — `git push origin vX.Y.Z` |
-| install fails on integrity | an existing tag was moved; cut the next one instead |
-| a runtime has no skill | `runtimes` declares a runtime the package does not deliver |
-| push to `main` refused | the package does not load in Tachyon's parser; fix it, do not work around it |
+Ele chama `loadPlugin`, a MESMA função que a instalação chama — não uma cópia do schema. É o que
+impede um pacote de ser publicado num formato que o Tachyon recusa: o `verify-gate` 1.0.0 subiu
+ininstalável exatamente por não haver essa checagem.
 
-## References
+Um pacote que não traz nenhuma capacidade é recusado aqui, e não depois: publicar o silêncio é pior
+que não publicar.
 
-- `README.md` in `tachyon-plugins` — the catalogue and what each package combines
-- `.githooks/pre-push` and `scripts/validate-manifests.sh` — the gate
-- `.tachyon/plugins.lock.json` — what this workspace has installed, with commit and sha256
+## Publicar = empacotar um zip
+
+Não há tag a cortar, nem endereço a resolver, nem checksum a conferir. A instalação é por arquivo:
+
+```sh
+cd /home/goat/tachyon-plugins
+zip -r ~/Downloads/sdd-2.0.0.zip sdd -x '*/.git/*'
+```
+
+O manifesto pode estar **na raiz** do arquivo ou dentro de **uma única pasta** — que é o que todo
+"baixe esta release" produz. Duas pastas com manifesto é recusado pelos dois nomes, nunca adivinhado.
+
+## Instalar
+
+Aba **Plugins** → **Install from zip**. O seletor abre nos `.zip` que estão por perto (o projeto,
+`~/Downloads`, `~/Desktop`, `/tmp`) e navega dali; o **Browse…** ao lado entrega ao diálogo do sistema
+quando você prefere clicar.
+
+Um `.zip` que é um pacote de APP não aparece na lista: a varredura lê o diretório central do arquivo
+e classifica pelo manifesto que ele carrega. Um arquivo que não deu para ler continua sendo oferecido
+— recusa de leitura não é evidência sobre o conteúdo.
+
+O que a instalação faz: descompacta em `.tachyon/plugins/<nome>/`. **Só isso.** Ela não cria
+`.claude/skills`, `.agents/skills` nem `.grok/skills`, não escreve no `settings.json` do seu projeto,
+não mexe no `.mcp.json` e não deixa arquivo de registro nenhum. O diretório É o registro.
+
+Reinstalar substitui o diretório inteiro (a troca é atômica: nunca existe uma janela em que o plugin
+não existe). Desinstalar apaga a pasta — e **revoga antes** as concessões que apontam para ela, porque
+apagar primeiro deixaria agentes com concessão para um payload que não existe mais.
+
+## Injetar num agente
+
+Instalar não dá o plugin a ninguém. Isso é uma segunda decisão, por agente:
+
+**Agent Studio → o agente → Tachyon plugins → Authorize.**
+
+Autorizar concede **tudo** o que o plugin expõe para aquele runtime. Um plugin que traz algo que
+nenhuma concessão carrega hoje (um hook nativo, um servidor MCP) é recusado **inteiro**, com o motivo
+— conceder metade reportaria sucesso enquanto metade nunca chega.
+
+A concessão é fixada no digest do payload. Se o payload mudar depois, o launch **recusa pelo nome** em
+vez de entregar outra coisa, e o card mostra `autorizado em 2.0.0, agora 2.1.0`.
+
+O que um agente vivo recebeu não muda: ele fica com a cópia com que nasceu até o próximo launch.
+
+## Migrar um plugin do formato antigo
+
+Um por vez, quando precisar dele. O repositório fica intocado até lá.
+
+1. `docsUrl` → `docs`; `externalTools` → `requires` (só os nomes).
+2. `blocks: {claude: "claude/"}` → mova a pasta para `hooks/claude/`.
+3. `config: {file: "…"}` → mova para `config/`.
+4. `tools` (binário baixado) → declare a ferramenta em `requires`. **Isto reduz uma garantia**: o
+   invólucro que fazia a lista de domínios do `agent-browser` ser inegociável pelo agente vinha do
+   provisionamento. Sem ele, o que afirma a política é o texto da skill.
+5. `data` → traga o arquivo no payload, ou declare a ferramenta que o baixa.
+6. `dependencies` → diga na `description` o que precisa ser instalado antes.
+7. `gitHooks` → **fora da v1.** Voltam como um sistema próprio, porque é o que são: contribuição ao
+   repositório, que dispara para qualquer ator, e não capacidade de um agente.
+
+Valide, empacote, instale.

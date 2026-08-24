@@ -1857,10 +1857,34 @@ export class HarnessManager {
 
     const missing = [...granted.keys()].filter((name) => !delivered.has(name));
     if (missing.length > 0) {
+      // 516 — DOIS fatos diferentes produziam esta recusa, e uma mensagem só para os dois mandava o
+      // humano para um beco. Medido: com o payload intacto e uma skill de mesmo nome escrita à mão em
+      // `<cwd>/.agents/skills`, a mensagem dizia "a origem mudou ou foi removida — reautorize", e
+      // reautorizar produz a MESMA concessão e falha idêntico. A origem não tinha mudado; outra coisa
+      // estava ocupando o caminho onde o runtime procura.
+      //
+      // Distinguir custa um digest do payload que a concessão nomeia: se ele ainda bate, o problema
+      // não é a autorização, é o ocupante — e é o ocupante que a mensagem tem de nomear, porque é o
+      // arquivo do humano e só ele decide o que fazer com ele.
+      const detail = missing.map((name) => {
+        const source = granted.get(name)!;
+        let payloadIntact = false;
+        try {
+          const live = inspectCapabilitySourceAtRoot(path.dirname(source.sourcePath), path.basename(source.sourcePath));
+          payloadIntact = live.sha256 === source.sha256;
+        } catch { payloadIntact = false; }
+        const occupant = path.join(roots[0]!, name);
+        if (payloadIntact && fs.existsSync(occupant)) {
+          return `'${name}': the plugin payload is intact, but ${occupant} holds different content — that path is where this runtime looks, so move or remove what is there`;
+        }
+        if (payloadIntact) {
+          return `'${name}': the plugin payload is intact but could not be delivered to ${occupant}`;
+        }
+        return `'${name}': its source changed or was removed — reauthorize it in Agent Studio`;
+      });
       throw new HarnessUnavailableError(
         agent,
-        `granted skill(s) ${missing.join(", ")} are not present at the content this profile authorized — `
-        + "reauthorize them in Agent Studio (their source changed or was removed)",
+        `granted skill(s) could not be delivered at the content this profile authorized. ${detail.join("; ")}`,
       );
     }
     if (disabled.length === 0) return "";
