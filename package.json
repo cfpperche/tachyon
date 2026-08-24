@@ -1,6 +1,6 @@
 {
   "name": "tachyon-workspace",
-  "version": "0.93.58",
+  "version": "0.93.59",
   "private": true,
   "workspaces": [
     "apps/*",

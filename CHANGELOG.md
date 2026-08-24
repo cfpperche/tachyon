@@ -4,6 +4,56 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.59 — o sistema de plugins, reescrito do zero
+
+Um plugin é uma pasta que você descompacta. Ela fica lá **inerte**. Um agente que recebe a concessão
+tem aquilo materializado na **própria home** no launch. Mais nada acontece.
+
+O sistema anterior tinha 13.584 linhas e fazia muito mais do que o uso pedia. Medido no catálogo real
+de 17 plugins: a capacidade mais cara — o Tachyon baixar e instalar binários — servia **três** deles,
+e custava 2.000 linhas. Toda a porta de git servia uma forma de instalar que o produto já tinha
+substituído por zip. **21.605 linhas saíram; o sistema novo inteiro tem 1.444.**
+
+### A lei
+
+> O agente recebe exatamente o que foi concedido. Nada que o plugin traz escapa para o projeto, e
+> nada que está no projeto entra no agente sem ter sido concedido.
+
+Instalar não cria mais `.claude/skills`, `.agents/skills` nem `.grok/skills`. O que fica é o payload
+em `.tachyon/plugins/<nome>/`, e desinstalar é apagar essa pasta.
+
+### O manifesto tem seis campos
+
+`name`, `version`, `description`, e opcionalmente `docs`, `runtimes`, `requires`. O resto é convenção
+de diretório — `skills/`, `extensions/`, `prompts/`, `themes/`, `packages/`, `hooks/<runtime>/`,
+`mcp.json`. O campo que dizia onde ficavam os hooks sumiu porque a pasta já diz.
+
+E `runtimes` virou **opcional**: ausente significa "todos os que conseguem consumir o que este payload
+traz", que é a resposta certa para a forma comum. Declarar passa a ser um estreitamento deliberado do
+autor, não cerimônia.
+
+### O `pi` deixou de ser inalcançável
+
+A concessão sabia entregar `extensions`, `prompts`, `themes` e `packages` ao pi desde o MVP, mas
+nenhum plugin conseguia produzi-los — o manifesto antigo não sabia que o pi existia. Agora sabe.
+
+### Não há mais lockfile
+
+Ele existia para lembrar o que a instalação mesclava em arquivos compartilhados do seu projeto — a
+única informação que não se derivava do disco. Sem essas escritas, `.tachyon/plugins/` **é** o
+catálogo. Um registro que pode divergir do disco vai divergir, e quando divergir será ele que mente.
+
+### O que saiu junto, e volta depois
+
+**Git hooks** saem inteiros da v1 e voltam como um sistema próprio, porque é o que são: uma
+contribuição ao repositório, que dispara para qualquer ator, e não uma capacidade de um agente.
+Estavam no mesmo manifesto por conveniência, não por parentesco.
+
+**Baixar binário** sai. Um plugin declara em `requires` a ferramenta externa de que precisa, a tela
+detecta se ela está no PATH, e você a instala uma vez. Isso reduz uma garantia, e vale dizer qual: o
+invólucro que fazia a lista de domínios do `agent-browser` ser inegociável pelo agente vinha do
+provisionamento. Sem ele, o que afirma a política é o texto da skill.
+
 ## 0.93.58 — a concessão passa a ser o que entrega
 
 Instalar um plugin escrevia as skills dele em `.claude/skills`, `.agents/skills` e `.grok/skills`. Para
