@@ -4,6 +4,22 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.63 — o hook do Codex passa a existir
+
+Um hook concedido a um agente Codex nunca disparou. Não falhava, não avisava, não deixava rastro: o
+agente subia normalmente e o hook simplesmente não estava lá.
+
+A causa é uma regra do formato de configuração do Codex. `hooks.PreToolUse` só significa "hook" se
+estiver escrito no topo do arquivo; depois de qualquer cabeçalho de seção, a mesma linha vira um
+campo daquela seção. O Tachyon escrevia os hooks no fim do arquivo — e o fim, sempre, vinha depois
+do cabeçalho que marca seu projeto como confiável.
+
+Agora eles são escritos antes de qualquer seção. Medido com um Codex real, na configuração que o
+próprio Tachyon gera, movendo só a posição da linha: antes do cabeçalho o hook dispara, depois não.
+
+Quem achou foi a checagem que compara o mapa dos runtimes com a realidade — e ela achou porque
+errou primeiro, do outro lado, pela mesma regra.
+
 ## 0.93.62 — o Codex recebe suas skills sem tocar no seu projeto
 
 Um agente Codex recebia as skills concedidas dentro de `<projeto>/.agents/skills` — um diretório que é
