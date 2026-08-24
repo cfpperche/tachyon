@@ -4,6 +4,18 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.64 — o Agent Studio para de oferecer o que o Grok não aceita
+
+Ao configurar um agente Grok, o formulário oferecia conceder hooks e servidores MCP de um plugin.
+Conceder não fazia nada: a porta de perfil do Grok aceita skills e mais nada, e o launch retinha a
+concessão com um aviso. Nada quebrava, mas o formulário prometia o que a outra ponta não cumpria.
+
+Agora ele oferece a um agente Grok só o que o Grok aceita. Claude e Codex seguem recebendo hooks e
+MCP normalmente — os dois foram medidos com chamadas reais, e nos dois o hook concedido dispara.
+
+Isso veio de uma varredura feita depois da correção de ontem no Codex: se um caminho de hook estava
+morto sem ninguém notar, valia olhar os outros dois antes de esperar a próxima surpresa.
+
 ## 0.93.63 — o hook do Codex passa a existir
 
 Um hook concedido a um agente Codex nunca disparou. Não falhava, não avisava, não deixava rastro: o
