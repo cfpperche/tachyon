@@ -19,6 +19,20 @@
  * JSON, validados pela forma e entregues como dado. A divisão está no `agentProfileResolver`
  * (`addPi(..., "prompts", undefined, ...)` passa `undefined` como kind de grant, de propósito), e
  * repeti-la aqui seria criar uma segunda opinião sobre a mesma pergunta. Este módulo só relata.
+ *
+ * ## A porta de perfil do grok é só de skills, e este mapa tem de dizer isso
+ *
+ * O `agentProfileResolver` recusa pelo nome todo grant de MCP ou hook num perfil grok:
+ * *"Grok profile projection supports exact captured skills only; MCP, hooks and Pi resources have
+ * separate runtime doors"*. Este módulo oferecia os dois assim mesmo, então o Agent Studio mostrava
+ * ao humano uma concessão que o launch ia sempre reter. Não era falha silenciosa — a retenção tem
+ * diagnóstico visível — mas era uma promessa que a outra camada não cumpre, e escolher entre relatar
+ * e prometer não é escolha: este módulo relata.
+ *
+ * Medido em 2026-08-24 varrendo os três runtimes com hook: claude entrega e dispara, codex entrega e
+ * dispara (depois da correção de ordem do TOML no mesmo dia), grok recusa. Quando a porta de perfil
+ * do grok aprender MCP e hook, é `GROK_PROFILE_DOOR_KINDS` que muda — e o caso de unidade que trava
+ * este acordo falha até que as duas camadas voltem a concordar.
  */
 import { inspectCapabilitySourceAtRoot } from "../config/agentCapabilitySource.js";
 import { CAPABILITY_KINDS, type CapabilityKind, type LoadedPlugin, type Runtime } from "./manifest.js";
@@ -26,6 +40,14 @@ import { PLUGINS_REL } from "./catalog.js";
 
 /** Os `kind` que uma entrada de `references` num perfil de agente aceita, para o que um plugin traz. */
 export type ReferenceKind = "skill" | "mcp" | "hook" | "pi-extension" | "pi-prompt" | "pi-theme" | "pi-package";
+
+/**
+ * O que a porta de PERFIL do grok aceita hoje, espelhando `agentProfileResolver`.
+ *
+ * Não é preferência nossa: é o que aquela camada implementa. Ligar um destes aqui sem ensinar a
+ * porta correspondente reintroduz exatamente a promessa não cumprida que isto veio remover.
+ */
+const GROK_PROFILE_DOOR_KINDS = { mcp: false, hook: false } as const;
 
 const REFERENCE_KIND_OF: Record<CapabilityKind, ReferenceKind> = {
   skill: "skill",
@@ -69,10 +91,11 @@ export function grantableReferences(plugin: LoadedPlugin): GrantableReference[] 
   }
   for (const [runtime, hookRel] of Object.entries(plugin.hooks) as Array<[Runtime, string]>) {
     if (!served.has(runtime)) continue;
+    if (!GROK_PROFILE_DOOR_KINDS.hook && runtime === "grok") continue;
     out.push({ id: `${plugin.manifest.name}-hooks-${runtime}`, kind: "hook", owner, path: rel(hookRel), runtimes: [runtime] });
   }
   if (plugin.mcp) {
-    const runtimes = narrow(["claude", "codex", "grok"]);
+    const runtimes = narrow(GROK_PROFILE_DOOR_KINDS.mcp ? ["claude", "codex", "grok"] : ["claude", "codex"]);
     if (runtimes.length > 0) out.push({ id: `${plugin.manifest.name}-mcp`, kind: "mcp", owner, path: rel("mcp.json"), runtimes });
   }
   return out;

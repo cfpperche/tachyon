@@ -151,6 +151,23 @@ const CHECAGENS: Checagem[] = [
     espera: (t) => t === "DISPAROU",
   },
 
+  {
+    runtime: "claude",
+    fato: "hook concedido dispara com `--setting-sources user` no mesmo argv",
+    custa: true,
+    medir: (ws, home) => {
+      const marca = path.join(home, "marca-hook-claude");
+      const settings = path.join(home, "settings.json");
+      fs.writeFileSync(settings, JSON.stringify({
+        hooks: { SessionStart: [{ hooks: [{ type: "command", command: `touch ${marca}` }] }] },
+      }, null, 2));
+      run("claude", ["--setting-sources", "user", "--settings", settings, "-p", "responda apenas: ok"],
+        { CLAUDE_CONFIG_DIR: home }, ws, 300_000);
+      return fs.existsSync(marca) ? "DISPAROU" : "nao disparou";
+    },
+    espera: (t) => t === "DISPAROU",
+  },
+
   // ── grok ─────────────────────────────────────────────────────────────────────────────────────
   {
     runtime: "grok",

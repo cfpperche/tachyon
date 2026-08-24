@@ -465,3 +465,32 @@ O achado veio do drift-check, que cometeu **o mesmo erro do outro lado** — ape
 um config que já tinha `[[skills.config]]` e mediu "não disparou" de um produto que naquele ponto
 estava correto. Investigar o próprio instrumento é o que revelou o bug no produto: os dois erravam
 pela mesma regra de TOML.
+
+## A varredura de hooks concedidos — 2026-08-24
+
+Depois de achar que o hook do codex nunca disparou, a pergunta óbvia era se os outros dois estavam
+inteiros. O sistema de plugins declara três runtimes com hook nativo
+(`HOOK_RUNTIMES = ["claude", "codex", "grok"]`), e só um deles tinha sido medido — o quebrado.
+
+Cada linha abaixo é um A/B na home escrita pelo **produto**, com marca em disco. Nada de perguntar
+ao modelo o que ele enxerga.
+
+| runtime | hook concedido | MCP concedido |
+|---|---|---|
+| claude | **dispara** — `settings.json`, com `--setting-sources user` no mesmo `argv` | chega em `mcp.json` |
+| codex | **dispara** — depois da correção de ordem do TOML do mesmo dia | chega em `config.toml` |
+| grok | **retido pelo nome** no `agentProfileResolver` | retido pelo nome |
+
+A suspeita no claude era a interação entre `--settings <arquivo>` e `--setting-sources user`: se o
+segundo restringisse as fontes, mataria o primeiro em silêncio. Não mata. Controle negativo com o
+mesmo `argv` e o bloco `hooks` removido do `settings.json`: não disparou.
+
+O grok **não** falha em silêncio — a porta de perfil dele é só de skills, e a retenção tem
+diagnóstico visível. O que estava errado era a outra ponta: `grantableReferences` OFERECIA hook e MCP
+para grok, então o Agent Studio mostrava uma concessão que o launch sempre reteria. A oferta passou a
+espelhar a porta (`GROK_PROFILE_DOOR_KINDS`), e um caso de unidade trava o acordo — quando a porta do
+grok aprender MCP e hook, o caso falha e obriga a mexer nos dois lados juntos.
+
+Vale dizer o que a varredura **não** prova: que hook de plugin funciona ponta a ponta. Ela prova que
+um hook concedido chega e dispara. Nenhum plugin do repositório concede hook a ninguém ainda.
+

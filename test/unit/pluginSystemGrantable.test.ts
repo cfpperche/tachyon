@@ -76,9 +76,12 @@ describe("516 — cada família vira o kind que o perfil entende", () => {
     expect(grantableReferences(plugin)[0]!.runtimes).toEqual(["codex"]);
   });
 
-  it("MCP não é oferecido ao pi, que não o materializa", () => {
+  it("MCP não é oferecido nem ao pi nem ao grok, que não têm porta de perfil para ele", () => {
+    // O grok saiu desta lista em 2026-08-24. Ele estava aqui por simetria com os outros dois, não
+    // por medição: o `agentProfileResolver` sempre reteve MCP e hook num perfil grok, então a oferta
+    // prometia o que o launch nunca entregava. O pi nunca esteve — ele não materializa MCP.
     const { plugin } = installed("demo", {}, { "mcp.json": "{}", "skills/uma/SKILL.md": SKILL });
-    expect(grantableReferences(plugin).find((r) => r.kind === "mcp")!.runtimes).toEqual(["claude", "codex", "grok"]);
+    expect(grantableReferences(plugin).find((r) => r.kind === "mcp")!.runtimes).toEqual(["claude", "codex"]);
   });
 });
 
@@ -97,5 +100,47 @@ describe("516 — o digest é o do sistema, não um número nosso", () => {
     const antes = digestOf(ws, ref!.path);
     fs.writeFileSync(path.join(ws, ref!.path, "SKILL.md"), SKILL.replace("body", "outro corpo"));
     expect(digestOf(ws, ref!.path)).not.toBe(antes);
+  });
+});
+
+/**
+ * A OFERTA NÃO PODE PROMETER O QUE O LAUNCH SEMPRE RETÉM.
+ *
+ * `agentProfileResolver` recusa pelo nome todo grant de MCP ou hook num perfil grok — *"Grok profile
+ * projection supports exact captured skills only; MCP, hooks and Pi resources have separate runtime
+ * doors"*. Este mapa oferecia os dois assim mesmo, então o Agent Studio mostrava ao humano uma
+ * concessão que nunca ia chegar. A retenção tem diagnóstico visível, então não era falha silenciosa;
+ * era uma promessa que a outra camada não cumpre.
+ *
+ * O caso trava o ACORDO entre as duas camadas, não uma constante: quando a porta de perfil do grok
+ * aprender MCP e hook, este caso falha e obriga a mexer nos dois lados juntos.
+ */
+describe("516 — o que se oferece é o que a porta de perfil aceita", () => {
+  it("não oferece hook nem MCP a um perfil grok, que só tem porta de skills", () => {
+    const { plugin } = installed("portao", { runtimes: ["claude", "codex", "grok"] }, {
+      "skills/uma/SKILL.md": SKILL,
+      "hooks/claude/h.json": "{}",
+      "hooks/codex/h.json": "{}",
+      "hooks/grok/h.json": "{}",
+      "mcp.json": "{}",
+    });
+    const paraGrok = grantableReferences(plugin).filter((r) => r.runtimes.includes("grok"));
+    expect(paraGrok.map((r) => r.kind).sort()).toEqual(["skill"]);
+  });
+
+  it("continua oferecendo hook e MCP a claude e codex, onde a entrega foi medida", () => {
+    const { plugin } = installed("portao2", { runtimes: ["claude", "codex", "grok"] }, {
+      "hooks/claude/h.json": "{}",
+      "hooks/codex/h.json": "{}",
+      "hooks/grok/h.json": "{}",
+      "mcp.json": "{}",
+    });
+    const refs = grantableReferences(plugin);
+    expect(refs.map((r) => `${r.kind}:${r.id}`).sort()).toEqual([
+      "hook:portao2-hooks-claude",
+      "hook:portao2-hooks-codex",
+      "mcp:portao2-mcp",
+    ]);
+    expect(refs.find((r) => r.kind === "mcp")!.runtimes).toEqual(["claude", "codex"]);
   });
 });
