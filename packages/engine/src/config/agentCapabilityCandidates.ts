@@ -18,6 +18,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { readCatalog } from "../plugins/catalog.js";
+import { grantableReferences } from "../plugins/grantable.js";
 
 /** Where each runtime loads skills from, mirroring the plugin engine's adapter table. */
 const SKILLS_REL: Record<string, string> = {
@@ -111,7 +113,7 @@ export function listAuthorizableCapabilities(workspaceRoot: string, adapter: str
   const claimed = new Set<string>();
   for (const plugin of lock) {
     for (const target of plugin.targets) {
-      if (target.kind === "skill-dir") claimed.add(path.posix.basename(target.file));
+      if (target.kind === "skill") claimed.add(path.posix.basename(target.file));
     }
   }
 
@@ -184,10 +186,23 @@ export function annotateAuthorized(
   };
 }
 
+/**
+ * 516 — o que uma concessão consegue carregar. `hook` e `mcp` continuam fora: nenhuma entrada de
+ * `references` os carrega hoje, e um plugin que os traga é recusado inteiro em vez de pela metade.
+ */
+const GRANTABLE = new Set(["skill", "pi-extension", "pi-prompt", "pi-theme", "pi-package"]);
+
 function describePlugin(plugin: LockedPlugin, adapter: string): AuthorizablePlugin {
   const mine = plugin.targets.filter((target) => target.runtime === undefined || target.runtime === adapter);
-  const skills = mine.filter((target) => target.kind === "skill-dir").map((target) => path.posix.basename(target.file)).sort();
-  const ungrantableKinds = [...new Set(mine.filter((target) => target.kind !== "skill-dir").map((target) => target.kind))].sort();
+  // 516 — TUDO o que este runtime receberia, não só as skills. Autorizar concede o plugin inteiro,
+  // então listar apenas as skills mostraria menos do que o botão entrega — e para um plugin com
+  // `prompts/` num agente pi, mostraria uma lista que não menciona a única coisa que ele ganha. Uma
+  // capacidade que não é skill é nomeada com a família, porque "nova-spec" sozinho não diz o que é.
+  const skills = mine
+    .filter((target) => GRANTABLE.has(target.kind))
+    .map((target) => target.kind === "skill" ? path.posix.basename(target.file) : `${path.posix.basename(target.file)} (${target.kind.replace(/^pi-/, "")})`)
+    .sort();
+  const ungrantableKinds = [...new Set(mine.filter((target) => !GRANTABLE.has(target.kind)).map((target) => target.kind))].sort();
   const base = { name: plugin.name, version: plugin.version, runtimes: plugin.runtimes, skills, ungrantableKinds };
 
   if (!plugin.runtimes.includes(adapter)) {
@@ -224,28 +239,29 @@ function readDirNames(directory: string): string[] {
   }
 }
 
+/**
+ * 516 — o que está instalado, lido do catálogo em vez de um lockfile.
+ *
+ * O nome `readPluginLock` sobreviveu a um lockfile que não existe mais, e por um tempo esta função
+ * leu `.tachyon/plugins.lock.json` por CAMINHO LITERAL e `JSON.parse` — o que o compilador não vê
+ * quando o módulo do lockfile é apagado. O resultado foi um Agent Studio dizendo "nenhum plugin
+ * instalado" com um plugin instalado na tela ao lado.
+ *
+ * A forma que ele devolve é a que esta camada já consumia: nome, versão, os runtimes que o plugin
+ * serve, e uma linha por capacidade concedível. Ela vem de `grantableReferences`, que é a mesma
+ * fonte que a concessão usa — em vez de uma segunda leitura com uma segunda opinião.
+ */
 export function readPluginLock(workspaceRoot: string): LockedPlugin[] {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(fs.readFileSync(path.join(workspaceRoot, ".tachyon/plugins.lock.json"), "utf8"));
-  } catch {
-    return [];
-  }
-  const plugins = (raw as { plugins?: Record<string, unknown> } | null)?.plugins;
-  if (!plugins || typeof plugins !== "object") return [];
-  const parsed: LockedPlugin[] = [];
-  for (const value of Object.values(plugins)) {
-    const entry = value as Partial<LockedPlugin>;
-    if (typeof entry?.name !== "string" || typeof entry.version !== "string") continue;
-    parsed.push({
-      name: entry.name,
-      version: entry.version,
-      runtimes: Array.isArray(entry.runtimes) ? entry.runtimes.filter((r): r is string => typeof r === "string") : [],
-      targets: Array.isArray(entry.targets)
-        ? entry.targets.filter((t): t is { kind: string; file: string; runtime?: string } =>
-          typeof (t as { kind?: unknown })?.kind === "string" && typeof (t as { file?: unknown })?.file === "string")
-        : [],
-    });
-  }
-  return parsed;
+  return readCatalog(workspaceRoot).installed.map((plugin) => ({
+    name: plugin.manifest.name,
+    version: plugin.manifest.version,
+    runtimes: plugin.runtimes,
+    targets: grantableReferences(plugin).map((reference) => ({
+      kind: reference.kind,
+      file: reference.path,
+      // Uma capacidade que serve um runtime só é listada com ELE; a que serve todos é listada sem
+      // runtime, que é como esta camada já lia "vale para qualquer um".
+      ...(reference.runtimes.length === 1 ? { runtime: reference.runtimes[0]! } : {}),
+    })),
+  }));
 }

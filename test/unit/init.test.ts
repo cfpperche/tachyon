@@ -128,7 +128,6 @@ describe("ensureTachyonGitignore", () => {
     expect(out).toContain(".tachyon/*");
     expect(out).not.toContain(".tachyon/git-deliveries/");
     expect(out).toContain("!.tachyon/HANDOFF.md");
-    expect(out).toContain("!.tachyon/plugins.lock.json");
     expect(out).toContain("# Tachyon");
     expect(out).not.toMatch(/^\n/); // no ugly leading blank line
   });
@@ -138,12 +137,12 @@ describe("ensureTachyonGitignore", () => {
     expect(out).toContain("node_modules");
     expect(out).toContain("dist");
     expect(out).toContain(".tachyon/*");
-    expect(out).toBe("node_modules\ndist\n\n# Tachyon — machine-local state (HANDOFF.md and plugins.lock.json stay shareable)\n" + TACHYON_GITIGNORE_ENTRIES.join("\n") + "\n");
+    expect(out).toBe("node_modules\ndist\n\n# Tachyon — machine-local state (HANDOFF.md stays shareable)\n" + TACHYON_GITIGNORE_ENTRIES.join("\n") + "\n");
   });
 
   it("handles a file with no trailing newline", () => {
     const out = ensureTachyonGitignore("dist");
-    expect(out).toBe("dist\n\n# Tachyon — machine-local state (HANDOFF.md and plugins.lock.json stay shareable)\n" + TACHYON_GITIGNORE_ENTRIES.join("\n") + "\n");
+    expect(out).toBe("dist\n\n# Tachyon — machine-local state (HANDOFF.md stays shareable)\n" + TACHYON_GITIGNORE_ENTRIES.join("\n") + "\n");
   });
 
   it("is idempotent — returns null when all entries are already present", () => {
@@ -163,7 +162,10 @@ describe("ensureTachyonGitignore", () => {
 
   it("reopens only the two committed Tachyon files", () => {
     const entries = (ensureTachyonGitignore(undefined) ?? "").split("\n").filter((l) => l && !l.startsWith("#"));
-    expect(entries).toEqual([".tachyon/*", "!.tachyon/HANDOFF.md", "!.tachyon/plugins.lock.json"]);
+    // 516 — duas entradas, não três: a exceção do lockfile saiu com o lockfile. O sistema novo não
+    // tem receita de re-hidratação porque não tem transação — um plugin é uma pasta, e um clone que
+    // quer o plugin instala o zip.
+    expect(entries).toEqual([".tachyon/*", "!.tachyon/HANDOFF.md"]);
   });
 });
 
@@ -193,7 +195,7 @@ describe("Init gitignore vs credential-class paths in a fresh workspace (t-4290d
   function initWorkspace(): string {
     const repo = fs.mkdtempSync(path.join(os.tmpdir(), "t4290d0-init-ws-"));
     execFileSync("git", ["init", "-q"], { cwd: repo, stdio: "ignore" });
-    for (const rel of [...MUST_BE_IGNORED, ".tachyon/sessions.json", ".tachyon/plugins.lock.json", ".tachyon/HANDOFF.md"]) {
+    for (const rel of [...MUST_BE_IGNORED, ".tachyon/sessions.json", ".tachyon/HANDOFF.md"]) {
       fs.mkdirSync(path.join(repo, path.dirname(rel)), { recursive: true });
       fs.writeFileSync(path.join(repo, rel), "");
     }
@@ -218,14 +220,13 @@ describe("Init gitignore vs credential-class paths in a fresh workspace (t-4290d
     }
   });
 
-  it("keeps the lockfile and HANDOFF.md unignored because both are committed by design", () => {
+  it("keeps HANDOFF.md unignored because it is committed by design", () => {
     const repo = initWorkspace();
     try {
       // The two untracked Tachyon files are committed BY DESIGN; -uall enumerates them instead of
       // letting git collapse the directory in its default display.
       const status = execFileSync("git", ["status", "--porcelain", "-uall"], { cwd: repo, encoding: "utf8" }).trim().split("\n").sort();
-      expect(status).toEqual(["?? .gitignore", "?? .tachyon/HANDOFF.md", "?? .tachyon/plugins.lock.json"]);
-      expect(isIgnored(repo, ".tachyon/plugins.lock.json")).toBe(false);
+      expect(status).toEqual(["?? .gitignore", "?? .tachyon/HANDOFF.md"]);
       expect(isIgnored(repo, ".tachyon/HANDOFF.md")).toBe(false);
       // t-a65335 — the workspace settings file is personal, machine-local configuration BY DESIGN:
       // it must stay out of git, unlike the two committed-by-design files above.

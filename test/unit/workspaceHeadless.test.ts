@@ -3844,19 +3844,13 @@ describe("Agent Studio — authorizing a capability with the agent running (t-74
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(path.join(dir, "SKILL.md"), `# ${skill}\n`);
       }
-      fs.mkdirSync(path.join(ws.workspaceRoot, ".tachyon"), { recursive: true });
-      fs.writeFileSync(path.join(ws.workspaceRoot, ".tachyon", "plugins.lock.json"), JSON.stringify({
-        plugins: {
-          cartografia: {
-            name: "cartografia",
-            version: "1.0.0",
-            runtimes: ["claude"],
-            targets: [
-              { runtime: "claude", kind: "skill-dir", file: ".claude/skills/mapa" },
-              { runtime: "claude", kind: "skill-dir", file: ".claude/skills/bussola" },
-            ],
-          },
-        },
+      // 516 — o payload JÁ está no disco (o laço acima), e é isso que o torna instalado. Só falta o
+      // manifesto ao lado dele: não há lockfile a escrever.
+      fs.writeFileSync(path.join(ws.workspaceRoot, ".tachyon", "plugins", "cartografia", "tachyon-plugin.json"), JSON.stringify({
+        name: "cartografia",
+        version: "1.0.0",
+        description: "duas skills para achar o caminho",
+        runtimes: ["claude"],
       }));
       expect(await ws.authorizeAgentPlugin(AGENT, "cartografia")).toMatchObject({ ok: true });
       await ws.manager.spawn(AGENT);
@@ -3901,19 +3895,13 @@ describe("Agent Studio — authorizing a capability with the agent running (t-74
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(path.join(dir, "SKILL.md"), `# ${skill}\n`);
       }
-      fs.mkdirSync(path.join(ws.workspaceRoot, ".tachyon"), { recursive: true });
-      fs.writeFileSync(path.join(ws.workspaceRoot, ".tachyon", "plugins.lock.json"), JSON.stringify({
-        plugins: {
-          cartografia: {
-            name: "cartografia",
-            version: "1.0.0",
-            runtimes: ["claude"],
-            targets: [
-              { runtime: "claude", kind: "skill-dir", file: ".claude/skills/mapa" },
-              { runtime: "claude", kind: "skill-dir", file: ".claude/skills/bussola" },
-            ],
-          },
-        },
+      // 516 — o payload JÁ está no disco (o laço acima), e é isso que o torna instalado. Só falta o
+      // manifesto ao lado dele: não há lockfile a escrever.
+      fs.writeFileSync(path.join(ws.workspaceRoot, ".tachyon", "plugins", "cartografia", "tachyon-plugin.json"), JSON.stringify({
+        name: "cartografia",
+        version: "1.0.0",
+        description: "duas skills para achar o caminho",
+        runtimes: ["claude"],
       }));
 
       expect(await ws.authorizeAgentPlugin(AGENT, "cartografia")).toMatchObject({

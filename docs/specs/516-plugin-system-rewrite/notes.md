@@ -197,3 +197,46 @@ apresentação que reprovava um arquivo do lado certo, e o `toBe(2)` que contrad
 A fatia 4 acrescentou um quarto: `webviewPreviewPluginsFixture` comparava contra um JSON capturado com
 seis estados de frescor. Sem origem remota não há frescor — a fixture virou três estados escritos à
 mão, e o teste passou a segurar a FORMA em vez da captura.
+
+## O buraco que a fatia 4 deixou, e que o compilador não podia ver (0.93.60)
+
+Instalado o 0.93.59, o `sdd` entrou pela porta nova e nenhum diretório de runtime foi criado — a lei
+valeu. Mas o **Agent Studio dizia "No Tachyon plugins are installed in this workspace"** com o plugin
+instalado na tela ao lado.
+
+Causa: `agentCapabilityCandidates.ts` lia `.tachyon/plugins.lock.json` por **caminho literal e
+`JSON.parse`**, sem importar o módulo do lockfile. Apagar o módulo deixou o `tsc` verde e a função
+retornando lista vazia para sempre.
+
+**O apagamento foi verificado por quem não conseguia ver a coisa que sobrou.** É a lição do dia, e a
+correção tem duas partes: a função passou a ler o catálogo (via `readCatalog` + `grantableReferences`,
+a MESMA fonte que a concessão usa), e `noLockfileByPath.test.ts` virou o guarda — uma busca pelo nome
+do arquivo em código, que é o tamanho certo do problema.
+
+O guarda achou sozinho uma terceira sobra que eu não tinha visto: o `.gitignore` que o produto escreve
+ainda reabria `!.tachyon/plugins.lock.json`, descrito como "receita de re-hidratação de um clone". Não
+há receita porque não há transação — um plugin é uma pasta, e um clone que quer o plugin instala o zip.
+
+### E um segundo silêncio, no mesmo lugar
+
+Para o pi, o `prompts/nova-spec` **seria concedido e não aparecia na tela**: o card listava só o que era
+`kind: "skill"`. Autorizar concede o plugin inteiro, então mostrar menos do que o botão entrega é o
+mesmo tipo de defeito que o código ao redor passa a vida recusando. Agora lista toda capacidade
+concedível, e nomeia a família quando não é skill (`nova-spec (prompt)`).
+
+## O card, com o design system aplicado
+
+As classes novas (`.pcard`, `.pcard-head`, `.pdesc`, `.prt`, `.plist`) subiram **sem folha de estilo** —
+as antigas tinham outros nomes. Sem gap nenhum, o nome colava na versão (`sddv2.0.0`) e os quatro
+runtimes viravam uma palavra só (`claudecodexgrokpi`).
+
+Nada disso aparece numa asserção de DOM: `textContent` já era o texto certo, e a diferença estava só no
+espaço. Por isso `pluginCardShots.test.ts` **mede distâncias** além de tirar o retrato — irmãos numa
+linha têm de estar separados, e as ações têm de estar do outro lado do card.
+
+A hierarquia é de três níveis, deliberada: QUEM é o plugin (nome + versão), O QUE faz (descrição), O
+QUE traz (pastilhas + runtimes). Toda distância é um passo de `--ds-spacing-size*`.
+
+Evidence: `.tachyon/visual-qa/516-plugin-card/` — 880 e 360, mais o estado quebrado.
+Verdict: aprovado. Os três níveis leem, os runtimes ficam agrupados e separados das capacidades, e a
+única linha colorida é a da ferramenta externa que falta — a única em que o humano precisa agir.

@@ -255,12 +255,12 @@ export function authorizedSkillStates(
   return states;
 }
 
-/** Resolve a skill NAME to its origin by consulting the plugin lockfile, which is the only honest
- * discriminator: a plugin skill edited by hand diverges in content and is still the plugin's. */
+/** Resolve a skill NAME to its origin consultando o CATÁLOGO, que é o discriminador honesto: uma skill
+ * de plugin editada à mão diverge em conteúdo e continua sendo do plugin. */
 export function skillOriginFor(workspaceRoot: string, skillName: string, adapter: string): SkillOrigin | undefined {
   const lock = readPluginLock(workspaceRoot);
   for (const plugin of lock) {
-    const owns = plugin.targets.some((target) => target.kind === "skill-dir" && path.posix.basename(target.file) === skillName);
+    const owns = plugin.targets.some((target) => target.kind === "skill" && path.posix.basename(target.file) === skillName);
     if (!owns) continue;
     return { kind: "plugin", plugin: plugin.name, skill: skillName, version: plugin.version, runtimes: plugin.runtimes };
   }

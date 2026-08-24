@@ -105,7 +105,10 @@ function pickAgent(installed: string[]): { bin: string; detected: boolean } {
 export const TACHYON_GITIGNORE_ENTRIES = [
   ".tachyon/*",
   "!.tachyon/HANDOFF.md", // spec 245 — durable, committed project handoff
-  "!.tachyon/plugins.lock.json", // spec 250 — committed clone re-hydration recipe
+  // 516 — a exceção do lockfile de plugins saiu: não existe mais um lockfile. Ela era a "receita de
+  // re-hidratação de um clone" — o arquivo que um clone novo lia para reinstalar o que a máquina
+  // original tinha. O sistema novo não tem receita porque não tem transação: um plugin é uma pasta,
+  // e um clone que quer o plugin instala o zip.
 ];
 
 /**
@@ -119,7 +122,7 @@ export function ensureTachyonGitignore(existing: string | undefined): string | n
   if (lines.includes(".tachyon/") || lines.includes(".tachyon")) return null; // whole dir already ignored
   const missing = TACHYON_GITIGNORE_ENTRIES.filter((e) => !lines.includes(e));
   if (missing.length === 0) return null;
-  const block = ["# Tachyon — machine-local state (HANDOFF.md and plugins.lock.json stay shareable)", ...missing].join("\n") + "\n";
+  const block = ["# Tachyon — machine-local state (HANDOFF.md stays shareable)", ...missing].join("\n") + "\n";
   if (!existing || existing.trim() === "") return block;
   return existing.endsWith("\n") ? `${existing}\n${block}` : `${existing}\n\n${block}`;
 }
