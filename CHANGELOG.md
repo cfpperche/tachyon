@@ -4,6 +4,30 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.62 — o Codex recebe suas skills sem tocar no seu projeto
+
+Um agente Codex recebia as skills concedidas dentro de `<projeto>/.agents/skills` — um diretório que é
+seu. Não por escolha: a versão do Codex de então não lia skills de mais lugar nenhum, então entregar
+significava escrever no seu checkout e depois desligar, uma a uma, todas as skills que o agente não
+podia ver.
+
+O Codex mudou. Medido na 0.149.0, com controle: ele lê skills da própria casa privada. Então a entrega
+virou o que já era no Grok e no Pi — **escrever na casa do agente** — e o seu projeto deixou de ser
+tocado.
+
+### O que isso dispensa
+
+Uma classe inteira de problema, não uma linha de código. Não há mais como alguém deixar um arquivo com
+o nome da skill concedida no caminho onde o agente procura — e não há mais a recusa de launch que isso
+provocava, com uma mensagem mandando reautorizar algo que reautorizar não consertava.
+
+A garantia de que você recebe exatamente o conteúdo autorizado **não se perdeu**: ela é conferida
+contra o pacote do plugin, na hora de capturá-lo, que é um lugar melhor do que conferir contra o que
+por acaso estivesse num diretório compartilhado.
+
+E a negação ficou mais estrita: **toda** skill solta no projeto é desligada agora, sem exceção — antes
+a concedida precisava ser poupada, porque morava lá.
+
 ## 0.93.61 — quem não recebeu nada passa a ser o mais isolado
 
 Duas skills escritas à mão no checkout compartilhado, e um agente codex **sem concessão nenhuma**
