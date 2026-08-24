@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
 
 /**
@@ -8,6 +9,21 @@ import path from "node:path";
  * an s3-compatible backend maps them 1:1 (putObject/getObject/list/deleteObject); gdrive likewise.
  * Deliberately NOT content-addressed and NOT incremental: the durable set is kilobytes, so every
  * generation is written whole. Optimize when a real workspace makes that slow, not before.
+ *
+ * ## Toda I/O aqui é ASSÍNCRONA, e isso não é estilo
+ *
+ * A primeira versão usava `fs.writeFileSync` e companhia DENTRO destes métodos `async` — a assinatura
+ * prometia não bloquear e a implementação bloqueava. Numa engine de event loop único isso para tudo:
+ * enquanto o backup escreve, a engine não responde a nada, nem à sonda de saúde que o shell usa para
+ * decidir se ela está viva.
+ *
+ * Medido em 2026-08-24 num destino real (disco Windows montado no WSL, 197 arquivos, 22 MB):
+ * **2740 ms** só na escrita (13,9 ms por arquivo) e mais 704 ms relendo. O orçamento da sonda é de
+ * 750 ms, e o supervisor conclui "zumbi" depois de 10 s mudo — então um backup grande o bastante faz
+ * o shell MATAR uma engine perfeitamente viva, e o ciclo se repete a cada passe.
+ *
+ * O comentário acima dizia "otimize quando um workspace real tornar isso lento". Um workspace real
+ * tornou. A correção não é otimizar o volume: é não segurar o loop enquanto se escreve.
  */
 export interface StateBackupAdapter {
   /** human-readable destination for logs/errors (a path, a bucket, ...). */
@@ -43,16 +59,16 @@ export class FilesystemBackupAdapter implements StateBackupAdapter {
 
   async put(key: string, bytes: Buffer): Promise<void> {
     const target = this.resolve(key);
-    fs.mkdirSync(path.dirname(target), { recursive: true });
+    await fsp.mkdir(path.dirname(target), { recursive: true });
     // tmp + rename, not link: mounted destinations (SMB/FUSE) routinely lack hardlink support.
     const tmp = `${target}.tmp.${process.pid}`;
-    fs.writeFileSync(tmp, bytes);
-    fs.renameSync(tmp, target);
+    await fsp.writeFile(tmp, bytes);
+    await fsp.rename(tmp, target);
   }
 
   async get(key: string): Promise<Buffer | null> {
     try {
-      return fs.readFileSync(this.resolve(key));
+      return await fsp.readFile(this.resolve(key));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
@@ -63,27 +79,27 @@ export class FilesystemBackupAdapter implements StateBackupAdapter {
     assertSafeKey(prefix);
     const base = path.join(this.root, ...prefix.split("/"));
     const keys: string[] = [];
-    const walk = (dir: string, rel: string): void => {
+    const walk = async (dir: string, rel: string): Promise<void> => {
       let entries: fs.Dirent[];
       try {
-        entries = fs.readdirSync(dir, { withFileTypes: true });
+        entries = await fsp.readdir(dir, { withFileTypes: true });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
         throw error;
       }
       for (const entry of entries) {
         const childRel = rel ? `${rel}/${entry.name}` : entry.name;
-        if (entry.isDirectory()) walk(path.join(dir, entry.name), childRel);
+        if (entry.isDirectory()) await walk(path.join(dir, entry.name), childRel);
         else if (entry.isFile() && !entry.name.includes(".tmp.")) keys.push(`${prefix}/${childRel}`);
       }
     };
-    walk(base, "");
+    await walk(base, "");
     return keys;
   }
 
   async remove(key: string): Promise<void> {
     try {
-      fs.unlinkSync(this.resolve(key));
+      await fsp.unlink(this.resolve(key));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }

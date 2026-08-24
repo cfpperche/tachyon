@@ -197,3 +197,41 @@ describe("StateBackupService", () => {
     service.dispose();
   });
 });
+
+/**
+ * O BACKUP NÃO PODE SEGURAR O EVENT LOOP DA ENGINE, e este caso trava a propriedade em vez do estilo.
+ *
+ * Medido em 2026-08-24 num destino real (disco Windows montado no WSL, 197 arquivos, 22 MB): a
+ * versão síncrona deixava a engine **muda por 25,7 s** — 28 timeouts seguidos de uma sonda de saúde
+ * rodando em OUTRO processo, sem carga nenhuma. O shell dá 750 ms por sonda e conclui "zumbi" depois
+ * de 10 s mudo, então ele matava uma engine perfeitamente viva e relançava outra, a cada 11 min 24 s,
+ * despejando três avisos no humano por ciclo. A engine não caía: ela era executada.
+ *
+ * A assinatura do adaptador SEMPRE foi `Promise<void>` — era a implementação que chamava
+ * `writeFileSync` por dentro. Prometer não bloquear e bloquear é pior que declarar-se síncrono, e
+ * nenhum tipo pega isso.
+ *
+ * A propriedade aqui é a mais simples que separa os dois casos, e é exata: **um `await` cede o loop,
+ * uma chamada síncrona não.** Com I/O assíncrona o timer dispara durante o passe; com a versão
+ * síncrona ele dispara ZERO vezes, porque nenhum callback roda entre o primeiro e o último `put`.
+ */
+describe("statesync — o passe de backup cede o event loop", () => {
+  it("deixa timers rodarem enquanto escreve, para a engine seguir respondendo a sonda de saúde", async () => {
+    const destino = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-lag-"));
+    try {
+      const adapter = new FilesystemBackupAdapter(destino);
+      const bytes = Buffer.alloc(64 * 1024);
+      let ticks = 0;
+      const amostrador = setInterval(() => { ticks += 1; }, 1);
+      try {
+        for (let i = 0; i < 300; i += 1) await adapter.put(`d${i % 8}/f${i}.bin`, bytes);
+      } finally {
+        clearInterval(amostrador);
+      }
+      expect(ticks, "o loop não rodou nenhum timer durante o passe — a I/O está bloqueando").toBeGreaterThan(0);
+      expect(await adapter.list("d0")).not.toHaveLength(0);
+    } finally {
+      fs.rmSync(destino, { recursive: true, force: true });
+    }
+  });
+});

@@ -27,6 +27,11 @@ export function runRelease({ args = [], run = runCommand, root = process.cwd() }
     { repositoryRoot: root },
   );
   run("npm", ["run", "smoke:vsix"]);
+  // t-88df49 — o release SUJOU o build, o release limpa. `build:stable` deixa o
+  // `engine-manifest.json` do disco no canal `stable`, e `enginePackaging.test.ts` le o que estiver
+  // la e exige `dev` — entao toda suite rodada depois de um release falhava por artefato parado, no
+  // meio de 8.000 casos verdes, com cara de regressao. Custou tres investigacoes num unico dia.
+  run("node", ["scripts/build-engine-channel.mjs", "dev"]);
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : undefined;

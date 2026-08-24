@@ -28,7 +28,7 @@ describe("release command", () => {
     expect(Object.values(extensionManifest.scripts).join("\n")).not.toMatch(/(?:^|\s)vsce\s+package(?:\s|$)/m);
   });
 
-  it("runs stable build, assertion, packaging, and smoke in order", async () => {
+  it("runs stable build, assertion, packaging, smoke, and restores the dev build in order", async () => {
     const { runRelease } = await import("../../scripts/release.mjs");
     const calls: Array<[string, string[]]> = [];
 
@@ -44,6 +44,11 @@ describe("release command", () => {
       ["npm", ["run", "package:assert"]],
       ["vsce", ["package", "--no-dependencies", "--out", "tachyon.vsix"]],
       ["npm", ["run", "smoke:vsix"]],
+      // t-88df49 — o release e quem suja o build, entao e o release quem limpa. Sem esta ultima
+      // etapa o `engine-manifest.json` do disco fica no canal `stable` e `enginePackaging.test.ts`,
+      // que le o que estiver la e exige `dev`, falha em TODA suite rodada depois de um release --
+      // uma falha com cara de regressao no meio de 8.000 casos verdes.
+      ["node", ["scripts/build-engine-channel.mjs", "dev"]],
     ]);
   });
 
