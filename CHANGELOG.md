@@ -4,6 +4,27 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.60 — o Agent Studio volta a enxergar os plugins
+
+A versão anterior instalou o plugin certo, no lugar certo, sem tocar no seu projeto — e o Agent
+Studio dizia que não havia plugin nenhum instalado.
+
+A tela que lista o que se pode conceder a um agente lia o arquivo de registro **pelo nome, dentro de
+uma string**. Quando esse arquivo deixou de existir, o compilador não teve como perceber e a lista
+passou a ser vazia para sempre. Agora ela lê o catálogo — a mesma fonte que a concessão usa — e há uma
+checagem que procura pelo nome do arquivo no código, porque foi exatamente isso que ninguém procurou.
+
+Um segundo silêncio no mesmo lugar: num agente pi, um `prompt` que o plugin traz **seria concedido e
+não aparecia na lista**. Autorizar concede o plugin inteiro, então mostrar menos do que o botão
+entrega é a forma de erro que este produto passa a vida recusando.
+
+### O card do plugin
+
+Subiu sem folha de estilo — o nome colava na versão (`sddv2.0.0`) e os quatro runtimes viravam uma
+palavra só (`claudecodexgrokpi`). Agora tem três níveis de leitura: quem é o plugin, o que ele faz, o
+que ele traz. Nada disso aparece numa verificação de código: o texto já era o certo, o que faltava era
+o espaço entre as palavras — então a verificação passou a medir distâncias e a olhar o retrato.
+
 ## 0.93.59 — o sistema de plugins, reescrito do zero
 
 Um plugin é uma pasta que você descompacta. Ela fica lá **inerte**. Um agente que recebe a concessão
