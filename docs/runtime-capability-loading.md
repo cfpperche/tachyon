@@ -15,6 +15,24 @@ Três perguntas por runtime, **e as três respondidas para cada capacidade** —
 Uma capacidade não medida é uma linha em branco na tabela, nunca uma omissão silenciosa: a primeira
 versão da seção do Grok saiu sem hooks e o dono percebeu antes de mim.
 
+## Este documento é verificado, não só escrito
+
+```sh
+npx vite-node scripts/dogfood/runtime-drift.ts          # os quatro
+npx vite-node scripts/dogfood/runtime-drift.ts codex    # um só
+```
+
+Doze fatos daqui viraram checagem. Quando um runtime muda, isso **falha nomeando o quê** — em vez de a
+descoberta vir por acaso, oito versões depois.
+
+Existe porque foi exatamente o que aconteceu: `$CODEX_HOME/skills` passou a ser lido entre a 0.146.1 e
+a 0.149.0, e o produto seguiu construindo sobre o contrário. **Ninguém errou — a medição estava certa
+no dia. Faltou alguém perguntar de novo.**
+
+Quase tudo é medido sem gastar chamada (`codex debug prompt-input`, `grok inspect`, `grok mcp doctor`,
+o log de descoberta do claude antes da autenticação, o `project_trust` do pi). Onde só uma chamada
+prova, a checagem gasta: provar que o sistema funciona vale mais que economizar um turno.
+
 ---
 
 ## Claude Code 2.1.241 — medido em 2026-08-24

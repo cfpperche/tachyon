@@ -4,6 +4,8 @@
 
 **Dogfood:** `npx vite-node scripts/dogfood/plugin-system-v2.ts`
 
+**Dogfood:** `npx vite-node scripts/dogfood/runtime-drift.ts`
+
 ## Fatia 0 — medir antes de prometer
 
 - [x] **T1 (R1, PRIMEIRO)** — medir se o claude descobre `<cwd>/.claude/skills` com
