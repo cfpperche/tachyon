@@ -127,8 +127,86 @@ digest-no-caminho-de-descoberta a menos.
 
 ---
 
-## Codex — a fazer
+## Grok 1.0.5 — medido em 2026-08-24
 
-## Grok — a fazer
+**Instrumento:** `grok inspect` lista o que ele descobre, com a fonte de cada item — muito melhor que
+log. Mas ele **lista o que existe, não o que roda**: um item pode aparecer e nunca ser carregado. Para
+MCP o instrumento decisivo é `grok mcp doctor`, que tenta iniciar cada servidor e diz por que falhou.
+
+> **Armadilha paga aqui:** `grok inspect` e `grok mcp list` DISCORDAM sobre os servidores de
+> `.mcp.json` — o primeiro lista, o segundo não. Nenhum dos dois responde a `[compat.claude] mcps`.
+> Passei disso para o `doctor` em vez de escolher a leitura que me convinha; a resposta estava numa
+> terceira palavra que nenhum dos dois dizia (`folder untrusted`).
+
+### 1. O que ele carrega sozinho
+
+| capacidade | de onde |
+|---|---|
+| **skills** | `$GROK_HOME/skills` (user) **e TRÊS raízes de projeto**: `<cwd>/.grok/skills`, `<cwd>/.agents/skills` (a do codex) e `<cwd>/.claude/skills` (a do claude) |
+| **MCP** | `<cwd>/.grok/config.toml` **e `<cwd>/.mcp.json`** (o arquivo do claude) |
+
+`GROK_HOME` privado **não fecha nada disso** — confirma na 1.0.5 o que a t-26f508 mediu na 0.2.112.
+Grok é o runtime que lê mais casas alheias: ele descobre pelas raízes dos outros dois.
+
+### 2. As portas de negar
+
+| porta | skills do projeto | MCP do projeto |
+|---|---|---|
+| **`[skills] ignore = [<raízes>]`** | **somem** (4 itens → 1) | não fecha |
+| `[compat.<runtime>] skills = false` | marca `[disabled]`, **continua listada**; e não cobre `.agents/skills` | — |
+| `[compat.claude] mcps = false` | — | **não fecha** (medido: sem efeito nas três leituras) |
+| **`disabled_mcp_servers = [<nomes>]`** | — | **fecha** — `✗ disabled in config`, não inicia |
+| **retirar a confiança da pasta** | — | **fecha tudo de projeto**: `repo-local server not started for an untrusted folder` |
+
+`[skills].ignore` é uma lista de **caminhos**; `disabled_mcp_servers` é uma lista de **nomes**. A
+segunda exige saber o nome antes, o que significa descobrir primeiro — não é negar por padrão.
+
+### 3. O portão que decide MCP é a CONFIANÇA da pasta, e o Tachyon a concede
+
+Sem confiança, nenhum servidor de projeto inicia. Com ela, os dois iniciam — medido no `doctor`:
+
+```
+Project trusted: no   → ✗ folder untrusted (repo-local server not started)
+Project trusted: yes  → ✓ command found  ✓ server started
+```
+
+O Tachyon **semeia** essa confiança (`seedGrokTrustedFolders`, `trusted_folders.toml`), e por boa
+razão: sem ela o spawn trava num "Do you trust the contents of this directory?" interativo.
+
+**Consequência, e é um buraco:** a config que o Tachyon gera hoje fecha as skills do projeto
+(`[skills].ignore` nas duas raízes que ele conhece) e **não fecha os servidores MCP do projeto**. Um
+`.mcp.json` ou um `.grok/config.toml` no checkout compartilhado dá a todo agente Grok um servidor MCP
+que ninguém concedeu — e um servidor MCP é capacidade executável, não texto.
+
+### 4. O que a config gerada cobre, e o que falta
+
+Lido de um `config.toml` real que o Tachyon escreveu:
+
+```toml
+[skills]
+ignore = ["<ws>/.agents/skills", "<ws>/.grok/skills"]   # falta "<ws>/.claude/skills"
+[memory] enabled = false
+[compat.cursor] / [compat.claude]  ... = false
+[mcp_servers.tachyon_bridge] ...
+```
+
+Duas lacunas medidas, ambas pequenas de fechar:
+
+1. **`<cwd>/.claude/skills` não está no `ignore`.** Hoje ela cai no `[compat.claude] skills = false`,
+   que marca `[disabled]` em vez de remover — e "disabled" é uma palavra do runtime, não uma garantia
+   que eu medi valer no turno.
+2. **Nenhuma porta fecha o MCP do projeto.** Fechar exige `disabled_mcp_servers` com os nomes lidos do
+   `.mcp.json`/`.grok/config.toml` do projeto — descobrir para negar, que é o mesmo formato feio da
+   supressão por path do codex.
+
+### 5. As portas explícitas
+
+O Grok **não tem** um `--plugin-dir` nem um `--mcp-config`. O que existe é a home privada: skills
+concedidas são reconstruídas em `$GROK_HOME/skills` e servidores concedidos entram no `config.toml`
+gerado. É materialização, não passagem por argumento — o oposto do Claude Code e do pi.
+
 
 ## Pi — a fazer
+
+## Codex — a fazer
+
