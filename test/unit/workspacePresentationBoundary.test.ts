@@ -76,7 +76,12 @@ describe("persistent workspace presentation boundary", () => {
     for (const relative of migrated) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");
       expect(source, relative).not.toMatch(/workspace\/Workspace(?:\.js)?/);
-      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|PluginPresentation|Activity|Handoff|Board|PinStudio|Sidebar|TaskDetail|TaskStudio|AgentStudio|Studio)Target/);
+      // 516 — `PluginProfile` entra na lista porque É um seam de apresentação como os outros
+      // (`WorkspacePluginProfileTarget extends WorkspaceGitPresentationTarget`). Ele já era usado
+      // pelo painel de Plugins; o que o mantinha fora da alternância era o painel importar TAMBÉM o
+      // `GitPresentationTarget`, que casava. Quando a reescrita deixou de precisar do segundo, a
+      // regra reprovou um arquivo que sempre esteve do lado certo da fronteira.
+      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|PluginPresentation|PluginProfile|Activity|Handoff|Board|PinStudio|Sidebar|TaskDetail|TaskStudio|AgentStudio|Studio)Target/);
     }
   });
 

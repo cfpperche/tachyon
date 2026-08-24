@@ -25,7 +25,7 @@
 
 - [x] **T7** — `plugins2/install.ts`: zip → `.tachyon/plugins/<nome>/`, reusando
   `extractZipContained`. Reinstalar substitui. Remover é apagar a pasta.
-- [ ] **T8** — a aba Plugins passa a falar com o sistema novo: listar, instalar por zip, remover,
+- [x] **T8** — a aba Plugins passa a falar com o sistema novo: listar, instalar por zip, remover,
   docs. O caminho de git e o de atualização somem da tela.
 - [x] **T9** — testes: instalar não cria `.claude`/`.agents`/`.grok`; remover não deixa resíduo;
   instalar duas vezes é idempotente.

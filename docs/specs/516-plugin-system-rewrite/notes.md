@@ -108,3 +108,44 @@ ok — 2 capacidade(s) concedível(is), digest conferido contra a custódia
 ok — prompts/ chega ao pi e a mais ninguém; skills/ chega aos quatro
 ok — desinstalar apagou a pasta e nada mais precisou ser consultado
 ```
+
+## T8 — a UI, e três coisas que a reescrita revelou
+
+O painel foi de **1.117 para 356 linhas**, e o webview perdeu a gaveta de consentimento, o filtro, a
+ordenação e o temporizador de 3 segundos. Nenhum deles sobrevive a "não há origem remota" e "instalar
+não escreve": não há frescor a reconsultar, não há colisão a decidir, e uma lista de três plugins não
+precisa de filtro.
+
+### Uma regressão que eu ia entregar, e o teste que a pegou
+
+Meu `remove` novo apagava a pasta e pronto. O teste do painel antigo dizia, no nome, o que faltava:
+*"a successful remove revokes profile grants BEFORE deleting the payload"* (t-b1940c). Sem isso, um
+agente com concessão para o plugin removido seria recusado no launch por `missing-reference` — estado
+que o humano não pediu e não sabe desfazer. A ordem foi restaurada inteira, junto com a regra de que
+uma revogação que **não completa** recusa a remoção: o plugin continua instalado, que é o estado do
+qual ainda se pode sair.
+
+Se eu tivesse apagado esse teste junto com o sistema antigo — que era a tentação, já que ele estava
+escrito contra a gaveta de consentimento —, teria apagado a única coisa que documentava a ordem.
+
+### Um teste que passava por coincidência
+
+`controlStringsReachability` exige que toda string do catálogo seja referenciada como `.<chave>` num
+app. A chave `openConfig` passava porque o App de plugins tinha um `dispatch.openConfig` — uma ação
+sem nenhuma relação com a string "Open workspace settings". Apagado o App, a chave ficou órfã e o
+teste finalmente disse a verdade: **nenhum app jamais renderizou aquela string.** Removida do catálogo,
+do tipo e da fixture.
+
+### Uma regra que reprovou um arquivo do lado certo
+
+`workspacePresentationBoundary` exige que um painel seja tipado contra um seam de apresentação. O
+`WorkspacePluginProfileTarget` **é** um (`extends WorkspaceGitPresentationTarget`), mas não estava na
+alternância do regex — o painel antigo passava porque importava TAMBÉM o `GitPresentationTarget`.
+Quando a reescrita deixou de precisar do segundo, a regra reprovou um arquivo que sempre esteve do
+lado certo da fronteira. `PluginProfile` entrou na lista.
+
+### E um número que dizia o contrário do nome do teste
+
+`"PluginsApp still owns exactly one .ck-plugins-root"` afirmava `toBe(2)`, porque o App antigo abria
+uma raiz no ramo de carregamento e outra no ramo carregado. O novo tem uma raiz só e decide o conteúdo
+dentro dela. O número virou 1, e agora diz o que o nome sempre disse.

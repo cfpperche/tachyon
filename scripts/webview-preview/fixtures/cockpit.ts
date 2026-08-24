@@ -77,7 +77,6 @@ export const strings: CockpitStrings & WorktreesStrings = {
   continueTaskDestDetail: "New session with focused handoff from {0}",
   reveal: "Reveal",
   copyPath: "Copy path",
-  openConfig: "Open workspace settings",
   settingsBody:
     "Two settings files, on purpose: yours on this machine, the project's shared with the team. They own different knobs.",
   settingsScopeGlobalTitle: "Global (personal)",

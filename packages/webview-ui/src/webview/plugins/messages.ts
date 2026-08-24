@@ -1,18 +1,25 @@
 /**
- * spec 278 — the SHARED host↔webview message envelope for the Plugins view.
+ * 516 — o envelope host↔webview da aba Plugins.
  *
- * Pure module (no vscode, no preact — only VM TYPES, which esbuild erases): imported by the host sender
- * (`PluginsPanelManager`), the webview listener (`plugins/main.tsx`), AND the dev preview harness
- * (`scripts/webview-preview/routes.ts`). The `type` strings + message shapes live here ONCE, so an
- * envelope rename or VM-shape change breaks the BUILD (typecheck), not a silent preview screenshot.
+ * ## Por que ele encolheu tanto
+ *
+ * O envelope antigo tinha vinte e duas ações e quatro mensagens de host, e a maioria existia por
+ * causa de coisas que não existem mais: checar atualização (não há origem remota), consentir por
+ * runtime (a instalação não escreve em runtime nenhum), decidir Keep/Replace numa colisão (não há
+ * escrita para colidir), aplicar e desaplicar contribuição (a entrega é decidida na concessão),
+ * provisionar ferramenta (o Tachyon não baixa binário), reparar git hooks (saem da v1).
+ *
+ * Sobrou o que a tela realmente faz: mostrar o que está instalado, instalar um arquivo, remover, e
+ * abrir a documentação.
+ *
+ * PURO por desenho (sem vscode, sem preact): importado pelo host, pelo webview e pelo harness de
+ * preview, para que renomear um envelope quebre o BUILD e não uma captura de tela.
  */
-
-import type { PluginsViewModel } from "../../plugins/viewModel";
-import type { ConsentVM } from "../../plugins/consentViewModel";
+import type { PluginsViewModel } from "@tachyon/engine/plugins2/viewModel.js";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 
-/** host → webview: the installed-plugins model (the main view). */
+/** host → webview: o catálogo, lido do disco. */
 export const PLUGINS = "plugins" as const;
 export interface PluginsMessage {
   type: typeof PLUGINS;
@@ -22,17 +29,7 @@ export function pluginsMessage(vm: PluginsViewModel): PluginsMessage {
   return { type: PLUGINS, vm };
 }
 
-/** host → webview: open the consent drawer for a pending install/update. */
-export const CONSENT = "consent" as const;
-export interface ConsentMessage {
-  type: typeof CONSENT;
-  vm: ConsentVM;
-}
-export function consentMessage(vm: ConsentVM): ConsentMessage {
-  return { type: CONSENT, vm };
-}
-
-/** host → webview: a long op is running (drawer/list lock + spinner label). */
+/** host → webview: uma operação longa está em curso. */
 export const BUSY = "busy" as const;
 export interface BusyMessage {
   type: typeof BUSY;
@@ -42,7 +39,7 @@ export function busyMessage(label: string): BusyMessage {
   return { type: BUSY, label };
 }
 
-/** host → webview: an op finished (toast). */
+/** host → webview: uma operação terminou. */
 export const RESULT = "result" as const;
 export interface ResultMessage {
   type: typeof RESULT;
@@ -54,15 +51,12 @@ export function resultMessage(ok: boolean, message: string): ResultMessage {
 }
 
 /**
- * 515 — host → webview: what the plugin file chooser draws.
+ * host → webview: o que o seletor de arquivo desenha.
  *
- * One message carries both screens the picker has, because they are one answer at different depths:
- * `candidates` is the nearby-archives screen it opens on, `listing` is a directory the human browsed
- * into. The host replaces the whole object each time, so the picker never merges two answers.
- *
- * `error` exists so a refusal can travel as a REASON. The app picker shipped without it once and drew
- * "no .zip found in " for a query that had been rejected outright — an empty answer wearing a measured
- * one's clothes.
+ * Duas telas numa mensagem só, porque são a mesma resposta em profundidades diferentes: `candidates`
+ * é a tela de arquivos por perto em que ele abre, `listing` é um diretório em que o humano entrou.
+ * `error` existe para que uma recusa viaje como MOTIVO — a primeira versão disso, em 514, desenhava
+ * "no .zip found in " para uma consulta que tinha sido recusada.
  */
 export const ZIPS = "zips" as const;
 export interface ZipsMessage {
@@ -80,56 +74,11 @@ export function zipsMessage(
   return { type: ZIPS, candidates, roots, ...extra };
 }
 
-/** the union the Plugins webview listens for (host → webview). */
-export type PluginsHostMessage = PluginsMessage | ConsentMessage | BusyMessage | ResultMessage | ZipsMessage;
+export type PluginsHostMessage = PluginsMessage | BusyMessage | ResultMessage | ZipsMessage;
 
-/**
- * SDD 485 D2 — webview → host: "re-read the model, nothing has been asked for". The app's own 3s timer,
- * which is the timer CONTROL used to own: inside Control the plugins model was re-posted as a side effect
- * of `sendSectionModule()` running every three seconds for whatever section was active.
- *
- * It is a SEPARATE word from `refresh` on purpose, and the separation is the product behaviour rather than
- * taste. `refresh` is the human pressing the Refresh button, and the host answers it by DROPPING every
- * update check it has found (`io.setChecks({})`) — that is what the button means. A poll that shared the
- * word would run that drop twenty times a minute and a just-found "update available" badge would vanish
- * within three seconds: t-0fc9ee's bug exactly, arriving by a new road. So the poll asks for a re-gather
- * and nothing else, and it is the message `pluginsRefreshKind` claims for the visibility gate.
- */
-export const POLL = "poll" as const;
-export interface PollActionMessage {
-  type: typeof POLL;
-}
-export function pollAction(): PollActionMessage {
-  return { type: POLL };
-}
-
-export interface ConfirmPayload {
-  token: string;
-  skillDecisions?: Record<string, "keep" | "replace">;
-  mcpDecisions?: Record<string, "keep" | "replace">;
-  mcpConfirmed?: boolean;
-  gitHookConfirmed?: boolean;
-  toolConfirmed?: boolean;
-  dataConfirmed?: boolean;
-  viewConfirmed?: boolean;
-  fleetReadConfirmed?: boolean;
-  actionConfirmed?: Record<string, boolean>;
-}
-
-/** webview -> host: apply the currently-open consent drawer, echoing every required acknowledgement. */
-export interface ConfirmActionMessage extends ConfirmPayload {
-  type: "confirm";
-}
-export function confirmMessage(payload: ConfirmPayload): ConfirmActionMessage {
-  return { type: "confirm", ...payload };
-}
-
-/** spec 280 — the webview→host action type union (the Plugins view's inbound messages). Typing the host's
- *  InboundMsg.type against this makes a typo'd `case "…"` a compile error (the typed-union convention). */
+/** webview → host: as seis coisas que a tela faz. Tipar a união faz de um `case` errado um erro de build. */
 export type PluginsActionType =
-  | "ready" | "refresh" | "poll" | "checkUpdates" | "checkPluginUpdate" | "install" | "installZip" | "browseZips" | "systemBrowseZip" | "installZipFrom" | "update" | "reinstall" | "remove"
-  | "reselect" | "repair" | "rehydrate" | "confirm" | "cancel" | "openConfig" | "openDocs" | "installExternal"
-  | "applyMcp" | "unapplyMcp" | "applyContribution" | "unapplyContribution";
+  | "ready" | "refresh" | "install" | "browseZips" | "systemBrowseZip" | "installFrom" | "remove" | "openDocs";
 
-/** t-d23f93 — the result-toast shape (moved from the retired standalone bootstrap main.tsx). */
+/** t-d23f93 — a forma do toast de resultado. */
 export interface Toast { ok: boolean; message: string; }
