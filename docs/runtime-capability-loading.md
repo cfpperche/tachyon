@@ -6,11 +6,14 @@ documentação lida. O instrumento importa tanto quanto o resultado, então ele 
 Existe porque o sistema de plugins ficou complicado tentando entregar capacidade a quatro runtimes
 sem que estivesse escrito, num lugar só, **o que cada um faz sozinho**.
 
-Três perguntas por runtime:
+Três perguntas por runtime, **e as três respondidas para cada capacidade** — skills, hooks e MCP:
 
 1. **De onde ele carrega sem que ninguém peça** (a descoberta — o que contamina).
 2. **Como se nega isso** (a porta de negar).
 3. **Como se entrega uma coisa específica** (a porta explícita — o que concede).
+
+Uma capacidade não medida é uma linha em branco na tabela, nunca uma omissão silenciosa: a primeira
+versão da seção do Grok saiu sem hooks e o dono percebeu antes de mim.
 
 ---
 
@@ -140,23 +143,42 @@ MCP o instrumento decisivo é `grok mcp doctor`, que tenta iniciar cada servidor
 
 ### 1. O que ele carrega sozinho
 
-| capacidade | de onde |
-|---|---|
-| **skills** | `$GROK_HOME/skills` (user) **e TRÊS raízes de projeto**: `<cwd>/.grok/skills`, `<cwd>/.agents/skills` (a do codex) e `<cwd>/.claude/skills` (a do claude) |
-| **MCP** | `<cwd>/.grok/config.toml` **e `<cwd>/.mcp.json`** (o arquivo do claude) |
+| capacidade | de onde | o projeto entra? |
+|---|---|---|
+| **skills** | `$GROK_HOME/skills` **e TRÊS raízes de projeto**: `<cwd>/.grok/skills`, `<cwd>/.agents/skills` (a do codex) e `<cwd>/.claude/skills` (a do claude) | **sim** |
+| **MCP** | `<cwd>/.grok/config.toml` **e `<cwd>/.mcp.json`** (o arquivo do claude) | **sim**, com a pasta confiável |
+| **hooks** | `$GROK_HOME/hooks/*.json` | **não** |
 
-`GROK_HOME` privado **não fecha nada disso** — confirma na 1.0.5 o que a t-26f508 mediu na 0.2.112.
-Grok é o runtime que lê mais casas alheias: ele descobre pelas raízes dos outros dois.
+`GROK_HOME` privado **não fecha** skills nem MCP — confirma na 1.0.5 o que a t-26f508 mediu na 0.2.112.
+Grok é o runtime que lê mais casa alheia: descobre skills e MCP pelas raízes dos outros dois.
+
+**Hooks são a exceção, e vão no sentido contrário.** Medido com um hook de `SessionStart` que dá
+`touch` num arquivo, em três lugares ao mesmo tempo:
+
+| onde | disparou? |
+|---|---|
+| `$GROK_HOME/hooks/*.json` | **sim** |
+| `<cwd>/.grok/hooks/*.json` | **não** — mesmo com a pasta confiável |
+| `<cwd>/.claude/settings.json` | **não** — ele lê skills e MCP do claude, hooks não |
+
+O hook de projeto fica pulado até um `/hooks-trust` explícito, que é uma confiança SEPARADA da
+confiança de pasta (esta última o Tachyon semeia; a de hooks não). Ou seja: **para hooks, o Grok já
+nasce fechado** — e é o único dos três nesse estado.
+
+> Custo desta medição: uma chamada mínima ao Grok. Ele recusa antes de disparar `SessionStart` quando
+> não autenticado, então — diferente do Claude, onde a descoberta acontece antes da autenticação — não
+> havia como medir de graça.
 
 ### 2. As portas de negar
 
-| porta | skills do projeto | MCP do projeto |
-|---|---|---|
-| **`[skills] ignore = [<raízes>]`** | **somem** (4 itens → 1) | não fecha |
-| `[compat.<runtime>] skills = false` | marca `[disabled]`, **continua listada**; e não cobre `.agents/skills` | — |
-| `[compat.claude] mcps = false` | — | **não fecha** (medido: sem efeito nas três leituras) |
-| **`disabled_mcp_servers = [<nomes>]`** | — | **fecha** — `✗ disabled in config`, não inicia |
-| **retirar a confiança da pasta** | — | **fecha tudo de projeto**: `repo-local server not started for an untrusted folder` |
+| porta | skills do projeto | MCP do projeto | hooks do projeto |
+|---|---|---|---|
+| **`[skills] ignore = [<raízes>]`** | **somem** (4 itens → 1) | não fecha | — |
+| `[compat.<runtime>] skills = false` | marca `[disabled]`, **continua listada**; e não cobre `.agents/skills` | — | — |
+| `[compat.claude] mcps = false` | — | **não fecha** (medido: sem efeito nas três leituras) | — |
+| **`disabled_mcp_servers = [<nomes>]`** | — | **fecha** — `✗ disabled in config`, não inicia | — |
+| **retirar a confiança da pasta** | — | **fecha tudo de projeto** | — |
+| **nada a fazer** | — | — | **já fechado** — pulado até `/hooks-trust` |
 
 `[skills].ignore` é uma lista de **caminhos**; `disabled_mcp_servers` é uma lista de **nomes**. A
 segunda exige saber o nome antes, o que significa descobrir primeiro — não é negar por padrão.
@@ -190,7 +212,7 @@ ignore = ["<ws>/.agents/skills", "<ws>/.grok/skills"]   # falta "<ws>/.claude/sk
 [mcp_servers.tachyon_bridge] ...
 ```
 
-Duas lacunas medidas, ambas pequenas de fechar:
+Duas lacunas medidas, ambas pequenas de fechar (hooks não é uma delas — já nasce fechado):
 
 1. **`<cwd>/.claude/skills` não está no `ignore`.** Hoje ela cai no `[compat.claude] skills = false`,
    que marca `[disabled]` em vez de remover — e "disabled" é uma palavra do runtime, não uma garantia
