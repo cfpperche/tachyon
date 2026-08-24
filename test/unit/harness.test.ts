@@ -998,7 +998,9 @@ describe("HarnessManager materialize (fs)", () => {
     // Fail closed: delivering the edited bytes as if the profile had authorized them is the one
     // outcome the grant exists to prevent.
     expect(() => mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, ws))
-      .toThrow(/research .* not present at the content this profile authorized|not present at the content/);
+      // 516 — a recusa passou a NOMEAR qual dos dois fatos aconteceu. Aqui é o payload que mudou
+      // depois de atestado, e para esse caso reautorizar é de fato o conserto.
+      .toThrow(/'research': its source changed or was removed — reauthorize it/);
   });
 
   it("t-318d7d / 515 T9: an installed dest is a SYMLINK, and a lost dest is restored FROM THE GRANT — with the lockfile declaring nothing", () => {
@@ -1100,6 +1102,90 @@ describe("HarnessManager materialize (fs)", () => {
     // E o que estava no disco continua no disco: suprimir é dizer ao runtime para não ler, nunca
     // apagar o arquivo de alguém no checkout compartilhado.
     expect(fs.existsSync(path.join(ws, ".agents", "skills", "intrusa", "SKILL.md"))).toBe(true);
+  });
+
+  it("516: uma skill concedida bloqueada por um OCUPANTE nomeia o ocupante, não manda reautorizar", () => {
+    // Medido no workspace do autor: com o payload intacto e uma skill de mesmo nome escrita à mão em
+    // `<cwd>/.agents/skills`, a recusa dizia "a origem mudou ou foi removida — reautorize". Reautorizar
+    // produz a MESMA concessão (o payload não mudou) e falha idêntico: um beco.
+    //
+    // São dois fatos diferentes e a mensagem tem de escolher entre eles. Distinguir custa um digest do
+    // payload que a concessão nomeia.
+    const codexHome = path.join(path.dirname(realHome), "realcodex-516-occupant");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+
+    const payload = path.join(ws, ".tachyon", "plugins", "sdd", "skills", "sdd");
+    fs.mkdirSync(payload, { recursive: true });
+    fs.writeFileSync(path.join(payload, "SKILL.md"), "---\nname: sdd\ndescription: a concedida\n---\ncorpo atestado\n");
+    const granted = inspectCapabilitySourceAtRoot(path.dirname(payload), "sdd");
+
+    // O ocupante: mesmo NOME, conteúdo do humano, no caminho onde o codex procura.
+    const occupant = path.join(ws, ".agents", "skills", "sdd");
+    fs.mkdirSync(occupant, { recursive: true });
+    fs.writeFileSync(path.join(occupant, "SKILL.md"), "---\nname: sdd\ndescription: a do projeto\n---\noutro corpo\n");
+
+    const projection: ResolvedAgentCapabilityProjection = {
+      schemaVersion: 1,
+      adapter: "codex",
+      sha256: "a".repeat(64),
+      effectiveProfileSha256: "b".repeat(64),
+      sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: granted.sha256 }],
+      skills: [{ name: "sdd", source: granted }],
+      mcp: {},
+      hooks: {},
+      pi: { extensions: [], prompts: [], themes: [], packages: [] },
+    };
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+
+    let message = "";
+    try {
+      mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig: { adapter: "codex", selectors: { model: "gpt-5.6" } }, capabilities: projection }, ws);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message, "o launch tinha de recusar").not.toBe("");
+    expect(message).toContain("the plugin payload is intact");
+    expect(message, "a mensagem tem de nomear o caminho que o humano precisa mexer").toContain(occupant);
+    expect(message, "reautorizar não resolve isto e não pode ser sugerido").not.toContain("reauthorize");
+    // E o arquivo do humano continua onde estava: recusar é não entregar, nunca apagar o que é dele.
+    expect(fs.readFileSync(path.join(occupant, "SKILL.md"), "utf8")).toContain("outro corpo");
+  });
+
+  it("516: quando a origem MUDA de verdade, aí sim manda reautorizar", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex-516-drift");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+
+    const payload = path.join(ws, ".tachyon", "plugins", "drift", "skills", "drift");
+    fs.mkdirSync(payload, { recursive: true });
+    fs.writeFileSync(path.join(payload, "SKILL.md"), "---\nname: drift\ndescription: v1\n---\ncorpo\n");
+    const granted = inspectCapabilitySourceAtRoot(path.dirname(payload), "drift");
+    // O payload muda DEPOIS de atestado — o caso que a mensagem antiga descrevia corretamente.
+    fs.writeFileSync(path.join(payload, "SKILL.md"), "---\nname: drift\ndescription: v2\n---\noutro corpo\n");
+
+    const projection: ResolvedAgentCapabilityProjection = {
+      schemaVersion: 1,
+      adapter: "codex",
+      sha256: "a".repeat(64),
+      effectiveProfileSha256: "b".repeat(64),
+      sources: [{ referenceId: "drift", kind: "skill", scope: "project", owner: "plugin:drift", path: ".tachyon/plugins/drift/skills/drift", sha256: granted.sha256 }],
+      skills: [{ name: "drift", source: granted }],
+      mcp: {},
+      hooks: {},
+      pi: { extensions: [], prompts: [], themes: [], packages: [] },
+    };
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+
+    let message = "";
+    try {
+      mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig: { adapter: "codex", selectors: { model: "gpt-5.6" } }, capabilities: projection }, ws);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain("its source changed or was removed");
+    expect(message).toContain("reauthorize");
   });
 
   it("t-f842f0: empty Codex selection purges the worktree skill tree and never the plugin roster", () => {

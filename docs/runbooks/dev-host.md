@@ -123,7 +123,7 @@ Measured from the fixtures in this repository:
 | continuity briefs | `.tachyon/continuity/` | `companion-track-dogfood` |
 | session index | `.tachyon/sessions.json` | `release-0-56-91-dogfood` |
 | agent profiles | `.tachyon/agents/` | `runtime-config-prototype-dogfood` |
-| installed plugins | `.tachyon/plugins/` + `plugins.lock.json` | `agent-capability-reauth-dogfood` |
+| installed plugins | `.tachyon/plugins/` (o diretório É o registro; não há lockfile desde a spec 516) | `agent-capability-reauth-dogfood` |
 | prompt templates | `.tachyon/prompts/` | `prompt-templates-dogfood` |
 
 Copy the shape from whichever of those is closest to the surface you are exercising.
