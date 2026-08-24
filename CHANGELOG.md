@@ -4,6 +4,19 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.61 — quem não recebeu nada passa a ser o mais isolado
+
+Duas skills escritas à mão no checkout compartilhado, e um agente codex **sem concessão nenhuma**
+subindo por cima: ele enxergava as duas.
+
+A causa é o avesso do que deveria ser. O isolamento de skill inteiro vivia dentro de um "se este
+agente tem capacidades", e um agente que não autorizou nada não tem. Então nenhuma linha era escrita e
+ele via tudo o que estivesse solto no projeto — **quem foi concedido de menos ficava isolado de
+menos.**
+
+Zero concessão não é "não tenho nada a dizer". É a afirmação mais forte que existe: *suprima tudo o
+que descobrir*. A diferença entre as duas leituras era um caminho de código que não rodava.
+
 ## 0.93.60 — o Agent Studio volta a enxergar os plugins
 
 A versão anterior instalou o plugin certo, no lugar certo, sem tocar no seu projeto — e o Agent
