@@ -146,6 +146,18 @@ export interface EnsureDaemonEngineOptions {
   tmuxSocket?: string;
   /** Interactive shells gate a destructive upgrade; absent means no human is available, so upgrade proceeds. */
   confirmUpgrade?: (snapshot: EngineUpgradeWorkingSnapshot) => Promise<boolean>;
+  /**
+   * t-881588 — chamado depois de SUBSTITUIR uma engine que ficou muda. É a ação mais drástica que o
+   * shell toma sozinho, e até 0.93.65 era a única que ele não nomeava: o humano via só as
+   * consequências (agentes re-descobertos, resume oferecido, rebind adiado) e nada dizendo que o
+   * motor havia sido trocado. Foi assim que o dono do produto olhou três avisos e perguntou "me
+   * parece bug".
+   *
+   * NÃO é uma `disposition` nova de propósito: dois comentários neste repositório já registram que
+   * `disposition` é um veredito que ninguém lê. Um callback que o chamador precisa ligar não pode
+   * ser silenciosamente ignorado da mesma forma.
+   */
+  onReplacedMuteEngine?: (info: { unitName: string; muteMs: number; detail?: string }) => void;
   /** Deterministic test seam; production queries the still-running engine over control. */
   workingSnapshot?: (socketPath: string, identity: EngineServiceIdentityV1) => Promise<EngineUpgradeWorkingSnapshot>;
 }
@@ -208,6 +220,9 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
   const entryDeadline = Date.now() + timeoutMs;
   let existing: EngineServiceIdentityV1 | undefined;
   let entryUnverifiable: EngineSupervisorError | undefined;
+  // Quando a mudez COMEÇOU, não quando o deadline acabou: é o número que diz ao humano quanto tempo
+  // a engine ficou sem responder, e é o que separa "ocupada por um instante" de "parada".
+  let muteSince: number | undefined;
   for (;;) {
     try {
       existing = await probeHealthyEngine(controlSocketPath, canonicalRoot, hash);
@@ -216,11 +231,12 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
     } catch (error) {
       if (!(error instanceof EngineSupervisorError && error.code === "CONTROL_UNAVAILABLE")) throw error;
       entryUnverifiable = error;
+      muteSince ??= Date.now();
       if (Date.now() >= entryDeadline) break;
       await delay(pollMs);
     }
   }
-  let zombieReplace: { transitionId: string; unitName: string } | undefined;
+  let zombieReplace: { transitionId: string; unitName: string; muteMs: number; detail?: string } | undefined;
   if (entryUnverifiable) {
     const ours = await proveWorkspaceUnitLoaded(unitName, unitLoaded);
     if (!ours) throw offerManualStop(entryUnverifiable, unitName);
@@ -233,6 +249,11 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
       reason: "entry-probe-mute-deadline",
       unitName,
       socket: controlSocketPath,
+      // t-881588 — a EVIDÊNCIA junto da DECISÃO. Até 0.93.65 este registro dizia por que a engine foi
+      // substituída sem dizer o que a sonda observou, e o `EngineSupervisorError` que motivou tudo era
+      // descartado aqui. Reconstruir esse erro por fora custou a maior parte de uma investigação de
+      // duas horas em 2026-08-24, para descobrir no fim que era um `TIMEOUT` de 751 ms.
+      error: boundedError(entryUnverifiable),
     });
     try {
       await stopper({
@@ -255,7 +276,12 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
       });
       throw error;
     }
-    zombieReplace = { transitionId, unitName };
+    zombieReplace = {
+      transitionId,
+      unitName,
+      muteMs: muteSince === undefined ? timeoutMs : Date.now() - muteSince,
+      ...(entryUnverifiable.technicalDetail ? { detail: entryUnverifiable.technicalDetail } : {}),
+    };
   }
   if (existing) {
     const action = classifyRunningBundle(existing, options.bundle, manifest);
@@ -319,6 +345,14 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
       reason: "entry-probe-mute-deadline",
       unitName: zombieReplace.unitName,
       to: auditIdentity(identity),
+      muteMs: zombieReplace.muteMs,
+    });
+    // Só DEPOIS de a substituição ter dado certo. Avisar antes seria narrar uma intenção, e uma troca
+    // que falha já se anuncia pela exceção.
+    options.onReplacedMuteEngine?.({
+      unitName: zombieReplace.unitName,
+      muteMs: zombieReplace.muteMs,
+      ...(zombieReplace.detail ? { detail: zombieReplace.detail } : {}),
     });
   }
   return {

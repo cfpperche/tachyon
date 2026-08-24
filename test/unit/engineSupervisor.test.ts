@@ -830,6 +830,10 @@ describe("persistent engine supervisor", () => {
       unitName: engineSystemdUnitName(fixture.workspace),
       reason: "entry-probe-mute-deadline",
     });
+    // t-881588 — a EVIDÊNCIA viaja junto da DECISÃO. Este registro dizia por que a engine foi
+    // substituída e descartava o que a sonda observou; reconstruir esse erro por fora custou a maior
+    // parte de uma investigação de duas horas em 2026-08-24, para achar no fim um TIMEOUT de 751 ms.
+    expect(audit[0].error, "o zombie-replace registrou a decisão sem a evidência").toBeTruthy();
     expect(audit[1]).toMatchObject({
       unitName: engineSystemdUnitName(fixture.workspace),
       to: { instanceId: result.identity.instanceId, bundleId: fixture.bundle.bundleId },
@@ -840,6 +844,41 @@ describe("persistent engine supervisor", () => {
     });
     expect((await shell.attach()).engine).toEqual(result.identity);
     await shell.detach();
+  });
+
+  /**
+   * t-881588 — SUBSTITUIR UMA ENGINE É A AÇÃO MAIS DRÁSTICA QUE O SHELL TOMA SOZINHO, e era a única
+   * sem nome. O humano via três consequências — agentes re-descobertos, um convite de "Resume all", e
+   * a deferência do rebind — e nada dizendo que o motor tinha sido trocado nem por quê. Foi olhando
+   * exatamente esses três avisos que o dono do produto perguntou "me parece bug".
+   *
+   * O aviso NÃO virou uma `disposition` nova de propósito: dois comentários deste repositório já
+   * registram `disposition` como um veredito que ninguém lê. Um callback que o chamador precisa
+   * ligar não some do mesmo jeito — e este caso é o que prova que ele é chamado.
+   */
+  it("nomeia a substituição de uma engine muda, com quanto tempo ela ficou sem responder", async () => {
+    const fixture = workspaceFixture();
+    const mute = await listenMute(fixture.socket);
+    const avisos: Array<{ unitName: string; muteMs: number; detail?: string }> = [];
+    await ensureDaemonEngine({
+      workspaceRoot: fixture.workspace,
+      bundle: fixture.bundle,
+      runtime: fixture.runtime,
+      storageRoot: fixture.storage,
+      controlSocketPath: fixture.socket,
+      launcher: async (input) => { spawnWorker(input.encodedOptions); return "started"; },
+      stopper: async () => { await mute.close(); },
+      unitLoaded: async () => true,
+      onReplacedMuteEngine: (info) => { avisos.push(info); },
+      startTimeoutMs: 1_600,
+      pollMs: 20,
+    });
+    expect(avisos, "a engine foi substituída sem que ninguém contasse ao humano").toHaveLength(1);
+    expect(avisos[0]!.unitName).toBe(engineSystemdUnitName(fixture.workspace));
+    // O número é o que separa "ocupada por um instante" de "parada", então ele tem de ser real e não
+    // um carimbo: a mudez aqui dura ao menos o deadline que o caso configurou.
+    expect(avisos[0]!.muteMs).toBeGreaterThan(0);
+    expect(avisos[0]!.detail, "o aviso não diz o que a sonda observou").toBeTruthy();
   });
 
   // t-d244e1 — the deadline still exists so a just-started peer can finish becoming healthy.

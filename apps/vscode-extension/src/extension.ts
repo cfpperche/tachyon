@@ -3026,6 +3026,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           if (!isJsonValue(value)) throw new Error(`editor command '${request.command}' returned a non-JSON result`);
           return value;
         },
+        // t-881588 — a substituição de uma engine muda passa a ter nome. Ela é a ação mais drástica
+        // que o shell toma sozinho e era a única sem aviso próprio: o humano via agentes
+        // re-descobertos, um convite de resume e uma deferência de rebind, e nada ligando as três
+        // coisas à sua causa. Aviso, não modal — quando isto dispara a troca JÁ aconteceu, e não há
+        // decisão a tomar.
+        onEngineReplacedMute: ({ muteMs, detail }) => {
+          const segundos = Math.round(muteMs / 1000);
+          notify(
+            vscode.l10n.t(
+              "Tachyon replaced its engine: it stopped answering for {0}s and was assumed stuck ({1}).",
+              segundos,
+              detail ?? vscode.l10n.t("no further detail"),
+            ),
+            "warn",
+          );
+        },
         // Development/Test includes F5, CI and headless harnesses. With no guaranteed human to answer,
         // activation must keep moving; only an installed production shell owns this modal decision.
         confirmEngineUpgrade: context.extensionMode === vscode.ExtensionMode.Production

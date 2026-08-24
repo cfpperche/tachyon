@@ -107,6 +107,8 @@ export interface ConnectRemoteWorkspaceClientOptions {
   migrationProvider?: EngineStateMigrationProvider;
   uiHandler?: WorkspaceUiRequestHandler;
   confirmEngineUpgrade?: EnsureDaemonEngineOptions["confirmUpgrade"];
+  /** t-881588 — o shell nomeia a substituição de uma engine muda em vez de deixar só as consequências. */
+  onEngineReplacedMute?: EnsureDaemonEngineOptions["onReplacedMuteEngine"];
   supervisor?: Omit<EnsureDaemonEngineOptions, "workspaceRoot" | "bundle" | "runtime" | "settings" | "migrationProvider">;
   /** Deterministic test/platform seam; production uses ensureDaemonEngine. */
   ensure?: EnsureEngine;
@@ -250,6 +252,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
       settings,
       migrationProvider: options.migrationProvider,
       confirmUpgrade: options.confirmEngineUpgrade,
+      ...(options.onEngineReplacedMute ? { onReplacedMuteEngine: options.onEngineReplacedMute } : {}),
       ...(options.agentProfileHomeDir ? { agentProfileHomeDir: options.agentProfileHomeDir } : {}),
       ...(options.tmuxSocket ? { tmuxSocket: options.tmuxSocket } : {}),
     };
