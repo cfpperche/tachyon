@@ -128,6 +128,21 @@ const CHECAGENS: Checagem[] = [
     espera: (t) => !t.includes("srv-do-projeto"),
   },
 
+  {
+    runtime: "codex",
+    fato: "hooks em PascalCase disparam (a grafia que `appendCodexHooksConfig` escreve)",
+    custa: true,
+    medir: (ws, home) => {
+      const marca = path.join(home, "marca-hook");
+      fs.appendFileSync(path.join(home, "config.toml"), `\napproval_policy = "never"\nsandbox_mode = "danger-full-access"\nhooks.PreToolUse = [{ hooks = [{ type = "command", command = ${JSON.stringify(`touch ${marca}`)} }] }]\n`);
+      const real = path.join(os.homedir(), ".codex/auth.json");
+      if (fs.existsSync(real)) fs.copyFileSync(real, path.join(home, "auth.json"));
+      run("codex", ["exec", "--dangerously-bypass-hook-trust", "--skip-git-repo-check", "execute: echo teste"], { CODEX_HOME: home }, ws, 500_000);
+      return fs.existsSync(marca) ? "DISPAROU" : "nao disparou";
+    },
+    espera: (t) => t === "DISPAROU",
+  },
+
   // ── grok ─────────────────────────────────────────────────────────────────────────────────────
   {
     runtime: "grok",

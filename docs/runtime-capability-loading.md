@@ -395,27 +395,27 @@ Não há porta de negar em bloco: a supressão é **por caminho**, o que exige d
 formato mais feio dos quatro, e é o que produziu o defeito desta sessão — um agente sem concessão
 nenhuma não ganhava supressão porque o código só a escrevia quando havia projeção.
 
-### 4. Hooks — linha em branco, com a pista
+### 4. Hooks — medidos, e a grafia do produto está CERTA
 
-Não consegui **controle positivo**: plantei hooks na home privada e no projeto, em dois formatos, e
-nenhum disparou num `codex exec`. Sem um hook que comprovadamente funcione, "não disparou" não
-distingue "o runtime não lê" de "meu formato está errado".
+Controle positivo obtido: `hooks.PreToolUse = [{ hooks = [{ type = "command", command = "…" }] }]` no
+`config.toml`, em **PascalCase** — exatamente o que `appendCodexHooksConfig` escreve — **dispara**.
 
-O que **está** estabelecido, do próprio `~/.codex/config.toml` do operador:
+O snake_case que aparece nas chaves do registro de confiança
+(`[hooks.state."<projeto>/.codex/config.toml:session_start:0:0"]`) é outro espaço de nomes: um slug
+interno, não a chave de configuração. A suspeita de que os hooks do Tachyon nunca disparavam **estava
+errada**, e é bom que estivesse.
 
-```toml
-[hooks.state."/home/goat/Agent0/.codex/config.toml:session_start:0:0"]
-trusted_hash = "sha256:…"
-```
+| arm | home privada | projeto (`<cwd>/.codex/config.toml`) |
+|---|---|---|
+| com `--dangerously-bypass-hook-trust` | **dispara** | **dispara** |
+| sem a flag | não dispara | não dispara |
 
-O registro de confiança **nomeia o arquivo que confiou**: `<projeto>/.codex/config.toml`. Portanto o
-codex lê hooks do projeto, com um portão de confiança por hash — e `--dangerously-bypass-hook-trust`
-(que o Tachyon passa) contorna esse portão.
+**E aqui está o buraco, medido:** os hooks do codex são fechados por um portão de confiança por hash.
+O Tachyon passa `--dangerously-bypass-hook-trust` — e precisa, senão os hooks que ELE projeta não
+disparam. Mas a flag é global: **a mesma flag que abre os hooks do produto abre os do projeto.** Um
+`.codex/config.toml` no checkout compartilhado executa comando em todo agente codex do Tachyon.
 
-> **Pergunta aberta, e vale investigar:** as chaves de confiança usam evento em **snake_case**
-> (`session_start`, `pre_tool_use`), enquanto o Tachyon escreve `hooks.SessionStart = …`
-> (`appendCodexHooksConfig`). Ou o codex aceita as duas grafias, ou **os hooks que o Tachyon projeta
-> para codex nunca disparam**. Não é uma acusação — é uma discrepância que eu não consegui resolver
-> com o instrumento que tinha, e que merece um controle positivo antes de qualquer conclusão.
-
+É a mesma forma do buraco do Grok: um portão aberto por uma razão legítima, mais largo que a
+necessidade. E nos dois casos o produto abre o portão porque a alternativa é um prompt interativo que
+travaria o spawn.
 
