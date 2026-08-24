@@ -230,63 +230,78 @@ gerado. É materialização, não passagem por argumento — o oposto do Claude 
 
 ## Pi 0.84.3 — medido em 2026-08-24
 
-**Instrumento, e ele deu trabalho.** Pi recusa antes de carregar recursos quando não autenticado, então
-não há leitura de graça como no Claude. Pior: **perguntar ao modelo quais skills ele tem é um
-instrumento ruim** — com ferramentas ligadas ele vai LER O DIRETÓRIO e reportar o que achou no disco,
-não o que está carregado. Foi o que aconteceu num braço, e o resultado contraditório (com a porta
-FECHADA ele listou MAIS skills) foi o que denunciou o método.
+### Aviso de método: um instrumento que falhou, e como se soube
 
-O que funcionou foi um **marcador de comportamento**: um `AGENTS.md` no projeto dizendo "sempre diga
-PROJETO-AGENTS". Se a instrução chega, a resposta carrega a palavra. Não depende de introspecção nem
-de o modelo ser honesto sobre si.
+Perguntar ao modelo o que ele tem carregado **não mede nada em pi**, e isto foi provado em vez de
+suposto:
 
-`--no-tools` também não serve para medir skills aqui: em pi elas **são ferramentas**, então desligar as
-ferramentas desliga as skills junto e todo braço responde "nenhuma".
+- com ferramentas ligadas, ele **lê o diretório** e reporta o disco. Denunciado por um resultado
+  absurdo: com a porta FECHADA ele listou MAIS skills que com ela aberta.
+- com `--no-tools`, todo braço responde "nenhuma" — em pi as skills são ferramentas, então desligar
+  ferramentas desliga as skills junto.
+- com `-nbt` (só as embutidas desligadas, que é o instrumento certo para não deixar ele ler o disco),
+  um **controle positivo falhou**: passei `--skill <caminho>` explícito, que a doc garante carregar
+  *"even with --no-skills"*, e o modelo respondeu `skill=nao`.
+
+Um controle positivo que falha invalida o instrumento, não o runtime. Por isso a linha de skills
+abaixo está **em branco**, e não preenchida com o que eu teria concluído.
+
+O que funcionou foi **marcador de comportamento** (um `AGENTS.md` mandando dizer uma palavra) e
+**marcador de ferramenta** (uma extensão registrando uma ferramenta de nome único, que o modelo
+genuinamente enxerga na lista).
 
 ### 1. O que ele carrega sozinho
 
 | capacidade | de onde | o projeto entra? |
 |---|---|---|
-| **skills** | `<cwd>/.pi/skills` | **sim** — e **só a raiz dele**: `.claude/skills` e `.agents/skills` do projeto **não** entram |
-| **arquivos de contexto** | `AGENTS.md` / `CLAUDE.md` do projeto | **sim** (marcador confirmou) |
-| **MCP** | — | **não existe nativo.** A doc do próprio pi: *"It intentionally does not include built-in MCP, sub-agents, permission popups, plan mode, to-dos, or background bash. You can build or install those workflows as extensions or packages"* |
-| **hooks** | — | **não são arquivos descobertos.** Existem como pontos de extensão em código (`session_start`, transformadores de exibição), dentro de uma extensão — não um diretório que ele varre |
+| **extensões** | `~/.pi/agent/extensions/` (global) e `.pi/extensions/` (projeto) | **só com `--approve`** — medido: base `extensao=nao`, com `--approve` `extensao=sim` |
+| **arquivos de contexto** | `AGENTS.md` / `CLAUDE.md` do projeto | **sim** — marcador confirmou |
+| **skills** | — | **NÃO MEDIDO** (ver aviso acima) |
+| **MCP** | — | **não existe nativo.** Doc do próprio pi: *"It intentionally does not include built-in MCP, sub-agents, permission popups, plan mode, to-dos, or background bash. You can build or install those workflows as extensions or packages"* |
+| **hooks** | — | **não são arquivos descobertos.** São pontos de extensão em código (`session_start`, transformadores), dentro de uma extensão |
 
-Pi é o **oposto do Grok** na descoberta: lê só a própria raiz, e não vai à casa de ninguém.
+> **Retratação.** A primeira versão desta seção dizia "skills: `<cwd>/.pi/skills` — sim, e só a raiz
+> dele; `.claude/skills` e `.agents/skills` não entram". Aquilo veio do braço em que o modelo leu o
+> disco, e não se sustenta. A doc do pi diz o contrário em um ponto: `.agents/skills` **de `cwd` e dos
+> diretórios ANCESTRAIS** é uma raiz de projeto dele.
 
-### 2. As portas de negar
+### 2. O que a doc do pi declara sobre skills — declaração, não medição
+
+Transcrito de `docs/skills.md` da 0.84.3, para não se perder enquanto não houver instrumento:
+
+- **Global:** `~/.pi/agent/skills/`, `~/.agents/skills/`
+- **Projeto (só depois de o projeto ser confiável):** `.pi/skills/`, e `.agents/skills/` em `cwd` **e
+  nos ancestrais** até a raiz do repositório
+- **Pacotes:** diretórios `skills/` ou `pi.skills` no `package.json`
+- **Settings:** array `skills` com arquivos ou diretórios
+- **CLI:** `--skill <path>` — *"repeatable, additive even with `--no-skills`"*
+- **Negar:** `--no-skills` (caminhos explícitos continuam carregando)
+- As pastas de skill do Claude e do Codex **não** são lidas por padrão: a doc ensina a adicioná-las
+  manualmente em settings, o que confirma que não entram sozinhas
+
+### 3. As portas de negar
 
 | flag | o que fecha | medido |
 |---|---|---|
-| **`--no-context-files` / `-nc`** | `AGENTS.md` e `CLAUDE.md` do projeto | **sim** — o marcador some da resposta |
-| `--no-approve` / `-na` | "Ignore project-local files for this run" | **NÃO fecha os arquivos de contexto** — o marcador continua aparecendo. O que ele fecha exatamente ficou **não medido** |
-| `--no-skills` / `-ns` | descoberta de skills | declarado no `--help`; **não medido** |
-| `--no-extensions` / `-ne` | descoberta de extensões (`-e` explícito continua valendo) | declarado; **não medido** |
-| `--no-prompt-templates`, `--no-themes` | as duas famílias | declarados; **não medidos** |
+| **`--no-context-files` / `-nc`** | `AGENTS.md` e `CLAUDE.md` do projeto | **sim** — o marcador some |
+| `--no-approve` / `-na` | "Ignore project-local files for this run" | **NÃO fecha os arquivos de contexto** — o marcador continua. O que ele fecha exatamente: não medido |
+| **ausência de `--approve`** | extensões do projeto | **sim** — o padrão já é fechado |
+| `--no-skills`, `--no-extensions`, `--no-prompt-templates`, `--no-themes` | as famílias | declarados no `--help`; **não medidos** |
 
-> **Duas linhas em branco de propósito.** `-ns`/`-ne` são as portas que o desenho do Tachyon depende, e
-> eu não as medi: cada braço custa uma chamada, o pi do autor está numa cota emprestada, e um `--help`
-> não é medição. Ficam declaradas como declaração, não como fato.
+### 4. As portas explícitas
 
-### 3. As portas explícitas
+`--skill <path>`, `--extension/-e <path>`, `--prompt-template <path>`, `--theme <path>`.
 
-| flag | entrega |
-|---|---|
-| `--skill <path>` | um arquivo ou diretório de skill |
-| `--extension, -e <path>` | uma extensão (`-ne` não a bloqueia — a semântica está no próprio `--help`: *"explicit -e paths still work"*) |
-| `--prompt-template <path>` | um template |
-| `--theme <path>` | um tema |
-
-**Não existe `--package <path>`.** Pacotes entram por `pi install`, e o código do Tachyon hoje passa
-`--extension` para a família `packages` (cai no `else` final da cadeia de flags). O primeiro plugin que
+**Não existe `--package <path>`.** Pacotes entram por `pi install`, e o Tachyon hoje passa
+`--extension` para a família `packages` (o `else` final da cadeia de flags). O primeiro plugin que
 trouxer `packages/` vai descobrir se isso está certo.
 
-### 4. Por que o pi é o modelo que os outros deviam seguir
+### 5. Por que o pi continua sendo o modelo, mesmo com metade não medida
 
-`-ne` está documentado como *"Disable extension discovery (**explicit -e paths still work**)"*. É a lei
-inteira do isolamento numa linha de `--help`, escrita pelo próprio runtime: **negar a descoberta,
-aceitar o caminho explícito.** Nenhum dos outros três diz isso tão claramente, e dois deles não fazem.
-
+`-ne` está documentado como *"Disable extension discovery (**explicit -e paths still work**)"*, e
+`--skill` como *"additive even with `--no-skills`"*. É a lei do isolamento escrita duas vezes pelo
+próprio runtime: **negar a descoberta, aceitar o caminho explícito.** E o padrão de extensões já nasce
+fechado — medido —, que é a postura que os outros três não têm.
 
 ## Codex — a fazer
 
