@@ -441,3 +441,27 @@ disparam. Mas a flag é global: **a mesma flag que abre os hooks do produto abre
 necessidade. E nos dois casos o produto abre o portão porque a alternativa é um prompt interativo que
 travaria o spawn.
 
+
+### Hooks: a POSIÇÃO no `config.toml` decide se disparam — medido em 2026-08-24
+
+`hooks.PreToolUse = […]` é chave pontilhada de **raiz**. Em TOML, toda chave depois de um
+`[cabeçalho]` pertence àquela tabela — então a mesma linha, escrita depois do `[projects."<ws>"]`
+que o Tachyon semeia para o trust, vira `projects."<ws>".hooks.PreToolUse`. O codex sobe, **não
+reclama de nada**, e o hook nunca dispara.
+
+Medido com `codex exec` real nos dois braços, na home escrita pelo **produto**, variando só a
+posição da linha:
+
+| posição da linha `hooks.PreToolUse` | marca criada |
+|---|---|
+| antes de `[projects."<ws>"]` | **DISPAROU** |
+| depois, mesma linha byte a byte | não disparou |
+
+`appendCodexHooksConfig` apendava no fim desde que nasceu, e o fim sempre tem tabela. Corrigido para
+inserir antes do primeiro cabeçalho; guardado por `test/unit/harness.test.ts` § *"516: nenhuma chave
+de raiz é escrita depois da primeira tabela"*.
+
+O achado veio do drift-check, que cometeu **o mesmo erro do outro lado** — apendou o hook no fim de
+um config que já tinha `[[skills.config]]` e mediu "não disparou" de um produto que naquele ponto
+estava correto. Investigar o próprio instrumento é o que revelou o bug no produto: os dois erravam
+pela mesma regra de TOML.

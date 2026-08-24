@@ -276,3 +276,13 @@ Não consegui o vermelho limpo: guardar só o `HarnessManager` deixa o arquivo s
 vazia mora nele), então o teste é PULADO em vez de falhar. O que sustenta o caso é a medição no
 workspace do autor — config sem supressão, duas skills plantadas 16 minutos antes do launch — e o
 teste passa a defender o comportamento daqui para a frente.
+
+## Dogfood log
+
+### 2026-08-24T18:54:35Z — fail (1/2) — source: tasks.md — commit: bd50438cd5cf0f59cb6845cd7ea0db302910ae58
+- `npx vite-node scripts/dogfood/plugin-system-v2.ts` — pass
+- `npx vite-node scripts/dogfood/runtime-drift.ts` — fail
+
+### 2026-08-24T19:07:46Z — pass (2/2) — source: tasks.md — commit: bd50438cd5cf0f59cb6845cd7ea0db302910ae58
+- `npx vite-node scripts/dogfood/plugin-system-v2.ts` — pass
+- `npx vite-node scripts/dogfood/runtime-drift.ts` — pass

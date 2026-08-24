@@ -1027,6 +1027,54 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.existsSync(path.join(ws, ".agents", "skills", "intrusa", "SKILL.md"))).toBe(true);
   });
 
+  // 516 — O HOOK DO CODEX MORRE EM SILÊNCIO SE A ORDEM DE ESCRITA INVERTER, e nada guardava isso.
+  //
+  // Em TOML, toda chave depois de um `[[cabeçalho]]` pertence àquela tabela. `appendCodexHooksConfig`
+  // escreve `hooks.PreToolUse = …` — chave de RAIZ — e a supressão escreve `[[skills.config]]`. Hoje
+  // o launch faz hooks primeiro e supressão depois, que é TOML válido. Inverta a ordem, ou apende
+  // qualquer chave de raiz nova depois da supressão, e o hook passa a ser lido como campo de
+  // `skills.config`: o codex sobe, não reclama de nada, e o hook simplesmente nunca dispara.
+  //
+  // Foi exatamente assim que o drift-check se enganou primeiro (apendando o hook no fim de um
+  // config que já tinha a supressão) e mediu "não disparou" de um produto correto. O erro é fácil de
+  // cometer nos dois lados; este caso trava o lado que importa.
+  it("516: nenhuma chave de raiz é escrita depois da primeira tabela no config.toml do codex", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex-516-ordem");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    const solta = path.join(ws, ".agents", "skills", "qualquer-uma");
+    fs.mkdirSync(solta, { recursive: true });
+    fs.writeFileSync(path.join(solta, "SKILL.md"), "---\nname: qualquer-uma\ndescription: x\n---\n");
+
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    // Os hooks NÃO viajam na configuração nativa (que é política escalar); eles chegam pela projeção
+    // de capacidades. A primeira versão deste caso os pendurou no lugar errado, com um `as never` por
+    // cima, e mediu um config sem hook nenhum — o cast escondeu exatamente o que ele deveria ter dito.
+    const projecao: ResolvedAgentCapabilityProjection = {
+      schemaVersion: 1,
+      adapter: "codex",
+      sha256: "a".repeat(64),
+      effectiveProfileSha256: "b".repeat(64),
+      sources: [],
+      skills: [],
+      mcp: {},
+      hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "true" }] }] },
+      pi: { extensions: [], prompts: [], themes: [], packages: [] },
+    };
+    mgr.materializeProfileCapabilities("ordem", projecao, codex, ws);
+
+    const linhas = fs.readFileSync(harnessCodexConfigPath(ws, "ordem"), "utf8").split("\n");
+    const primeiraTabela = linhas.findIndex((l) => /^\s*\[/.test(l));
+    expect(primeiraTabela, "a supressão não escreveu tabela nenhuma — o caso perdeu o sentido").toBeGreaterThanOrEqual(0);
+    // A invariante é estreita de propósito: uma chave DEPOIS de uma tabela não é erro nenhum — é
+    // assim que `[projects."…"] trust_level = "trusted"` funciona, e a primeira versão deste caso
+    // acusou justamente esse `trust_level` de ser um bug. O que não pode existir é uma chave
+    // pontilhada `hooks.*`, que só tem sentido na RAIZ, aparecendo depois de um cabeçalho.
+    const hooksTardios = linhas.slice(primeiraTabela).filter((l) => /^\s*hooks\./.test(l));
+    expect(hooksTardios, "hook enterrado dentro de uma tabela — nunca vai disparar").toEqual([]);
+    expect(linhas.slice(0, primeiraTabela).some((l) => l.startsWith("hooks.PreToolUse"))).toBe(true);
+  });
+
   // 516 — os dois casos da MENSAGEM de recusa saíram com a recusa. Eles distinguiam "o payload mudou"
   // de "um ocupante está no caminho de descoberta", e o segundo não pode mais acontecer: a entrega não
   // usa mais um caminho que outra pessoa possa ocupar. Escrever uma mensagem melhor para um estado

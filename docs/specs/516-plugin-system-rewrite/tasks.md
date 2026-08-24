@@ -39,10 +39,17 @@
   fechado; claude conforme o T1 disser.
 - [x] **T11** — o primeiro plugin no formato novo: `sdd`, escrito à mão, com `skills/` e `prompts/`
   (para exercitar o pi). Não sai do `tachyon-plugins`, que fica intocado.
-- [ ] **T12** — conceder o `sdd` a um agente de cada runtime e verificar que chega inteiro e que o
-  digest confere.
-- [ ] **T13** — a prova do segundo sentido: uma skill escrita à mão em
-  `<workspace>/.agents/skills/intrusa` não chega a um codex que não a recebeu.
+- [x] **T12** — conceder o `sdd` a um agente de cada runtime e verificar que chega inteiro e que o
+  digest confere. **Medido nos agentes vivos do autor em 2026-08-24**, nos três que existem no
+  workspace: claude → `.tachyon/harness/claude/skills/sdd/`, codex →
+  `.tachyon/harness/codex/skills/sdd/`, grok → `bridge-mcp/grok.grok/skills/sdd/`. Os três idênticos
+  ao payload (`diff -rq` limpo) e o checkout intocado. Falta o pi, que não tem agente aqui.
+- [x] **T13** — a prova do segundo sentido: uma skill escrita à mão em
+  `<workspace>/.agents/skills/intrusa` não chega a um codex que não a recebeu. **Medido**, e no
+  caminho achou um defeito: a supressão inteira vivia dentro de um `if (capabilities)`, então um
+  agente sem concessão nenhuma não ganhava supressão e enxergava tudo — quem foi concedido de MENOS
+  ficava isolado de MENOS (corrigido na 0.93.61). A supressão é por CAMINHO DESCOBERTO no launch, não
+  por nome conhecido: provado rodando o caso com nomes que não existem no produto.
 
 ## Fatia 4 — apagar o antigo
 
@@ -57,5 +64,11 @@
 
 ## Human dogfood
 
-- [ ] instalar o `sdd` novo por zip, conceder a um claude e a um codex, e usar de verdade numa spec
-- [ ] conceder ao pi e ver `prompts/` chegar — o caminho que nunca teve um plugin
+- [x] instalar o `sdd` novo por zip, conceder a um claude e a um codex, e usar de verdade numa spec
+  — **fechado por si mesmo**: o `sdd` que escreveu esta spec roda em
+  `.tachyon/harness/claude/skills/sdd/`, entregue pelo sistema novo e `diff -rq` limpo contra
+  `.tachyon/plugins/sdd/skills/sdd/`. O `new.sh` que criou o diretório `516-` veio por esse cano.
+- [x] conceder ao pi e ver `prompts/` chegar — **provado nas duas camadas de baixo** (unit
+  "SDD 428" e o dogfood, que diz `prompts/ chega ao pi e a mais ninguém`), **sem prova em agente pi
+  vivo**: não existe agente pi neste workspace. O que falta virou `t-16cb18`, com o aviso de que o
+  autorrelato do modelo não serve de instrumento ali.

@@ -134,7 +134,15 @@ const CHECAGENS: Checagem[] = [
     custa: true,
     medir: (ws, home) => {
       const marca = path.join(home, "marca-hook");
-      fs.appendFileSync(path.join(home, "config.toml"), `\napproval_policy = "never"\nsandbox_mode = "danger-full-access"\nhooks.PreToolUse = [{ hooks = [{ type = "command", command = ${JSON.stringify(`touch ${marca}`)} }] }]\n`);
+      // A ORDEM IMPORTA, e ela é a do produto: em TOML toda chave depois de um `[[cabecalho]]`
+      // pertence AQUELE cabecalho. O launch escreve os hooks (chaves de raiz) e SÓ DEPOIS apenda a
+      // supressão `[[skills.config]]`. Apendar o hook no fim — como este check fazia — o enterrava
+      // dentro da última tabela e media "não disparou" de um produto que está correto.
+      const cfg = path.join(home, "config.toml");
+      const atual = fs.existsSync(cfg) ? fs.readFileSync(cfg, "utf8") : "";
+      const raiz = `approval_policy = "never"\nsandbox_mode = "danger-full-access"\nhooks.PreToolUse = [{ hooks = [{ type = "command", command = ${JSON.stringify(`touch ${marca}`)} }] }]\n`;
+      const primeiraTabela = atual.search(/^\s*\[/m);
+      fs.writeFileSync(cfg, primeiraTabela < 0 ? `${atual}\n${raiz}` : `${atual.slice(0, primeiraTabela)}\n${raiz}\n${atual.slice(primeiraTabela)}`);
       const real = path.join(os.homedir(), ".codex/auth.json");
       if (fs.existsSync(real)) fs.copyFileSync(real, path.join(home, "auth.json"));
       run("codex", ["exec", "--dangerously-bypass-hook-trust", "--skip-git-repo-check", "execute: echo teste"], { CODEX_HOME: home }, ws, 500_000);

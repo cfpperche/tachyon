@@ -205,10 +205,23 @@ function appendCodexHooksConfig(existing: string, hooks: Record<string, unknown>
     const dotted = new RegExp(`^\\s*hooks\\.${event.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=`);
     lines = lines.filter((line) => !dotted.test(line));
   }
-  let toml = lines.join("\n").replace(/\n*$/, "");
   const block = Object.entries(hooks).map(([event, value]) => `hooks.${tomlKey(event)} = ${tomlValue(value)}`).join("\n");
   if (block.length === 0) return existing;
-  return `${toml}${toml.length > 0 ? "\n\n" : ""}${block}\n`;
+  // O BLOCO VAI ANTES DA PRIMEIRA TABELA, e isso não é estilo: é a diferença entre o hook disparar e
+  // não existir. `hooks.PreToolUse` é chave pontilhada de RAIZ, e em TOML toda chave depois de um
+  // `[cabeçalho]` pertence àquele cabeçalho. Este arquivo sempre tem `[projects."<ws>"]` (o trust)
+  // escrito antes, então apendar no fim — como esta função fazia desde que nasceu — produzia
+  // `projects."<ws>".hooks.PreToolUse`: o codex sobe, não reclama de nada, e o hook nunca dispara.
+  // Achado pelo drift-check da 516, que primeiro cometeu o MESMO erro do outro lado e mediu "não
+  // disparou" de um produto que, naquele ponto, estava certo.
+  const primeiraTabela = lines.findIndex((line) => /^\s*\[/.test(line));
+  if (primeiraTabela < 0) {
+    const toml = lines.join("\n").replace(/\n*$/, "");
+    return `${toml}${toml.length > 0 ? "\n\n" : ""}${block}\n`;
+  }
+  const antes = lines.slice(0, primeiraTabela).join("\n").replace(/\n*$/, "");
+  const depois = lines.slice(primeiraTabela).join("\n").replace(/^\n*/, "");
+  return `${antes}${antes.length > 0 ? "\n\n" : ""}${block}\n\n${depois}${depois.endsWith("\n") ? "" : "\n"}`;
 }
 
 function isReadableRegularFile(file: string): boolean {
