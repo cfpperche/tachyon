@@ -230,78 +230,98 @@ gerado. É materialização, não passagem por argumento — o oposto do Claude 
 
 ## Pi 0.84.3 — medido em 2026-08-24
 
-### Aviso de método: um instrumento que falhou, e como se soube
+### O portão é a CONFIANÇA DO PROJETO, e ele cobre tudo de uma vez
 
-Perguntar ao modelo o que ele tem carregado **não mede nada em pi**, e isto foi provado em vez de
-suposto:
+Diferente dos outros três, o pi não tem uma porta por capacidade: tem **uma** decisão que abre ou
+fecha `.pi/` e `.agents/skills` juntos.
 
-- com ferramentas ligadas, ele **lê o diretório** e reporta o disco. Denunciado por um resultado
-  absurdo: com a porta FECHADA ele listou MAIS skills que com ela aberta.
-- com `--no-tools`, todo braço responde "nenhuma" — em pi as skills são ferramentas, então desligar
-  ferramentas desliga as skills junto.
-- com `-nbt` (só as embutidas desligadas, que é o instrumento certo para não deixar ele ler o disco),
-  um **controle positivo falhou**: passei `--skill <caminho>` explícito, que a doc garante carregar
-  *"even with --no-skills"*, e o modelo respondeu `skill=nao`.
+O evento `project_trust` — *"Fired before pi decides whether to trust a project with dynamic configs
+(`.pi` or `.agents/skills`)"* — dispara **antes da autenticação**, o que dá um instrumento de custo
+zero: uma extensão global que só registra o evento já prova que o portão existe e quando ele corre.
 
-Um controle positivo que falha invalida o instrumento, não o runtime. Por isso a linha de skills
-abaixo está **em branco**, e não preenchida com o que eu teria concluído.
+Resolução da confiança, na ordem (doc `security.md`):
 
-O que funcionou foi **marcador de comportamento** (um `AGENTS.md` mandando dizer uma palavra) e
-**marcador de ferramenta** (uma extensão registrando uma ferramenta de nome único, que o modelo
-genuinamente enxerga na lista).
+1. um handler de extensão global/CLI que devolva `yes`/`no` — o primeiro decide e suprime o prompt;
+2. decisão salva em `~/.pi/agent/trust.json`, pelo diretório mais próximo na árvore;
+3. `defaultProjectTrust` das settings globais — **padrão `"ask"`**.
+
+E o detalhe que decide tudo em modo não-interativo: *"Non-interactive modes (`-p`, `--mode json`,
+`--mode rpc`) do not show a trust prompt. Without an applicable saved trust decision,
+`defaultProjectTrust: "ask"` and `"never"` **ignore such resources**, while `"always"` trusts them."*
 
 ### 1. O que ele carrega sozinho
 
 | capacidade | de onde | o projeto entra? |
 |---|---|---|
-| **extensões** | `~/.pi/agent/extensions/` (global) e `.pi/extensions/` (projeto) | **só com `--approve`** — medido: base `extensao=nao`, com `--approve` `extensao=sim` |
-| **arquivos de contexto** | `AGENTS.md` / `CLAUDE.md` do projeto | **sim** — marcador confirmou |
-| **skills** | — | **NÃO MEDIDO** (ver aviso acima) |
-| **MCP** | — | **não existe nativo.** Doc do próprio pi: *"It intentionally does not include built-in MCP, sub-agents, permission popups, plan mode, to-dos, or background bash. You can build or install those workflows as extensions or packages"* |
-| **hooks** | — | **não são arquivos descobertos.** São pontos de extensão em código (`session_start`, transformadores), dentro de uma extensão |
+| **extensões** | `~/.pi/agent/extensions/` (global) e `.pi/extensions/` (projeto) | **só com confiança** — medido: sem `--approve` a ferramenta plantada não existe; com `--approve` ela aparece |
+| **skills** | global `~/.pi/agent/skills/` e `~/.agents/skills/`; projeto `.pi/skills/` e `.agents/skills/` **de `cwd` e dos ANCESTRAIS** até a raiz do repo | **só com confiança** — mesmo portão (doc; não medido diretamente, ver abaixo) |
+| **arquivos de contexto** | `AGENTS.md` / `CLAUDE.md` do projeto | **sim** — marcador de comportamento confirmou |
+| **MCP** | — | **não existe nativo.** Doc do pi: *"It intentionally does not include built-in MCP… You can build or install those workflows as extensions or packages"* |
+| **hooks** | — | **não são arquivos descobertos**: são pontos de extensão em código (`session_start`, transformadores), dentro de uma extensão |
+
+**A evidência da extensão é mecânica, não auto-relato.** Ela veio do registro de sessão que o pi grava:
+o texto de raciocínio do modelo diz *"There's also a project extension marker tool planted in this
+environment — the tool description says it's for measuring discovery"*. Ele viu a ferramenta na lista;
+não leu um diretório.
+
+### 2. Um instrumento que falhou, e por que a linha de skills não é uma medição
+
+Perguntar ao modelo quais skills ele tem **não mede nada em pi**:
+
+- **com ferramentas ligadas** ele lê o diretório e reporta o disco. Denunciado por um absurdo: com a
+  porta FECHADA ele listou MAIS skills que com ela aberta.
+- **com `--no-tools`** todo braço responde "nenhuma" — em pi as skills são ferramentas, e desligar
+  ferramentas desliga as skills junto.
+- **com `-nbt`** (só as embutidas desligadas, o instrumento certo) um **controle positivo falhou**:
+  passei `--skill <caminho>` explícito, que a doc garante carregar *"even with --no-skills"*, e a
+  resposta foi `skill=nao`.
+
+Um controle positivo que falha invalida o **instrumento**, não o runtime. A skill provavelmente
+carregou nos dois casos e o modelo simplesmente não a nomeia. Por isso a linha de skills acima cita a
+DOC, rotulada, em vez de um resultado meu.
 
 > **Retratação.** A primeira versão desta seção dizia "skills: `<cwd>/.pi/skills` — sim, e só a raiz
-> dele; `.claude/skills` e `.agents/skills` não entram". Aquilo veio do braço em que o modelo leu o
-> disco, e não se sustenta. A doc do pi diz o contrário em um ponto: `.agents/skills` **de `cwd` e dos
-> diretórios ANCESTRAIS** é uma raiz de projeto dele.
-
-### 2. O que a doc do pi declara sobre skills — declaração, não medição
-
-Transcrito de `docs/skills.md` da 0.84.3, para não se perder enquanto não houver instrumento:
-
-- **Global:** `~/.pi/agent/skills/`, `~/.agents/skills/`
-- **Projeto (só depois de o projeto ser confiável):** `.pi/skills/`, e `.agents/skills/` em `cwd` **e
-  nos ancestrais** até a raiz do repositório
-- **Pacotes:** diretórios `skills/` ou `pi.skills` no `package.json`
-- **Settings:** array `skills` com arquivos ou diretórios
-- **CLI:** `--skill <path>` — *"repeatable, additive even with `--no-skills`"*
-- **Negar:** `--no-skills` (caminhos explícitos continuam carregando)
-- As pastas de skill do Claude e do Codex **não** são lidas por padrão: a doc ensina a adicioná-las
-  manualmente em settings, o que confirma que não entram sozinhas
+> dele; `.claude/skills` e `.agents/skills` não entram". Veio do braço em que o modelo leu o disco, e
+> está errado nos dois pontos: o portão é a confiança, e `.agents/skills` **é** raiz de projeto do pi,
+> inclusive nos diretórios ancestrais.
 
 ### 3. As portas de negar
 
 | flag | o que fecha | medido |
 |---|---|---|
 | **`--no-context-files` / `-nc`** | `AGENTS.md` e `CLAUDE.md` do projeto | **sim** — o marcador some |
-| `--no-approve` / `-na` | "Ignore project-local files for this run" | **NÃO fecha os arquivos de contexto** — o marcador continua. O que ele fecha exatamente: não medido |
-| **ausência de `--approve`** | extensões do projeto | **sim** — o padrão já é fechado |
-| `--no-skills`, `--no-extensions`, `--no-prompt-templates`, `--no-themes` | as famílias | declarados no `--help`; **não medidos** |
+| **ausência de confiança** | `.pi/` e `.agents/skills` inteiros | **sim** para extensões; doc para as demais famílias |
+| `--no-approve` / `-na` | "Ignore project-local files for this run" | **NÃO fecha os arquivos de contexto** — o marcador continua aparecendo |
+| `--no-skills`, `--no-extensions`, `--no-prompt-templates`, `--no-themes` | as quatro famílias | declarados no `--help`; não medidos (instrumento inválido) |
 
 ### 4. As portas explícitas
 
-`--skill <path>`, `--extension/-e <path>`, `--prompt-template <path>`, `--theme <path>`.
+`--skill <path>`, `--extension/-e <path>`, `--prompt-template <path>`, `--theme <path>` — todas
+repetíveis e, pelo `--help`, aditivas mesmo com a negação correspondente ligada.
 
 **Não existe `--package <path>`.** Pacotes entram por `pi install`, e o Tachyon hoje passa
-`--extension` para a família `packages` (o `else` final da cadeia de flags). O primeiro plugin que
-trouxer `packages/` vai descobrir se isso está certo.
+`--extension` para a família `packages` (o `else` final da cadeia). O primeiro plugin que trouxer
+`packages/` vai descobrir se isso está certo.
 
-### 5. Por que o pi continua sendo o modelo, mesmo com metade não medida
+### 5. O que o Tachyon já faz — lido do código, não de um processo vivo
 
-`-ne` está documentado como *"Disable extension discovery (**explicit -e paths still work**)"*, e
+`HarnessManager` monta o launch do pi com
+`PI_RESOURCE_DISABLE_ARGS = ["--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes"]`
+e depois acrescenta um `--skill`/`--extension`/`--prompt-template`/`--theme` por recurso concedido,
+tudo a partir de uma área privada sob a home. E escreve um `trust.json` **exato** nessa home privada,
+confiando só nas pastas que ele nomeia.
+
+**Isso isola o agente também do `trust.json` do operador.** Medido na máquina do autor:
+`~/.pi/agent/trust.json` contém `"/home/goat/tachyon": true` — ou seja, um `pi` que ele rode à mão no
+workspace **carrega** `.pi/` e `.agents/skills` do projeto (hoje, por exemplo, a `intrusa` plantada
+lá). Um agente pi do Tachyon não, porque nem a home nem a decisão de confiança são as dele.
+
+### 6. Por que o pi continua sendo o modelo
+
+`-ne` está documentado como *"Disable extension discovery (**explicit -e paths still work**)"* e
 `--skill` como *"additive even with `--no-skills`"*. É a lei do isolamento escrita duas vezes pelo
-próprio runtime: **negar a descoberta, aceitar o caminho explícito.** E o padrão de extensões já nasce
-fechado — medido —, que é a postura que os outros três não têm.
+próprio runtime — **negar a descoberta, aceitar o caminho explícito** — e o Tachyon já a usa inteira
+aqui, o que não acontece nos outros três.
 
 ## Codex — a fazer
 
