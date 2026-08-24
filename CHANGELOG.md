@@ -4,6 +4,22 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.66 — quando o Tachyon troca o próprio motor, ele avisa
+
+Em raras ocasiões o Tachyon substitui o motor que roda seus agentes: se ele para de responder por dez
+segundos, o editor assume que travou e sobe outro. Até agora isso acontecia calado. Você via as
+consequências — agentes re-descobertos, um convite de "Resume all", um aviso de que um agente ocupado
+não pôde ser retomado — e nada explicando de onde vinham.
+
+Agora sai um aviso dizendo o que aconteceu: que o motor foi trocado, por quantos segundos ele ficou
+sem responder, e o que a verificação observou.
+
+O registro interno dessa decisão também passou a guardar o erro que a motivou. Antes ele anotava o
+motivo e descartava a prova, o que transformava qualquer investigação futura em arqueologia.
+
+Isto é sobre deixar o sistema se explicar. A causa que disparava essas trocas foi corrigida na
+versão anterior.
+
 ## 0.93.65 — a engine para de ser reiniciada a cada 11 minutos
 
 Se você tem backup de estado ligado, o Tachyon estava matando e relançando o próprio motor a cada
