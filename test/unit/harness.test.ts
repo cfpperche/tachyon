@@ -817,10 +817,12 @@ describe("HarnessManager materialize (fs)", () => {
       "revoked-codex", codex, { nativeConfig: codexNative, capabilities: projectionFor("codex") }, cwd, bridge,
     );
     expect(fs.existsSync(manifestOf(codexGranted.home))).toBe(true);
-    expect(fs.readFileSync(path.join(cwd, ".agents", "skills", "sdd", "SKILL.md"), "utf8")).toBe("# Granted SDD\n");
+    // 516 — a concedida chega pela home PRIVADA, não mais por `<cwd>/.agents/skills`.
+    expect(fs.readFileSync(path.join(codexGranted.home, "skills", "sdd", "SKILL.md"), "utf8")).toBe("# Granted SDD\n");
     mgr.materializeCanonicalCodexHome("revoked-codex", codex, codexNative, cwd);
     expect(fs.existsSync(manifestOf(codexGranted.home))).toBe(false);
-    expect(fs.existsSync(path.join(cwd, ".agents", "skills"))).toBe(false);
+    // Seleção vazia varre a árvore privada, que é onde ela agora está.
+    expect(fs.existsSync(path.join(codexGranted.home, "skills", "sdd"))).toBe(false);
     expect(fs.readFileSync(path.join(codexGranted.home, "config.toml"), "utf8")).toContain('model = "gpt-5.6"');
 
     // pi — the same guard again. Pi's resource GENERATIONS are content-addressed, inert without the
@@ -897,7 +899,8 @@ describe("HarnessManager materialize (fs)", () => {
       url: "http://127.0.0.1:9/mcp",
       headers: { Authorization: "Bearer ${TACHYON_BRIDGE_TOKEN}" },
     });
-    const skillFile = path.join(launchCwd, ".agents", "skills", "research", "SKILL.md");
+    // 516 — a concedida vive na home privada, não na worktree.
+    const skillFile = path.join(first.home, "skills", "research", "SKILL.md");
     const manifestFile = path.join(first.home, ".tachyon-profile-capabilities", "manifest.json");
 
     expect(fs.readFileSync(skillFile, "utf8")).toContain("Canonical skill");
@@ -923,9 +926,11 @@ describe("HarnessManager materialize (fs)", () => {
     expect(JSON.parse(fs.readFileSync(manifestFile, "utf8"))).toMatchObject({ capabilityProjectionSha256: "a".repeat(64) });
     expect(fs.readFileSync(path.join(ws, ".codex", "config.toml"), "utf8")).toBe(pluginConfig);
 
-    fs.rmSync(path.join(launchCwd, ".agents", "skills"), { recursive: true });
-    fs.writeFileSync(path.join(launchCwd, ".agents", "skills"), "unsafe replacement");
-    expect(() => mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, launchCwd)).toThrow(/skill projection target must be a real directory/);
+    // 516 — a garantia é a mesma e o alvo mudou: adulterar o diretório em que a projeção escreve faz o
+    // launch recusar. Esse diretório agora é `<home privada>/skills`, não a worktree.
+    fs.rmSync(path.join(first.home, "skills"), { recursive: true });
+    fs.writeFileSync(path.join(first.home, "skills"), "unsafe replacement");
+    expect(() => mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, launchCwd)).toThrow(/skill projection (target|root) must be a real directory/);
     expect(fs.existsSync(manifestFile)).toBe(false);
   });
 
@@ -965,111 +970,29 @@ describe("HarnessManager materialize (fs)", () => {
     // the roster the projection does not own is untouched, byte for byte
     expect(fs.readdirSync(path.join(ws, ".agents", "skills")).sort()).toEqual(["research", "workspace-plugin"]);
     expect(fs.readFileSync(rosterSkill, "utf8")).toBe(rosterBytes);
-    // the ungranted neighbour is disabled BY PATH, and the granted one is not
+    // 516 — a asserção INVERTEU, e a inversão é a simplificação. Antes a skill concedida vivia neste
+    // mesmo diretório, então ela tinha de ser a exceção da supressão. Agora ela vem da home privada, e
+    // TUDO o que está no caminho de descoberta é desligado — inclusive uma vizinha que por acaso tenha
+    // o nome dela. Não há mais exceção a manter, e é por isso que o ocupante deixou de ser um problema.
     const config = fs.readFileSync(harnessCodexConfigPath(ws, "coder"), "utf8");
     expect(config).toContain(JSON.stringify(rosterSkill));
     expect(config).toContain("enabled = false");
-    expect(config).not.toContain(JSON.stringify(path.join(grantedDir, "SKILL.md")));
+    expect(config).toContain(JSON.stringify(path.join(grantedDir, "SKILL.md")));
+    // e a concedida chega, pela home privada
+    expect(fs.readFileSync(path.join(harnessHome(ws, "coder"), "skills", "research", "SKILL.md"), "utf8")).toContain("research");
     expect(fs.existsSync(path.join(harnessHome(ws, "coder"), ".tachyon-profile-capabilities", "manifest.json"))).toBe(true);
   });
 
-  it("t-ef3c1f: a granted skill that is no longer at its attested content refuses the launch by name", () => {
-    const codexHome = path.join(path.dirname(realHome), "realcodex-drifted");
-    fs.mkdirSync(codexHome, { recursive: true });
-    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
-    const grantedDir = path.join(ws, ".agents", "skills", "research");
-    fs.mkdirSync(grantedDir, { recursive: true });
-    fs.writeFileSync(path.join(grantedDir, "SKILL.md"), "---\nname: research\ndescription: research\n---\nEDITED after the grant.\n");
-    const projection: ResolvedAgentCapabilityProjection = {
-      schemaVersion: 1,
-      adapter: "codex",
-      sha256: "a".repeat(64),
-      effectiveProfileSha256: "b".repeat(64),
-      sources: [{ referenceId: "research", kind: "skill", scope: "project", owner: "workspace", path: ".agents/skills/research", sha256: "c".repeat(64) }],
-      // the snapshot attests a digest the live tree no longer has
-      skills: [{ name: "research", source: { source: ".agents/skills/research", sourcePath: grantedDir, type: "tree", sha256: "c".repeat(64), entries: [] } }],
-      mcp: {},
-      hooks: {},
-      pi: { extensions: [], prompts: [], themes: [], packages: [] },
-    };
-    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
-    const nativeConfig = { adapter: "codex" as const, selectors: { model: "gpt-5.6" } };
+  // 516 — o caso "skill concedida não está no conteúdo atestado" saiu com o desenho que o produzia.
+  // Ele conferia o digest do que estava no CAMINHO DE DESCOBERTA, porque era lá que a entrega escrevia.
+  // Agora a entrega escreve na home privada a partir dos bytes CAPTURADOS, e a captura já é fixada no
+  // digest da concessão (`captureCapabilitySourceAtRoot(root, path, reference.sha256)`, que falha com
+  // `profile/digest-mismatch`). A garantia não se perdeu: mudou para um lugar melhor — é conferida
+  // contra o payload, não contra o que alguém por acaso deixou num diretório compartilhado.
 
-    // Fail closed: delivering the edited bytes as if the profile had authorized them is the one
-    // outcome the grant exists to prevent.
-    expect(() => mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, ws))
-      // 516 — a recusa passou a NOMEAR qual dos dois fatos aconteceu. Aqui é o payload que mudou
-      // depois de atestado, e para esse caso reautorizar é de fato o conserto.
-      .toThrow(/'research': its source changed or was removed — reauthorize it/);
-  });
-
-  it("t-318d7d / 515 T9: an installed dest is a SYMLINK, and a lost dest is restored FROM THE GRANT — with the lockfile declaring nothing", () => {
-    // The 0.93.39 launch stopped writing the tree and started DELIVERING WHAT THE INSTALLER LEFT.
-    // Two things about what the installer leaves were not in that design: a workspace dest is a
-    // symlink into the plugin payload (not a real directory), and it can be gone — which is the state
-    // that refused a healthy grant at resume on this very workspace.
-    //
-    // 515 T9 IS THE GATE OF SLICE 2, and this is where it is decided. Slice 2 makes install stop
-    // declaring `skill-dir` in the lockfile, so the lockfile below deliberately declares NO targets:
-    // the state slice 2 produces, written down before slice 2 exists. If delivery still needs the
-    // record, this test goes red and the slice stops. It stays green because the grant already carries
-    // the payload it attests, which was always the honest thing to derive from.
-    const codexHome = path.join(path.dirname(realHome), "realcodex-318d7d");
-    fs.mkdirSync(codexHome, { recursive: true });
-    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
-
-    const payload = path.join(ws, ".tachyon", "plugins", "agent-browser", "skills", "agent-browser");
-    fs.mkdirSync(payload, { recursive: true });
-    fs.writeFileSync(path.join(payload, "SKILL.md"), "---\nname: agent-browser\ndescription: drive a browser\n---\nbody\n");
-    fs.mkdirSync(path.join(ws, ".tachyon"), { recursive: true });
-    fs.writeFileSync(path.join(ws, ".tachyon", "plugins.lock.json"), JSON.stringify({
-      schemaVersion: 1,
-      plugins: {
-        "agent-browser": {
-          name: "agent-browser",
-          version: "3.2.0",
-          runtimes: ["codex"],
-          // No `skill-dir`: the post-slice-2 shape. Delivery must not need it.
-          targets: [],
-          source: { type: "git", spec: "github:owner/repo#path=agent-browser", remote: "https://github.com/owner/repo.git", ref: "v1", resolvedCommit: "0".repeat(40), subdir: "agent-browser" },
-          integrity: { algorithm: "sha256", payload: "d".repeat(64) },
-        },
-      },
-    }));
-    const grantedDigest = inspectCapabilitySourceAtRoot(path.dirname(payload), "agent-browser");
-    const projection: ResolvedAgentCapabilityProjection = {
-      schemaVersion: 1,
-      adapter: "codex",
-      sha256: "a".repeat(64),
-      effectiveProfileSha256: "b".repeat(64),
-      sources: [{ referenceId: "agent-browser", kind: "skill", scope: "project", owner: "plugin:agent-browser", path: ".tachyon/plugins/agent-browser/skills/agent-browser", sha256: grantedDigest.sha256 }],
-      skills: [{ name: "agent-browser", source: grantedDigest }],
-      mcp: {},
-      hooks: {},
-      pi: { extensions: [], prompts: [], themes: [], packages: [] },
-    };
-    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
-    const nativeConfig = { adapter: "codex" as const, selectors: { model: "gpt-5.6" } };
-    const dest = path.join(ws, ".agents", "skills", "agent-browser");
-
-    // 1. as the installer leaves it: a symlink. Codex follows it and reports the discovery path
-    //    (measured 0.149.0), so it is a discoverable entry — delivered, never suppressed.
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.symlinkSync(payload, dest);
-    mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, ws);
-    let config = fs.readFileSync(harnessCodexConfigPath(ws, "coder"), "utf8");
-    expect(config).not.toContain(JSON.stringify(path.join(dest, "SKILL.md")));
-
-    // 2. the dest is gone — the state that turned a healthy grant into a refusal. It is restored from
-    //    the payload THE GRANT names, with nothing in the lockfile pointing at it, and the launch
-    //    proceeds. This assertion is the whole of T9.
-    fs.rmSync(dest, { recursive: true, force: true });
-    mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, ws);
-    expect(fs.existsSync(path.join(dest, "SKILL.md"))).toBe(true);
-    expect(fs.realpathSync(dest)).toBe(fs.realpathSync(payload));
-    config = fs.readFileSync(harnessCodexConfigPath(ws, "coder"), "utf8");
-    expect(config).not.toContain(JSON.stringify(path.join(dest, "SKILL.md")));
-  });
+  // 516 — o caso do t-318d7d/T9 saiu porque a coisa que ele defendia deixou de existir. Ele provava que
+  // um dest PERDIDO no projeto era restaurado a partir da concessão; agora nada é escrito no projeto,
+  // então não há dest a perder. `restoreWorkspaceSkillDest` foi apagada junto.
 
   it("516: um agente SEM CONCESSÃO NENHUMA suprime toda skill solta no projeto", () => {
     // O defeito, medido no workspace do autor: a supressão inteira vivia dentro de `if (capabilities)`,
@@ -1104,89 +1027,10 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.existsSync(path.join(ws, ".agents", "skills", "intrusa", "SKILL.md"))).toBe(true);
   });
 
-  it("516: uma skill concedida bloqueada por um OCUPANTE nomeia o ocupante, não manda reautorizar", () => {
-    // Medido no workspace do autor: com o payload intacto e uma skill de mesmo nome escrita à mão em
-    // `<cwd>/.agents/skills`, a recusa dizia "a origem mudou ou foi removida — reautorize". Reautorizar
-    // produz a MESMA concessão (o payload não mudou) e falha idêntico: um beco.
-    //
-    // São dois fatos diferentes e a mensagem tem de escolher entre eles. Distinguir custa um digest do
-    // payload que a concessão nomeia.
-    const codexHome = path.join(path.dirname(realHome), "realcodex-516-occupant");
-    fs.mkdirSync(codexHome, { recursive: true });
-    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
-
-    const payload = path.join(ws, ".tachyon", "plugins", "sdd", "skills", "sdd");
-    fs.mkdirSync(payload, { recursive: true });
-    fs.writeFileSync(path.join(payload, "SKILL.md"), "---\nname: sdd\ndescription: a concedida\n---\ncorpo atestado\n");
-    const granted = inspectCapabilitySourceAtRoot(path.dirname(payload), "sdd");
-
-    // O ocupante: mesmo NOME, conteúdo do humano, no caminho onde o codex procura.
-    const occupant = path.join(ws, ".agents", "skills", "sdd");
-    fs.mkdirSync(occupant, { recursive: true });
-    fs.writeFileSync(path.join(occupant, "SKILL.md"), "---\nname: sdd\ndescription: a do projeto\n---\noutro corpo\n");
-
-    const projection: ResolvedAgentCapabilityProjection = {
-      schemaVersion: 1,
-      adapter: "codex",
-      sha256: "a".repeat(64),
-      effectiveProfileSha256: "b".repeat(64),
-      sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: granted.sha256 }],
-      skills: [{ name: "sdd", source: granted }],
-      mcp: {},
-      hooks: {},
-      pi: { extensions: [], prompts: [], themes: [], packages: [] },
-    };
-    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
-
-    let message = "";
-    try {
-      mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig: { adapter: "codex", selectors: { model: "gpt-5.6" } }, capabilities: projection }, ws);
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
-    }
-
-    expect(message, "o launch tinha de recusar").not.toBe("");
-    expect(message).toContain("the plugin payload is intact");
-    expect(message, "a mensagem tem de nomear o caminho que o humano precisa mexer").toContain(occupant);
-    expect(message, "reautorizar não resolve isto e não pode ser sugerido").not.toContain("reauthorize");
-    // E o arquivo do humano continua onde estava: recusar é não entregar, nunca apagar o que é dele.
-    expect(fs.readFileSync(path.join(occupant, "SKILL.md"), "utf8")).toContain("outro corpo");
-  });
-
-  it("516: quando a origem MUDA de verdade, aí sim manda reautorizar", () => {
-    const codexHome = path.join(path.dirname(realHome), "realcodex-516-drift");
-    fs.mkdirSync(codexHome, { recursive: true });
-    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
-
-    const payload = path.join(ws, ".tachyon", "plugins", "drift", "skills", "drift");
-    fs.mkdirSync(payload, { recursive: true });
-    fs.writeFileSync(path.join(payload, "SKILL.md"), "---\nname: drift\ndescription: v1\n---\ncorpo\n");
-    const granted = inspectCapabilitySourceAtRoot(path.dirname(payload), "drift");
-    // O payload muda DEPOIS de atestado — o caso que a mensagem antiga descrevia corretamente.
-    fs.writeFileSync(path.join(payload, "SKILL.md"), "---\nname: drift\ndescription: v2\n---\noutro corpo\n");
-
-    const projection: ResolvedAgentCapabilityProjection = {
-      schemaVersion: 1,
-      adapter: "codex",
-      sha256: "a".repeat(64),
-      effectiveProfileSha256: "b".repeat(64),
-      sources: [{ referenceId: "drift", kind: "skill", scope: "project", owner: "plugin:drift", path: ".tachyon/plugins/drift/skills/drift", sha256: granted.sha256 }],
-      skills: [{ name: "drift", source: granted }],
-      mcp: {},
-      hooks: {},
-      pi: { extensions: [], prompts: [], themes: [], packages: [] },
-    };
-    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
-
-    let message = "";
-    try {
-      mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig: { adapter: "codex", selectors: { model: "gpt-5.6" } }, capabilities: projection }, ws);
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
-    }
-    expect(message).toContain("its source changed or was removed");
-    expect(message).toContain("reauthorize");
-  });
+  // 516 — os dois casos da MENSAGEM de recusa saíram com a recusa. Eles distinguiam "o payload mudou"
+  // de "um ocupante está no caminho de descoberta", e o segundo não pode mais acontecer: a entrega não
+  // usa mais um caminho que outra pessoa possa ocupar. Escrever uma mensagem melhor para um estado
+  // impossível é pior que não ter a mensagem.
 
   it("t-f842f0: empty Codex selection purges the worktree skill tree and never the plugin roster", () => {
     // ACTOR × TRIGGER. Actor: the profile lost its skill selection. Trigger: any door that
@@ -1222,8 +1066,10 @@ describe("HarnessManager materialize (fs)", () => {
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
     const nativeConfig = { adapter: "codex" as const, selectors: { model: "gpt-5.6" } };
 
-    mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, launchCwd);
-    expect(fs.readFileSync(path.join(launchCwd, ".agents", "skills", "sdd", "SKILL.md"), "utf8")).toBe("# Granted SDD\n");
+    const concedido = mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, launchCwd);
+    // 516 — na home privada, e a worktree do humano permanece intocada.
+    expect(fs.readFileSync(path.join(concedido.home, "skills", "sdd", "SKILL.md"), "utf8")).toBe("# Granted SDD\n");
+    expect(fs.existsSync(path.join(launchCwd, ".agents", "skills"))).toBe(false);
     expect(fs.readFileSync(rosterSkill, "utf8")).toBe(rosterBytes);
 
     mgr.materializeCanonicalCodexHome("coder", codex, nativeConfig, launchCwd);
@@ -2549,6 +2395,110 @@ describe("HarnessManager materialize (fs)", () => {
     expect(readWorkspaceMcpServers(ws)).toBeNull();
     fs.writeFileSync(path.join(ws, ".mcp.json"), "not json");
     expect(readWorkspaceMcpServers(ws)).toBeNull();
+  });
+
+  /**
+   * 516 — a raiz privada do Codex, e o que ela dispensa.
+   *
+   * A t-ef3c1f construiu "entregar sem POSSUIR um diretório" porque a codex-cli 0.146.1 não tinha raiz
+   * de descoberta além do `cwd`: a skill concedida tinha de ser materializada dentro de
+   * `<cwd>/.agents/skills`, que é do humano, e o resto suprimido por path.
+   *
+   * Medido em 2026-08-24 na 0.149.0 (`codex debug prompt-input`, com controle nos dois sentidos):
+   * `$CODEX_HOME/skills` É lido. O runtime mudou. Estes casos fixam a consequência — a entrega escreve
+   * na home privada e NÃO toca no checkout compartilhado, que é o que grok e pi já fazem.
+   */
+  it("materializa a skill concedida em $CODEX_HOME/skills e não escreve no checkout", () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-516-codex-"));
+    const realHome = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-516-home-"));
+    const codexHome = path.join(path.dirname(realHome), "realcodex-516-priv");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+
+    const payload = path.join(ws, ".tachyon", "plugins", "sdd", "skills", "sdd");
+    fs.mkdirSync(payload, { recursive: true });
+    fs.writeFileSync(path.join(payload, "SKILL.md"), "---\nname: sdd\ndescription: a concedida\n---\ncorpo atestado\n");
+    const granted = inspectCapabilitySourceAtRoot(path.dirname(payload), "sdd");
+
+    const projection: ResolvedAgentCapabilityProjection = {
+      schemaVersion: 1,
+      adapter: "codex",
+      sha256: "a".repeat(64),
+      effectiveProfileSha256: "b".repeat(64),
+      sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: granted.sha256 }],
+      skills: [{ name: "sdd", source: granted }],
+      mcp: {},
+      hooks: {},
+      pi: { extensions: [], prompts: [], themes: [], packages: [] },
+    };
+
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const home = mgr.materializeCanonicalCodexProfileHome(
+      "coder", codex,
+      { nativeConfig: { adapter: "codex", selectors: { model: "gpt-5.6" } }, capabilities: projection },
+      ws,
+    ).home;
+
+    // A concedida chega pela home privada, com o conteúdo atestado.
+    expect(fs.readFileSync(path.join(home, "skills", "sdd", "SKILL.md"), "utf8")).toContain("corpo atestado");
+    // E o checkout compartilhado continua intocado: nem o diretório foi criado.
+    expect(fs.existsSync(path.join(ws, ".agents"))).toBe(false);
+
+    fs.rmSync(ws, { recursive: true, force: true });
+    fs.rmSync(realHome, { recursive: true, force: true });
+    fs.rmSync(codexHome, { recursive: true, force: true });
+  });
+
+  it("continua suprimindo TODA skill solta no projeto, concedida ou não", () => {
+    // A entrega mudou de lugar; a negação não. O projeto continua sendo lido pelo codex, então toda
+    // entrada descoberta ali é desligada pelo nome — inclusive uma que tenha o nome da concedida,
+    // porque a concedida agora vem de outro lugar.
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-516-codex2-"));
+    const realHome = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-516-home2-"));
+    const codexHome = path.join(path.dirname(realHome), "realcodex-516-supr");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+
+    const payload = path.join(ws, ".tachyon", "plugins", "sdd", "skills", "sdd");
+    fs.mkdirSync(payload, { recursive: true });
+    fs.writeFileSync(path.join(payload, "SKILL.md"), "---\nname: sdd\ndescription: a concedida\n---\ncorpo atestado\n");
+    const granted = inspectCapabilitySourceAtRoot(path.dirname(payload), "sdd");
+
+    for (const nome of ["sdd", "intrusa"]) {
+      const dir = path.join(ws, ".agents", "skills", nome);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "SKILL.md"), `---\nname: ${nome}\ndescription: do projeto\n---\noutro corpo\n`);
+    }
+
+    const projection: ResolvedAgentCapabilityProjection = {
+      schemaVersion: 1,
+      adapter: "codex",
+      sha256: "a".repeat(64),
+      effectiveProfileSha256: "b".repeat(64),
+      sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: granted.sha256 }],
+      skills: [{ name: "sdd", source: granted }],
+      mcp: {},
+      hooks: {},
+      pi: { extensions: [], prompts: [], themes: [], packages: [] },
+    };
+
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    mgr.materializeCanonicalCodexProfileHome(
+      "coder", codex,
+      { nativeConfig: { adapter: "codex", selectors: { model: "gpt-5.6" } }, capabilities: projection },
+      ws,
+    );
+
+    const config = fs.readFileSync(harnessCodexConfigPath(ws, "coder"), "utf8");
+    for (const nome of ["sdd", "intrusa"]) {
+      expect(config, `${nome} do projeto não foi desligada`).toContain(JSON.stringify(path.join(ws, ".agents", "skills", nome, "SKILL.md")));
+    }
+    // E o arquivo do humano continua no disco: suprimir é não ler, nunca apagar.
+    expect(fs.existsSync(path.join(ws, ".agents", "skills", "intrusa", "SKILL.md"))).toBe(true);
+
+    fs.rmSync(ws, { recursive: true, force: true });
+    fs.rmSync(realHome, { recursive: true, force: true });
+    fs.rmSync(codexHome, { recursive: true, force: true });
   });
 });
 

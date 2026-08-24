@@ -26,7 +26,7 @@ import type { ResolvedAgentNativeConfigProjection } from "@tachyon/shared/config
 import { GROK_PROJECTED_KEY_ORDER } from "../config/grokNativeConfigProjection.js";
 import { withGrokProjectSkillsIgnored } from "../config/grokSkillIsolation.js";
 import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileResolver.js";
-import { inspectCapabilitySourceAtRoot, type CapturedCapabilitySource } from "../config/agentCapabilitySource.js";
+import { type CapturedCapabilitySource } from "../config/agentCapabilitySource.js";
 import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs, grokMemoryEnv } from "../runtime/adapters/grokMemory.js";
 import { authRequiredFromHarness, type AuthRequiredEvidence } from "@tachyon/shared/runtime/authRequired.js";
 import type { ResumeAdapter } from "@tachyon/shared/resume/adapters.js";
@@ -54,7 +54,6 @@ import { NOTICE_DRAIN_CODEX_AGENT_ARG, NOTICE_DRAIN_SCRIPT_SOURCE, noticeDrainAg
 import { renderCodexMcpBlock } from "../plugins/adapters/codex.js";
 import { setCodexMcpServer, setOpencodeMcpServer, expectedAgentOpencodeEntry } from "../registration/adapters.js";
 import { materializePiAgentHome, materializePiSessionDir, PI_AGENT_DIR_ENV, PI_SESSION_DIR_ENV } from "../agents/piSession.js";
-import { restoreWorkspaceSkillDest } from "../plugins/agentDest.js";
 
 /**
  * 516 — a projeção de "nada foi concedido".
@@ -1790,34 +1789,19 @@ export class HarnessManager {
    * digests to the captured `sha256` is refused by name rather than shipped: fail-closed, the same
    * posture the authorization door already takes on `digest-changed`.
    */
-  private codexSkillSuppressionToml(
-    agent: string,
-    cwd: string,
-    projection: ResolvedAgentCapabilityProjection,
-  ): string {
-    const granted = new Map(projection.skills.map((skill) => [skill.name, skill.source]));
+  private codexSkillSuppressionToml(cwd: string): string {
     const seen = new Set<string>();
     const disabled: string[] = [];
-    const delivered = new Set<string>();
 
     // Every root codex 0.149 discovers repository and user skills from. The user root is included
-    // deliberately: `replaceCapturedSkillTree` never covered it, so a hand-written skill in the
-    // human's own home reached a Codex agent that was granted none of it.
-    const roots = [path.join(path.resolve(cwd), ".agents", "skills"), path.join(os.homedir(), ".agents", "skills")];
-
-    // Deliver-what-the-installer-left has a premise: that what the installer left is still there. It
-    // was not (t-318d7d) — three skill dests recorded as materialized, none of them on disk, which
-    // turned a healthy grant into a refusal at resume.
+    // deliberately: a hand-written skill in the human's own home reached a Codex agent granted none.
     //
-    // 515 — the missing entries are materialized from THE GRANT, not from the installer's record. The
-    // grant carries the payload it attests, so this keeps working when install stops writing workspace
-    // dests at all; and what lands on disk is what THIS agent was granted rather than what some install
-    // once left for everybody. Anything already present is untouched, so this can never become the tree
-    // replacement that must not run at this root.
-    for (const [name, source] of granted) {
-      if (fs.existsSync(path.join(roots[0]!, name, "SKILL.md"))) continue;
-      restoreWorkspaceSkillDest(roots[0]!, name, source.sourcePath);
-    }
+    // 516 — a entrega saiu daqui, e por isso este laço ficou simples: TODA entrada descoberta é
+    // desligada, sem exceção e sem digest. A concedida não está mais nestas raízes; ela vem da home
+    // privada. Antes havia um `if (granted.has(name))` que conferia o digest do que estava no caminho
+    // de descoberta — e era ele que produzia a recusa de launch quando outra pessoa punha um arquivo
+    // com o nome certo ali. Sem entrega no projeto, não há ocupante possível.
+    const roots = [path.join(path.resolve(cwd), ".agents", "skills"), path.join(os.homedir(), ".agents", "skills")];
     for (const root of roots) {
       let entries: fs.Dirent[];
       try {
@@ -1826,72 +1810,23 @@ export class HarnessManager {
         continue; // an absent root discovers nothing
       }
       for (const entry of entries) {
-        // A dest the installer wrote is a SYMLINK into the plugin payload, and codex follows it: it
-        // discovers the skill and reports it under the discovery path (measured 0.149.0), which is
-        // also the path that suppresses it. So the link is a discoverable entry, not a skipped one.
+        // Um dest que o instalador antigo deixou é um SYMLINK, e o codex o segue: descobre a skill e a
+        // reporta sob o caminho de descoberta (medido 0.149.0), que é também o caminho que a suprime.
         const entryPath = path.join(root, entry.name);
         if (!entry.isDirectory() && !this.resolvesToDirectory(entryPath)) continue;
         const manifest = path.join(entryPath, "SKILL.md");
         if (!fs.existsSync(manifest) || seen.has(manifest)) continue;
         seen.add(manifest);
-        const source = granted.get(entry.name);
-        if (source && !delivered.has(entry.name)) {
-          let live: CapturedCapabilitySource | undefined;
-          try {
-            // Digest what the agent will actually read. Custody capture refuses a symbolic link by
-            // design, so a linked dest is resolved first — the content behind the link at THIS launch
-            // is what the attestation is checked against, which is the question that matters.
-            const real = fs.realpathSync(entryPath);
-            live = inspectCapabilitySourceAtRoot(path.dirname(real), path.basename(real));
-          } catch {
-            live = undefined;
-          }
-          if (live && live.sha256 === source.sha256) {
-            delivered.add(entry.name);
-            continue; // the attested content, in place: deliver it by leaving it enabled
-          }
-        }
         disabled.push(manifest);
       }
     }
 
-    const missing = [...granted.keys()].filter((name) => !delivered.has(name));
-    if (missing.length > 0) {
-      // 516 — DOIS fatos diferentes produziam esta recusa, e uma mensagem só para os dois mandava o
-      // humano para um beco. Medido: com o payload intacto e uma skill de mesmo nome escrita à mão em
-      // `<cwd>/.agents/skills`, a mensagem dizia "a origem mudou ou foi removida — reautorize", e
-      // reautorizar produz a MESMA concessão e falha idêntico. A origem não tinha mudado; outra coisa
-      // estava ocupando o caminho onde o runtime procura.
-      //
-      // Distinguir custa um digest do payload que a concessão nomeia: se ele ainda bate, o problema
-      // não é a autorização, é o ocupante — e é o ocupante que a mensagem tem de nomear, porque é o
-      // arquivo do humano e só ele decide o que fazer com ele.
-      const detail = missing.map((name) => {
-        const source = granted.get(name)!;
-        let payloadIntact = false;
-        try {
-          const live = inspectCapabilitySourceAtRoot(path.dirname(source.sourcePath), path.basename(source.sourcePath));
-          payloadIntact = live.sha256 === source.sha256;
-        } catch { payloadIntact = false; }
-        const occupant = path.join(roots[0]!, name);
-        if (payloadIntact && fs.existsSync(occupant)) {
-          return `'${name}': the plugin payload is intact, but ${occupant} holds different content — that path is where this runtime looks, so move or remove what is there`;
-        }
-        if (payloadIntact) {
-          return `'${name}': the plugin payload is intact but could not be delivered to ${occupant}`;
-        }
-        return `'${name}': its source changed or was removed — reauthorize it in Agent Studio`;
-      });
-      throw new HarnessUnavailableError(
-        agent,
-        `granted skill(s) could not be delivered at the content this profile authorized. ${detail.join("; ")}`,
-      );
-    }
     if (disabled.length === 0) return "";
     return disabled
       .map((manifest) => `[[skills.config]]\npath = ${JSON.stringify(manifest)}\nenabled = false\n`)
       .join("\n");
   }
+
 
   private resolvesToDirectory(entryPath: string): boolean {
     try {
@@ -2871,35 +2806,35 @@ export class HarnessManager {
     }
     if (content.length > 0) atomicWrite(configPath, `${content}\n`);
     else fs.rmSync(configPath, { force: true });
-    // Codex discovers skills from the launch project's `.agents/skills` and from the user's home,
-    // never from CODEX_HOME. Two ways to make that exact, and which one applies is decided by
-    // whether this launch OWNS the directory it would write into:
+    // 516 — A ENTREGA MUDOU DE LUGAR, e é a simplificação que o runtime permitiu.
     //
-    //  - a worktree is the agent's own: replace the tree, rebuilt solely from the digest-pinned
-    //    snapshot. Nothing ambient can survive a replacement, which is the strongest form.
-    //  - the workspace root belongs to the human: touch nothing, and disable by path every
-    //    discoverable skill the snapshot does not carry (t-ef3c1f).
+    // A t-ef3c1f construiu "entregar sem POSSUIR um diretório" porque a codex-cli 0.146.1 não tinha
+    // raiz de descoberta além do `cwd`: a skill concedida TINHA de ser escrita dentro de
+    // `<cwd>/.agents/skills`, que é do humano, e o resto suprimido por path. Medido em 2026-08-24 na
+    // 0.149.0, com controle nos dois sentidos: `$CODEX_HOME/skills` É lido. O runtime mudou.
     //
-    // 516 — isto roda MESMO SEM CAPACIDADE NENHUMA, e essa é a correção. Antes o bloco inteiro vivia
-    // dentro de `if (capabilities)`, então um agente que não recebeu nada não ganhava supressão e
-    // enxergava toda skill solta no projeto: quem foi concedido de MENOS ficava isolado de MENOS.
-    // Medido no workspace do autor com um codex sem concessão e duas skills plantadas à mão — as duas
-    // chegavam. Zero concessão significa "suprima tudo o que for descoberto", que é a afirmação mais
-    // forte, não a ausência de afirmação.
+    // Então a entrega é a mesma do grok e do pi — escrever na home PRIVADA — e o checkout
+    // compartilhado deixa de ser tocado. O que isso dispensa é uma classe inteira de problema, não uma
+    // linha: sem escrita no projeto não há ocupante possível no caminho de descoberta, não há digest a
+    // conferir contra o que outra pessoa pôs lá, e não há a recusa de launch que essa conferência
+    // produzia (medida na sessão do autor: uma cópia manual com o nome da skill concedida travava o
+    // agente, e a mensagem mandava reautorizar, o que não consertava nada).
+    //
+    // A NEGAÇÃO não mudou de lugar nem de força: o codex continua lendo `<cwd>/.agents/skills` e
+    // `~/.agents/skills`, então toda entrada descoberta ali é desligada pelo nome — agora sem exceção,
+    // porque nenhuma delas é a concedida.
     const launchRoot = path.resolve(cwd ?? this.workspaceRoot);
     const skillSnapshot = capabilities ?? EMPTY_CAPABILITY_PROJECTION;
-    if (launchRoot === path.resolve(this.workspaceRoot)) {
-      const suppression = this.codexSkillSuppressionToml(agent, launchRoot, skillSnapshot);
-      if (suppression.length > 0) {
-        const current = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : "";
-        atomicWrite(configPath, `${current}${current.endsWith("\n") || current.length === 0 ? "" : "\n"}${suppression}`);
-      }
-    } else if (capabilities) {
-      // A worktree SEM projeção não passa por aqui de propósito: `materializeHome` já varre a árvore
-      // inteira nesse caso, e reconstruí-la vazia recriaria o diretório que a varredura acabou de
-      // remover. A correção do 516 é da outra perna — a raiz do workspace, que ninguém varre.
-      this.replaceCapturedSkillTree(agent, path.join(launchRoot, ".agents"), capabilities);
+    this.replaceCapturedSkillTree(agent, home, skillSnapshot);
+    const suppression = this.codexSkillSuppressionToml(launchRoot);
+    if (suppression.length > 0) {
+      const current = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : "";
+      atomicWrite(configPath, `${current}${current.endsWith("\n") || current.length === 0 ? "" : "\n"}${suppression}`);
     }
+    // Uma árvore que o desenho ANTIGO escreveu numa worktree continua sendo removida: ela não é mais
+    // escrita, mas pode estar lá de um launch anterior, e deixá-la seria entregar por um caminho que
+    // ninguém mais mantém.
+    if (launchRoot !== path.resolve(this.workspaceRoot)) this.purgeOwnedCodexLaunchSkillTree(agent, launchRoot);
     if (capabilities) this.writeProfileCapabilityManifest(agent, home, capabilities);
     const secretEnv = capabilities ? this.resolveMcpSecretEnv(agent, { inherit: "none", mcp: capabilities.mcp }) : {};
     return { home, env: { CODEX_HOME: home, ...secretEnv }, args: [] };

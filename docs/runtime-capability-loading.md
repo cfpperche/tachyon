@@ -377,9 +377,23 @@ no pi: **escrever na home privada e não tocar no checkout**. E some junto toda 
 apareceu nesta sessão — o ocupante no caminho de descoberta, o digest conferido contra o que outra
 pessoa pôs lá, a mensagem de recusa que mandava reautorizar sem conserto possível.
 
-> **Isto pede uma medição de confirmação antes de virar código**, num agente codex real do produto e
-> não numa sonda: a raiz privada precisa valer também no launch que o Tachyon monta, com o `CODEX_HOME`
-> que ele gera.
+**Confirmado no caminho real do produto e já implementado (0.93.62).** A entrega ao codex passou a
+escrever em `$CODEX_HOME/skills` pelo mesmo `replaceCapturedSkillTree` que grok e pi usam, e o checkout
+compartilhado deixou de ser tocado. O que saiu junto:
+
+- `restoreWorkspaceSkillDest` — a função em que a spec 515 gastou uma fatia inteira (o T9). Ela
+  restaurava um dest perdido no projeto; sem escrita no projeto não há dest a perder.
+- `packages/engine/src/plugins/agentDest.ts` inteiro, que existia só para ela.
+- a conferência de digest contra o caminho de descoberta, e a recusa de launch que ela produzia. A
+  garantia não se perdeu: a captura já é fixada no digest da concessão
+  (`captureCapabilitySourceAtRoot(root, path, reference.sha256)` → `profile/digest-mismatch`), o que é
+  conferir contra o **payload** em vez de contra o que alguém deixou num diretório compartilhado.
+- a mensagem de recusa que eu tinha acabado de melhorar, distinguindo "o payload mudou" de "há um
+  ocupante no caminho". O segundo estado não pode mais existir.
+
+E a supressão ficou **mais simples e mais estrita**: toda entrada descoberta em `<cwd>/.agents/skills`
+e `~/.agents/skills` é desligada, sem exceção — antes a concedida precisava ser poupada, porque morava
+ali.
 
 ### 2. O que ele carrega sozinho
 
