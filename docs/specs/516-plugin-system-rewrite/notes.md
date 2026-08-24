@@ -240,3 +240,39 @@ QUE traz (pastilhas + runtimes). Toda distância é um passo de `--ds-spacing-si
 Evidence: `.tachyon/visual-qa/516-plugin-card/` — 880 e 360, mais o estado quebrado.
 Verdict: aprovado. Os três níveis leem, os runtimes ficam agrupados e separados das capacidades, e a
 única linha colorida é a da ferramenta externa que falta — a única em que o humano precisa agir.
+
+## T13 — o isolamento de ENTRADA estava invertido (0.93.61)
+
+O dono plantou duas skills à mão em `.agents/skills/` do checkout compartilhado e reiniciou um codex
+**sem concessão nenhuma**. O `config.toml` que o launch gerou não tinha uma única linha de supressão:
+as duas chegavam nele.
+
+**Causa, e ela é o avesso do que devia ser.** O bloco inteiro de isolamento de skill vivia dentro de
+`if (capabilities)`, e `Workspace.ts:931` só passa capacidades quando o perfil tem
+`profileCapabilities`. Um agente que não autorizou nada não tem projeção → o bloco não roda → nenhuma
+linha é escrita → ele enxerga tudo o que estiver solto no projeto.
+
+**Quem foi concedido de MENOS ficava isolado de MENOS.** Zero concessão não é "não tenho nada a
+dizer": é a afirmação mais forte que existe — *suprima tudo o que descobrir*. A diferença entre as
+duas leituras era um caminho de código que não rodava, e é exatamente o tipo de silêncio que esta spec
+existe para acabar.
+
+Corrigido com uma projeção vazia explícita (`EMPTY_CAPABILITY_PROJECTION`) em vez de um `if`. O ramo
+do worktree continua exigindo projeção, e isso é deliberado: ali `materializeHome` já varre a árvore
+inteira, e reconstruí-la vazia recriaria o diretório que a varredura acabou de remover. A perna que
+faltava era a raiz do workspace, que ninguém varre porque não é nossa.
+
+### O que a tela mostrou de certo, no meio disso
+
+O Agent Studio listou a `intrusa` em **workspace skills** (autorizável, não autorizada) e o
+`sdd@2.0.0` em **Tachyon plugins**. E não listou a `sdd` que o dono plantou à mão em
+`.agents/skills/sdd`: ela é reivindicada pelo plugin de mesmo nome, mesmo com conteúdo divergente —
+que é a regra escrita em `agentCapabilityCandidates` desde a t-5498a6 e continua valendo sobre o
+catálogo.
+
+### Sobre a prova vermelho/verde
+
+Não consegui o vermelho limpo: guardar só o `HarnessManager` deixa o arquivo sem compilar (a projeção
+vazia mora nele), então o teste é PULADO em vez de falhar. O que sustenta o caso é a medição no
+workspace do autor — config sem supressão, duas skills plantadas 16 minutos antes do launch — e o
+teste passa a defender o comportamento daqui para a frente.

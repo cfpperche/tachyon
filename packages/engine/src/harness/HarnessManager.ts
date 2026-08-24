@@ -56,6 +56,24 @@ import { setCodexMcpServer, setOpencodeMcpServer, expectedAgentOpencodeEntry } f
 import { materializePiAgentHome, materializePiSessionDir, PI_AGENT_DIR_ENV, PI_SESSION_DIR_ENV } from "../agents/piSession.js";
 import { restoreWorkspaceSkillDest } from "../plugins/agentDest.js";
 
+/**
+ * 516 — a projeção de "nada foi concedido".
+ *
+ * Existe para que a ausência de concessão seja uma AFIRMAÇÃO ("suprima tudo o que descobrir") em vez
+ * de um caminho de código que não roda. A diferença entre as duas foi um defeito real: um agente sem
+ * concessão nenhuma enxergava toda skill solta no projeto.
+ */
+const EMPTY_CAPABILITY_PROJECTION: ResolvedAgentCapabilityProjection = {
+  schemaVersion: 1,
+  adapter: "codex",
+  sha256: "",
+  sources: [],
+  skills: [],
+  mcp: {},
+  hooks: {},
+  pi: { extensions: [], prompts: [], themes: [], packages: [] },
+};
+
 /** What a materialized harness contributes to the spawn: the config home, the env that redirects to
  *  it, and the MCP args. Threaded into the spawn/restart/resume/fork command (H3). */
 export interface MaterializedHarness {
@@ -2829,27 +2847,36 @@ export class HarnessManager {
     }
     if (content.length > 0) atomicWrite(configPath, `${content}\n`);
     else fs.rmSync(configPath, { force: true });
-    if (capabilities) {
-      // Codex discovers skills from the launch project's `.agents/skills` and from the user's home,
-      // never from CODEX_HOME. Two ways to make that exact, and which one applies is decided by
-      // whether this launch OWNS the directory it would write into:
-      //
-      //  - a worktree is the agent's own: replace the tree, rebuilt solely from the digest-pinned
-      //    snapshot. Nothing ambient can survive a replacement, which is the strongest form.
-      //  - the workspace root belongs to the plugin installer: touch nothing, and disable by path
-      //    every discoverable skill the snapshot does not carry (t-ef3c1f).
-      const launchRoot = path.resolve(cwd ?? this.workspaceRoot);
-      if (launchRoot === path.resolve(this.workspaceRoot)) {
-        const suppression = this.codexSkillSuppressionToml(agent, launchRoot, capabilities);
-        if (suppression.length > 0) {
-          const current = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : "";
-          atomicWrite(configPath, `${current}${current.endsWith("\n") || current.length === 0 ? "" : "\n"}${suppression}`);
-        }
-      } else {
-        this.replaceCapturedSkillTree(agent, path.join(launchRoot, ".agents"), capabilities);
+    // Codex discovers skills from the launch project's `.agents/skills` and from the user's home,
+    // never from CODEX_HOME. Two ways to make that exact, and which one applies is decided by
+    // whether this launch OWNS the directory it would write into:
+    //
+    //  - a worktree is the agent's own: replace the tree, rebuilt solely from the digest-pinned
+    //    snapshot. Nothing ambient can survive a replacement, which is the strongest form.
+    //  - the workspace root belongs to the human: touch nothing, and disable by path every
+    //    discoverable skill the snapshot does not carry (t-ef3c1f).
+    //
+    // 516 — isto roda MESMO SEM CAPACIDADE NENHUMA, e essa é a correção. Antes o bloco inteiro vivia
+    // dentro de `if (capabilities)`, então um agente que não recebeu nada não ganhava supressão e
+    // enxergava toda skill solta no projeto: quem foi concedido de MENOS ficava isolado de MENOS.
+    // Medido no workspace do autor com um codex sem concessão e duas skills plantadas à mão — as duas
+    // chegavam. Zero concessão significa "suprima tudo o que for descoberto", que é a afirmação mais
+    // forte, não a ausência de afirmação.
+    const launchRoot = path.resolve(cwd ?? this.workspaceRoot);
+    const skillSnapshot = capabilities ?? EMPTY_CAPABILITY_PROJECTION;
+    if (launchRoot === path.resolve(this.workspaceRoot)) {
+      const suppression = this.codexSkillSuppressionToml(agent, launchRoot, skillSnapshot);
+      if (suppression.length > 0) {
+        const current = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : "";
+        atomicWrite(configPath, `${current}${current.endsWith("\n") || current.length === 0 ? "" : "\n"}${suppression}`);
       }
-      this.writeProfileCapabilityManifest(agent, home, capabilities);
+    } else if (capabilities) {
+      // A worktree SEM projeção não passa por aqui de propósito: `materializeHome` já varre a árvore
+      // inteira nesse caso, e reconstruí-la vazia recriaria o diretório que a varredura acabou de
+      // remover. A correção do 516 é da outra perna — a raiz do workspace, que ninguém varre.
+      this.replaceCapturedSkillTree(agent, path.join(launchRoot, ".agents"), capabilities);
     }
+    if (capabilities) this.writeProfileCapabilityManifest(agent, home, capabilities);
     const secretEnv = capabilities ? this.resolveMcpSecretEnv(agent, { inherit: "none", mcp: capabilities.mcp }) : {};
     return { home, env: { CODEX_HOME: home, ...secretEnv }, args: [] };
   }

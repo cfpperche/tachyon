@@ -1069,6 +1069,39 @@ describe("HarnessManager materialize (fs)", () => {
     expect(config).not.toContain(JSON.stringify(path.join(dest, "SKILL.md")));
   });
 
+  it("516: um agente SEM CONCESSÃO NENHUMA suprime toda skill solta no projeto", () => {
+    // O defeito, medido no workspace do autor: a supressão inteira vivia dentro de `if (capabilities)`,
+    // e um agente cujo perfil não autoriza nada não recebe projeção — então nenhuma linha era escrita
+    // e ele enxergava tudo o que estivesse em `<cwd>/.agents/skills`. Quem foi concedido de MENOS
+    // ficava isolado de MENOS, que é o avesso da lei da spec.
+    //
+    // Este caso sobe pela porta que a produção usa quando não há capacidade: `materializeCanonicalCodexHome`,
+    // que recebe só a configuração nativa. Passar por ela é o ponto — chamar a variante com projeção
+    // vazia testaria um caminho que a produção não toma.
+    const codexHome = path.join(path.dirname(realHome), "realcodex-516-nogrants");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+
+    for (const name of ["intrusa", "sdd"]) {
+      const dir = path.join(ws, ".agents", "skills", name);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: escrita a mao\n---\ncorpo\n`);
+    }
+
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    mgr.materializeCanonicalCodexHome("semnada", codex, { adapter: "codex", selectors: { model: "gpt-5.6" } }, ws);
+
+    const config = fs.readFileSync(harnessCodexConfigPath(ws, "semnada"), "utf8");
+    for (const name of ["intrusa", "sdd"]) {
+      const manifest = path.join(ws, ".agents", "skills", name, "SKILL.md");
+      expect(config, `${name} não foi desligada`).toContain(JSON.stringify(manifest));
+    }
+    expect(config).toContain("enabled = false");
+    // E o que estava no disco continua no disco: suprimir é dizer ao runtime para não ler, nunca
+    // apagar o arquivo de alguém no checkout compartilhado.
+    expect(fs.existsSync(path.join(ws, ".agents", "skills", "intrusa", "SKILL.md"))).toBe(true);
+  });
+
   it("t-f842f0: empty Codex selection purges the worktree skill tree and never the plugin roster", () => {
     // ACTOR × TRIGGER. Actor: the profile lost its skill selection. Trigger: any door that
     // rematerializes the Codex home (`materializeCanonicalCodexHome` and `materializeHomeOnly`
