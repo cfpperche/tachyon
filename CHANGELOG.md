@@ -4,6 +4,19 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.68 — conceder um plugin a um agente Pi funciona
+
+Conceder um plugin a um agente Pi falhava com uma mensagem sobre um arquivo que não existe. O
+caminho estava sendo inventado: o Tachyon montava `plugins/<plugin>/skills/<nome>` para toda
+capacidade, o que é verdade para uma skill e falso para um prompt, que mora em `prompts/`.
+
+O erro nunca apareceu antes porque Claude, Codex e Grok só recebem skills de plugin. O Pi é o único
+que recebe prompts — e era, por isso, o único runtime que o Tachyon oferecia e não entregava.
+
+Junto veio um ajuste de formato: um prompt de plugin agora é um arquivo `.md` e um tema é um
+`.json`, em vez de pastas. É o que o Pi já esperava receber. Se você tem um plugin com
+`prompts/<nome>/arquivo.md`, mova para `prompts/<nome>.md`.
+
 ## 0.93.67 — motor ocupado deixa de ser confundido com motor travado
 
 O editor pergunta ao motor, de tempos em tempos, se ele está vivo. Se ficasse dez segundos sem
