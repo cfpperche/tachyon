@@ -62,7 +62,23 @@ const REFERENCE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 /** Where a skill comes from. The origin decides scope, path root and provenance — none are guessed. */
 export type SkillOrigin =
   /** Installed by a Tachyon plugin; the plugin tree is the source, the runtime dirs are its copies. */
-  | { kind: "plugin"; plugin: string; skill: string; version: string; runtimes: readonly string[] }
+  | {
+      kind: "plugin";
+      plugin: string;
+      skill: string;
+      version: string;
+      runtimes: readonly string[];
+      /**
+       * 516 — o CAMINHO vem de `grantableReferences`, que é a mesma fonte que a instalação usa, em vez
+       * de ser remontado aqui. A versão anterior compunha `.tachyon/plugins/<p>/skills/<nome>` na mão,
+       * o que era verdade enquanto toda capacidade de plugin era uma skill. Um `prompt` do pi mora em
+       * `prompts/`, e o caminho inventado apontava para um arquivo que não existe — foi assim que a
+       * primeira concessão a um agente pi falhou, em 2026-08-24.
+       */
+      path: string;
+      /** A família da capacidade. `skill` continua sendo o caso comum, não o único. */
+      referenceKind: PluginReferenceKind;
+    }
   /** Hand-written in this repo. Workspace-relative path to the skill DIRECTORY. */
   | { kind: "workspace"; path: string }
   /**
@@ -85,10 +101,20 @@ export interface SkillAuthorizationRequest {
   referenceId?: string;
 }
 
+/**
+ * As famílias que uma concessão de plugin pode ter. Nem todas exigem GRANT: `pi-prompt` e `pi-theme`
+ * são dado (um `.md` e um JSON), e o schema de autoridade deliberadamente não os aceita em
+ * `capabilityGrants` — o resolvedor os trata como dado validado pela forma. Ver `GRANT_KINDS` abaixo.
+ */
+export type PluginReferenceKind = "skill" | "pi-extension" | "pi-prompt" | "pi-theme" | "pi-package";
+
+/** As que EXIGEM custódia, espelhando o enum de `capabilityGrant` em `agentProfileAuthority`. */
+const GRANT_KINDS = new Set<PluginReferenceKind>(["skill", "pi-extension", "pi-package"]);
+
 /** The shape `profile.references` stores. Always pinned — the schema requires it for `kind: "skill"`. */
 export interface AuthorizedSkillReference {
   id: string;
-  kind: "skill";
+  kind: PluginReferenceKind;
   /** `project` resolves against the workspace root; `profile` against the agent's profile directory. */
   scope: "project" | "profile";
   owner: string;
@@ -104,7 +130,7 @@ export interface AuthorizedSkillGrant {
   referenceId: string;
   sourceSha256: string;
   adapter: SkillGrantAdapter;
-  kind: "skill";
+  kind: "skill" | "pi-extension" | "pi-package";
 }
 
 export type SkillAuthorizationOutcome =
@@ -158,7 +184,7 @@ function placeOrigin(
     return {
       scope: "project",
       owner: `plugin:${origin.plugin}`,
-      path: `.tachyon/plugins/${origin.plugin}/skills/${origin.skill}`,
+      path: origin.path,
       version: origin.version,
     };
   }
@@ -229,10 +255,14 @@ export function authorizeWorkspaceSkill(
     };
   }
 
+  const referenceKind: PluginReferenceKind = request.origin.kind === "plugin" ? request.origin.referenceKind : "skill";
+  // Uma família de dado não tem grant, então exigir um aqui a deixaria eternamente "mudada": o caminho
+  // de re-autorização rodaria em todo launch para um prompt que não mudou nada.
+  const needsGrant = GRANT_KINDS.has(referenceKind);
   const alreadyPinnedHere = existingReference?.sha256 === request.sha256
-    && existingGrant?.sourceSha256 === request.sha256
+    && (!needsGrant || existingGrant?.sourceSha256 === request.sha256)
     && existingReference?.version === placed.version;
-  if (existingReference && existingGrant && alreadyPinnedHere) {
+  if (existingReference && (!needsGrant || existingGrant) && alreadyPinnedHere) {
     return { ok: true, outcome: "unchanged", referenceId, state };
   }
   if ((existingReference || existingGrant) && !options.reauthorize) {
@@ -241,7 +271,7 @@ export function authorizeWorkspaceSkill(
 
   const reference: AuthorizedSkillReference = {
     id: referenceId,
-    kind: "skill",
+    kind: referenceKind,
     scope: placed.scope,
     owner: placed.owner,
     path: placed.path,
@@ -249,12 +279,20 @@ export function authorizeWorkspaceSkill(
     sha256: request.sha256,
     ...(placed.version ? { version: placed.version } : {}),
   };
-  const grant: AuthorizedSkillGrant = {
-    referenceId,
-    sourceSha256: request.sha256,
-    adapter: adapter as SkillGrantAdapter,
-    kind: "skill",
-  };
+  // Um prompt e um tema NÃO ganham linha em `capabilityGrants`, e isso não é economia: o schema de
+  // autoridade não os aceita ali, porque são dado validado pela forma e não código que passa a rodar
+  // dentro do agente. Escrever a linha assim mesmo produziria um perfil que o próprio Studio recusa.
+  const grants = needsGrant
+    ? [
+      ...state.grants.filter((entry) => entry.referenceId !== referenceId),
+      {
+        referenceId,
+        sourceSha256: request.sha256,
+        adapter: adapter as SkillGrantAdapter,
+        kind: referenceKind as AuthorizedSkillGrant["kind"],
+      },
+    ].sort((a, b) => a.referenceId.localeCompare(b.referenceId))
+    : state.grants.filter((entry) => entry.referenceId !== referenceId);
 
   return {
     ok: true,
@@ -263,8 +301,7 @@ export function authorizeWorkspaceSkill(
     state: {
       references: [...state.references.filter((entry) => entry.id !== referenceId), reference]
         .sort((a, b) => a.id.localeCompare(b.id)),
-      grants: [...state.grants.filter((entry) => entry.referenceId !== referenceId), grant]
-        .sort((a, b) => a.referenceId.localeCompare(b.referenceId)),
+      grants,
     },
   };
 }

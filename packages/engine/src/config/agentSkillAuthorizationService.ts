@@ -29,6 +29,9 @@ import { listAuthorizableCapabilities, readPluginLock, type AuthorizedState } fr
 import {
   authorizeWorkspaceSkill,
   revokeWorkspaceSkill,
+  type AuthorizedSkillGrant,
+  type AuthorizedSkillReference,
+  type PluginReferenceKind,
   type SkillAuthorizationOutcome,
   type SkillAuthorizationState,
   type SkillOrigin,
@@ -51,6 +54,12 @@ export interface SkillAuthorizationPorts {
     references: readonly AgentProfileReferenceV1[];
     capabilityGrants: readonly PersistedGrant[];
     selectedSkills?: readonly string[];
+    /**
+     * 516 — a seleção de uma capacidade de dado do pi mora em `capabilities.pi.<família>`, não em
+     * `capabilities.skills`. O schema recusa um `pi-prompt` listado como skill, então mandar tudo por
+     * um campo só produziria um perfil que o próprio Studio rejeita.
+     */
+    selectedPi?: { prompts?: readonly string[]; themes?: readonly string[]; extensions?: readonly string[]; packages?: readonly string[] };
   }): Promise<void>;
 }
 
@@ -76,7 +85,10 @@ export type AuthorizeAgentSkillResult =
 /** Where an origin's tree physically lives, and under which custody root it is captured. */
 function custodyOf(workspaceRoot: string, origin: SkillOrigin): { root: string; relative: string } | { error: string } {
   if (origin.kind === "plugin") {
-    return { root: workspaceRoot, relative: `.tachyon/plugins/${origin.plugin}/skills/${origin.skill}` };
+    // O MESMO caminho que a referência vai gravar, e pela mesma fonte. Remontar aqui era o quarto
+    // lugar com a opinião `skills/<nome>` — e o digest calculado sobre um caminho e gravado noutro
+    // seria uma concessão que falha na entrega, longe da decisão que a causou.
+    return { root: workspaceRoot, relative: origin.path };
   }
   if (origin.kind === "workspace") {
     return { root: workspaceRoot, relative: origin.path };
@@ -145,8 +157,15 @@ export async function authorizeAgentSkill(input: AuthorizeAgentSkillInput): Prom
     };
   }
 
-  const selectedSkills = input.select
+  // A família decide ONDE a seleção mora. `skill` continua em `capabilities.skills`; as quatro do pi
+  // vão para `capabilities.pi.<família>`, que é o que o schema exige e o resolvedor lê.
+  const decidedKind = decided.state.references.find((reference) => reference.id === decided.referenceId)?.kind ?? "skill";
+  const piField = PI_SELECTION_FIELD[decidedKind];
+  const selectedSkills = input.select && !piField
     ? [...new Set([...(current.profile.capabilities?.skills ?? []), decided.referenceId])].sort()
+    : undefined;
+  const selectedPi = input.select && piField
+    ? { [piField]: [...new Set([...(current.profile.capabilities?.pi?.[piField] ?? []), decided.referenceId])].sort() }
     : undefined;
 
   await input.ports.commit({
@@ -154,6 +173,7 @@ export async function authorizeAgentSkill(input: AuthorizeAgentSkillInput): Prom
     references: mergeReferences(current.profile.references ?? [], decided.state.references),
     capabilityGrants: mergeGrants(current.grants, decided.state.grants),
     ...(selectedSkills ? { selectedSkills } : {}),
+    ...(selectedPi ? { selectedPi } : {}),
   });
 
   return { ok: true, outcome: decided.outcome, referenceId: decided.referenceId, sha256, selected: input.select === true };
@@ -193,10 +213,35 @@ export async function revokeAgentSkill(input: {
   return { ok: true, removed: true, deselected: revoked.alsoDeselect.length > 0 };
 }
 
+/** Um alvo do catálogo vira o origin, com o caminho e a família que ELE declara — nunca remontados. */
+function pluginOriginFrom(
+  plugin: { name: string; version: string; runtimes: readonly string[] },
+  target: { kind: string; id: string; file: string },
+): SkillOrigin {
+  return {
+    kind: "plugin",
+    plugin: plugin.name,
+    skill: target.id,
+    version: plugin.version,
+    runtimes: plugin.runtimes,
+    path: target.file,
+    referenceKind: target.kind as PluginReferenceKind,
+  };
+}
+
+const PI_SELECTION_FIELD: Partial<Record<string, "prompts" | "themes" | "extensions" | "packages">> = {
+  "pi-prompt": "prompts",
+  "pi-theme": "themes",
+  "pi-extension": "extensions",
+  "pi-package": "packages",
+};
+
+const PLUGIN_REFERENCE_KINDS = new Set<string>(["skill", "pi-extension", "pi-prompt", "pi-theme", "pi-package"]);
+
 function isAuthorizedSkillShape(reference: AgentProfileReferenceV1): reference is AgentProfileReferenceV1 & {
-  kind: "skill"; scope: "project" | "profile"; mode: "pinned"; sha256: string;
+  kind: PluginReferenceKind; scope: "project" | "profile"; mode: "pinned"; sha256: string;
 } {
-  return reference.kind === "skill" && reference.mode === "pinned" && typeof reference.sha256 === "string"
+  return PLUGIN_REFERENCE_KINDS.has(reference.kind) && reference.mode === "pinned" && typeof reference.sha256 === "string"
     && (reference.scope === "project" || reference.scope === "profile");
 }
 
@@ -207,7 +252,7 @@ function isAuthorizedSkillShape(reference: AgentProfileReferenceV1): reference i
  */
 function mergeReferences(
   existing: readonly AgentProfileReferenceV1[],
-  skills: readonly { id: string; kind: "skill"; scope: "project" | "profile"; owner: string; path: string; mode: "pinned"; sha256: string; version?: string }[],
+  skills: readonly AuthorizedSkillReference[],
 ): AgentProfileReferenceV1[] {
   const byId = new Map(skills.map((skill) => [skill.id, skill as AgentProfileReferenceV1]));
   const kept = existing.filter((reference) => !(isAuthorizedSkillShape(reference) && byId.has(reference.id)));
@@ -217,10 +262,10 @@ function mergeReferences(
 /** Same rule for grants: a skill grant set must not disturb an mcp or hook grant it never inspected. */
 function mergeGrants(
   existing: readonly PersistedGrant[],
-  skills: readonly { referenceId: string; sourceSha256: string; adapter: string; kind: "skill" }[],
+  skills: readonly AuthorizedSkillGrant[],
 ): PersistedGrant[] {
   const byId = new Map(skills.map((grant) => [grant.referenceId, grant as PersistedGrant]));
-  const kept = existing.filter((grant) => !(grant.kind === "skill" && byId.has(grant.referenceId)));
+  const kept = existing.filter((grant) => !(PLUGIN_REFERENCE_KINDS.has(grant.kind) && byId.has(grant.referenceId)));
   return [...kept, ...byId.values()].sort((left, right) => left.referenceId.localeCompare(right.referenceId));
 }
 
@@ -260,9 +305,11 @@ export function authorizedSkillStates(
 export function skillOriginFor(workspaceRoot: string, skillName: string, adapter: string): SkillOrigin | undefined {
   const lock = readPluginLock(workspaceRoot);
   for (const plugin of lock) {
-    const owns = plugin.targets.some((target) => target.kind === "skill" && path.posix.basename(target.file) === skillName);
-    if (!owns) continue;
-    return { kind: "plugin", plugin: plugin.name, skill: skillName, version: plugin.version, runtimes: plugin.runtimes };
+    // Qualquer família, não só `skill`: um prompt do pi também é uma capacidade que um agente recebe,
+    // e casar pelo `id` é o que faz `nova-spec` encontrar `prompts/nova-spec.md`.
+    const target = plugin.targets.find((entry) => entry.id === skillName);
+    if (!target) continue;
+    return pluginOriginFrom(plugin, target);
   }
   const rel = adapter === "codex" ? `.agents/skills/${skillName}` : `.claude/skills/${skillName}`;
   return fs.existsSync(path.join(workspaceRoot, rel)) ? { kind: "workspace", path: rel } : undefined;
@@ -302,17 +349,22 @@ export async function authorizeAgentPlugin(input: {
 
   const authorized: string[] = [];
   const outcomes: SkillAuthorizationOutcome[] = [];
-  for (const skill of candidate.skills) {
+  // Os ALVOS, não a lista de exibição. `candidate.skills` é texto para a tela — um prompt aparece lá
+  // como `"nova-spec (prompt)"`, parêntese e tudo — e iterar sobre isso como se fosse nome foi o que
+  // produziu o caminho `.tachyon/plugins/sdd/skills/nova-spec (prompt)` na primeira concessão a um pi.
+  const locked = readPluginLock(input.workspaceRoot).find((plugin) => plugin.name === input.pluginName);
+  const targets = (locked?.targets ?? []).filter((target) => !target.runtime || target.runtime === input.adapter);
+  for (const target of targets) {
     const result = await authorizeAgentSkill({
       workspaceRoot: input.workspaceRoot,
       agentName: input.agentName,
-      origin: { kind: "plugin", plugin: candidate.name, skill, version: candidate.version, runtimes: candidate.runtimes },
+      origin: pluginOriginFrom({ name: candidate.name, version: candidate.version, runtimes: candidate.runtimes }, target),
       ports: input.ports,
       ...(input.reauthorize ? { reauthorize: true } : {}),
       ...(input.select ? { select: true } : {}),
     });
     if (!result.ok) return { ok: false, error: `plugin '${candidate.name}': ${result.error}`, authorized };
-    authorized.push(skill);
+    authorized.push(target.id);
     outcomes.push(result.outcome);
   }
   return { ok: true, authorized, outcomes };

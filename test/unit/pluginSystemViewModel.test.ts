@@ -42,7 +42,7 @@ describe("516 — o card diz o que o plugin traz", () => {
     const ws = workspace({ demo: { files: {
       "skills/uma/SKILL.md": SKILL,
       "skills/outra/SKILL.md": SKILL,
-      "prompts/planejar/p.md": "x",
+      "prompts/planejar.md": "x",
     } } });
     const card = vmOf(ws).installed[0]!;
     expect(card.capabilities.map((c) => c.label)).toEqual(["2 skills", "1 prompt"]);

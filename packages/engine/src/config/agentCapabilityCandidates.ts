@@ -94,11 +94,11 @@ export interface AuthorizableCapabilities {
   checkoutOnlyPlugins: string[];
 }
 
-interface LockedPlugin {
+export interface LockedPlugin {
   name: string;
   version: string;
   runtimes: string[];
-  targets: { kind: string; file: string; runtime?: string }[];
+  targets: { kind: string; id: string; file: string; runtime?: string }[];
 }
 
 /**
@@ -258,6 +258,10 @@ export function readPluginLock(workspaceRoot: string): LockedPlugin[] {
     runtimes: plugin.runtimes,
     targets: grantableReferences(plugin).map((reference) => ({
       kind: reference.kind,
+      // O `id` viaja junto do caminho porque re-derivá-lo do basename foi exatamente o que quebrou a
+      // primeira concessão a um agente pi: para um prompt, o arquivo é `nova-spec.md` e o id é
+      // `nova-spec`. Duas opiniões sobre o mesmo nome é uma a mais.
+      id: reference.id,
       file: reference.path,
       // Uma capacidade que serve um runtime só é listada com ELE; a que serve todos é listada sem
       // runtime, que é como esta camada já lia "vale para qualquer um".

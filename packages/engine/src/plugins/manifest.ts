@@ -37,13 +37,26 @@ export type Runtime = (typeof RUNTIMES)[number];
 export const MANIFEST_FILE = "tachyon-plugin.json";
 
 /** A família de capacidade, e os runtimes que sabem consumi-la. */
+/**
+ * As famílias, e a FORMA de cada uma no payload.
+ *
+ * `file` está aqui porque duas delas não são diretórios e nunca foram: o pi recebe um prompt como um
+ * `.md` e um tema como um `.json`, e é isso que ele passa em `--prompt-template` / `--theme`. O
+ * resolvedor de perfil exige exatamente isso desde a 428 (`type === "file"` e a extensão certa).
+ *
+ * A 516 nasceu com "toda capacidade é um diretório nomeado", o que é verdade para skill, extensão e
+ * pacote — e falso para as duas de dado. O descasamento só apareceu quando um plugin foi concedido a
+ * um agente pi pela primeira vez, em 2026-08-24, e o resolvedor recusou um prompt que era pasta.
+ * Forçar as duas a virarem diretório significaria mexer no resolvedor E na entrega para desembrulhar
+ * de novo; deixá-las serem o que já são não mexe em nenhum dos dois.
+ */
 export const CAPABILITY_KINDS = {
   skill: { dir: "skills", runtimes: ["claude", "codex", "grok", "pi"] },
   extension: { dir: "extensions", runtimes: ["pi"] },
-  prompt: { dir: "prompts", runtimes: ["pi"] },
-  theme: { dir: "themes", runtimes: ["pi"] },
+  prompt: { dir: "prompts", runtimes: ["pi"], file: ".md" },
+  theme: { dir: "themes", runtimes: ["pi"], file: ".json" },
   package: { dir: "packages", runtimes: ["pi"] },
-} as const satisfies Record<string, { dir: string; runtimes: readonly Runtime[] }>;
+} as const satisfies Record<string, { dir: string; runtimes: readonly Runtime[]; file?: string }>;
 
 export type CapabilityKind = keyof typeof CAPABILITY_KINDS;
 
@@ -172,9 +185,10 @@ export function parseManifest(raw: unknown): { manifest?: PluginManifest; errors
   };
 }
 
-/** Entradas de um diretório de família: cada subdiretório é uma capacidade daquele nome. */
+/** Entradas de um diretório de família: um subdiretório, ou um arquivo nas famílias que são arquivo. */
 function readFamily(dir: string, kind: CapabilityKind, errors: string[]): PluginCapability[] {
   const familyDir = CAPABILITY_KINDS[kind].dir;
+  const fileExt: string | undefined = (CAPABILITY_KINDS[kind] as { file?: string }).file;
   const root = path.join(dir, familyDir);
   let entries: fs.Dirent[];
   try {
@@ -185,7 +199,18 @@ function readFamily(dir: string, kind: CapabilityKind, errors: string[]): Plugin
   const found: PluginCapability[] = [];
   for (const entry of entries) {
     if (entry.name.startsWith(".")) continue;
-    if (!entry.isDirectory()) continue; // um arquivo solto numa família não é uma capacidade nomeada
+    if (fileExt) {
+      // Família de dado: a capacidade é o arquivo, e o nome é o basename sem a extensão.
+      if (!entry.isFile() || !entry.name.endsWith(fileExt)) continue;
+      const name = entry.name.slice(0, -fileExt.length);
+      if (!NAME.test(name)) {
+        errors.push(`${familyDir}/${entry.name}: a capability name must be lowercase words joined by hyphens`);
+        continue;
+      }
+      found.push({ kind, name, rel: `${familyDir}/${entry.name}` });
+      continue;
+    }
+    if (!entry.isDirectory()) continue; // um arquivo solto numa família de árvore não é uma capacidade nomeada
     if (!NAME.test(entry.name)) {
       errors.push(`${familyDir}/${entry.name}: a capability name must be lowercase words joined by hyphens`);
       continue;

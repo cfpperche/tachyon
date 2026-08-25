@@ -40,8 +40,8 @@ describe("516 — cada família vira o kind que o perfil entende", () => {
     const { plugin } = installed("demo", {}, {
       "skills/uma/SKILL.md": SKILL,
       "extensions/medir/index.ts": "export {}",
-      "prompts/planejar/p.md": "x",
-      "themes/escuro/t.json": "{}",
+      "prompts/planejar.md": "x",
+      "themes/escuro.json": "{}",
       "packages/pacote/package.json": "{}",
       "hooks/claude/h.json": "{}",
       "mcp.json": "{}",
@@ -65,7 +65,7 @@ describe("516 — cada família vira o kind que o perfil entende", () => {
   });
 
   it("uma skill alcança os quatro runtimes; um prompt, só o pi", () => {
-    const { plugin } = installed("demo", {}, { "skills/uma/SKILL.md": SKILL, "prompts/p/p.md": "x" });
+    const { plugin } = installed("demo", {}, { "skills/uma/SKILL.md": SKILL, "prompts/p.md": "x" });
     const refs = grantableReferences(plugin);
     expect(refs.find((r) => r.kind === "skill")!.runtimes).toEqual(["claude", "codex", "grok", "pi"]);
     expect(refs.find((r) => r.kind === "pi-prompt")!.runtimes).toEqual(["pi"]);

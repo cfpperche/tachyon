@@ -27,6 +27,9 @@ const pluginOrigin = (overrides: Partial<Extract<SkillOrigin, { kind: "plugin" }
   skill: "visual-qa",
   version: "0.3.1",
   runtimes: ["claude", "codex"],
+  // 516 — o caminho e a família viajam com o origin; a autorização parou de remontá-los.
+  path: ".tachyon/plugins/visual-qa/skills/visual-qa",
+  referenceKind: "skill",
   ...overrides,
 });
 

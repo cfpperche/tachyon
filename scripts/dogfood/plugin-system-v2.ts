@@ -47,7 +47,7 @@ try {
   };
   add(path.join(SOURCE, "skills", "sdd"), "sdd-2.0.0/skills/sdd");
   // E um prompt, para exercitar o caminho do pi que nunca teve um plugin.
-  zip.file("sdd-2.0.0/prompts/nova-spec/prompt.md", "Rascunhe a intenção antes do código: problema, critérios de aceite, não-objetivos.\n");
+  zip.file("sdd-2.0.0/prompts/nova-spec.md", "Rascunhe a intenção antes do código: problema, critérios de aceite, não-objetivos.\n");
 
   const zipPath = path.join(ws, "sdd.zip");
   fs.writeFileSync(zipPath, await zip.generateAsync({ type: "nodebuffer" }));

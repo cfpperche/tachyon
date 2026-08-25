@@ -6050,7 +6050,7 @@ export class Workspace {
         const authority = await this.profileAuthorityPort().read(agentName);
         return { profile: snapshot.profile, grants: authority?.capabilityGrants ?? [] };
       },
-      commit: async ({ agentName, references, capabilityGrants, selectedSkills }) => {
+      commit: async ({ agentName, references, capabilityGrants, selectedSkills, selectedPi }) => {
         const snapshot = await this.inspectAgentProfileLifecycle(agentName);
         const input = {
           agentName,
@@ -6058,8 +6058,17 @@ export class Workspace {
           expectedRevision: cas,
           patch: {
             references: [...references],
-            ...(selectedSkills
-              ? { capabilities: { ...(snapshot.profile.capabilities ?? {}), skills: [...selectedSkills] } }
+            ...(selectedSkills || selectedPi
+              ? { capabilities: {
+                ...(snapshot.profile.capabilities ?? {}),
+                ...(selectedSkills ? { skills: [...selectedSkills] } : {}),
+                ...(selectedPi
+                  ? { pi: Object.fromEntries([
+                    ...Object.entries(snapshot.profile.capabilities?.pi ?? {}),
+                    ...Object.entries(selectedPi).map(([field, ids]) => [field, [...(ids ?? [])]]),
+                  ]) as { extensions?: string[]; prompts?: string[]; themes?: string[]; packages?: string[] } }
+                  : {}),
+              } }
               : {}),
           },
           capabilityGrants,

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  authorizeAgentPlugin,
   authorizeAgentSkill,
   authorizedSkillStates,
   revokeAgentSkill,
@@ -70,12 +71,18 @@ function ports(initial: AgentProfileV1, grants: Record<string, unknown>[] = []) 
   const state = { profile: initial, grants: grants as never[], commits: 0 };
   const port: SkillAuthorizationPorts = {
     read: async () => ({ profile: state.profile, grants: state.grants }),
-    commit: async ({ references, capabilityGrants, selectedSkills }) => {
+    commit: async ({ references, capabilityGrants, selectedSkills, selectedPi }) => {
       state.commits += 1;
       state.profile = {
         ...state.profile,
         references: [...references],
-        ...(selectedSkills ? { capabilities: { ...(state.profile.capabilities ?? {}), skills: [...selectedSkills] } } : {}),
+        ...(selectedSkills || selectedPi
+          ? { capabilities: {
+            ...(state.profile.capabilities ?? {}),
+            ...(selectedSkills ? { skills: [...selectedSkills] } : {}),
+            ...(selectedPi ? { pi: { ...(state.profile.capabilities?.pi ?? {}), ...selectedPi } } : {}),
+          } }
+          : {}),
       } as AgentProfileV1;
       state.grants = [...capabilityGrants] as never[];
     },
@@ -92,7 +99,7 @@ describe("t-5498a6 — the reference and the grant land together, at the digest 
     const result = await authorizeAgentSkill({
       workspaceRoot: root,
       agentName: "claude-validador",
-      origin: { kind: "plugin", plugin: "visual-qa", skill: "visual-qa", version: "0.3.1", runtimes: ["claude", "codex"] },
+      origin: { kind: "plugin", plugin: "visual-qa", skill: "visual-qa", version: "0.3.1", runtimes: ["claude", "codex"], path: ".tachyon/plugins/visual-qa/skills/visual-qa", referenceKind: "skill" as const },
       ports: port,
     });
 
@@ -253,7 +260,7 @@ describe("t-5498a6 — the lockfile decides what came from a plugin, not the con
     writeSkill(root, ".claude/skills/visual-qa", "# edited by hand\n");
 
     expect(skillOriginFor(root, "visual-qa", "claude")).toEqual({
-      kind: "plugin", plugin: "visual-qa", skill: "visual-qa", version: "0.3.1", runtimes: ["claude", "codex"],
+      kind: "plugin", plugin: "visual-qa", skill: "visual-qa", version: "0.3.1", runtimes: ["claude", "codex"], path: ".tachyon/plugins/visual-qa/skills/visual-qa", referenceKind: "skill" as const,
     });
   });
 
@@ -407,7 +414,7 @@ describe("t-ef3c1f — a Codex agent on the shared checkout can hold a grant aga
     const result = await authorizeAgentSkill({
       workspaceRoot: root,
       agentName: "codex",
-      origin: { kind: "plugin", plugin: "agent-browser", skill: "agent-browser", version: "3.2.0", runtimes: ["codex"] },
+      origin: { kind: "plugin", plugin: "agent-browser", skill: "agent-browser", version: "3.2.0", runtimes: ["codex"], path: ".tachyon/plugins/agent-browser/skills/agent-browser", referenceKind: "skill" as const },
       ports: port,
     });
 
@@ -424,7 +431,7 @@ describe("t-ef3c1f — a Codex agent on the shared checkout can hold a grant aga
     const result = await authorizeAgentSkill({
       workspaceRoot: root,
       agentName: "codex",
-      origin: { kind: "plugin", plugin: "agent-browser", skill: "agent-browser", version: "3.2.0", runtimes: ["codex"] },
+      origin: { kind: "plugin", plugin: "agent-browser", skill: "agent-browser", version: "3.2.0", runtimes: ["codex"], path: ".tachyon/plugins/agent-browser/skills/agent-browser", referenceKind: "skill" as const },
       ports: port,
     });
 
@@ -447,7 +454,11 @@ describe("t-d697c7 — a plugin authorization can be withdrawn", () => {
       const granted = await authorizeAgentSkill({
         workspaceRoot: root,
         agentName: "claude",
-        origin: { kind: "plugin", plugin: "toolbelt", skill, version: "1.0.0", runtimes: ["claude"] },
+        origin: {
+          kind: "plugin", plugin: "toolbelt", skill, version: "1.0.0", runtimes: ["claude"],
+          // 516 — o caminho e a família viajam com o origin desde que a autorização parou de remontá-los.
+          path: `.tachyon/plugins/toolbelt/skills/${skill}`, referenceKind: "skill",
+        },
         ports: port,
         select: true,
       });
@@ -475,5 +486,65 @@ describe("t-d697c7 — a plugin authorization can be withdrawn", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected refusal");
     expect(result.error).toContain("holds no authorization");
+  });
+});
+
+/**
+ * 516 — A PRIMEIRA CONCESSÃO A UM AGENTE PI, e o que ela achou.
+ *
+ * Em 2026-08-24 o dono criou um agente pi e tentou conceder o `sdd`. Falhou com
+ * `.tachyon/plugins/sdd/skills/nova-spec (prompt): does not exist` — um caminho com três defeitos
+ * numa linha só, e os três da mesma origem: este módulo foi escrito quando toda capacidade de plugin
+ * era uma skill.
+ *
+ *   1. o identificador era um RÓTULO DE TELA — `candidate.skills` devolve `"nova-spec (prompt)"`,
+ *      parêntese e tudo, e o laço iterava sobre isso como se fosse nome;
+ *   2. a pasta da família era FIXA em `skills/`, e um prompt do pi mora em `prompts/`;
+ *   3. o tipo da referência era FIXO em `"skill"`, e um prompt precisa ser `pi-prompt` para o
+ *      resolvedor sequer olhar para ele.
+ *
+ * Nenhum dos três doía nos outros três runtimes, porque neles "sempre skill" é verdade. O pi é o
+ * único que consome `prompts/` — e por isso era o único runtime que o sistema prometia e não
+ * entregava.
+ */
+describe("516 — conceder a um agente pi entrega prompt e skill, cada um no lugar que é dele", () => {
+  it("grava o prompt como pi-prompt, no caminho real, e SEM linha de grant", async () => {
+    const root = workspace();
+    writeSkill(root, ".tachyon/plugins/sdd/skills/sdd", "# sdd\n");
+    const prompts = path.join(root, ".tachyon/plugins/sdd/prompts");
+    fs.mkdirSync(prompts, { recursive: true });
+    fs.writeFileSync(path.join(prompts, "nova-spec.md"), "Rascunhe a intenção antes do código.\n");
+    fs.writeFileSync(path.join(root, ".tachyon/plugins/sdd/tachyon-plugin.json"), JSON.stringify({
+      name: "sdd", version: "2.0.0", description: "spec-driven development",
+    }));
+    const { port, state } = ports(profile({ runtime: { adapter: "pi", executable: "pi" } } as Partial<AgentProfileV1>));
+
+    const result = await authorizeAgentPlugin({
+      workspaceRoot: root,
+      agentName: "pi",
+      pluginName: "sdd",
+      adapter: "pi",
+      ports: port,
+      select: true,
+    });
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    const references = state.profile.references ?? [];
+    const prompt = references.find((reference) => reference.id === "nova-spec");
+    expect(prompt, "o prompt não virou referência").toBeTruthy();
+    expect(prompt!.kind, "gravado com a família errada").toBe("pi-prompt");
+    expect(prompt!.path, "o caminho foi remontado em vez de vir do catálogo")
+      .toBe(".tachyon/plugins/sdd/prompts/nova-spec.md");
+    // A seleção mora na família, não em `capabilities.skills`: o schema recusa um pi-prompt listado
+    // como skill, então mandar tudo por um campo só produziria um perfil que o Studio rejeita.
+    expect(state.profile.capabilities?.pi?.prompts).toContain("nova-spec");
+    expect(state.profile.capabilities?.skills ?? []).not.toContain("nova-spec");
+    // E um prompt é DADO, não código que passa a rodar: o schema de autoridade não aceita `pi-prompt`
+    // em `capabilityGrants`, então escrever a linha assim mesmo faria um perfil inválido.
+    expect(state.grants.some((grant) => (grant as { referenceId?: string }).referenceId === "nova-spec"))
+      .toBe(false);
+    // A skill do mesmo plugin continua indo pelo caminho de sempre.
+    expect(references.find((reference) => reference.id === "sdd")?.kind).toBe("skill");
+    expect(state.profile.capabilities?.skills).toContain("sdd");
   });
 });

@@ -85,8 +85,8 @@ describe("516 — a posição no payload é a declaração", () => {
   it("encontra as capacidades pelas pastas, sem nenhum campo dizendo onde estão", () => {
     const dir = plugin(BASE, {
       "skills/thing/SKILL.md": SKILL,
-      "prompts/planejar/prompt.md": "planeje",
-      "themes/escuro/theme.json": "{}",
+      "prompts/planejar.md": "planeje",
+      "themes/escuro.json": "{}",
       "extensions/medir/index.ts": "export {}",
     });
     const loaded = loadPlugin(dir);
@@ -122,7 +122,7 @@ describe("516 — quem serve quem é derivado, porque é propriedade dos runtime
   });
 
   it("um plugin de prompts serve só o pi — é vocabulário dele", () => {
-    const loaded = loadPlugin(plugin(BASE, { "prompts/planejar/prompt.md": "x" }));
+    const loaded = loadPlugin(plugin(BASE, { "prompts/planejar.md": "x" }));
     expect(loaded.plugin!.runtimes).toEqual(["pi"]);
   });
 
