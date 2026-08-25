@@ -881,6 +881,59 @@ describe("persistent engine supervisor", () => {
     expect(avisos[0]!.detail, "o aviso não diz o que a sonda observou").toBeTruthy();
   });
 
+  /**
+   * t-881588 — MUDA POR ESTAR OCUPADA NÃO É MUDA POR ESTAR PARADA.
+   *
+   * Em 2026-08-24 o shell matou e relançou a engine 105 vezes num dia. Ela não estava travada: estava
+   * gravando o backup num disco lento, e não sobrava fôlego para responder "estou viva". Substituir
+   * uma engine ocupada custa exatamente o trabalho que ela estava fazendo.
+   *
+   * O sinal não é limiar nem heurística — é o sistema operacional respondendo sobre a própria fila:
+   * um processo parado esperando o disco está trabalhando, e não pode nem ser morto até o disco
+   * soltar. Foi por isso que aquela morte levou 12 segundos: o pedido de encerrar ficou na fila.
+   * A demora da morte era a prova de que não devia matar.
+   */
+  it("não substitui uma engine que está apenas esperando o disco", async () => {
+    const fixture = workspaceFixture();
+    const mute = await listenMute(fixture.socket);
+    try {
+      let stops = 0;
+      let launches = 0;
+      await expect(ensureDaemonEngine({
+        workspaceRoot: fixture.workspace,
+        bundle: fixture.bundle,
+        runtime: fixture.runtime,
+        storageRoot: fixture.storage,
+        controlSocketPath: fixture.socket,
+        launcher: async (input) => { launches += 1; spawnWorker(input.encodedOptions); return "started"; },
+        stopper: async () => { stops += 1; await mute.close(); },
+        unitLoaded: async () => true,
+        busyOnDisk: async () => true,
+        startTimeoutMs: 400,
+        pollMs: 20,
+      })).rejects.toThrow(/busy writing to disk/);
+      expect(stops, "matou uma engine que estava trabalhando").toBe(0);
+      expect(launches, "subiu uma segunda engine por cima de uma viva").toBe(0);
+      // E nada de conselho de `systemctl stop`: mandar o operador matar uma engine ocupada é pior
+      // que o silêncio que motivou o aviso.
+      await expect(ensureDaemonEngine({
+        workspaceRoot: fixture.workspace,
+        bundle: fixture.bundle,
+        runtime: fixture.runtime,
+        storageRoot: fixture.storage,
+        controlSocketPath: fixture.socket,
+        launcher: async (input) => { spawnWorker(input.encodedOptions); return "started"; },
+        stopper: async () => { await mute.close(); },
+        unitLoaded: async () => true,
+        busyOnDisk: async () => true,
+        startTimeoutMs: 400,
+        pollMs: 20,
+      })).rejects.not.toThrow(/systemctl/);
+    } finally {
+      await mute.close().catch(() => undefined);
+    }
+  });
+
   // t-d244e1 — the deadline still exists so a just-started peer can finish becoming healthy.
   it("accepts a mute endpoint that becomes healthy before the deadline and does not stop it", async () => {
     const fixture = workspaceFixture();

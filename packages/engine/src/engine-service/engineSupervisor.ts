@@ -136,6 +136,11 @@ export interface EnsureDaemonEngineOptions {
    * existing CONTROL_UNAVAILABLE refusal.
    */
   unitLoaded?: (unitName: string) => Promise<boolean>;
+  /**
+   * Test/platform seam. Produção pergunta ao systemd o PID da unidade e ao `/proc` se ele está
+   * parado esperando o disco. Uma costura só, porque é uma pergunta só.
+   */
+  busyOnDisk?: (unitName: string) => Promise<boolean>;
   startTimeoutMs?: number;
   pollMs?: number;
   /** Test/platform adapter overrides. Production derives private per-user locations. */
@@ -223,6 +228,11 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
   // Quando a mudez COMEÇOU, não quando o deadline acabou: é o número que diz ao humano quanto tempo
   // a engine ficou sem responder, e é o que separa "ocupada por um instante" de "parada".
   let muteSince: number | undefined;
+  // t-881588 — perguntado a cada volta do laço que JÁ espera, não numa amostragem nova. Uma única
+  // amostra erraria: durante um bloqueio real medido em 2026-08-24, 10 de 12 estavam esperando o
+  // disco e 2 não.
+  const busyOnDisk = options.busyOnDisk ?? unitBusyOnDisk;
+  let sawDiskWait = false;
   for (;;) {
     try {
       existing = await probeHealthyEngine(controlSocketPath, canonicalRoot, hash);
@@ -232,6 +242,7 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
       if (!(error instanceof EngineSupervisorError && error.code === "CONTROL_UNAVAILABLE")) throw error;
       entryUnverifiable = error;
       muteSince ??= Date.now();
+      if (!sawDiskWait && await busyOnDisk(unitName)) sawDiskWait = true;
       if (Date.now() >= entryDeadline) break;
       await delay(pollMs);
     }
@@ -240,6 +251,17 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
   if (entryUnverifiable) {
     const ours = await proveWorkspaceUnitLoaded(unitName, unitLoaded);
     if (!ours) throw offerManualStop(entryUnverifiable, unitName);
+    // t-881588 — muda por estar OCUPADA não é muda por estar parada, e substituir a segunda nunca
+    // deve custar a primeira. Este shell desiste desta tentativa; o poll dele volta em 1 s e a engine
+    // atende assim que o disco solta. Nada de conselho de `systemctl stop` aqui: mandar o operador
+    // matar uma engine que está trabalhando é pior que o silêncio que motivou o aviso.
+    if (sawDiskWait) {
+      throw new EngineSupervisorError(
+        "ENGINE_BUSY_ON_DISK",
+        "Tachyon's engine is busy writing to disk and did not answer in time; it was left running.",
+        entryUnverifiable.technicalDetail,
+      );
+    }
     const transitionId = randomUUID();
     appendUpgradeAudit(storageRoot, {
       schemaVersion: 1,
@@ -1327,6 +1349,36 @@ function systemdLaunchError(input: { error?: unknown; code?: number | null; outp
     return new EngineSupervisorError("SYSTEMD_USER_UNAVAILABLE", "Tachyon cannot start its persistent engine because Linux user services are unavailable.", detail);
   }
   return new EngineSupervisorError("SYSTEMD_RUN_FAILED", "Tachyon could not start its persistent engine. Run Tachyon: Doctor and retry.", detail);
+}
+
+/**
+ * t-881588 — o processo está PARADO ESPERANDO O DISCO neste instante?
+ *
+ * `D` é sono ininterrompível: o kernel segurando o processo dentro de uma operação de disco. Quem
+ * está em `D` está trabalhando, não travado — e não pode nem ser morto até o disco terminar. Foi
+ * exatamente por isso que, em 2026-08-24, matar a engine levou 12 segundos: o pedido de encerrar
+ * ficou na fila esperando a escrita acabar. **A demora da morte era a prova de que não devia matar**,
+ * e ninguém estava olhando para ela.
+ *
+ * Não é heurística nem limiar: é o sistema operacional respondendo sobre a própria fila. Ilegível ou
+ * fora do Linux → `false`, que preserva o comportamento anterior em vez de inventar uma desculpa
+ * para não substituir.
+ */
+function waitingOnDisk(pid: number): boolean {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    const close = stat.lastIndexOf(")");
+    return close >= 0 && stat.slice(close + 2).trimStart().startsWith("D");
+  } catch {
+    return false;
+  }
+}
+
+async function unitBusyOnDisk(unitName: string): Promise<boolean> {
+  const shown = await runSystemctl(["--user", "show", "--property=MainPID", "--value", unitName]);
+  const pid = Number(shown.output.trim());
+  if (shown.code !== 0 || !Number.isInteger(pid) || pid <= 0) return false;
+  return waitingOnDisk(pid);
 }
 
 async function workspaceDerivedUnitLoaded(unitName: string): Promise<boolean> {
