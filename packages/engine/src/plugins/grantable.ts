@@ -33,6 +33,9 @@
  * dispara (depois da correção de ordem do TOML no mesmo dia), grok recusa. Quando a porta de perfil
  * do grok aprender MCP e hook, é `GROK_PROFILE_DOOR_KINDS` que muda — e o caso de unidade que trava
  * este acordo falha até que as duas camadas voltem a concordar.
+ *
+ * **Ela aprendeu em 2026-08-25** (t-0c2708), e a constante mudou junto com a porta, num commit só —
+ * que é a razão de ela existir em vez de o `false` estar espalhado por aqui.
  */
 import { inspectCapabilitySourceAtRoot } from "../config/agentCapabilitySource.js";
 import { CAPABILITY_KINDS, type CapabilityKind, type LoadedPlugin, type Runtime } from "./manifest.js";
@@ -47,7 +50,7 @@ export type ReferenceKind = "skill" | "mcp" | "hook" | "pi-extension" | "pi-prom
  * Não é preferência nossa: é o que aquela camada implementa. Ligar um destes aqui sem ensinar a
  * porta correspondente reintroduz exatamente a promessa não cumprida que isto veio remover.
  */
-const GROK_PROFILE_DOOR_KINDS = { mcp: false, hook: false } as const;
+const GROK_PROFILE_DOOR_KINDS = { mcp: true, hook: true } as const;
 
 const REFERENCE_KIND_OF: Record<CapabilityKind, ReferenceKind> = {
   skill: "skill",

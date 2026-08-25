@@ -218,6 +218,25 @@ const CHECAGENS: Checagem[] = [
     espera: (t) => t === "SEM-CREDENCIAL" || !t.includes("MARCA-CLAUDE"),
   },
 
+  {
+    runtime: "grok",
+    fato: "hook concedido em `hooks/granted.json` dispara",
+    custa: true,
+    medir: (ws, home) => {
+      const marca = path.join(home, "marca-hook-grok");
+      const hooksRoot = path.join(home, "hooks");
+      fs.mkdirSync(hooksRoot, { recursive: true });
+      fs.writeFileSync(path.join(hooksRoot, "granted.json"), JSON.stringify({
+        hooks: { PreToolUse: [{ hooks: [{ type: "command", command: `touch ${marca}` }] }] },
+      }, null, 2));
+      const real = path.join(os.homedir(), ".grok/auth.json");
+      if (fs.existsSync(real)) fs.copyFileSync(real, path.join(home, "auth.json"));
+      run("grok", ["-p", "execute: echo teste"], { GROK_HOME: home, HOME: home }, ws, 420_000);
+      return fs.existsSync(marca) ? "DISPAROU" : "nao disparou";
+    },
+    espera: (t) => t === "DISPAROU",
+  },
+
   // ── pi ───────────────────────────────────────────────────────────────────────────────────────
   {
     runtime: "pi",

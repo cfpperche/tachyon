@@ -789,11 +789,16 @@ function resolveCapabilities(
     }
   }
   if (adapter === "grok") {
-    for (const id of [...new Set([...(selected?.mcp ?? []), ...(selected?.hooks ?? []), ...piIds])].sort(compareText)) {
+    // t-0c2708 — MCP e hooks saíram desta retenção em 2026-08-25, quando a porta do grok aprendeu a
+    // entregá-los: `materializeBridgeMcpGrok` escreve os servidores concedidos no `config.toml` e os
+    // hooks concedidos em `hooks/granted.json`, pela mesma passada que já escrevia o resto. Recursos
+    // do pi continuam retidos porque o grok não os consome — isso é propriedade do runtime, não
+    // lacuna nossa.
+    for (const id of [...new Set(piIds)].sort(compareText)) {
       withholdId(
         id,
         "profile/capability",
-        "Grok profile projection supports exact captured skills only; MCP, hooks and Pi resources have separate runtime doors",
+        "Grok profile projections support skills, MCP and hooks; Pi resources belong to the Pi runtime",
         "capabilities",
       );
     }

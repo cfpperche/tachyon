@@ -1625,6 +1625,11 @@ export class HarnessManager {
     if (adapter.runtime === "grok") {
       const home = this.materializeBridgeMcpGrok(agent, bridgeEntry ?? {}, cwd, {
         ...(nativeConfig ? { nativeConfig } : {}),
+        // t-0c2708 — a projeção inteira pela porta que escreve o `config.toml` e os `hooks/`. Antes
+        // desta linha o grok era o único runtime que recebia SÓ skills: o `projection.hooks` e o
+        // `projection.mcp` não eram usados em lugar nenhum, e o resolvedor retinha os dois pelo nome
+        // para que a lacuna ao menos não fosse silenciosa.
+        capabilities: projection,
       });
       this.replaceCapturedSkillTree(agent, home, projection);
       this.writeProfileCapabilityManifest(agent, home, projection);
@@ -3060,6 +3065,33 @@ export class HarnessManager {
    * the load-bearing half — a stale `projected.json` would keep gating a session whose policy no longer
    * says so, and `$GROK_HOME` outlives a single spawn.
    */
+  /**
+   * t-0c2708 — os hooks CONCEDIDOS a este agente, em `$GROK_HOME/hooks/granted.json`.
+   *
+   * Arquivo próprio pelo mesmo motivo que o `projected.json` tem o dele: o grok mescla toda fonte que
+   * descobre, `session-start.json`/`stop.json` são o canal de posse do Tachyon, e o `projected.json` é
+   * o canal de política. Três donos, três arquivos — misturá-los faria a remoção de um reescrever o
+   * outro. Apagar quando vazio é a metade que sustenta: um `granted.json` órfão continuaria injetando
+   * um hook de uma concessão que já foi retirada, e `$GROK_HOME` sobrevive ao spawn.
+   *
+   * `SessionStart`/`Stop` são pulados como nos outros dois canais e pela mesma razão: uma concessão
+   * não pode deslocar nem duplicar os hooks de posse.
+   */
+  private writeGrokGrantedHooks(hooksRoot: string, grantedHooks?: Record<string, unknown>): void {
+    const file = path.join(hooksRoot, "granted.json");
+    const hooks = Object.fromEntries(
+      Object.entries(grantedHooks ?? {})
+        .filter(([event, groups]) => event !== "SessionStart" && event !== "Stop" && Array.isArray(groups) && groups.length > 0)
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+    );
+    if (Object.keys(hooks).length === 0) {
+      fs.rmSync(file, { force: true });
+      return;
+    }
+    fs.mkdirSync(hooksRoot, { recursive: true });
+    atomicWrite(file, `${JSON.stringify({ hooks }, null, 2)}\n`);
+  }
+
   private writeGrokProjectedHooks(hooksRoot: string, projectedHooks?: Record<string, OwnershipHookGroup[]>): void {
     const file = path.join(hooksRoot, "projected.json");
     // SessionStart/Stop are skipped for the same reason as on the Claude/Codex channels (buildOwnershipSettings
@@ -3082,7 +3114,12 @@ export class HarnessManager {
     agent: string,
     grokHome: string,
     handoffPath: string | undefined,
-    opts: { silentPersistence: boolean; projectedHooks?: Record<string, OwnershipHookGroup[]> },
+    opts: {
+      silentPersistence: boolean;
+      projectedHooks?: Record<string, OwnershipHookGroup[]>;
+      /** t-0c2708 — os hooks que ESTE agente recebeu por concessão de plugin. */
+      grantedHooks?: Record<string, unknown>;
+    },
   ): void {
     const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
     fs.mkdirSync(path.dirname(recorder), { recursive: true });
@@ -3124,6 +3161,7 @@ export class HarnessManager {
       fs.rmSync(path.join(hooksRoot, "stop.json"), { force: true });
     }
     this.writeGrokProjectedHooks(hooksRoot, opts.projectedHooks);
+    this.writeGrokGrantedHooks(hooksRoot, opts.grantedHooks);
   }
 
   /** spec t-e2ebe3 — the opencode harness config body for `<XDG_CONFIG_HOME>/opencode/opencode.json`. Folds
@@ -3621,6 +3659,13 @@ export class HarnessManager {
       nativeConfig?: ResolvedAgentNativeConfigProjection;
       projectedHooks?: Record<string, OwnershipHookGroup[]>;
       lifecycle?: { handoffPath?: string; silentPersistence?: boolean };
+      /**
+       * t-0c2708 — o que ESTE agente recebeu por concessão, entregue pela MESMA porta que escreve o
+       * resto. Passar por fora seria escrever num `config.toml` que este método reescreve do zero
+       * logo em seguida: a t-26f508 já registra que esta porta roda por último em todo spawn, e é
+       * por isso que os dois chamadores têm de passar o mesmo valor.
+       */
+      capabilities?: ResolvedAgentCapabilityProjection;
     } = {},
   ): string {
     const home = bridgeGrokHome(this.workspaceRoot, agent);
@@ -3668,6 +3713,12 @@ export class HarnessManager {
     if (url) {
       toml = setCodexMcpServer(toml, "tachyon_bridge", this.renderGrokMcpBlock("tachyon_bridge", { url, headers }));
     }
+    // t-0c2708 — os servidores CONCEDIDOS, na mesma passada. Ordenados por nome para que duas
+    // materializações do mesmo perfil produzam bytes iguais: este arquivo é reescrito a cada spawn e
+    // uma ordem instável faria cada launch parecer uma mudança de configuração.
+    for (const [name, server] of Object.entries(options.capabilities?.mcp ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+      toml = setCodexMcpServer(toml, name, this.renderGrokMcpBlock(name, server));
+    }
     const configPath = path.join(home, "config.toml");
     fs.writeFileSync(configPath, toml.endsWith("\n") || toml.length === 0 ? toml : `${toml}\n`, "utf8");
     // Pre-trust workspace + effective spawn cwd so the folder-trust dialog never blocks managed Grok.
@@ -3683,6 +3734,7 @@ export class HarnessManager {
     this.materializeGrokLifecycleHooks(agent, home, options.lifecycle?.handoffPath, {
       silentPersistence: options.lifecycle?.silentPersistence ?? false,
       ...(options.projectedHooks ? { projectedHooks: options.projectedHooks } : {}),
+      ...(options.capabilities ? { grantedHooks: options.capabilities.hooks } : {}),
     });
     return home;
   }

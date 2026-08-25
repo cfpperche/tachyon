@@ -76,12 +76,14 @@ describe("516 — cada família vira o kind que o perfil entende", () => {
     expect(grantableReferences(plugin)[0]!.runtimes).toEqual(["codex"]);
   });
 
-  it("MCP não é oferecido nem ao pi nem ao grok, que não têm porta de perfil para ele", () => {
-    // O grok saiu desta lista em 2026-08-24. Ele estava aqui por simetria com os outros dois, não
-    // por medição: o `agentProfileResolver` sempre reteve MCP e hook num perfil grok, então a oferta
-    // prometia o que o launch nunca entregava. O pi nunca esteve — ele não materializa MCP.
+  it("MCP não é oferecido ao pi, que não o materializa", () => {
+    // O grok SAIU desta lista em 2026-08-24 e VOLTOU em 2026-08-25, e as duas datas são a mesma
+    // regra: a oferta espelha a porta. Ele saiu porque o resolvedor retinha MCP num perfil grok, e
+    // voltou quando `materializeBridgeMcpGrok` aprendeu a escrever o servidor concedido no
+    // `config.toml` (t-0c2708). O pi nunca esteve: ele não materializa MCP, e isso é propriedade do
+    // runtime, não decisão nossa.
     const { plugin } = installed("demo", {}, { "mcp.json": "{}", "skills/uma/SKILL.md": SKILL });
-    expect(grantableReferences(plugin).find((r) => r.kind === "mcp")!.runtimes).toEqual(["claude", "codex"]);
+    expect(grantableReferences(plugin).find((r) => r.kind === "mcp")!.runtimes).toEqual(["claude", "codex", "grok"]);
   });
 });
 
@@ -114,9 +116,13 @@ describe("516 — o digest é o do sistema, não um número nosso", () => {
  *
  * O caso trava o ACORDO entre as duas camadas, não uma constante: quando a porta de perfil do grok
  * aprender MCP e hook, este caso falha e obriga a mexer nos dois lados juntos.
+ *
+ * **Ele reprovou em 2026-08-25, e era para isso mesmo.** A porta aprendeu (t-0c2708), o caso quebrou,
+ * e os dois lados foram mexidos no mesmo commit. Um caso que só afirmasse a constante teria passado
+ * calado com a oferta e a entrega discordando de novo — na direção contrária.
  */
 describe("516 — o que se oferece é o que a porta de perfil aceita", () => {
-  it("não oferece hook nem MCP a um perfil grok, que só tem porta de skills", () => {
+  it("oferece skill, hook e MCP a um perfil grok — as três portas que ele tem", () => {
     const { plugin } = installed("portao", { runtimes: ["claude", "codex", "grok"] }, {
       "skills/uma/SKILL.md": SKILL,
       "hooks/claude/h.json": "{}",
@@ -125,10 +131,10 @@ describe("516 — o que se oferece é o que a porta de perfil aceita", () => {
       "mcp.json": "{}",
     });
     const paraGrok = grantableReferences(plugin).filter((r) => r.runtimes.includes("grok"));
-    expect(paraGrok.map((r) => r.kind).sort()).toEqual(["skill"]);
+    expect(paraGrok.map((r) => r.kind).sort()).toEqual(["hook", "mcp", "skill"]);
   });
 
-  it("continua oferecendo hook e MCP a claude e codex, onde a entrega foi medida", () => {
+  it("oferece hook a cada runtime que o payload nomeia, e MCP aos três que o materializam", () => {
     const { plugin } = installed("portao2", { runtimes: ["claude", "codex", "grok"] }, {
       "hooks/claude/h.json": "{}",
       "hooks/codex/h.json": "{}",
@@ -139,8 +145,9 @@ describe("516 — o que se oferece é o que a porta de perfil aceita", () => {
     expect(refs.map((r) => `${r.kind}:${r.id}`).sort()).toEqual([
       "hook:portao2-hooks-claude",
       "hook:portao2-hooks-codex",
+      "hook:portao2-hooks-grok",
       "mcp:portao2-mcp",
     ]);
-    expect(refs.find((r) => r.kind === "mcp")!.runtimes).toEqual(["claude", "codex"]);
+    expect(refs.find((r) => r.kind === "mcp")!.runtimes).toEqual(["claude", "codex", "grok"]);
   });
 });

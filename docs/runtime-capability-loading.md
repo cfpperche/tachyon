@@ -494,3 +494,41 @@ grok aprender MCP e hook, o caso falha e obriga a mexer nos dois lados juntos.
 Vale dizer o que a varredura **não** prova: que hook de plugin funciona ponta a ponta. Ela prova que
 um hook concedido chega e dispara. Nenhum plugin do repositório concede hook a ninguém ainda.
 
+## Paridade de capacidade — 2026-08-25
+
+A varredura de hooks do dia anterior tinha achado o grok recusando MCP e hook pelo nome. O dono
+decidiu fechar a lacuna em vez de registrá-la como desenho. O estado agora, medido:
+
+| runtime | skill | hook | mcp |
+|---|---|---|---|
+| claude | entrega | **dispara** | entrega |
+| codex | entrega | **dispara** | entrega |
+| grok | entrega | **dispara** | entrega |
+| pi | entrega | — não tem | — não tem |
+
+O pi não tem hook nativo nem MCP: isso é propriedade do runtime, não lacuna. Ele recebe `prompts/`,
+que nenhum dos outros três consome.
+
+**Onde cada runtime lê o hook concedido:**
+
+| runtime | arquivo | forma |
+|---|---|---|
+| claude | `<home>/settings.json`, chave `hooks` | JSON |
+| codex | `<home>/config.toml`, `hooks.<Evento>` ANTES da primeira tabela | TOML |
+| grok | `$GROK_HOME/hooks/granted.json` | JSON |
+
+O grok tem **três** arquivos de hook na mesma pasta, com três donos: `session-start.json`/`stop.json`
+são o canal de posse do Tachyon, `projected.json` é o canal de política, e `granted.json` é a
+concessão. Ele mescla toda fonte que descobre, então separar por arquivo é o que permite remover um
+sem reescrever os outros — e apagar quando vazio é a metade que sustenta, porque `$GROK_HOME`
+sobrevive ao spawn.
+
+**A armadilha do MCP no grok, dita para não voltar:** o `config.toml` é reescrito DO ZERO pela porta
+do Bridge, que roda por último em todo spawn (t-26f508). Um servidor concedido escrito por fora dela
+seria apagado em silêncio pelo segundo escritor. Por isso a projeção inteira passa pela mesma porta,
+e os dois chamadores passam o mesmo valor.
+
+Guardado por `scripts/dogfood/plugin-parity.ts`, que instala quatro plugins de exemplo — um só de
+skill, um só de hook, um só de MCP, e um com as três — e mede o que chega na home privada de cada
+runtime. Uma célula `FALTA` é uma capacidade oferecida e não entregue, e o dogfood sai com erro.
+

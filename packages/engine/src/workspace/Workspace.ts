@@ -1092,6 +1092,11 @@ export class Workspace {
             // pure function of (lockfile, classification, runtime) and never of the agent's declaration,
             // so an undeclared child is projected exactly like a Saved agent.
             ...this.projectedSessionHooks("grok", name),
+            // t-0c2708 — MESMO valor que a porta canônica acima passa, pela regra da t-26f508: esta
+            // roda por último em todo spawn e reescreve o `config.toml` do zero. Se as duas
+            // discordassem, a segunda apagaria em silêncio a concessão que a primeira acabou de
+            // escrever — que é exatamente como o MCP concedido sumiria sem deixar rastro.
+            ...(declared?.profileCapabilities ? { capabilities: declared.profileCapabilities } : {}),
           },
         );
       },
