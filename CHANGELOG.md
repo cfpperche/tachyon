@@ -4,6 +4,23 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.69 — o Grok recebe hooks e servidores MCP de um plugin
+
+Um plugin podia dar skills, hooks e servidores MCP a um agente Claude ou Codex. Para o Grok, só
+skills — as outras duas apareciam no formulário, você concedia, e o launch as retinha com um aviso.
+
+Agora chegam. Um hook concedido é escrito onde o Grok o lê, e dispara — medido com um Grok real, o
+mesmo teste que Claude e Codex já passavam. Um servidor MCP concedido entra na configuração privada
+do agente.
+
+O Pi continua recebendo skills e prompts, e não hooks nem MCP: ele não tem nenhum dos dois. Isso é
+do runtime, não uma lacuna do Tachyon.
+
+Junto veio uma rede de segurança: quatro plugins de exemplo — um só de skill, um só de hook, um só
+de MCP e um com as três — que passam a ser rodados contra os quatro runtimes a cada verificação. Eles
+existem porque nenhum plugin real trazia hook ou MCP ainda, o que deixava essas duas famílias sem
+ninguém para exercê-las.
+
 ## 0.93.68 — conceder um plugin a um agente Pi funciona
 
 Conceder um plugin a um agente Pi falhava com uma mensagem sobre um arquivo que não existe. O
