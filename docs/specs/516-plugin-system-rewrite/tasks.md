@@ -68,7 +68,9 @@
   — **fechado por si mesmo**: o `sdd` que escreveu esta spec roda em
   `.tachyon/harness/claude/skills/sdd/`, entregue pelo sistema novo e `diff -rq` limpo contra
   `.tachyon/plugins/sdd/skills/sdd/`. O `new.sh` que criou o diretório `516-` veio por esse cano.
-- [x] conceder ao pi e ver `prompts/` chegar — **provado nas duas camadas de baixo** (unit
+- [x] conceder ao pi e ver `prompts/` chegar — **FECHADO em 2026-08-25**, e o caminho estava quebrado,
+  não faltando agente: cinco defeitos na autorização (`t-16cb18`, corrigidos na 0.93.68). O runtime
+  lista `[Prompts] /nova-spec` no próprio banner. Texto antigo abaixo, preservado — **provado nas duas camadas de baixo** (unit
   "SDD 428" e o dogfood, que diz `prompts/ chega ao pi e a mais ninguém`), **sem prova em agente pi
   vivo**: não existe agente pi neste workspace. O que falta virou `t-16cb18`, com o aviso de que o
   autorrelato do modelo não serve de instrumento ali.

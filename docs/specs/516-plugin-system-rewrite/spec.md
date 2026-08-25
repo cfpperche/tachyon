@@ -187,9 +187,18 @@ nunca funcionou — o runtime sobe, não reclama, e o hook não existe. Corrigid
 primeiro cabeçalho, guardado por um caso de unidade, e registrado em
 `docs/runtime-capability-loading.md`. O instrumento errado foi o que revelou o produto errado.
 
-O que ficou de fora, dito com nome: **nenhum agente pi vivo já recebeu um plugin** — a entrega ao pi
-está provada em unit e em dogfood, no código que roda de verdade, mas não existe agente pi neste
-workspace para fechar o círculo. Git hooks saíram inteiros da v1. Os dezessete plugins antigos
+O que ficou de fora foi fechado em **2026-08-25**, e o fechamento contradisse a própria ressalva. Ela
+dizia que faltava um agente pi para completar o círculo. Não faltava agente: **o círculo estava
+quebrado**. A primeira tentativa de conceder achou cinco defeitos no caminho de autorização — quatro
+deles a mesma opinião `skills/<nome>` remontada em quatro lugares diferentes, e um descasamento entre
+a convenção "toda capacidade é um diretório" desta spec e o que o pi aceita para prompt e tema (um
+`.md` e um `.json`, que é o que `--prompt-template` recebe). Nenhum deles aparecia nos outros três
+runtimes, porque neles "sempre skill" é verdade — e por isso nenhum teste pegava: nenhum exercia o
+caminho. Corrigido na 0.93.68.
+
+O pi agora recebe, e a prova não é autorrelato de modelo (instrumento que falhou o controle positivo
+aqui): é o **banner de inicialização do próprio runtime**, impresso antes de qualquer turno, listando
+`[Skills] sdd` e `[Prompts] /nova-spec`, com os bytes conferindo contra o payload na home privada. Git hooks saíram inteiros da v1. Os dezessete plugins antigos
 continuam no repo, intocados, para migrarem quando forem precisos — não foram apagados.
 
 O mapa de como cada runtime carrega skills, hooks e MCPs virou documento
