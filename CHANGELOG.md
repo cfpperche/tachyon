@@ -4,6 +4,23 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.93.67 — motor ocupado deixa de ser confundido com motor travado
+
+O editor pergunta ao motor, de tempos em tempos, se ele está vivo. Se ficasse dez segundos sem
+resposta, concluía que travou e subia outro no lugar.
+
+Só que "não respondeu" e "travou" não são a mesma coisa. Um motor gravando arquivos num disco lento
+está trabalhando — ele só não tem fôlego para atender. Trocá-lo custa exatamente o trabalho que ele
+estava fazendo.
+
+Agora, antes de desistir, o editor faz mais uma pergunta: ao próprio sistema operacional, se aquele
+programa está parado esperando o disco neste instante. Quem responde é quem está segurando a espera,
+então não é palpite. Se estiver, o motor fica onde está e volta a atender assim que o disco solta.
+
+Um detalhe que ficou visível na investigação: quando o sistema matava o motor, a morte demorava doze
+segundos — porque não dá para interromper um programa no meio de uma gravação. A própria demora já
+dizia que ele estava trabalhando.
+
 ## 0.93.66 — quando o Tachyon troca o próprio motor, ele avisa
 
 Em raras ocasiões o Tachyon substitui o motor que roda seus agentes: se ele para de responder por dez
